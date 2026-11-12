@@ -17,6 +17,7 @@ import {
   mailboxes as schemaMailboxes,
   mailDomains,
   members,
+  notifications,
   threadState,
   threads,
 } from "../src/schema/index.ts";
@@ -105,6 +106,27 @@ describe("forMember isolation", () => {
     expect(await asAlice.getThread(ops.threadId)).toBeNull();
     expect((await asAlice.getConversation(hello.threadId))?.status).toBe("open");
     expect(await asAlice.getConversation(billing.threadId)).toBeNull();
+    const [aliceThread, billingThread] = await Promise.all([
+      asAlice.getThread(hello.threadId),
+      forMember(db, bob).getThread(billing.threadId),
+    ]);
+    expect(await asAlice.listTags(aliceThread!.mailboxId)).toEqual([]);
+    expect(await asAlice.listTags(billingThread!.mailboxId)).toBeNull();
+    expect(
+      (await asAlice.mailboxAssignees(aliceThread!.mailboxId))?.map((m) => m.memberId),
+    ).toEqual([alice]);
+    expect(await asAlice.mailboxAssignees(billingThread!.mailboxId)).toBeNull();
+    expect(
+      (await asAlice.listConversations({ mailboxId: aliceThread!.mailboxId, view: "all" })).map(
+        (c) => c.id,
+      ),
+    ).toEqual([hello.threadId]);
+    expect(
+      await asAlice.listConversations({ mailboxId: billingThread!.mailboxId, view: "all" }),
+    ).toEqual([]);
+    expect((await asAlice.conversationCounts()).map((c) => c.mailboxId)).toEqual([
+      aliceThread!.mailboxId,
+    ]);
     expect(await asAlice.search("flamingo")).toEqual([]);
     expect(await asAlice.search("albatross")).toEqual([]);
 
@@ -122,6 +144,23 @@ describe("forMember isolation", () => {
     expect(await asCarol.search("pelican")).toEqual([]);
     expect(await asCarol.setThreadState(hello.threadId, { read: true })).toBeNull();
     expect(await asCarol.getConversation(hello.threadId)).toBeNull();
+    const helloBox = (await forMember(db, alice).getThread(hello.threadId))!.mailboxId;
+    expect(await asCarol.listTags(helloBox)).toBeNull();
+    expect(await asCarol.mailboxAssignees(helloBox)).toBeNull();
+    expect(await asCarol.listConversations({ mailboxId: helloBox, view: "all" })).toEqual([]);
+    // A notification row for Carol about hello@ (as a buggy writer might leave) stays hidden.
+    await db.insert(notifications).values({
+      orgId: orgBId,
+      memberId: carol,
+      kind: "mention",
+      threadId: hello.threadId,
+    });
+    expect((await asCarol.listNotifications()).notifications).toEqual([]);
+    expect((await asCarol.conversationCounts()).map((c) => c.mailboxId)).toEqual([opsBoxId]);
+    // Nor is she listed as someone hello@ can be assigned to: her grant crosses orgs.
+    expect((await forMember(db, alice).mailboxAssignees(helloBox))?.map((m) => m.memberId)).toEqual(
+      [alice],
+    );
     expect(
       await applyConversationChange(db, {
         threadId: hello.threadId,
