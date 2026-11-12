@@ -31,13 +31,7 @@ import {
   threadsByMessageIds,
   upsertMessage,
 } from "@omni/db";
-import {
-  decideThread,
-  normalizeSubject,
-  type ParsedMessage,
-  parseMessage,
-  replyIds as replyIdsOf,
-} from "@omni/mail-core";
+import { decideThread, normalizeSubject, type ParsedMessage, parseMessage } from "@omni/mail-core";
 import { cleanMessage, sanitizeHtml } from "@omni/mail-core/clean";
 import { createHash } from "node:crypto";
 import type { ObjectStore } from "./objects.ts";
@@ -266,7 +260,9 @@ export class PgMailStore implements MailStore {
     message: ParsedMessage,
     sentAt: Date,
   ): Promise<string> {
-    const replyIds = replyIdsOf(message);
+    const replyIds = [message.inReplyTo, ...message.references].filter(
+      (id): id is string => id !== null,
+    );
     const knownMessageIds = await threadsByMessageIds(this.db, mailboxId, replyIds);
     // No known parent: a stored reply to this message (or to its parent) may have come first.
     const relatedThreadId =

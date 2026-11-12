@@ -79,6 +79,7 @@ describe("automatedKind", () => {
 test("a bounce joins the conversation of the message it returns", async () => {
   // Delivery reports carry no In-Reply-To, so without this a bounce opens a new ticket.
   const bounce = await parse("bounce-dsn-postfix.eml");
+  expect(bounce.inReplyTo).toBe("<3a9f1c7e-5b2d-4e8a-9c6f-0d4b2e8a1c37@example.com>");
   const knownMessageIds = new Map([
     ["<3a9f1c7e-5b2d-4e8a-9c6f-0d4b2e8a1c37@example.com>", "t-quote"],
   ]);

@@ -47,6 +47,11 @@ export interface ParsedMessage {
   /** In `<id@host>` form. Synthesized from a header hash when the message has none. */
   messageId: string;
   messageIdSynthesized: boolean;
+  /**
+   * The In-Reply-To header. A bounce without one gets the Message-ID of the message it
+   * returns, as Gmail's own bounces carry: it is stored, so threading converges whichever
+   * of the two syncs first.
+   */
   inReplyTo: string | null;
   /** Oldest first, as in the header. */
   references: string[];
@@ -128,6 +133,7 @@ export async function parseMessage(raw: Uint8Array | string): Promise<ParseResul
     signals: { ...signals(mail.headerLines), displayNameSpoof: displayNameSpoof(from) },
     automated: automated(mail, from),
   };
+  message.inReplyTo ??= message.automated?.bouncedMessageId ?? null;
   if (bodySkipped) message.bodySkipped = true;
 
   return {
