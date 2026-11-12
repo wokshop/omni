@@ -8,6 +8,7 @@ import {
   addLocation,
   claimActions,
   completeAction,
+  claimProviderThread,
   createThread,
   deferAction,
   sendingPaused,
@@ -15,6 +16,7 @@ import {
   findFolder,
   findMailbox,
   findMessageByHeader,
+  findThreadByProviderId,
   folderLocations,
   getFolderPosition,
   hasLocation,
@@ -236,7 +238,9 @@ export class PgMailStore implements MailStore {
     mailboxId: string,
     mailbox: MailboxRow,
     folderId: string | null,
-    fetched: Pick<FetchedMessage, "raw" | "internalDate"> & { uid: number | null },
+    fetched: Pick<FetchedMessage, "raw" | "internalDate" | "providerThreadId"> & {
+      uid: number | null;
+    },
     parsed: Awaited<ReturnType<typeof parseMessage>>,
     knownThreadId: string | null = null,
   ) {
@@ -274,7 +278,8 @@ export class PgMailStore implements MailStore {
 
     const sentAt = message.sentAt ?? fetched.internalDate ?? new Date();
     const threadId =
-      knownThreadId ?? (await this.assignThread(mailboxId, mailbox, message, sentAt));
+      knownThreadId ??
+      (await this.assignThread(mailboxId, mailbox, message, sentAt, fetched.providerThreadId));
     const { cleanText } = cleanMessage(message);
     return upsertMessage(this.db, {
       orgId: mailbox.orgId,
@@ -310,7 +315,13 @@ export class PgMailStore implements MailStore {
     mailbox: MailboxRow,
     message: ParsedMessage,
     sentAt: Date,
+    providerThreadId?: string,
   ): Promise<string> {
+    // Gmail's thread wins: the conversation is the one Gmail shows (ADR 0023).
+    if (providerThreadId) {
+      const known = await findThreadByProviderId(this.db, mailboxId, providerThreadId);
+      if (known) return known;
+    }
     const replyIds = [message.inReplyTo, ...message.references].filter(
       (id): id is string => id !== null,
     );
@@ -333,12 +344,20 @@ export class PgMailStore implements MailStore {
       { ...message, sentAt },
       { knownMessageIds, candidates, selfAddresses: [mailbox.address], relatedThreadId },
     );
-    if (decision.kind !== "new") return decision.threadId;
+    if (decision.kind !== "new") {
+      // A thread started before Gmail's id was known (our own send, indexed before its Sent copy)
+      // takes this id; one that already belongs to another Gmail thread is not this conversation.
+      if (!providerThreadId) return decision.threadId;
+      if (await claimProviderThread(this.db, decision.threadId, providerThreadId)) {
+        return decision.threadId;
+      }
+    }
     return createThread(this.db, {
       orgId: mailbox.orgId,
       mailboxId,
-      subjectKey: decision.subjectKey,
+      subjectKey: decision.kind === "new" ? decision.subjectKey : normalizeSubject(message.subject),
       lastMessageAt: sentAt,
+      providerThreadId: providerThreadId ?? null,
     });
   }
 
