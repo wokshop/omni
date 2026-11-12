@@ -229,26 +229,46 @@ export function useDraft(
   const whereRef = useRef(where);
   whereRef.current = where;
 
-  const flush = useCallback(async () => {
-    clearTimeout(timer.current);
+  // Saves run one at a time: each needs the version the previous one answered, or two in
+  // flight would conflict with each other and the composer would load its own older text.
+  const queue = useRef<Promise<unknown>>(Promise.resolve());
+  // Bumped when a send takes the draft over, so a save still in flight can't revive it.
+  const generation = useRef(0);
+
+  const saveOnce = useCallback(async () => {
     const content = latest.current;
     if (!content) return state.current.id;
     latest.current = null;
+    const gen = generation.current;
+    // A failed request keeps its content for the next try, unless newer content came since.
+    const keep = () => {
+      if (gen === generation.current) latest.current ??= content;
+    };
     if (!state.current.id) {
       state.current.creating ??= createDraft({ ...whereRef.current, ...content } as NewDraft)
         .then((draft) => {
-          state.current = { id: draft.id, version: draft.version };
-          void client.invalidateQueries({ queryKey: keys.draftLists() });
+          if (gen === generation.current) {
+            state.current = { id: draft.id, version: draft.version };
+            void client.invalidateQueries({ queryKey: keys.draftLists() });
+          }
           return draft;
         })
-        .catch(() => undefined);
+        .catch(() => {
+          if (gen === generation.current) state.current.creating = undefined;
+          keep();
+          return undefined;
+        });
       await state.current.creating;
       return state.current.id;
     }
     const result = await saveDraft(state.current.id, state.current.version ?? 1, content).catch(
       () => undefined,
     );
-    if (!result) return state.current.id;
+    if (gen !== generation.current) return undefined;
+    if (!result) {
+      keep();
+      return state.current.id;
+    }
     if ("conflict" in result) {
       state.current.version = result.conflict.version;
       onConflict.current?.(result.conflict);
@@ -257,6 +277,13 @@ export function useDraft(
     }
     return state.current.id;
   }, [client]);
+
+  const flush = useCallback((): Promise<string | undefined> => {
+    clearTimeout(timer.current);
+    const next = queue.current.then(saveOnce, saveOnce);
+    queue.current = next;
+    return next;
+  }, [saveOnce]);
 
   const save = useCallback(
     (content: DraftContent) => {
@@ -270,6 +297,7 @@ export function useDraft(
   /** Stops autosave and forgets the draft (a send deletes it on the server). */
   const forget = useCallback(() => {
     clearTimeout(timer.current);
+    generation.current++;
     latest.current = null;
     state.current = {};
   }, []);

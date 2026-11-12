@@ -137,10 +137,23 @@ function ModeComposer(props: { thread: Thread; mode: Mode; setMode: (mode: Mode)
   const [bcc, setBcc] = useState<string[]>([]);
   const [text, setText] = useState("");
   const [showCopies, setShowCopies] = useState(false);
+  // The message replied to or forwarded: the latest, or the one a resumed draft was written for.
+  const [sourceId, setSourceId] = useState(latest?.id);
+  const source = thread.messages.find((m) => m.id === sourceId) ?? latest;
+  // Read only until the draft and signature are in, so they can't replace what was typed.
+  const [ready, setReady] = useState(false);
   const textarea = useRef<HTMLTextAreaElement>(null);
+  // What the composer holds now, for an undo that comes back later.
+  const current = useRef(text);
+  current.current = text;
 
   const draft = useDraft(
-    { mailboxId: thread.mailboxId, kind: mode, threadId: thread.id },
+    {
+      mailboxId: thread.mailboxId,
+      kind: mode,
+      threadId: thread.id,
+      ...(sourceId ? { sourceMessageId: sourceId } : {}),
+    },
     {
       onConflict: (theirs) => {
         load(theirs);
@@ -154,6 +167,7 @@ function ModeComposer(props: { thread: Thread; mode: Mode; setMode: (mode: Mode)
   const started = useRef(false);
   const load = (saved: Draft) => {
     setText(saved.bodyText);
+    if (saved.sourceMessageId) setSourceId(saved.sourceMessageId);
     if (saved.to.length) setTo(saved.to.map((a) => a.address));
     setCc(saved.cc.map((a) => a.address));
     setBcc(saved.bcc.map((a) => a.address));
@@ -163,9 +177,10 @@ function ModeComposer(props: { thread: Thread; mode: Mode; setMode: (mode: Mode)
   useEffect(() => {
     if (started.current || draft.isLoading || signatureLoading) return;
     started.current = true;
+    setReady(true);
     if (draft.draft) return load(draft.draft);
     setText(startingBody(signature));
-    if (mode === "forward") files.reset(originalFiles(latest));
+    if (mode === "forward") files.reset(originalFiles(source));
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- runs once, when both have loaded
   }, [draft.isLoading, signatureLoading]);
 
@@ -207,6 +222,12 @@ function ModeComposer(props: { thread: Thread; mode: Mode; setMode: (mode: Mode)
     const recipientsChanged =
       mode === "forward" || to.join() !== defaultTo.join() || cc.length > 0 || bcc.length > 0;
     const restore = () => {
+      // Something new was written since: keep it, and hand back the stopped one on the clipboard.
+      if (hasWords(current.current, signature)) {
+        void navigator.clipboard?.writeText(before.text).catch(() => undefined);
+        appToast.message("Send stopped", { description: "Its text is on your clipboard." });
+        return;
+      }
       setText(before.text);
       setTo(before.to);
       setCc(before.cc);
@@ -237,12 +258,17 @@ function ModeComposer(props: { thread: Thread; mode: Mode; setMode: (mode: Mode)
     touched.current = false;
     setText(startingBody(signature));
     files.reset();
+    if (mode === "forward") {
+      setTo([]);
+      setCc([]);
+      setBcc([]);
+    }
     if (mode === "reply") {
       reply.mutate(
         {
           threadId: thread.id,
           text,
-          ...(latest ? { messageId: latest.id } : {}),
+          ...(source ? { messageId: source.id } : {}),
           ...(recipientsChanged ? { to, cc, bcc } : {}),
           attachments,
         },
@@ -256,7 +282,7 @@ function ModeComposer(props: { thread: Thread; mode: Mode; setMode: (mode: Mode)
       forward.mutate(
         {
           threadId: thread.id,
-          ...(latest ? { messageId: latest.id } : {}),
+          ...(source ? { messageId: source.id } : {}),
           to,
           cc,
           bcc,
@@ -264,9 +290,9 @@ function ModeComposer(props: { thread: Thread; mode: Mode; setMode: (mode: Mode)
           includeAttachments: false,
           attachments,
         },
+        // Stays in Forward until it settles: the callbacks only run while this is mounted.
         { onSuccess: (queued) => sent(queued), onError: failed },
       );
-      props.setMode("reply");
     }
   };
 
@@ -331,6 +357,7 @@ function ModeComposer(props: { thread: Thread; mode: Mode; setMode: (mode: Mode)
       <Body
         ref={textarea}
         label={mode === "reply" ? "Reply" : "Message"}
+        readOnly={!ready}
         value={text}
         onChange={(next) => {
           setText(next);
@@ -392,9 +419,11 @@ function NewMessage(props: {
   const [text, setText] = useState("");
   const textarea = useRef<HTMLTextAreaElement>(null);
   const started = useRef(false);
+  const [ready, setReady] = useState(false);
   useEffect(() => {
     if (started.current || signatureLoading) return;
     started.current = true;
+    setReady(true);
     setText(startingBody(signature));
   }, [signature, signatureLoading]);
 
@@ -434,7 +463,20 @@ function NewMessage(props: {
   return (
     <ComposerFrame onFiles={files.add}>
       {props.mailboxes.length > 1 ? (
-        <FromPicker mailboxes={props.mailboxes} value={mailboxId} onChange={setMailboxId} />
+        <FromPicker
+          mailboxes={props.mailboxes}
+          value={mailboxId}
+          onChange={(next) => {
+            // A staged file belongs to the mailbox it was uploaded for; another can't send it.
+            if (files.files.length) {
+              for (const file of files.files) files.remove(file.id);
+              appToast.message("Attachments removed", {
+                description: "Attach them again to send from this address.",
+              });
+            }
+            setMailboxId(next);
+          }}
+        />
       ) : (
         <span className="text-sm text-muted-foreground">From {from?.address}</span>
       )}
@@ -464,6 +506,7 @@ function NewMessage(props: {
       <Body
         ref={textarea}
         label="Message"
+        readOnly={!ready}
         value={text}
         onChange={setText}
         onSend={send}
@@ -575,11 +618,13 @@ function Body(props: {
   onChange: (text: string) => void;
   onSend: () => void;
   rows?: number;
+  readOnly?: boolean;
 }) {
   return (
     <Textarea
       ref={props.ref}
       plain
+      readOnly={props.readOnly}
       aria-label={props.label}
       placeholder="Write…"
       rows={props.rows ?? 4}

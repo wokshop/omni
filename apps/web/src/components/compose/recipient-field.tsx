@@ -1,5 +1,8 @@
-import { useRef, useState } from "react";
-import { ComboBox as ComboBoxPrimitive } from "react-aria-components/ComboBox";
+import { use, useEffect, useRef, useState } from "react";
+import {
+  ComboBox as ComboBoxPrimitive,
+  ComboBoxStateContext,
+} from "react-aria-components/ComboBox";
 import {
   ComboBoxContent,
   ComboBoxDescription,
@@ -72,9 +75,7 @@ export function RecipientField(props: {
           inputValue={text}
           onInputChange={setText}
           allowsCustomValue
-          // Suggestions arrive after typing; the menu must already be open to show them, so it
-          // opens on input and stays hidden while there is nothing to suggest.
-          allowsEmptyCollection
+          allowsEmptyCollection={false}
           menuTrigger="input"
           selectedKey={null}
           onSelectionChange={(key) => {
@@ -106,10 +107,8 @@ export function RecipientField(props: {
               }
             }}
           />
-          <ComboBoxContent
-            items={suggestions}
-            popover={{ placement: "bottom start", className: suggestions.length ? "" : "hidden" }}
-          >
+          <OpenWhenSuggested count={suggestions.length} />
+          <ComboBoxContent items={suggestions} popover={{ placement: "bottom start" }}>
             {(customer) => (
               <ComboBoxItem id={customer.id} textValue={customer.address}>
                 <ComboBoxLabel>{customer.name || customer.address}</ComboBoxLabel>
@@ -122,4 +121,16 @@ export function RecipientField(props: {
       {props.end}
     </div>
   );
+}
+
+/**
+ * Suggestions come from the server after the keystroke, when the combo box has already decided
+ * there was nothing to open. This opens it once they arrive, while the field still has focus.
+ */
+function OpenWhenSuggested({ count }: { count: number }) {
+  const state = use(ComboBoxStateContext);
+  useEffect(() => {
+    if (state && count > 0 && state.isFocused && !state.isOpen) state.open(null, "input");
+  }, [count, state]);
+  return null;
 }
