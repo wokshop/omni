@@ -284,6 +284,7 @@ export class MailboxConnection extends EventEmitter<Events> {
           );
           if (pruned.messages > 0) this.log.info("sync.pruned", pruned);
         }
+        this.log.info("sync.all_done", { folders: results.length, clean });
         return results;
       } finally {
         this.syncingAll = null;
@@ -424,10 +425,19 @@ export class MailboxConnection extends EventEmitter<Events> {
       this.emit("connected", this.capabilities as Capabilities);
       this.log.info("imap.connected");
       this.started?.resolve();
-      // INBOX is in; every other folder follows behind whatever the app asks for first.
-      this.syncAll().catch((error: unknown) => {
-        if (!this.stopped && this.connected) this.log.warn("sync.all_failed", { error });
-      });
+      // INBOX is in; every other folder follows behind whatever the app asks for first. The
+      // import takes a `gate` permit like a connect does, so a fleet reconnecting at once imports
+      // `concurrency` archives at a time, not all of them.
+      void Effect.runPromise(
+        Semaphore.withPermit(
+          this.gate,
+          Effect.promise(() =>
+            this.syncAll().catch((error: unknown) => {
+              if (!this.stopped && this.connected) this.log.warn("sync.all_failed", { error });
+            }),
+          ),
+        ),
+      );
 
       yield* Deferred.await(closed);
       if (this.client === client) this.client = null;
