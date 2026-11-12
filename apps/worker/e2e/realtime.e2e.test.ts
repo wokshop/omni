@@ -199,24 +199,26 @@ test("mail deleted on the server refreshes its threads for open apps and re-runs
   const kept = await seedMessage(db, box, { subject: "Kept", fromAddress: "x@c.test", uid: 1 });
   const anaSocket = await connect(await signIn(worker, db, "ana@initech.test"));
 
-  // One thread survives with fewer messages; the other was emptied and deleted.
+  // One thread survives with fewer messages; the others were emptied and deleted. A big purge
+  // names more threads than one Queue `sendBatch` takes (100).
+  const gone = Array.from({ length: 149 }, (_, i) => `deleted-thread-${i}`);
   const response = await postMailEvents(worker, {
     events: [
       {
         type: "messages.pruned",
         orgId: org.id,
         mailboxId: box.id,
-        threadIds: [kept.threadId, "deleted-thread"],
+        threadIds: [kept.threadId, ...gone],
       },
     ],
   });
 
   expect(response.status).toBe(202);
-  // A summary of the thread may quote the deleted message: both threads get an AI job, and the
-  // one that is gone ends as `missing` in the consumer.
-  expect(await response.json()).toEqual({ ok: true, jobs: 2 });
+  // A summary of the thread may quote a deleted message: every thread gets an AI job, and the
+  // ones that are gone end as `missing` in the consumer.
+  expect(await response.json()).toEqual({ ok: true, jobs: 150 });
   expect(await anaSocket.next(1)).toEqual([
-    { type: "changed", mailboxId: box.id, threadIds: [kept.threadId, "deleted-thread"] },
+    { type: "changed", mailboxId: box.id, threadIds: [kept.threadId, ...gone] },
   ]);
   anaSocket.socket.close();
 });

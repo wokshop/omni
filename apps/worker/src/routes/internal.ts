@@ -67,7 +67,10 @@ export const internal = new Hono<AppEnv>().post(MAIL_EVENTS_PATH, async (c) => {
       actionRequestId: event.requestId ?? null,
     });
   }
-  if (jobs.length) await c.env.AI_QUEUE.sendBatch(jobs.map((body) => ({ body })));
+  // A Queue takes at most 100 messages per `sendBatch`; one prune can name 500 threads.
+  for (let i = 0; i < jobs.length; i += QUEUE_BATCH_MAX) {
+    await c.env.AI_QUEUE.sendBatch(jobs.slice(i, i + QUEUE_BATCH_MAX).map((body) => ({ body })));
+  }
 
   const { db, close } = openDb(c.env);
   try {
@@ -94,6 +97,8 @@ export const internal = new Hono<AppEnv>().post(MAIL_EVENTS_PATH, async (c) => {
   }
   return c.json({ ok: true, jobs: jobs.length }, 202);
 });
+
+const QUEUE_BATCH_MAX = 100;
 
 const envelope = z.object({
   events: z
