@@ -3,6 +3,7 @@
 // shared inbox the mail is from the inbox's address with the agent's name.
 import type { SendAttachment, SendPayload } from "@omni/contracts";
 import {
+  applyAgentReply,
   createUpload,
   deleteUnsentUpload,
   forMember,
@@ -22,6 +23,7 @@ import { z } from "zod";
 import type { AppEnv } from "../context.ts";
 import { limitPerMember } from "../rate-limiter.ts";
 import { zValidator } from "../validator.ts";
+import { fanOut } from "../realtime.ts";
 import { attachmentResponse } from "./assets.ts";
 import { idempotencyHeader, notFound, outboxKey, pingLater, type ActionMailbox } from "./mail.ts";
 
@@ -142,6 +144,25 @@ async function enqueueSend(
   }
   pingLater(c);
   return result.action;
+}
+
+/**
+ * The helpdesk side of a reply (ADR 0021), once the send is queued: an open conversation goes
+ * pending, an unassigned one is claimed by whoever replied, and the first reply records the
+ * first response. A retried request changes nothing more; personal mailboxes are left alone.
+ */
+async function afterAgentReply(c: Context<AppEnv>, threadId: string) {
+  const result = await applyAgentReply(c.var.db, {
+    threadId,
+    memberId: c.var.member.id,
+    requestId: c.var.requestId,
+  });
+  if (!result.ok || !result.changed) return;
+  if (result.queuedActions > 0) pingLater(c);
+  const { mailboxId, id } = result.conversation;
+  c.executionCtx.waitUntil(
+    fanOut(c.env, c.var.db, c.var.config, new Map([[mailboxId, new Set([id])]])),
+  );
 }
 
 /** Drops empty optional recipient lists so payloads stay as small as before. */
@@ -311,7 +332,7 @@ export const compose = new Hono<AppEnv>()
         },
         key,
       );
-      // TODO(B1): applyAgentReply(db, { threadId, memberId }) once the workflow layer merges.
+      await afterAgentReply(c, c.req.param("id"));
       return c.json(sendResponse(action), 202);
     },
   )
