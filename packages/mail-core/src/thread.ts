@@ -48,11 +48,8 @@ const SUBJECT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
 /** Spec "Grouping messages into threads": reply headers, then subject + participants, else new. */
 export function decideThread(message: ParsedMessage, context: ThreadContext): ThreadDecision {
-  // In-Reply-To names the direct parent; References is oldest first, so walk it newest first.
-  const replyIds = [message.inReplyTo, ...message.references.toReversed()].filter(
-    (id): id is string => id !== null,
-  );
-  for (const id of replyIds) {
+  const ids = replyIds(message);
+  for (const id of ids) {
     const threadId = context.knownMessageIds.get(id);
     if (threadId !== undefined) return { kind: "headers", threadId };
   }
@@ -61,7 +58,7 @@ export function decideThread(message: ParsedMessage, context: ThreadContext): Th
   const subjectKey = normalizeSubject(message.subject);
   // A reply whose parent we never saw starts a thread; subject matching is only for mail
   // that carries no reply headers at all. An empty subject would match unrelated mail.
-  if (replyIds.length > 0 || subjectKey === "" || message.sentAt === null) {
+  if (ids.length > 0 || subjectKey === "" || message.sentAt === null) {
     return { kind: "new", subjectKey };
   }
 
@@ -78,6 +75,22 @@ export function decideThread(message: ParsedMessage, context: ThreadContext): Th
     .toSorted((a, b) => b.lastMessageAt.getTime() - a.lastMessageAt.getTime())[0];
 
   return match ? { kind: "subject", threadId: match.threadId } : { kind: "new", subjectKey };
+}
+
+/**
+ * Message-IDs this message answers, nearest first: In-Reply-To, then References newest
+ * first. A bounce answers the message it returns, so it joins that conversation even though
+ * delivery reports carry no reply headers.
+ */
+export function replyIds(
+  message: Pick<ParsedMessage, "inReplyTo" | "references" | "automated">,
+): string[] {
+  const ids = [
+    message.inReplyTo,
+    ...message.references.toReversed(),
+    message.automated?.bouncedMessageId ?? null,
+  ].filter((id): id is string => id !== null);
+  return [...new Set(ids)];
 }
 
 /** Lowercased addresses on From, To, Cc and Reply-To. */
