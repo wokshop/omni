@@ -260,7 +260,20 @@ export class OutboxExecutor {
     // The Worker picks it when it can, so the app knows it before the mail goes out.
     const messageId =
       action.payload.messageId ?? deterministicMessageId(action.idempotencyKey, mailbox.address);
-    const files = await this.sendFiles(mailbox.id, action.payload);
+    const delivered = Boolean(action.smtpAcceptedAt) || this.accepted.has(action.id);
+    // A retry after SMTP accepted only has filing left. If an earlier attempt filed it, stop here,
+    // before reading attachments the user may have deleted since.
+    if (delivered && (await this.filedInSent(connection, messageId))) return;
+    let files: SendFile[];
+    try {
+      files = await this.sendFiles(mailbox.id, action.payload);
+    } catch (error) {
+      if (!delivered || !(error instanceof PermanentActionError)) throw error;
+      // Delivered, but the forwarded original is gone, so the copy for Sent cannot be rebuilt.
+      // The send succeeded: report it done rather than failed.
+      this.options.logger.warn("outbox.sent_not_filed", { actionId: action.id, error });
+      return;
+    }
     const raw = await composeMessage(action.payload, messageId, files);
 
     // A retry after SMTP accepted never resends. The window left is a crash between SMTP's OK and
@@ -294,6 +307,13 @@ export class OutboxExecutor {
       await session.client.append(sent.path, raw, ["\\Seen"], new Date());
       // Save the Sent copy now so it shows in the thread without waiting for the 5-minute sync.
       await session.syncFolder(sent.path);
+    });
+  }
+
+  private filedInSent(connection: MailboxConnection, messageId: string): Promise<boolean> {
+    return connection.run(async (session) => {
+      const sent = await session.ensureFolder("sent", "Sent");
+      return (await findByMessageId(session, sent.path, messageId)) !== null;
     });
   }
 }

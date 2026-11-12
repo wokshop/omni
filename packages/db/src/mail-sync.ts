@@ -440,7 +440,11 @@ export async function orphanedMessages(db: Db, mailboxId: string): Promise<strin
         sql`not exists (select 1 from ${mailActions} a
           where a.mailbox_id = ${messages.mailboxId} and a.kind = 'send'
             and a.status in ('pending', 'running')
-            and a.payload->>'messageId' = ${messages.messageIdHeader})`,
+            and (a.payload->>'messageId' = ${messages.messageIdHeader}
+              -- No Message-ID in the payload: the outbox derives one from the idempotency key
+              -- (deterministicMessageId in apps/mail/src/outbox.ts).
+              or (a.payload->>'messageId' is null and ${messages.messageIdHeader} like
+                '<' || left(encode(sha256(convert_to('omni-send:' || a.idempotency_key, 'UTF8')), 'hex'), 32) || '@%')))`,
       ),
     );
   return rows.map((row) => row.id);
