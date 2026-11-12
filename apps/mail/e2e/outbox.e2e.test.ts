@@ -364,6 +364,34 @@ describe("OutboxExecutor against GreenMail", () => {
     expect(delivered).toBe(0);
   });
 
+  it("a send SMTP already accepted is done, not failed, when its upload is gone by the retry", async () => {
+    const { seeded, box, actions, connection, executor } = await setup();
+    await connection.start();
+    const recipient = mailbox();
+    const row = await enqueue(db, seeded, {
+      kind: "send",
+      idempotencyKey: `idem-accepted-missing-${box.id}`,
+      payload: {
+        from: box.address,
+        to: [recipient.address],
+        subject: "delivered, then its file was deleted",
+        text: "see attached",
+        attachments: [{ kind: "upload", uploadId: "upload-deleted-after-send" }],
+      },
+    });
+    // SMTP accepted it, the attempt died before filing, and the upload was deleted since.
+    await actions.claim(1);
+    await actions.markSmtpAccepted(row.id);
+    await executor.execute(await asClaimed(db, row.id));
+
+    expect((await actionRow(db, row.id)).status).toBe("done");
+    const resent = await otherClient(recipient, async (client) => {
+      const status = await client.status("INBOX", { messages: true });
+      return status ? status.messages : -1;
+    });
+    expect(resent).toBe(0);
+  });
+
   it("refuses to touch UIDs whose folder UIDVALIDITY changed", async () => {
     const { seeded, box, connection, executor } = await setup();
     await deliver(box.address, "stale target");

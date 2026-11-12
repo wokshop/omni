@@ -67,7 +67,9 @@ export async function startService(config: ServiceConfig, log: Logger): Promise<
     logger: log,
     onDelivered: async (events) => {
       const ids = events.flatMap((e) => (e.type === "message.created" ? [e.messageId] : []));
-      // Left pending, the sweep sends them again: harmless, the Worker dedupes.
+      // Left pending, the sweep sends them again (at least once). The Worker does not dedupe
+      // yet, so a failed write here can repeat a push for that message; rare, and better than
+      // a lost one.
       await markNotified(db, ids).catch((error: unknown) =>
         log.warn("notify.mark_failed", { events: ids.length, error }),
       );

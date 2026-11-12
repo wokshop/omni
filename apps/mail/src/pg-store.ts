@@ -102,6 +102,8 @@ export class PgMailStore implements MailStore {
   private readonly links: ContentLinks;
   private readonly onIngested: (message: IngestedMessage) => void;
   private readonly mailboxes = new Map<string, MailboxRow>();
+  /** The tail of each mailbox's thread-and-insert chain (see `oneAtATime`). */
+  private readonly inserting = new Map<string, Promise<void>>();
 
   constructor(options: PgMailStoreOptions) {
     this.db = options.db;
@@ -275,36 +277,53 @@ export class PgMailStore implements MailStore {
     }
 
     const sentAt = message.sentAt ?? fetched.internalDate ?? new Date();
-    const threadId =
-      knownThreadId ?? (await this.assignThread(mailboxId, mailbox, message, sentAt));
     const { cleanText } = cleanMessage(message);
-    return upsertMessage(this.db, {
-      orgId: mailbox.orgId,
-      mailboxId,
-      threadId,
-      folderId,
-      imapUid: fetched.uid,
-      messageIdHeader: message.messageId,
-      inReplyTo: message.inReplyTo,
-      references: message.references,
-      subject: message.subject,
-      fromName: message.from?.name || null,
-      fromAddress: message.from?.address ?? "",
-      to: message.to.map(toAddress),
-      cc: message.cc.map(toAddress),
-      sentAt,
-      r2Key,
-      htmlR2Key,
-      cleanText,
-      // Cleared once the Worker accepts `message.created`; until then the sweep re-sends it.
-      notifyPending: true,
-      attachments: files.map((f) => ({
-        filename: f.meta.filename ?? "attachment",
-        mimeType: f.meta.mimeType,
-        size: f.meta.size,
-        r2Key: f.key,
-      })),
+    // One insert per mailbox at a time: an outbox send and an IMAP sync running together would
+    // otherwise both miss each other's row when matching a thread, and split one conversation.
+    return this.oneAtATime(mailboxId, async () => {
+      const threadId =
+        knownThreadId ?? (await this.assignThread(mailboxId, mailbox, message, sentAt));
+      return upsertMessage(this.db, {
+        orgId: mailbox.orgId,
+        mailboxId,
+        threadId,
+        folderId,
+        imapUid: fetched.uid,
+        messageIdHeader: message.messageId,
+        inReplyTo: message.inReplyTo,
+        references: message.references,
+        subject: message.subject,
+        fromName: message.from?.name || null,
+        fromAddress: message.from?.address ?? "",
+        to: message.to.map(toAddress),
+        cc: message.cc.map(toAddress),
+        sentAt,
+        r2Key,
+        htmlR2Key,
+        cleanText,
+        // Cleared once the Worker accepts `message.created`; until then the sweep re-sends it.
+        notifyPending: true,
+        attachments: files.map((f) => ({
+          filename: f.meta.filename ?? "attachment",
+          mimeType: f.meta.mimeType,
+          size: f.meta.size,
+          r2Key: f.key,
+        })),
+      });
     });
+  }
+
+  private oneAtATime<T>(mailboxId: string, task: () => Promise<T>): Promise<T> {
+    const result = (this.inserting.get(mailboxId) ?? Promise.resolve()).then(task);
+    const tail = result.then(
+      () => {},
+      () => {},
+    );
+    this.inserting.set(mailboxId, tail);
+    void tail.then(() => {
+      if (this.inserting.get(mailboxId) === tail) this.inserting.delete(mailboxId);
+    });
+    return result;
   }
 
   private async assignThread(
