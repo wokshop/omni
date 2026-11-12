@@ -82,8 +82,10 @@ export function Properties({ thread }: { thread: Thread }) {
 
   return (
     // Pulled left by the buttons' own inset (10px, or 6.5px once they are icon squares), so the
-    // first icon starts at the column's edge.
-    <div className="-ms-2.5 flex min-w-0 items-center gap-1 @max-[34rem]:-ms-[6.5px]">
+    // first icon starts at the column's edge. The cap keeps its right edge 8px clear of the
+    // toolbar's actions (162px, out of the flow): the column is centred, so its left edge sits
+    // at (toolbar - column) / 2 + 10px. Long names and tags truncate instead of sliding under.
+    <div className="-ms-2.5 flex max-w-[calc(50cqw+min(50cqw,24rem)-11.25rem)] min-w-0 items-center gap-1 @max-[34rem]:-ms-[6.5px]">
       <MenuTrigger>
         <Button
           intent="ghost"
