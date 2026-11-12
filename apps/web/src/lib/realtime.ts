@@ -76,7 +76,7 @@ export function startRealtime(
     timer ??= setTimeout(flush, FLUSH_MS);
   };
 
-  const onEvent = (event: RealtimeEvent) => {
+  const onEvent = (orgId: string, event: RealtimeEvent) => {
     switch (event.type) {
       // New mail, or the conversation's status, assignee, priority, tags or snooze changed.
       case "changed":
@@ -90,7 +90,7 @@ export function startRealtime(
       case "sla.breached":
         return changed(event.mailboxId, [event.threadId]);
       case "presence":
-        return applyPresence(event);
+        return applyPresence(orgId, event);
       case "action.succeeded": {
         // A reply went out: refetch its thread now rather than waiting for the sync's event.
         const pending = allPending(client).find((p) => p.actionId === event.actionId);
@@ -111,13 +111,13 @@ export function startRealtime(
     connectRealtime({
       baseUrl: window.location.origin,
       orgId,
-      onEvent,
+      onEvent: (event) => onEvent(orgId, event),
       onStatus: (next, { reconnected }) => onStatus(orgId, next, reconnected),
     });
   const onStatus = (orgId: string, next: RealtimeStatus, reconnected: boolean) => {
     if (orgId === activeOrgId) setStatus(next);
     // Teammates' `left` may be lost while the socket is down; they reappear on their next repeat.
-    if (next === "closed") clearPresence();
+    if (next === "closed") clearPresence(orgId);
     if (next !== "open") return;
     for (const listener of openListeners) listener(orgId);
     // The Worker answered. Going online resumes paused mutations and refetches stale queries.
