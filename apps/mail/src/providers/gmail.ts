@@ -10,7 +10,7 @@ import {
   type GoogleConnectResult,
 } from "@omni/contracts";
 import type { Keyring } from "@omni/crypto";
-import { type Db, findOrgMailbox, saveMailbox } from "@omni/db";
+import { type Db, findOrgMailbox, mailboxOwnerIds, saveMailbox } from "@omni/db";
 import { z } from "zod";
 import type { GoogleCredentials } from "../credentials.ts";
 import { sealCredentials } from "../credentials.ts";
@@ -124,7 +124,8 @@ export function createGoogleOAuth(
         ...(codeVerifier ? { code_verifier: codeVerifier } : {}),
       });
       // A person can untick Gmail on the consent screen; the sign-in scopes alone are useless here.
-      if (!data.scope?.split(" ").includes(MAIL_SCOPE)) {
+      const granted = new Set((data.scope ?? "").split(" "));
+      if (!granted.has(MAIL_SCOPE)) {
         throw new ProvisionError(422, "Omni needs access to Gmail: allow it on Google's screen");
       }
       if (!data.refresh_token) {
@@ -220,7 +221,7 @@ export async function connectGoogle(
   },
   input: GoogleConnectBody,
 ): Promise<GoogleConnectResult> {
-  const { db, keyring, oauth, logger } = deps;
+  const { oauth, logger } = deps;
   let grant: GoogleGrant;
   try {
     grant = await oauth.exchangeCode(input);
@@ -234,10 +235,40 @@ export async function connectGoogle(
     throw new ProvisionError(502, "Google could not be reached: try again");
   }
 
+  // One save per account at a time: two consent flows finishing together would otherwise both
+  // see no mailbox and race on (org, address), and the loser's code is already spent.
+  const key = `${input.orgId}\n${grant.email}`;
+  const previous = saving.get(key) ?? Promise.resolve();
+  const run = previous.catch(() => {}).then(() => save(deps, input, grant));
+  saving.set(key, run);
+  try {
+    return await run;
+  } finally {
+    if (saving.get(key) === run) saving.delete(key);
+  }
+}
+
+/** Saves in flight per (org, address). This service runs as one machine (ADR 0004). */
+const saving = new Map<string, Promise<GoogleConnectResult>>();
+
+async function save(
+  deps: Parameters<typeof connectGoogle>[0],
+  input: GoogleConnectBody,
+  grant: GoogleGrant,
+): Promise<GoogleConnectResult> {
+  const { db, keyring, logger } = deps;
   const address = grant.email;
   const existing = await findOrgMailbox(db, input.orgId, address);
   if (existing && existing.provider !== "gmail") {
     throw new ProvisionError(409, `${address} is already a mailbox in this workspace`);
+  }
+  // A personal mailbox has one owner. Another member consenting with the same Google account
+  // must not gain access to it, nor restore access after its owner's grant was revoked.
+  if (existing) {
+    const owners = await mailboxOwnerIds(db, existing.id);
+    if (!owners.includes(input.ownerMemberId)) {
+      throw new ProvisionError(409, `${address} is connected by someone else in this workspace`);
+    }
   }
   const mailboxId = existing?.id ?? randomUUIDv7();
   const credentials: GoogleCredentials = {
