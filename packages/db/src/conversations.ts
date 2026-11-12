@@ -1020,27 +1020,6 @@ export async function markNotificationsRead(db: Executor, memberId: string, ids:
 // Realtime (B4): who hears about a conversation, and whose preferences let a notification out.
 
 /**
- * The inbox of a thread `memberId` can see, and every member who can see it (presence goes to
- * them). Null when the member cannot see the thread.
- */
-export async function threadAudience(db: Executor, memberId: string, threadId: string) {
-  const [thread] = await db
-    .select({ mailboxId: threads.mailboxId, orgId: threads.orgId })
-    .from(threads)
-    .where(and(eq(threads.id, threadId), granted(db, memberId)));
-  if (!thread) return null;
-  const rows = await db
-    .select({ memberId: mailboxAccess.memberId })
-    .from(mailboxAccess)
-    .innerJoin(
-      members,
-      and(eq(members.id, mailboxAccess.memberId), eq(members.organizationId, thread.orgId)),
-    )
-    .where(eq(mailboxAccess.mailboxId, thread.mailboxId));
-  return { mailboxId: thread.mailboxId, memberIds: rows.map((r) => r.memberId) };
-}
-
-/**
  * Of these members, those whose preferences let `kind` through `channel`. No preferences row, or
  * no entry for the kind, means every channel is on.
  */

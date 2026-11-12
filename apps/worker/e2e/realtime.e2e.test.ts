@@ -275,6 +275,31 @@ test("presence reaches only teammates who can see the conversation, survives hib
   carl.socket.close();
 });
 
+test("a repeated heartbeat refreshes teammates, and a second tab viewing never hides one replying", async () => {
+  const { db } = database;
+  const desk = await supportDesk("heartbeat");
+  const anaCookie = await signIn(worker, db, "ana@heartbeat.test");
+  const replyingTab = await connect(anaCookie);
+  const viewingTab = await connect(anaCookie);
+  const bea = await connect(await signIn(worker, db, "bea@heartbeat.test"));
+  const ana = (state: string) => ({
+    type: "presence",
+    mailboxId: desk.inbox.id,
+    threadId: desk.threadId,
+    memberId: desk.ana.id,
+    state,
+  });
+
+  replyingTab.presence(desk.threadId, "replying");
+  expect(await bea.next(1)).toEqual([ana("replying")]);
+  // The web app repeats its state every 30 s and drops a teammate unheard for 70 s.
+  replyingTab.presence(desk.threadId, "replying");
+  expect(await bea.next(2)).toEqual([ana("replying"), ana("replying")]);
+  viewingTab.presence(desk.threadId, "viewing");
+  expect(await bea.next(3)).toEqual([ana("replying"), ana("replying"), ana("replying")]);
+  for (const socket of [replyingTab, viewingTab, bea]) socket.socket.close();
+});
+
 test("notes and assignments notify teammates live, as their preferences allow", async () => {
   const { db } = database;
   const desk = await supportDesk("live");

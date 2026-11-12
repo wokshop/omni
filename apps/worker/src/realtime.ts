@@ -1,10 +1,10 @@
 import { DurableObject } from "cloudflare:workers";
 import type { HelpdeskRealtimeEvent } from "@omni/contracts";
 import {
+  forMember,
   mailboxAudience,
   membersAccepting,
   pushTokensFor,
-  threadAudience,
   type Db,
   type NotificationKind,
 } from "@omni/db";
@@ -111,7 +111,7 @@ export class Realtime extends DurableObject<Env> {
     const { db, close } = openDb(this.env, 1);
     let audience;
     try {
-      audience = await threadAudience(db, memberId, message.threadId);
+      audience = await forMember(db, memberId).threadAudience(message.threadId);
     } finally {
       await close({ timeout: 0 });
     }
@@ -123,9 +123,10 @@ export class Realtime extends DurableObject<Env> {
     };
     socket.serializeAttachment(presence);
     const others = audience.memberIds.filter((m) => m !== memberId);
-    if (current?.state !== presence.state || current.threadId !== presence.threadId) {
-      await this.send(others, [presenceEvent(memberId, presence)]);
-    }
+    // Repeats go out too: they are the heartbeat that keeps the member listed on teammates'
+    // screens, which expire anyone they have not heard from. Teammates hear the member's state
+    // across all their sockets here, so a second tab viewing never hides a first one replying.
+    await this.send(others, [presenceEvent(memberId, this.memberState(memberId, presence))]);
     if (current?.threadId !== presence.threadId) {
       // The newcomer hears who is already here: one entry per member, replying over viewing.
       const here = new Map<string, Presence>();
@@ -154,6 +155,16 @@ export class Realtime extends DurableObject<Env> {
     const presence = presenceOf(socket);
     const memberId = this.ctx.getTags(socket)[0];
     if (presence && memberId) await this.leave(socket, memberId, presence);
+  }
+
+  /** The member's state in this conversation over all their sockets: replying wins. */
+  private memberState(memberId: string, presence: Presence): Presence {
+    if (presence.state === "replying") return presence;
+    for (const other of this.ctx.getWebSockets(memberId)) {
+      const theirs = presenceOf(other);
+      if (theirs?.threadId === presence.threadId && theirs.state === "replying") return theirs;
+    }
+    return presence;
   }
 
   /**
