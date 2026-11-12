@@ -71,7 +71,10 @@ only; undo send is 5 seconds by default.
    `not_before` column; it would have needed a second check in the claim query for the same
    effect, so it is not added.
 8. **Mail-level additions** for the same work: action kinds `trash`, `spam`, `not_spam`; folder
-   roles `junk` and `drafts`; `attachments.inline` and `content_id`; `messages.remote_image_count`.
+   roles `junk` and `drafts`; `attachments.inline` and `content_id`; `messages.remote_image_count`; and
+   `messages.notify_pending`, which the mail service keeps set until the Worker accepts a
+   message's `message.created`, so a crash or Worker outage cannot skip ingest (the status rule,
+   triage, SLA start).
 9. **Contracts** (`@omni/contracts`): send payloads gain `fromName` (agent name on the inbox
    address), `inReplyToMessageId` and `attachments` (upload ids or stored attachment ids, for
    forward); payloads for the new action kinds; and the helpdesk realtime events

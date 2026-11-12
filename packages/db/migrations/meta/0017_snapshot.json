@@ -1,5 +1,5 @@
 {
-  "id": "2e9f53d6-1763-4377-a16e-77c700c7c5a3",
+  "id": "1cae8017-1b32-45d5-886e-b091135e5077",
   "prevId": "8a68a53e-5000-4e4d-a7c1-e0a47481d724",
   "version": "7",
   "dialect": "postgresql",
@@ -3637,6 +3637,13 @@
           "notNull": true,
           "default": 0
         },
+        "notify_pending": {
+          "name": "notify_pending",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
         "search_vector": {
           "name": "search_vector",
           "type": "tsvector",
@@ -3733,6 +3740,22 @@
           "isUnique": false,
           "concurrently": false,
           "method": "gin",
+          "with": {}
+        },
+        "messages_notify_pending_idx": {
+          "name": "messages_notify_pending_idx",
+          "columns": [
+            {
+              "expression": "mailbox_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"messages\".\"notify_pending\"",
+          "concurrently": false,
+          "method": "btree",
           "with": {}
         },
         "messages_mailbox_id_sent_at_idx": {

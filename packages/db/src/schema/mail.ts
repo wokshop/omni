@@ -524,6 +524,12 @@ export const messages = pgTable(
     cleanText: text("clean_text").notNull().default(""),
     /** Remote images the sanitizer replaced; the reader offers to load them. */
     remoteImageCount: integer("remote_image_count").notNull().default(0),
+    /**
+     * Set when the mail service stores the row; cleared once the Worker accepts its
+     * `message.created`. A sweep re-sends what is still set after a crash or Worker outage.
+     * Defaults false so existing rows are never re-notified.
+     */
+    notifyPending: boolean("notify_pending").notNull().default(false),
     searchVector: tsvector("search_vector")
       .notNull()
       .generatedAlwaysAs(
@@ -549,6 +555,9 @@ export const messages = pgTable(
     index("messages_mailbox_id_in_reply_to_idx").on(t.mailboxId, t.inReplyTo),
     index("messages_references_idx").using("gin", t.references),
     // Search walks each mailbox newest first when a term is common, instead of ranking every hit.
+    index("messages_notify_pending_idx")
+      .on(t.mailboxId)
+      .where(sql`${t.notifyPending}`),
     index("messages_mailbox_id_sent_at_idx").on(
       t.mailboxId,
       t.sentAt.desc().nullsFirst(),

@@ -182,6 +182,7 @@ CREATE TABLE "uploads" (
 ALTER TABLE "attachments" ADD COLUMN "inline" boolean DEFAULT false NOT NULL;--> statement-breakpoint
 ALTER TABLE "attachments" ADD COLUMN "content_id" text;--> statement-breakpoint
 ALTER TABLE "messages" ADD COLUMN "remote_image_count" integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE "messages" ADD COLUMN "notify_pending" boolean DEFAULT false NOT NULL;--> statement-breakpoint
 ALTER TABLE "threads" ADD COLUMN "status" "conversation_status" DEFAULT 'open' NOT NULL;--> statement-breakpoint
 ALTER TABLE "threads" ADD COLUMN "assignee_member_id" text;--> statement-breakpoint
 ALTER TABLE "threads" ADD COLUMN "priority" "conversation_priority" DEFAULT 'normal' NOT NULL;--> statement-breakpoint
@@ -244,6 +245,7 @@ CREATE INDEX "thread_tags_tag_idx" ON "thread_tags" USING btree ("tag_id","threa
 CREATE INDEX "uploads_expiry_idx" ON "uploads" USING btree ("expires_at") WHERE "uploads"."used_at" is null;--> statement-breakpoint
 ALTER TABLE "threads" ADD CONSTRAINT "threads_assignee_member_id_members_id_fk" FOREIGN KEY ("assignee_member_id") REFERENCES "public"."members"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "threads" ADD CONSTRAINT "threads_customer_id_customers_id_fk" FOREIGN KEY ("customer_id") REFERENCES "public"."customers"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "messages_notify_pending_idx" ON "messages" USING btree ("mailbox_id") WHERE "messages"."notify_pending";--> statement-breakpoint
 CREATE INDEX "threads_mailbox_status_page_idx" ON "threads" USING btree ("mailbox_id","status","last_message_at" DESC NULLS FIRST,"id" DESC NULLS FIRST);--> statement-breakpoint
 CREATE INDEX "threads_mailbox_assignee_page_idx" ON "threads" USING btree ("mailbox_id","assignee_member_id","status","last_message_at" DESC NULLS FIRST,"id" DESC NULLS FIRST);--> statement-breakpoint
 CREATE INDEX "threads_mailbox_sla_due_idx" ON "threads" USING btree ("mailbox_id",least("first_response_due_at", "next_response_due_at", "resolution_due_at")) WHERE "threads"."status" = 'open';--> statement-breakpoint
