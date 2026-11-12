@@ -234,6 +234,15 @@ describe("replies and forwards", () => {
     expect(used?.usedAt).not.toBeNull();
     expect((await api(`/uploads/${file.id}`, ana.cookie, { method: "DELETE" })).status).toBe(404);
 
+    // The helpdesk side: the reply took the open conversation to pending, Ana claimed it by
+    // replying, and the first response is on record.
+    const [conversation] = await db
+      .select()
+      .from(schema.threads)
+      .where(eq(schema.threads.id, first.threadId));
+    expect(conversation).toMatchObject({ status: "pending", assigneeMemberId: ana.id });
+    expect(conversation?.firstRespondedAt).toBeInstanceOf(Date);
+
     // A retry (lost response) answers with the same send, though the upload is now used.
     const retried = await post(`/threads/${first.threadId}/reply`, ana.cookie, "reply-luis-1", {
       text: "Refund is on its way.",
