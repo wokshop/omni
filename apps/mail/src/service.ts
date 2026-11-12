@@ -1,6 +1,12 @@
 // Assembles the mail service: Postgres storage, one supervised connection per mailbox, HTTP.
 // `main.ts` runs it as a process; e2e suites run it in-process against the real local stack.
-import { createDb, listServiceMailboxes, setMailboxStatus } from "@omni/db";
+import {
+  createDb,
+  listServiceMailboxes,
+  markNotified,
+  pendingNotifications,
+  setMailboxStatus,
+} from "@omni/db";
 import { sql } from "drizzle-orm";
 import { Effect, Fiber } from "effect";
 import type { Hono } from "hono";
@@ -11,7 +17,7 @@ import { createApp, hmacVerifier } from "./http.ts";
 import type { Logger } from "./log.ts";
 import { WorkerNotifier } from "./notify.ts";
 import { createS3Store } from "./objects.ts";
-import { PgActionSource, PgMailStore } from "./pg-store.ts";
+import { PgActionSource, PgMailStore, PgSendFiles } from "./pg-store.ts";
 import { createPurelymailClient } from "./providers/purelymail.ts";
 import { createProvisioner } from "./provisioning.ts";
 import { Supervisor } from "./supervisor.ts";
@@ -37,7 +43,11 @@ export type ServiceConfig = Pick<
   Partial<
     Pick<
       Config,
-      "PURELYMAIL_API_TOKEN" | "DNS_RESOLVERS" | "DNS_NAMESERVER_PORT" | "DNS_TIMEOUT_MS"
+      | "PURELYMAIL_API_TOKEN"
+      | "DNS_RESOLVERS"
+      | "DNS_NAMESERVER_PORT"
+      | "DNS_TIMEOUT_MS"
+      | "NOTIFY_SWEEP_MS"
     >
   >;
 
@@ -55,22 +65,39 @@ export async function startService(config: ServiceConfig, log: Logger): Promise<
     workerUrl: config.WORKER_URL,
     secret: config.MAIL_SERVICE_HMAC_SECRET,
     logger: log,
+    onDelivered: async (events) => {
+      const ids = events.flatMap((e) => (e.type === "message.created" ? [e.messageId] : []));
+      // Left pending, the sweep sends them again (at least once). The Worker does not dedupe
+      // yet, so a failed write here can repeat a push for that message; rare, and better than
+      // a lost one.
+      await markNotified(db, ids).catch((error: unknown) =>
+        log.warn("notify.mark_failed", { events: ids.length, error }),
+      );
+    },
+  });
+  /** Re-sends `message.created` for rows the Worker never accepted (crash, Worker outage). */
+  const sweepNotifications = async () => {
+    const rows = await pendingNotifications(db, 500);
+    if (rows.length > 0) log.info("notify.sweep", { pending: rows.length });
+    for (const row of rows) notifier.push({ type: "message.created", ...row });
+  };
+  const objects = createS3Store({
+    endpoint: config.S3_ENDPOINT,
+    bucket: config.S3_BUCKET,
+    accessKeyId: config.S3_ACCESS_KEY_ID,
+    secretAccessKey: config.S3_SECRET_ACCESS_KEY,
+    region: config.S3_REGION,
   });
   const store = new PgMailStore({
     db,
     onIngested: ({ folder: _folder, ...message }) =>
       notifier.push({ type: "message.created", ...message }),
-    objects: createS3Store({
-      endpoint: config.S3_ENDPOINT,
-      bucket: config.S3_BUCKET,
-      accessKeyId: config.S3_ACCESS_KEY_ID,
-      secretAccessKey: config.S3_SECRET_ACCESS_KEY,
-      region: config.S3_REGION,
-    }),
+    objects,
     links: { imageProxyUrl: config.IMAGE_PROXY_URL, attachmentUrl: config.ATTACHMENT_URL },
   });
   const supervisor = new Supervisor({
     store,
+    files: new PgSendFiles({ db, objects }),
     actions: new PgActionSource({
       db,
       onFailed: (action) => notifier.push({ type: "action.failed", ...action }),
@@ -140,6 +167,10 @@ export async function startService(config: ServiceConfig, log: Logger): Promise<
   }
 
   supervisor.start();
+  await sweepNotifications().catch((error: unknown) => log.error("notify.sweep_failed", { error }));
+  const sweepLoop = every(config.NOTIFY_SWEEP_MS ?? 60_000, () =>
+    sweepNotifications().catch((error: unknown) => log.error("notify.sweep_failed", { error })),
+  );
   await reconcileMailboxes();
   const reconcileLoop = every(config.SYNC_INTERVAL_MS, () =>
     reconcileMailboxes().catch((error: unknown) =>
@@ -218,6 +249,7 @@ export async function startService(config: ServiceConfig, log: Logger): Promise<
     stop: async () => {
       stopping = true;
       await Effect.runPromise(Fiber.interrupt(reconcileLoop));
+      await Effect.runPromise(Fiber.interrupt(sweepLoop));
       await reconciling?.catch(() => {});
       await supervisor.stop();
       await notifier.stop();
