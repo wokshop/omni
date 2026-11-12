@@ -40,11 +40,23 @@ export function Conversation({ threadId }: { threadId: string }) {
   const { thread, pending } = useThread(threadId);
   useMarkReadOnOpen(thread);
   const end = useRef<HTMLDivElement>(null);
+  const scroller = useRef<HTMLDivElement>(null);
+  // Whether the reader sat at the bottom before this render: new mail follows them only then.
+  const atBottom = useRef(true);
 
   // A conversation opens at its newest message, like a chat.
   useLayoutEffect(() => {
+    atBottom.current = true;
     end.current?.scrollIntoView({ block: "end" });
-  }, [threadId, thread?.messages.length, pending.length]);
+  }, [threadId]);
+  // A new message or reply keeps the newest in view, unless they scrolled up to read.
+  useLayoutEffect(() => {
+    if (atBottom.current) end.current?.scrollIntoView({ block: "end" });
+  }, [thread?.messages.length, pending.length]);
+  const onScroll = () => {
+    const el = scroller.current;
+    if (el) atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  };
 
   if (!thread) return null; // The route loader fetched it.
   const subject = thread.messages.at(-1)?.subject || thread.messages[0]?.subject || "";
@@ -52,7 +64,7 @@ export function Conversation({ threadId }: { threadId: string }) {
   return (
     <section aria-label="Conversation" className="flex min-w-0 flex-1 flex-col border-s">
       <Actions thread={thread} />
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div ref={scroller} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex max-w-3xl flex-col gap-6 px-5 py-6">
           <div className="flex flex-col gap-2">
             <Heading level={2}>{subject || "(no subject)"}</Heading>
