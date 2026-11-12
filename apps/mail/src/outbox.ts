@@ -9,7 +9,16 @@ import {
   type MailboxConnection,
   MailboxUnavailableError,
 } from "./mailbox-connection.ts";
-import type { ActionSource, MailAction, MessageTarget, SendPayload } from "./ports.ts";
+import {
+  type ActionSource,
+  type MailAction,
+  type MailStore,
+  type MessageTarget,
+  MissingFileError,
+  type SendFile,
+  type SendFiles,
+  type SendPayload,
+} from "./ports.ts";
 import { backoffDelay } from "./timing.ts";
 
 /** Retrying cannot help: bad payload, or the folder's UIDVALIDITY moved under the action. */
@@ -28,6 +37,10 @@ export interface OutboxOptions {
   actions: ActionSource;
   logger: Logger;
   connection(mailboxId: string): MailboxConnection | undefined;
+  /** Indexes a sent message once SMTP accepts it, before its Sent copy exists. */
+  store?: Pick<MailStore, "storeSent">;
+  /** Reads a send's attachments. Required for sends that carry any. */
+  files?: SendFiles;
   maxAttempts?: number;
   retryBaseMs?: number;
   retryMaxMs?: number;
@@ -42,8 +55,8 @@ export interface OutboxOptions {
  * has a Message-ID derived from its idempotency key, and we look for it in Sent before sending.
  */
 export class OutboxExecutor {
-  private readonly options: Required<Omit<OutboxOptions, "connection">> &
-    Pick<OutboxOptions, "connection">;
+  private readonly options: Required<Omit<OutboxOptions, "connection" | "store" | "files">> &
+    Pick<OutboxOptions, "connection" | "store" | "files">;
   private draining: Promise<number> | null = null;
   private drainAgain = false;
   private stopped = false;
@@ -56,6 +69,8 @@ export class OutboxExecutor {
 
   constructor(options: OutboxOptions) {
     this.options = {
+      store: undefined,
+      files: undefined,
       maxAttempts: 8,
       retryBaseMs: 5_000,
       retryMaxMs: 30 * 60_000,
@@ -175,6 +190,10 @@ export class OutboxExecutor {
         return this.send(connection, action);
       case "archive":
         return connection.run(async (session) => {
+          // Our own replies stay in Sent and junk stays in Junk: archiving a conversation files
+          // what arrived in the inbox, not every copy of it.
+          const role = session.folders().find((f) => f.path === action.payload.folder)?.role;
+          if (role === "sent" || role === "junk") return;
           const archive = await session.ensureFolder("archive", "Archive");
           await move(session, action.payload, archive.path);
         });
@@ -182,6 +201,26 @@ export class OutboxExecutor {
         return connection.run((session) =>
           move(session, action.payload, action.payload.destination),
         );
+      case "trash":
+        return connection.run(async (session) => {
+          const trash = await session.ensureFolder("trash", "Trash");
+          if (action.payload.folder === trash.path) return;
+          await move(session, action.payload, trash.path);
+        });
+      case "spam":
+        return connection.run(async (session) => {
+          const junk = await session.ensureFolder("junk", "Junk");
+          if (action.payload.folder === junk.path) return;
+          await move(session, action.payload, junk.path);
+        });
+      case "not_spam":
+        return connection.run(async (session) => {
+          const inbox = session.folder("inbox");
+          if (!inbox) throw new Error("mailbox has no INBOX");
+          // Only what sits in Junk goes back; a copy elsewhere is already where it belongs.
+          if (session.folder("junk")?.path !== action.payload.folder) return;
+          await move(session, action.payload, inbox.path);
+        });
       case "mark_read":
       case "mark_unread":
         // Shared mailboxes: read state is per person and lives only in Postgres.
@@ -200,6 +239,19 @@ export class OutboxExecutor {
     }
   }
 
+  private async sendFiles(mailboxId: string, payload: SendPayload): Promise<SendFile[]> {
+    const refs = payload.attachments ?? [];
+    if (refs.length === 0) return [];
+    if (!this.options.files) throw new PermanentActionError("this outbox cannot read attachments");
+    try {
+      return await this.options.files.resolve(mailboxId, refs);
+    } catch (error) {
+      // A deleted upload or message will not come back: fail now rather than retry for hours.
+      if (error instanceof MissingFileError) throw new PermanentActionError(error.message);
+      throw error;
+    }
+  }
+
   private async send(
     connection: MailboxConnection,
     action: Extract<MailAction, { kind: "send" }>,
@@ -208,7 +260,21 @@ export class OutboxExecutor {
     // The Worker picks it when it can, so the app knows it before the mail goes out.
     const messageId =
       action.payload.messageId ?? deterministicMessageId(action.idempotencyKey, mailbox.address);
-    const raw = await composeMessage(action.payload, messageId);
+    const delivered = Boolean(action.smtpAcceptedAt) || this.accepted.has(action.id);
+    // A retry after SMTP accepted only has filing left. If an earlier attempt filed it, stop here,
+    // before reading attachments the user may have deleted since.
+    if (delivered && (await this.filedInSent(connection, messageId))) return;
+    let files: SendFile[];
+    try {
+      files = await this.sendFiles(mailbox.id, action.payload);
+    } catch (error) {
+      if (!delivered || !(error instanceof PermanentActionError)) throw error;
+      // Delivered, but the forwarded original is gone, so the copy for Sent cannot be rebuilt.
+      // The send succeeded: report it done rather than failed.
+      this.options.logger.warn("outbox.sent_not_filed", { actionId: action.id, error });
+      return;
+    }
+    const raw = await composeMessage(action.payload, messageId, files);
 
     // A retry after SMTP accepted never resends. The window left is a crash between SMTP's OK and
     // this write; appending to Sent first would trade it for "filed but never sent", which is worse.
@@ -226,6 +292,13 @@ export class OutboxExecutor {
       this.accepted.delete(action.id);
     }
 
+    // The reply shows in its thread now, not after the Sent append (which waits for the mailbox
+    // to be ready). Best effort: the Sent copy indexes it anyway.
+    const threadOf = action.payload.inReplyToMessageId;
+    await this.options.store?.storeSent(mailbox.id, raw, { threadOf }).catch((error: unknown) => {
+      this.options.logger.warn("outbox.sent_not_indexed", { actionId: action.id, error });
+    });
+
     await connection.run(async (session) => {
       const sent = await session.ensureFolder("sent", "Sent");
       // Already filed by an earlier attempt that died before `complete`, or by a server that files
@@ -234,6 +307,13 @@ export class OutboxExecutor {
       await session.client.append(sent.path, raw, ["\\Seen"], new Date());
       // Save the Sent copy now so it shows in the thread without waiting for the 5-minute sync.
       await session.syncFolder(sent.path);
+    });
+  }
+
+  private filedInSent(connection: MailboxConnection, messageId: string): Promise<boolean> {
+    return connection.run(async (session) => {
+      const sent = await session.ensureFolder("sent", "Sent");
+      return (await findByMessageId(session, sent.path, messageId)) !== null;
     });
   }
 }
@@ -260,9 +340,19 @@ export function deterministicMessageId(idempotencyKey: string, address: string):
   return `<${hash.slice(0, 32)}@${domain}>`;
 }
 
-function composeMessage(payload: SendPayload, messageId: string): Promise<Buffer> {
+function composeMessage(
+  payload: SendPayload,
+  messageId: string,
+  files: SendFile[] = [],
+): Promise<Buffer> {
   return new MailComposer({
-    from: payload.from,
+    // The address is always the mailbox's; the name says which agent wrote it.
+    from: payload.fromName ? { name: payload.fromName, address: payload.from } : payload.from,
+    attachments: files.map((file) => ({
+      filename: file.filename,
+      contentType: file.contentType,
+      content: Buffer.from(file.content),
+    })),
     to: payload.to,
     cc: payload.cc,
     subject: payload.subject,
