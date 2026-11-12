@@ -239,7 +239,11 @@ describe("outbox", () => {
         body: JSON.stringify({ text: "Sounds good.", replyAll: true }),
       });
       expect(reply.status).toBe(202);
-      return (await reply.json()) as { actionId: string; messageIdHeader: string };
+      const { actionId, messageIdHeader } = (await reply.json()) as {
+        actionId: string;
+        messageIdHeader: string;
+      };
+      return { actionId, messageIdHeader };
     };
     const { actionId, messageIdHeader } = await sendReply();
     // The app shows the pending message under this id; a retry must not hand out another.
@@ -250,9 +254,15 @@ describe("outbox", () => {
       .select()
       .from(schema.mailActions)
       .where(eq(schema.mailActions.id, actionId));
+    const second = await db
+      .select({ id: schema.messages.id })
+      .from(schema.messages)
+      .where(eq(schema.messages.messageIdHeader, "<second@client.test>"));
     expect(action?.payload).toEqual({
       messageId: messageIdHeader,
       from: "hello@hooli.test",
+      fromName: "ana@hooli.test from hooli",
+      inReplyToMessageId: second[0]!.id,
       to: ["luis@client.test"],
       cc: ["marta@client.test"],
       subject: "Re: Partnership",

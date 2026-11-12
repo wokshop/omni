@@ -1,6 +1,6 @@
 {
-  "id": "f1f82281-165e-4ef8-afa4-3ff8bc25cc57",
-  "prevId": "3cc6f650-ca3b-4df9-8883-647e76f70429",
+  "id": "96068acd-3a7c-4e68-be46-e765d50f6388",
+  "prevId": "36241ea3-8498-4350-a773-e57586575776",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2049,6 +2049,12 @@
         "name": {
           "name": "name",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "name_seen_at": {
+          "name": "name_seen_at",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },
@@ -6069,8 +6075,7 @@
         "note",
         "first_response",
         "sla_at_risk",
-        "sla_breached",
-        "merged"
+        "sla_breached"
       ]
     },
     "public.conversation_priority": {
