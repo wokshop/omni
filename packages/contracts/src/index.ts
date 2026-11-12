@@ -78,6 +78,9 @@ export const messageTargetSchema = z.object({
  * message in the same mailbox (`attachments.id`), which is how forward keeps the originals. The
  * mail service streams each from R2 into the MIME.
  */
+/** The most files one sent message may carry. */
+export const MAX_SEND_ATTACHMENTS = 50;
+
 export const sendAttachmentSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("upload"), uploadId: z.string().min(1) }),
   z.object({ kind: z.literal("attachment"), attachmentId: z.string().min(1) }),
@@ -103,7 +106,7 @@ export const sendPayloadSchema = z.object({
    * thread as soon as SMTP accepts it. Reply headers still come from `inReplyTo`/`references`.
    */
   inReplyToMessageId: z.string().min(1).optional(),
-  attachments: z.array(sendAttachmentSchema).max(50).optional(),
+  attachments: z.array(sendAttachmentSchema).max(MAX_SEND_ATTACHMENTS).optional(),
   /**
    * Message-ID to send with, in `<id@host>` form, chosen by the Worker so the app knows it before
    * the mail goes out. Absent: the mail service derives one from the idempotency key.
@@ -336,3 +339,46 @@ export type ProvisionDomainBody = z.infer<typeof provisionDomainBodySchema>;
 export type ProvisionDomainResult = z.infer<typeof provisionDomainResultSchema>;
 export type ProvisionMailboxBody = z.infer<typeof provisionMailboxBodySchema>;
 export type ProvisionMailboxResult = z.infer<typeof provisionMailboxResultSchema>;
+
+// Personal Gmail (helpdesk plan G1-G3). Worker → mail service, signed with a nonce like
+// provisioning. The Worker receives Google's OAuth callback but never sees a token: it passes the
+// one-time code (and its PKCE verifier) to the mail service, which exchanges it, stores the
+// encrypted refresh token and creates or reconnects the member's personal `gmail` mailbox.
+// Errors answer `{ error: string }` with 400 (bad or expired code), 409 (that Google account is
+// connected elsewhere) or 502 (Google failed).
+
+export const GOOGLE_CONNECT_PATH = "/connect/google";
+export const GOOGLE_DISCONNECT_PATH = "/connect/google/disconnect";
+
+export const googleConnectBodySchema = z.object({
+  orgId: z.string().min(1),
+  /** Gets an owner grant on the mailbox. */
+  memberId: z.string().min(1),
+  /** Google's one-time authorization code. Never logged. */
+  code: z.string().min(1),
+  /** PKCE verifier for the code (RFC 7636). Never logged. */
+  codeVerifier: z.string().min(43).max(128),
+  /** The redirect URI the code was issued for; Google requires the same one on exchange. */
+  redirectUri: z.url(),
+});
+
+export const googleConnectResultSchema = z.object({
+  mailboxId: z.string().min(1),
+  /** The Google account's address. */
+  address: z.string(),
+  /** False when an existing mailbox was reconnected (new refresh token). */
+  created: z.boolean(),
+});
+
+/** Revoke the token at Google, forget it, and stop syncing. Idempotent. */
+export const googleDisconnectBodySchema = z.object({
+  orgId: z.string().min(1),
+  memberId: z.string().min(1),
+  mailboxId: z.string().min(1),
+});
+
+export const googleDisconnectResultSchema = z.object({ mailboxId: z.string().min(1) });
+
+export type GoogleConnectBody = z.infer<typeof googleConnectBodySchema>;
+export type GoogleConnectResult = z.infer<typeof googleConnectResultSchema>;
+export type GoogleDisconnectBody = z.infer<typeof googleDisconnectBodySchema>;

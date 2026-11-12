@@ -188,6 +188,10 @@ test("replies written offline go out once each, in order, when the connection is
   const org = await createOrg(db, "offline");
   await createMailbox(db, org.id, SYSTEM_MAIL_FROM);
   const ana = await createMember(db, org.id, "ana@offline.test");
+  // No undo window: the outbox below must be able to claim the replies right away.
+  await db
+    .insert(schema.memberPreferences)
+    .values({ memberId: ana.id, orgId: org.id, undoSendSeconds: 0 });
   // A real GreenMail mailbox, synced by the real mail service.
   const box = { ...mailbox(), orgId: org.id };
   await db.insert(schema.mailboxes).values({
@@ -253,7 +257,7 @@ test("replies written offline go out once each, in order, when the connection is
   await page.getByRole("status").filter({ hasText: "Offline" }).waitFor();
   const reply = async (text: string) => {
     await page.locator("textarea").fill(text);
-    await page.getByRole("button", { name: "Reply" }).click();
+    await page.getByRole("button", { name: "Send", exact: true }).click();
   };
   await reply("First, offline.");
   await reply("Second, offline.");
@@ -286,7 +290,9 @@ test("replies written offline go out once each, in order, when the connection is
     "First, offline.",
     "Second, offline.",
   ]);
-  await expect.poll(() => page.locator("article").getByText("(queued)").count()).toBe(2);
+  await expect
+    .poll(() => page.locator("article").getByText("Queued", { exact: true }).count())
+    .toBe(2);
 
   // The mail service's outbox sends them: the sender of "Plans" gets each reply once.
   const actions = new PgActionSource({ db });

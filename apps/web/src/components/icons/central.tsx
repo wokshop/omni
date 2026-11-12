@@ -42,3 +42,15 @@ export { IconPeopleCircle as IconUserCog } from "central-icons-outlined/IconPeop
 export { IconUserRemove as IconUserMinus } from "central-icons-outlined/IconUserRemove";
 export { IconUserDuo as IconUsers } from "central-icons-outlined/IconUserDuo";
 export { IconGroup1 as IconUsersRound } from "central-icons-outlined/IconGroup1";
+export { IconArchive } from "central-icons-outlined/IconArchive";
+export { IconCirclePlaceholderOn as IconCircle } from "central-icons-outlined/IconCirclePlaceholderOn";
+export { IconCircleDashed } from "central-icons-outlined/IconCircleDashed";
+export { IconEmail2Check as IconMailOpen } from "central-icons-outlined/IconEmail2Check";
+export { IconExpand45 as IconMaximize } from "central-icons-outlined/IconExpand45";
+export { IconMinimize45 as IconMinimize } from "central-icons-outlined/IconMinimize45";
+export { IconPaperclip1 as IconPaperclip } from "central-icons-outlined/IconPaperclip1";
+export { IconSpeedHigh as IconSignalHigh } from "central-icons-outlined/IconSpeedHigh";
+export { IconSpeedMiddle as IconSignalMedium } from "central-icons-outlined/IconSpeedMiddle";
+export { IconSpeedLow as IconSignalLow } from "central-icons-outlined/IconSpeedLow";
+export { IconTag } from "central-icons-outlined/IconTag";
+export { IconUser as IconUserRound } from "central-icons-outlined/IconUser";

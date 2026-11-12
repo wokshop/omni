@@ -2,14 +2,23 @@ import { and, desc, eq, getTableColumns, sql, type AnyColumn, type SQL } from "d
 import type { Db } from "./client.ts";
 import {
   attachments,
+  businessHours,
+  conversationEvents,
   mailActions,
   mailboxAccess,
   mailboxes,
   members,
   messages,
+  notes,
+  notifications,
+  slaDueAt,
+  slaPolicies,
+  tags,
   threadState,
+  threadTags,
   threads,
   triageBucket,
+  users,
 } from "./schema/index.ts";
 
 /** Triage at or above this confidence files itself; below it lands in the Unsure lane. */
@@ -33,6 +42,41 @@ export const LANES = [...triageBucket.enumValues, "unsure"] as const satisfies r
 export const THREAD_VIEWS = ["inbox", "queue", "done", "archive", "all"] as const;
 export type ThreadView = (typeof THREAD_VIEWS)[number];
 
+/**
+ * A shared inbox's helpdesk views (ADR 0021), read from the conversation columns on `threads`:
+ *
+ * - `unassigned`: open, nobody owns it.
+ * - `mine`: the member's, open or pending.
+ * - `open`, `pending`, `snoozed`, `resolved`: by status.
+ * - `sla_at_risk`: open with an SLA due within `SLA_AT_RISK_MINUTES` or already past, soonest
+ *   first (every other view is newest first).
+ * - `all`: every conversation, for a tag filter on its own.
+ */
+export const CONVERSATION_VIEWS = [
+  "unassigned",
+  "mine",
+  "open",
+  "pending",
+  "snoozed",
+  "resolved",
+  "sla_at_risk",
+  "all",
+] as const;
+export type ConversationView = (typeof CONVERSATION_VIEWS)[number];
+
+/** How close to its due time an open conversation counts as at risk. */
+export const SLA_AT_RISK_MINUTES = 30;
+
+/**
+ * Keyset position: `at` is `last_message_at`, or the SLA due time in `sla_at_risk`, as an ISO
+ * string with Postgres's full microsecond precision (a `Date` drops it, and the page boundary row
+ * would then come back on the next page).
+ */
+export interface ConversationCursor {
+  at: string;
+  id: string;
+}
+
 export interface Participant {
   name: string | null;
   address: string;
@@ -43,6 +87,26 @@ function laneFilter(lane: Lane): SQL {
   return lane === "unsure"
     ? sql`(${threads.triageSource} = 'ai' and ${threads.triageConfidence} < ${TRIAGE_AUTO_FILE_CONFIDENCE})`
     : sql`(${threads.triage} = ${lane} and (${threads.triageSource} = 'person' or ${threads.triageConfidence} >= ${TRIAGE_AUTO_FILE_CONFIDENCE}))`;
+}
+
+/** Membership of a helpdesk view; `me` is the member column `mine` compares with. */
+function conversationViewFilter(view: ConversationView, me: AnyColumn): SQL | undefined {
+  switch (view) {
+    case "unassigned":
+      return sql`(${threads.status} = 'open' and ${threads.assigneeMemberId} is null)`;
+    case "mine":
+      return sql`(${threads.assigneeMemberId} = ${me} and ${threads.status} in ('open', 'pending'))`;
+    case "open":
+    case "pending":
+    case "snoozed":
+    case "resolved":
+      return sql`${threads.status} = ${view}`;
+    case "sla_at_risk":
+      // The same expression as `threads_mailbox_sla_due_idx`, so the index serves it.
+      return sql`(${threads.status} = 'open' and ${slaDueAt(threads)} <= now() + make_interval(mins => ${SLA_AT_RISK_MINUTES}))`;
+    case "all":
+      return undefined;
+  }
 }
 
 export interface ThreadCursor {
@@ -262,6 +326,142 @@ function mailQueries(db: Db, isGrantee: (memberId: AnyColumn | SQL) => SQL) {
     },
 
     /**
+     * One shared inbox's conversations in a helpdesk view, optionally only those with `tagId`,
+     * one keyset page. Rows are `listThreads` rows plus their tags. Empty for a personal mailbox
+     * or one no grantee can see.
+     */
+    async listConversations(options: {
+      mailboxId: string;
+      view: ConversationView;
+      tagId?: string;
+      after?: ConversationCursor;
+      limit?: number;
+    }) {
+      const { mailboxId, view, tagId, after, limit = 50 } = options;
+      const due = slaDueAt(threads);
+      const atRisk = view === "sla_at_risk";
+      const filters: (SQL | undefined)[] = [
+        eq(threads.mailboxId, mailboxAccess.mailboxId),
+        eq(threads.orgId, members.organizationId),
+        conversationViewFilter(view, mailboxAccess.memberId),
+        tagId
+          ? sql`exists (select 1 from ${threadTags} tt where tt.thread_id = ${threads.id} and tt.tag_id = ${tagId})`
+          : undefined,
+      ];
+      if (after) {
+        filters.push(
+          atRisk
+            ? sql`(${due}, ${threads.id}) > (${after.at}::timestamptz, ${after.id})`
+            : sql`(${threads.lastMessageAt}, ${threads.id}) < (${after.at}::timestamptz, ${after.id})`,
+        );
+      }
+      const order = atRisk
+        ? [sql`${due} asc`, sql`${threads.id} asc`]
+        : [desc(threads.lastMessageAt), desc(threads.id)];
+      // The page first (one index range), then the per-row summaries for its rows only: with the
+      // summaries in the same query Postgres can hash a subquery over every attachment instead.
+      const page = db
+        .select()
+        .from(threads)
+        .where(and(...filters))
+        .orderBy(...order)
+        .limit(limit)
+        .as("threads");
+      const rows = await db
+        .select({
+          ...rowFields,
+          slaDueAt: sql<Date | null>`${due}`.mapWith(threads.lastMessageAt).as("sla_due_at"),
+          /** This row's keyset `at` (see `ConversationCursor`). */
+          pageAt:
+            sql<string>`to_char((${atRisk ? due : threads.lastMessageAt}) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`.as(
+              "page_at",
+            ),
+          tags: sql<
+            { id: string; name: string; color: string | null }[]
+          >`(select coalesce(jsonb_agg(jsonb_build_object('id', tg.id, 'name', tg.name, 'color', tg.color) order by lower(tg.name)), '[]'::jsonb) from ${threadTags} tt join ${tags} tg on tg.id = tt.tag_id where tt.thread_id = ${threads.id})`.as(
+            "tags",
+          ),
+        })
+        .from(mailboxAccess)
+        .innerJoin(members, eq(members.id, mailboxAccess.memberId))
+        .innerJoin(
+          mailboxes,
+          and(eq(mailboxes.id, mailboxAccess.mailboxId), eq(mailboxes.kind, "shared")),
+        )
+        .crossJoinLateral(page)
+        .leftJoin(threadState, myState)
+        .where(and(isGrantee(mailboxAccess.memberId), eq(mailboxAccess.mailboxId, mailboxId)))
+        .orderBy(...order);
+      return rows.map(({ latest, ...row }) => ({
+        ...row,
+        unread: !row.read,
+        subject: latest?.subject ?? "",
+        snippet: latest?.snippet ?? "",
+        latestFrom: latest ? { name: latest.fromName, address: latest.fromAddress } : null,
+      }));
+    },
+
+    /**
+     * Per granted shared inbox: how many conversations each helpdesk view holds (`resolved`
+     * excepted: it only grows), and open or pending ones per tag.
+     */
+    async conversationCounts(options: { mailboxId?: string } = {}) {
+      const count = (filter: SQL) => sql<number>`(count(*) filter (where ${filter}))::int`;
+      const views = CONVERSATION_VIEWS.filter((v) => v !== "resolved" && v !== "all");
+      const [rows, tagRows] = await Promise.all([
+        db
+          .select({
+            orgId: threads.orgId,
+            mailboxId: threads.mailboxId,
+            views: sql<
+              Record<Exclude<ConversationView, "resolved" | "all">, number>
+            >`jsonb_build_object(${sql.join(
+              views.map(
+                (v) =>
+                  sql`${v}::text, ${count(conversationViewFilter(v, mailboxAccess.memberId) ?? sql`true`)}`,
+              ),
+              sql`, `,
+            )})`,
+          })
+          .from(threads)
+          .innerJoin(...threadGrant)
+          .innerJoin(...threadOrg)
+          .innerJoin(mailboxes, eq(mailboxes.id, threads.mailboxId))
+          .where(
+            and(
+              eq(mailboxes.kind, "shared"),
+              sql`${threads.status} <> 'resolved'`,
+              options.mailboxId ? eq(threads.mailboxId, options.mailboxId) : undefined,
+            ),
+          )
+          .groupBy(threads.orgId, threads.mailboxId),
+        db
+          .select({
+            mailboxId: threads.mailboxId,
+            tagId: threadTags.tagId,
+            count: sql<number>`count(*)::int`,
+          })
+          .from(threadTags)
+          .innerJoin(threads, eq(threads.id, threadTags.threadId))
+          .innerJoin(...threadGrant)
+          .innerJoin(...threadOrg)
+          .where(
+            and(
+              sql`${threads.status} in ('open', 'pending')`,
+              options.mailboxId ? eq(threads.mailboxId, options.mailboxId) : undefined,
+            ),
+          )
+          .groupBy(threads.mailboxId, threadTags.tagId),
+      ]);
+      return rows.map((row) => ({
+        ...row,
+        tags: Object.fromEntries(
+          tagRows.filter((t) => t.mailboxId === row.mailboxId).map((t) => [t.tagId, t.count]),
+        ),
+      }));
+    },
+
+    /**
      * Thread counts per granted mailbox, for the sidebar: inbox (unread too), queue, and each
      * lane within the inbox. The same rules as `listThreads`.
      */
@@ -333,6 +533,257 @@ function mailQueries(db: Db, isGrantee: (memberId: AnyColumn | SQL) => SQL) {
         .innerJoin(...actionOrg)
         .where(and(eq(mailActions.id, actionId), eq(mailActions.memberId, mailboxAccess.memberId)));
       return row ?? null;
+    },
+
+    /**
+     * A shared conversation's workflow state (ADR 0021): status, assignee, priority, SLA due
+     * times, its tags, and its timeline events oldest first. Null when no grantee can see it.
+     */
+    async getConversation(threadId: string) {
+      const [[conversation], tagRows, events, noteRows] = await Promise.all([
+        db
+          .select({
+            id: threads.id,
+            orgId: threads.orgId,
+            mailboxId: threads.mailboxId,
+            mailboxKind: mailboxes.kind,
+            status: threads.status,
+            assigneeMemberId: threads.assigneeMemberId,
+            priority: threads.priority,
+            snoozedUntil: threads.snoozedUntil,
+            resolvedAt: threads.resolvedAt,
+            customerId: threads.customerId,
+            firstRespondedAt: threads.firstRespondedAt,
+            firstResponseDueAt: threads.firstResponseDueAt,
+            nextResponseDueAt: threads.nextResponseDueAt,
+            resolutionDueAt: threads.resolutionDueAt,
+          })
+          .from(threads)
+          .innerJoin(...threadGrant)
+          .innerJoin(...threadOrg)
+          .innerJoin(mailboxes, eq(mailboxes.id, threads.mailboxId))
+          .where(eq(threads.id, threadId))
+          .limit(1),
+        db
+          .select({ id: tags.id, name: tags.name, color: tags.color })
+          .from(threadTags)
+          .innerJoin(tags, eq(tags.id, threadTags.tagId))
+          .innerJoin(threads, eq(threads.id, threadTags.threadId))
+          .innerJoin(...threadGrant)
+          .innerJoin(...threadOrg)
+          .where(eq(threadTags.threadId, threadId))
+          .orderBy(sql`lower(${tags.name})`),
+        db
+          .select({
+            id: conversationEvents.id,
+            kind: conversationEvents.kind,
+            actorMemberId: conversationEvents.actorMemberId,
+            data: conversationEvents.data,
+            createdAt: conversationEvents.createdAt,
+          })
+          .from(conversationEvents)
+          .innerJoin(threads, eq(threads.id, conversationEvents.threadId))
+          .innerJoin(...threadGrant)
+          .innerJoin(...threadOrg)
+          .where(eq(conversationEvents.threadId, threadId))
+          .orderBy(conversationEvents.createdAt, conversationEvents.id),
+        db
+          .select({
+            id: notes.id,
+            authorMemberId: notes.authorMemberId,
+            body: notes.body,
+            mentions: notes.mentions,
+            createdAt: notes.createdAt,
+            updatedAt: notes.updatedAt,
+          })
+          .from(notes)
+          .innerJoin(threads, eq(threads.id, notes.threadId))
+          .innerJoin(...threadGrant)
+          .innerJoin(...threadOrg)
+          .where(eq(notes.threadId, threadId))
+          .orderBy(notes.createdAt, notes.id),
+      ]);
+      if (!conversation) return null;
+      // A user's grants can show a thread through one member only (one per org), so no duplicates.
+      return { ...conversation, tags: tagRows, events, notes: noteRows };
+    },
+
+    /** A shared or personal inbox's tags by name. Null when no grantee can see the inbox. */
+    async listTags(mailboxId: string) {
+      const [mailboxGrant, mailboxOrg] = access(mailboxes.id, mailboxes.orgId);
+      const [[visible], rows] = await Promise.all([
+        db
+          .select({ id: mailboxes.id })
+          .from(mailboxes)
+          .innerJoin(...mailboxGrant)
+          .innerJoin(...mailboxOrg)
+          .where(eq(mailboxes.id, mailboxId))
+          .limit(1),
+        db
+          .select({ id: tags.id, name: tags.name, color: tags.color })
+          .from(tags)
+          .innerJoin(mailboxes, eq(mailboxes.id, tags.mailboxId))
+          .innerJoin(...mailboxGrant)
+          .innerJoin(...mailboxOrg)
+          .where(eq(tags.mailboxId, mailboxId))
+          .orderBy(sql`lower(${tags.name})`, tags.id),
+      ]);
+      return visible ? rows : null;
+    },
+
+    /**
+     * A thread's inbox and every member who can see it there (presence goes to them). Null when
+     * no grantee can see the thread.
+     */
+    async threadAudience(threadId: string) {
+      const [thread] = await db
+        .select({ mailboxId: threads.mailboxId, orgId: threads.orgId })
+        .from(threads)
+        .innerJoin(...threadGrant)
+        .innerJoin(...threadOrg)
+        .where(eq(threads.id, threadId))
+        .limit(1);
+      if (!thread) return null;
+      const rows = await db
+        .select({ memberId: mailboxAccess.memberId })
+        .from(mailboxAccess)
+        .innerJoin(
+          members,
+          and(eq(members.id, mailboxAccess.memberId), eq(members.organizationId, thread.orgId)),
+        )
+        .where(eq(mailboxAccess.mailboxId, thread.mailboxId));
+      return { mailboxId: thread.mailboxId, memberIds: rows.map((r) => r.memberId) };
+    },
+
+    /**
+     * A shared inbox's SLA targets per priority, its business hours (null: always open) and
+     * whether it auto-assigns. Null when no grantee can see the inbox.
+     */
+    async slaSettings(mailboxId: string) {
+      const [mailboxGrant, mailboxOrg] = access(mailboxes.id, mailboxes.orgId);
+      const visible = and(eq(mailboxes.id, mailboxId), eq(mailboxes.kind, "shared"));
+      const [[mailbox], policies, [hours]] = await Promise.all([
+        db
+          .select({ id: mailboxes.id, autoAssign: mailboxes.autoAssign })
+          .from(mailboxes)
+          .innerJoin(...mailboxGrant)
+          .innerJoin(...mailboxOrg)
+          .where(visible)
+          .limit(1),
+        db
+          .select({
+            priority: slaPolicies.priority,
+            firstResponseMinutes: slaPolicies.firstResponseMinutes,
+            nextResponseMinutes: slaPolicies.nextResponseMinutes,
+            resolutionMinutes: slaPolicies.resolutionMinutes,
+            businessHoursOnly: slaPolicies.businessHoursOnly,
+          })
+          .from(slaPolicies)
+          .innerJoin(mailboxes, eq(mailboxes.id, slaPolicies.mailboxId))
+          .innerJoin(...mailboxGrant)
+          .innerJoin(...mailboxOrg)
+          .where(visible)
+          .orderBy(slaPolicies.priority),
+        db
+          .select({
+            timezone: businessHours.timezone,
+            windows: businessHours.windows,
+            holidays: businessHours.holidays,
+          })
+          .from(businessHours)
+          .innerJoin(mailboxes, eq(mailboxes.id, businessHours.mailboxId))
+          .innerJoin(...mailboxGrant)
+          .innerJoin(...mailboxOrg)
+          .where(visible)
+          .limit(1),
+      ]);
+      if (!mailbox) return null;
+      return { policies, businessHours: hours ?? null, autoAssign: mailbox.autoAssign };
+    },
+
+    /**
+     * Who a conversation in this inbox can be assigned to: every member of the inbox's org who
+     * can see it, by name. Null when no grantee can see the inbox.
+     */
+    async mailboxAssignees(mailboxId: string) {
+      const [mailboxGrant, mailboxOrg] = access(mailboxes.id, mailboxes.orgId);
+      const [[visible], rows] = await Promise.all([
+        db
+          .select({ id: mailboxes.id })
+          .from(mailboxes)
+          .innerJoin(...mailboxGrant)
+          .innerJoin(...mailboxOrg)
+          .where(eq(mailboxes.id, mailboxId))
+          .limit(1),
+        db.execute(sql`
+          select am.id as "memberId", u.name, u.email, u.image
+          from ${mailboxes} mb
+          join ${mailboxAccess} ga on ga.mailbox_id = mb.id and ${isGrantee(sql`ga.member_id`)}
+          join ${members} gm on gm.id = ga.member_id and gm.organization_id = mb.org_id
+          join ${mailboxAccess} aa on aa.mailbox_id = mb.id
+          join ${members} am on am.id = aa.member_id and am.organization_id = mb.org_id
+          join ${users} u on u.id = am.user_id
+          where mb.id = ${mailboxId}
+          order by u.name, am.id`),
+      ]);
+      if (!visible) return null;
+      return (
+        rows as unknown as { memberId: string; name: string; email: string; image: string | null }[]
+      ).map((r) => ({ memberId: r.memberId, name: r.name, email: r.email, image: r.image }));
+    },
+
+    /**
+     * The grantee's notifications, newest first, one keyset page; only those about conversations
+     * they can still see. `unread` counts all their unread ones.
+     */
+    async listNotifications(
+      options: { unreadOnly?: boolean; before?: ConversationCursor; limit?: number } = {},
+    ) {
+      const { unreadOnly = false, before, limit = 50 } = options;
+      const visible = and(
+        isGrantee(notifications.memberId),
+        eq(mailboxAccess.memberId, notifications.memberId),
+      );
+      const [rows, [unread]] = await Promise.all([
+        db
+          .select({
+            id: notifications.id,
+            kind: notifications.kind,
+            threadId: notifications.threadId,
+            mailboxId: threads.mailboxId,
+            noteId: notifications.noteId,
+            actorMemberId: notifications.actorMemberId,
+            data: notifications.data,
+            readAt: notifications.readAt,
+            createdAt: notifications.createdAt,
+            /** This row's keyset `at` (see `ConversationCursor`). */
+            pageAt: sql<string>`to_char(${notifications.createdAt} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
+            subject: sql<string>`coalesce((select m.subject from ${messages} m where m.thread_id = ${threads.id} order by m.sent_at desc, m.id desc limit 1), '')`,
+          })
+          .from(notifications)
+          .innerJoin(threads, eq(threads.id, notifications.threadId))
+          .innerJoin(...threadGrant)
+          .innerJoin(...threadOrg)
+          .where(
+            and(
+              visible,
+              unreadOnly ? sql`${notifications.readAt} is null` : undefined,
+              before
+                ? sql`(${notifications.createdAt}, ${notifications.id}) < (${before.at}::timestamptz, ${before.id})`
+                : undefined,
+            ),
+          )
+          .orderBy(desc(notifications.createdAt), desc(notifications.id))
+          .limit(limit),
+        db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(notifications)
+          .innerJoin(threads, eq(threads.id, notifications.threadId))
+          .innerJoin(...threadGrant)
+          .innerJoin(...threadOrg)
+          .where(and(visible, sql`${notifications.readAt} is null`)),
+      ]);
+      return { notifications: rows, unread: unread?.count ?? 0 };
     },
 
     async getThread(threadId: string) {

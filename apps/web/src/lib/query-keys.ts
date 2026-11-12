@@ -5,12 +5,18 @@
 //   ├─ org ─ organizations · members · invitations · invitation(id) · passkeys · onboarding
 //   │        · workspaces · billing · billing-cards · billing-invoices
 //   ├─ mail ─ mailboxes · workspace-mailboxes · mailbox-members(id) · counts · threads(filter)
-//   │        · thread(id) · search(q) · action(id)
+//   │        · thread(id) ─ conversation · search(q) · action(id) · tags(mailbox)
+//   │        · assignees(mailbox) · conversations(filter) · conversation-counts
+//   │        · notifications ─ { unread } · sla(mailbox)
 //   └─ local ─ pending(threadId) · failures       (client-only state, never fetched)
 //
 // Switching organization or account clears the whole cache (see `session.ts`), so keys do not
 // carry the org id.
-import type { ThreadFilter } from "./types.ts";
+import type { ConversationFilter, ThreadFilter } from "./types.ts";
+
+export interface NotificationFilter {
+  unread: boolean;
+}
 
 const root = ["omni"] as const;
 const mail = [...root, "mail"] as const;
@@ -60,10 +66,44 @@ export const keys = {
   threadLists: () => [...mail, "threads"] as const,
   threads: (filter: ThreadFilter) => [...mail, "threads", normalize(filter)] as const,
   thread: (id: string) => [...mail, "thread", id] as const,
+  /**
+   * A helpdesk conversation's status, assignee, priority, tags and events. Under `thread(id)`, so
+   * whatever refetches the thread (realtime, an action) refetches this too.
+   */
+  conversation: (threadId: string) => [...mail, "thread", threadId, "conversation"] as const,
+  /** A shared inbox's tags. */
+  tags: (mailboxId: string) => [...mail, "tags", mailboxId] as const,
+  /** Every helpdesk list (one shared inbox's view, optionally a tag). */
+  conversationLists: () => [...mail, "conversations"] as const,
+  conversations: (filter: ConversationFilter) =>
+    [
+      ...mail,
+      "conversations",
+      { mailbox: filter.mailbox, view: filter.view, ...(filter.tag ? { tag: filter.tag } : {}) },
+    ] as const,
+  /** Every shared inbox's view and tag counts, for the navigation. */
+  conversationCounts: () => [...mail, "conversation-counts"] as const,
+  /** A shared inbox's SLA targets, business hours and auto-assign. */
+  sla: (mailboxId: string) => [...mail, "sla", mailboxId] as const,
+  /** Who a shared inbox's conversations can be assigned to. */
+  assignees: (mailboxId: string) => [...mail, "assignees", mailboxId] as const,
+  /** Your notifications: every list (all, unread only). Under `mail`, so a reconnect refetches them. */
+  notifications: () => [...mail, "notifications"] as const,
+  notificationList: (filter: NotificationFilter) =>
+    [...mail, "notifications", { unread: filter.unread }] as const,
   searches: () => [...mail, "search"] as const,
   search: (q: string, mailbox?: string) =>
     [...mail, "search", { q, ...(mailbox ? { mailbox } : {}) }] as const,
   action: (id: string) => [...mail, "action", id] as const,
+  /** An inbox's signature and the member's own on it. */
+  signatures: (mailboxId: string) => [...mail, "signatures", mailboxId] as const,
+  /** An inbox's canned replies with the member's own. */
+  cannedReplies: (mailboxId: string) => [...mail, "canned-replies", mailboxId] as const,
+  customerSearch: (q: string) => [...mail, "customers", { q }] as const,
+  /** Shared drafts: one conversation's, or an inbox's new mail. */
+  draftLists: () => [...mail, "drafts"] as const,
+  drafts: (where: { threadId: string } | { mailboxId: string }) =>
+    [...mail, "drafts", where] as const,
 
   /** App-only state, never fetched (`query-client.ts` keeps it forever). */
   local: () => local,
@@ -76,4 +116,16 @@ export const keys = {
 export function filterOf(queryKey: readonly unknown[]): ThreadFilter | undefined {
   const filter = queryKey[3];
   return typeof filter === "object" && filter !== null ? (filter as ThreadFilter) : undefined;
+}
+
+/** Reads the filter back out of a `keys.conversations(...)` key. */
+export function conversationFilterOf(queryKey: readonly unknown[]): ConversationFilter | undefined {
+  const filter = queryKey[3];
+  return typeof filter === "object" && filter !== null ? (filter as ConversationFilter) : undefined;
+}
+
+/** Reads the filter back out of a `keys.notificationList(...)` key. */
+export function notificationFilterOf(queryKey: readonly unknown[]): NotificationFilter | undefined {
+  const filter = queryKey[3];
+  return typeof filter === "object" && filter !== null ? (filter as NotificationFilter) : undefined;
 }

@@ -11,11 +11,13 @@ import {
   releaseDomain,
   transferDomain,
 } from "../src/domains.ts";
+import { applyConversationChange } from "../src/conversations.ts";
 import { forMember, forUser } from "../src/for-member.ts";
 import {
   mailboxes as schemaMailboxes,
   mailDomains,
   members,
+  notifications,
   threadState,
   threads,
 } from "../src/schema/index.ts";
@@ -102,6 +104,44 @@ describe("forMember isolation", () => {
     ]);
     expect(await asAlice.getThread(billing.threadId)).toBeNull();
     expect(await asAlice.getThread(ops.threadId)).toBeNull();
+    expect((await asAlice.getConversation(hello.threadId))?.status).toBe("open");
+    expect(await asAlice.getConversation(billing.threadId)).toBeNull();
+    const [aliceThread, billingThread] = await Promise.all([
+      asAlice.getThread(hello.threadId),
+      forMember(db, bob).getThread(billing.threadId),
+    ]);
+    expect(await asAlice.listTags(aliceThread!.mailboxId)).toEqual([]);
+    expect(await asAlice.listTags(billingThread!.mailboxId)).toBeNull();
+    expect(
+      (await asAlice.mailboxAssignees(aliceThread!.mailboxId))?.map((m) => m.memberId),
+    ).toEqual([alice]);
+    expect(await asAlice.mailboxAssignees(billingThread!.mailboxId)).toBeNull();
+    // Presence: only teammates in the inbox's own org hear it (Carol's grant crosses orgs).
+    expect(await asAlice.threadAudience(hello.threadId)).toEqual({
+      mailboxId: aliceThread!.mailboxId,
+      memberIds: [alice],
+    });
+    expect(await asAlice.threadAudience(billing.threadId)).toBeNull();
+    // SLA settings: the inbox's own, and none of another inbox's or org's.
+    expect(await asAlice.slaSettings(aliceThread!.mailboxId)).toEqual({
+      policies: [],
+      businessHours: null,
+      autoAssign: false,
+    });
+    expect(await asAlice.slaSettings(billingThread!.mailboxId)).toBeNull();
+    expect(await forMember(db, carol).slaSettings(aliceThread!.mailboxId)).toBeNull();
+    expect(await forMember(db, carol).threadAudience(hello.threadId)).toBeNull();
+    expect(
+      (await asAlice.listConversations({ mailboxId: aliceThread!.mailboxId, view: "all" })).map(
+        (c) => c.id,
+      ),
+    ).toEqual([hello.threadId]);
+    expect(
+      await asAlice.listConversations({ mailboxId: billingThread!.mailboxId, view: "all" }),
+    ).toEqual([]);
+    expect((await asAlice.conversationCounts()).map((c) => c.mailboxId)).toEqual([
+      aliceThread!.mailboxId,
+    ]);
     expect(await asAlice.search("flamingo")).toEqual([]);
     expect(await asAlice.search("albatross")).toEqual([]);
 
@@ -118,6 +158,31 @@ describe("forMember isolation", () => {
     expect(await asCarol.getThread(hello.threadId)).toBeNull();
     expect(await asCarol.search("pelican")).toEqual([]);
     expect(await asCarol.setThreadState(hello.threadId, { read: true })).toBeNull();
+    expect(await asCarol.getConversation(hello.threadId)).toBeNull();
+    const helloBox = (await forMember(db, alice).getThread(hello.threadId))!.mailboxId;
+    expect(await asCarol.listTags(helloBox)).toBeNull();
+    expect(await asCarol.mailboxAssignees(helloBox)).toBeNull();
+    expect(await asCarol.listConversations({ mailboxId: helloBox, view: "all" })).toEqual([]);
+    // A notification row for Carol about hello@ (as a buggy writer might leave) stays hidden.
+    await db.insert(notifications).values({
+      orgId: orgBId,
+      memberId: carol,
+      kind: "mention",
+      threadId: hello.threadId,
+    });
+    expect((await asCarol.listNotifications()).notifications).toEqual([]);
+    expect((await asCarol.conversationCounts()).map((c) => c.mailboxId)).toEqual([opsBoxId]);
+    // Nor is she listed as someone hello@ can be assigned to: her grant crosses orgs.
+    expect((await forMember(db, alice).mailboxAssignees(helloBox))?.map((m) => m.memberId)).toEqual(
+      [alice],
+    );
+    expect(
+      await applyConversationChange(db, {
+        threadId: hello.threadId,
+        actorMemberId: carol,
+        change: { type: "resolve" },
+      }),
+    ).toEqual({ ok: false, reason: "not_found" });
   });
 
   test("the workspace switcher lists only the user's orgs and the mailboxes granted to them there", async () => {

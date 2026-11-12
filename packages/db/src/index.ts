@@ -7,6 +7,10 @@ export {
   type Lane,
   THREAD_VIEWS,
   type ThreadView,
+  CONVERSATION_VIEWS,
+  type ConversationView,
+  type ConversationCursor,
+  SLA_AT_RISK_MINUTES,
   type Participant,
   type MemberQueries,
 } from "./for-member.ts";
@@ -27,3 +31,10 @@ export * from "./pictures.ts";
 export * from "./billing.ts";
 export * from "./sign-in-emails.ts";
 export * from "./abandoned-sign-ups.ts";
+export * from "./compose.ts";
+export * from "./library.ts";
+export * from "./customers.ts";
+export * from "./drafts.ts";
+export * from "./preferences.ts";
+export * from "./conversations.ts";
+export * from "./sla.ts";

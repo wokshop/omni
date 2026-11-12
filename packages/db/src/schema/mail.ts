@@ -146,6 +146,12 @@ export const mailboxes = pgTable(
      * until `ensureMailboxTeam` runs. Same org as the mailbox, enforced where it is read.
      */
     teamId: text("team_id").references(() => teams.id, { onDelete: "set null" }),
+    /**
+     * Shared inboxes: hand each new conversation to the next member in turn (round robin by
+     * member id). `auto_assign_last_member_id` is whose turn it was last.
+     */
+    autoAssign: boolean("auto_assign").notNull().default(false),
+    autoAssignLastMemberId: text("auto_assign_last_member_id"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -399,6 +405,13 @@ export const threads = pgTable(
     firstResponseDueAt: timestamptz("first_response_due_at"),
     nextResponseDueAt: timestamptz("next_response_due_at"),
     resolutionDueAt: timestamptz("resolution_due_at"),
+    /**
+     * SLA clocks (ADR 0023). When the customer started waiting for the reply we owe (cleared by
+     * our reply), and when the current open stretch began (cleared by resolve). The due times
+     * above are these plus the inbox's targets for the priority, in business hours.
+     */
+    responseClockAt: timestamptz("response_clock_at"),
+    resolutionClockAt: timestamptz("resolution_clock_at"),
     firstRespondedAt: timestamptz("first_responded_at"),
     resolvedAt: timestamptz("resolved_at"),
     createdAt: createdAt(),
@@ -530,6 +543,16 @@ export const messages = pgTable(
      * Defaults false so existing rows are never re-notified.
      */
     notifyPending: boolean("notify_pending").notNull().default(false),
+    /**
+     * A machine sent it (bounce, auto-reply, out of office: `@omni/mail-core` `automatedKind`).
+     * The helpdesk never reopens a conversation or starts an SLA on one.
+     */
+    automated: boolean("automated").notNull().default(false),
+    /**
+     * When the Worker applied this message to its conversation (status rule, first response,
+     * SLA). Claimed once, so a redelivered `message.created` cannot apply an old message again.
+     */
+    workflowAppliedAt: timestamptz("workflow_applied_at"),
     searchVector: tsvector("search_vector")
       .notNull()
       .generatedAlwaysAs(
@@ -1067,6 +1090,8 @@ export const customers = pgTable(
     /** Normalized: lowercase. */
     address: text("address").notNull(),
     name: text("name"),
+    /** When the message that gave `name` was sent: a later name wins, whatever order mail is indexed in. */
+    nameSeenAt: timestamptz("name_seen_at"),
     /** The address's domain, unless it is a webmail one; the company is guessed from it. */
     domain: text("domain"),
     company: text("company"),

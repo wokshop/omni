@@ -10,6 +10,8 @@ import {
   mailboxes,
   mailboxFolders,
   members,
+  attachments,
+  uploads,
   messageLocations,
   messages,
   threadState,
@@ -70,15 +72,29 @@ export async function replaceFolders(
 ) {
   const { orgId, mailboxId, folders } = input;
   await db.transaction(async (tx) => {
+    // Folders that are new or changed role. A role change moves threads in or out of the inbox
+    // (Junk stored as `other`, later detected as `junk`), so their messages are reconciled below.
+    const changed: string[] = [];
     for (const folder of folders) {
-      await tx
+      const rows = await tx
         .insert(mailboxFolders)
         .values({ orgId, mailboxId, path: folder.path, role: folder.role })
         .onConflictDoUpdate({
           target: [mailboxFolders.mailboxId, mailboxFolders.path],
           set: { role: folder.role, updatedAt: new Date() },
           setWhere: ne(mailboxFolders.role, folder.role),
-        });
+        })
+        .returning({ id: mailboxFolders.id });
+      changed.push(...rows.map((row) => row.id));
+    }
+    if (changed.length > 0) {
+      await reconcileThreads(
+        tx,
+        sql`select message_id from ${messageLocations} where folder_id in (${sql.join(
+          changed.map((id) => sql`${id}`),
+          sql`, `,
+        )})`,
+      );
     }
     const keep = folders.map((f) => f.path);
     await tx
@@ -391,8 +407,8 @@ export async function removeLocations(
  * are flagged, so that state set in Omni, in Apple Mail, or by a full re-sync all end up the same
  * (spec, "Sync rules"):
  *
- * - Archived: a copy in INBOX means not archived; otherwise a copy in the archive or trash folder
- *   means archived (out of the inbox: deleted in a mail app is not still waiting for an answer).
+ * - Archived: a copy in INBOX means not archived; otherwise a copy in the archive, trash or junk
+ *   folder means archived (out of the inbox: deleted or junked mail is not waiting for an answer).
  *   A thread with none of these (Sent only, another folder, or mid-move) keeps its state.
  * - Read, on personal mailboxes only: read when every copy has `\Seen`, for every member with
  *   access. Shared mailboxes keep read per person in Postgres and never look at `\Seen`.
@@ -401,7 +417,7 @@ async function reconcileThreads(db: Pick<Db, "execute">, messageIds: SQL) {
   const summary = sql`
     select m.thread_id,
       bool_or(f.role = 'inbox') as in_inbox,
-      bool_or(f.role in ('archive', 'trash')) as filed,
+      bool_or(f.role in ('archive', 'trash', 'junk')) as filed,
       bool_and(${"\\Seen"}::text = any(l.flags)) as seen
     from ${messages} m
     join ${messageLocations} l on l.message_id = m.id
@@ -423,7 +439,10 @@ async function reconcileThreads(db: Pick<Db, "execute">, messageIds: SQL) {
     where ${threadState}.read is distinct from excluded.read`);
 }
 
-/** Messages of the mailbox with no IMAP copy left in any stored folder. */
+/**
+ * Messages of the mailbox with no IMAP copy left in any stored folder. A send still in the outbox
+ * is not one: it was indexed when SMTP accepted it and its Sent copy is still to be filed.
+ */
 export async function orphanedMessages(db: Db, mailboxId: string): Promise<string[]> {
   const rows = await db
     .select({ id: messages.id })
@@ -432,6 +451,14 @@ export async function orphanedMessages(db: Db, mailboxId: string): Promise<strin
       and(
         eq(messages.mailboxId, mailboxId),
         sql`not exists (select 1 from ${messageLocations} l where l.message_id = ${messages.id})`,
+        sql`not exists (select 1 from ${mailActions} a
+          where a.mailbox_id = ${messages.mailboxId} and a.kind = 'send'
+            and a.status in ('pending', 'running')
+            and (a.payload->>'messageId' = ${messages.messageIdHeader}
+              -- No Message-ID in the payload: the outbox derives one from the idempotency key
+              -- (deterministicMessageId in apps/mail/src/outbox.ts).
+              or (a.payload->>'messageId' is null and ${messages.messageIdHeader} like
+                '<' || left(encode(sha256(convert_to('omni-send:' || a.idempotency_key, 'UTF8')), 'hex'), 32) || '@%')))`,
       ),
     );
   return rows.map((row) => row.id);
@@ -448,13 +475,16 @@ export async function pruneMessages(
   input: { mailboxId: string; messageIds: string[] },
 ): Promise<{ messages: number; threads: number }> {
   if (input.messageIds.length === 0) return { messages: 0, threads: 0 };
+  // One jsonb parameter, not one per id: a deleted folder can orphan more ids than Postgres binds.
+  const anyOf = (ids: string[]) =>
+    sql`any(array(select jsonb_array_elements_text(${JSON.stringify(ids)}::text::jsonb)))`;
   return db.transaction(async (tx) => {
     const removed = await tx
       .delete(messages)
       .where(
         and(
           eq(messages.mailboxId, input.mailboxId),
-          inArray(messages.id, input.messageIds),
+          sql`${messages.id} = ${anyOf(input.messageIds)}`,
           sql`not exists (select 1 from ${messageLocations} l where l.message_id = ${messages.id})`,
         ),
       )
@@ -465,7 +495,7 @@ export async function pruneMessages(
       .delete(threads)
       .where(
         and(
-          inArray(threads.id, threadIds),
+          sql`${threads.id} = ${anyOf(threadIds)}`,
           sql`not exists (select 1 from ${messages} m where m.thread_id = ${threads.id})`,
         ),
       )
@@ -476,9 +506,101 @@ export async function pruneMessages(
         lastMessageAt: sql`(select max(m.sent_at) from ${messages} m where m.thread_id = ${threads.id})`,
         updatedAt: new Date(),
       })
-      .where(inArray(threads.id, threadIds));
+      .where(sql`${threads.id} = ${anyOf(threadIds)}`);
     return { messages: removed.length, threads: emptied.length };
   });
+}
+
+/**
+ * Messages whose `message.created` the Worker has not accepted yet (`notify_pending`), oldest
+ * first: the mail service died or the Worker was down before delivery. Re-sending is safe; the
+ * Worker dedupes by message id.
+ */
+export async function pendingNotifications(db: Db, limit: number) {
+  const rows = await db
+    .select({
+      orgId: messages.orgId,
+      mailboxId: messages.mailboxId,
+      threadId: messages.threadId,
+      messageId: messages.id,
+      role: mailboxFolders.role,
+    })
+    .from(messages)
+    .leftJoin(mailboxFolders, eq(mailboxFolders.id, messages.folderId))
+    .where(eq(messages.notifyPending, true))
+    .orderBy(messages.id)
+    .limit(limit);
+  // No folder yet: a reply indexed when SMTP accepted it (its Sent copy is not filed yet).
+  return rows.map(({ role, ...row }) => ({ ...row, folderRole: role ?? ("sent" as const) }));
+}
+
+/** The Worker accepted `message.created` for these messages. */
+export async function markNotified(db: Db, messageIds: string[]) {
+  if (messageIds.length === 0) return;
+  await db
+    .update(messages)
+    .set({ notifyPending: false })
+    .where(and(inArray(messages.id, messageIds), eq(messages.notifyPending, true)));
+}
+
+/**
+ * The files a send attaches, in the order given: uploads made for it and attachments of stored
+ * messages (forward), each only if it belongs to `mailboxId`. A missing one is left out; the
+ * caller compares counts.
+ */
+export async function sendAttachmentFiles(
+  db: Db,
+  mailboxId: string,
+  refs: ({ kind: "upload"; uploadId: string } | { kind: "attachment"; attachmentId: string })[],
+) {
+  const uploadIds = refs.flatMap((r) => (r.kind === "upload" ? [r.uploadId] : []));
+  const attachmentIds = refs.flatMap((r) => (r.kind === "attachment" ? [r.attachmentId] : []));
+  const fromUploads = uploadIds.length
+    ? await db
+        .select({
+          id: uploads.id,
+          filename: uploads.filename,
+          mimeType: uploads.mimeType,
+          r2Key: uploads.r2Key,
+        })
+        .from(uploads)
+        .where(and(eq(uploads.mailboxId, mailboxId), inArray(uploads.id, uploadIds)))
+    : [];
+  const fromMessages = attachmentIds.length
+    ? await db
+        .select({
+          id: attachments.id,
+          filename: attachments.filename,
+          mimeType: attachments.mimeType,
+          r2Key: attachments.r2Key,
+        })
+        .from(attachments)
+        .innerJoin(messages, eq(messages.id, attachments.messageId))
+        .where(and(eq(messages.mailboxId, mailboxId), inArray(attachments.id, attachmentIds)))
+    : [];
+  const byId = new Map([...fromUploads, ...fromMessages].map((f) => [f.id, f]));
+  return refs.flatMap((r) => {
+    const file = byId.get(r.kind === "upload" ? r.uploadId : r.attachmentId);
+    return file ? [{ filename: file.filename, mimeType: file.mimeType, r2Key: file.r2Key }] : [];
+  });
+}
+
+/** Thread of a stored message in this mailbox, for filing a forward with what it forwards. */
+export async function messageThread(db: Db, mailboxId: string, messageId: string) {
+  const [row] = await db
+    .select({ threadId: messages.threadId })
+    .from(messages)
+    .where(and(eq(messages.mailboxId, mailboxId), eq(messages.id, messageId)));
+  return row?.threadId ?? null;
+}
+
+/** When the next pending outbox action is due (an undo-send window ends), or null. */
+export async function nextActionDue(db: Db): Promise<Date | null> {
+  const [row] = await db
+    .select({ at: sql<Date | null>`min(${mailActions.runAfter})` })
+    .from(mailActions)
+    .where(eq(mailActions.status, "pending"));
+  return row?.at ? new Date(row.at) : null;
 }
 
 /** Marks the folder for a full re-sync: no sync position and no stored copies. */

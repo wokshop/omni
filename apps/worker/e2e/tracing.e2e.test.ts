@@ -105,6 +105,10 @@ async function setUpMember() {
   const address = `trace-${randomUUID().slice(0, 8)}@omni.test`;
   const org = await createOrg(db, "trace");
   const member = await createMember(db, org.id, address);
+  // No undo window: this test follows a send end to end, not the wait before it leaves.
+  await db
+    .insert(schema.memberPreferences)
+    .values({ memberId: member.id, orgId: org.id, undoSendSeconds: 0 });
   const id = randomUUID();
   await db.insert(schema.mailboxes).values({
     id,
@@ -137,6 +141,8 @@ async function setUpMember() {
     const [row] = await db.select().from(schema.threads).where(eq(schema.threads.mailboxId, id));
     return row;
   });
+  // The first full pass runs behind readiness; let it finish so it cannot undo a test's edits.
+  await waitUntil(() => mailLog.some((l) => l.event === "sync.all_done" && l.mailboxId === id));
   return {
     orgId: org.id,
     mailboxId: id,
