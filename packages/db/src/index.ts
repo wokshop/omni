@@ -29,3 +29,4 @@ export * from "./sign-in-emails.ts";
 export * from "./abandoned-sign-ups.ts";
 export * from "./compose.ts";
 export * from "./library.ts";
+export * from "./customers.ts";
