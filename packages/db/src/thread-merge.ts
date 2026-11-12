@@ -93,18 +93,32 @@ export async function mergeThreads(
       );
     }
     await tx.execute(sql`update conversation_events e set thread_id = ${into}
-      where e.thread_id = any(${from}) and (e.dedupe_key is null or not exists (
-        select 1 from conversation_events s where s.thread_id = ${into} and s.dedupe_key = e.dedupe_key))`);
+      where e.thread_id = any(${from}) and (e.dedupe_key is null or (not exists (
+        select 1 from conversation_events s where s.thread_id = ${into} and s.dedupe_key = e.dedupe_key)
+        and e.ctid = (select min(d.ctid) from conversation_events d
+          where d.thread_id = any(${from}) and d.dedupe_key = e.dedupe_key)))`);
     await tx.execute(sql`update thread_tags t set thread_id = ${into}
       where t.thread_id = any(${from}) and not exists (
         select 1 from thread_tags s where s.thread_id = ${into} and s.tag_id = t.tag_id)
       and t.ctid = (select min(d.ctid) from thread_tags d
         where d.thread_id = any(${from}) and d.tag_id = t.tag_id)`);
-    await tx.execute(sql`update thread_state t set thread_id = ${into}
-      where t.thread_id = any(${from}) and not exists (
-        select 1 from thread_state s where s.thread_id = ${into} and s.member_id = t.member_id)
-      and t.ctid = (select min(d.ctid) from thread_state d
-        where d.thread_id = any(${from}) and d.member_id = t.member_id)`);
+    // A member's read, done and deferred state on the whole conversation: unread if any part
+    // was (no row means unread), done and deferred only as far as every part was.
+    const every = sql`array[${sql.join(
+      [into, ...fromIds].map((id) => sql`${id}`),
+      sql`, `,
+    )}]::text[]`;
+    await tx.execute(sql`with combined as (
+        delete from thread_state where thread_id = any(${every})
+        returning org_id, member_id, read, done_through, snoozed_until)
+      insert into thread_state (org_id, thread_id, member_id, read, done_through, snoozed_until)
+      select org_id, ${into}, member_id,
+        count(*) = ${fromIds.length + 1} and bool_and(read),
+        case when count(*) = ${fromIds.length + 1} and bool_and(done_through is not null)
+          then min(done_through) end,
+        case when count(*) = ${fromIds.length + 1} and bool_and(snoozed_until is not null)
+          then min(snoozed_until) end
+      from combined group by org_id, member_id`);
     const [kept] = await tx
       .select({ threadId: assignments.threadId })
       .from(assignments)
