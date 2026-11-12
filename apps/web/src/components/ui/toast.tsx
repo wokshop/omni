@@ -53,13 +53,30 @@ interface PromptOptions extends ToastTarget {
 }
 
 /** Hosts the toasts: bottom right, 356px wide (the full width less a gutter on a phone). */
-export function Toaster({ style, toastOptions, ...props }: ToasterProps) {
+/**
+ * Setup's toast (dorks' onboarding): Sonner's own toast, painted brand blue by `.setup-toaster` in
+ * styles.css, instead of `ToastCard`. The same message twice replaces itself.
+ */
+export function setupToast(message: string, description?: string) {
+  toast.error(message, { id: message, duration: ERROR_DURATION_MS, description });
+}
+
+export function Toaster({
+  style,
+  toastOptions,
+  setup = false,
+  ...props
+}: ToasterProps & {
+  /** Setup's toaster: top centre, brand-blue toasts with a close (see `setupToast`). */
+  setup?: boolean;
+}) {
   return (
     <Sonner
-      className="toaster group font-sans"
-      closeButton={false}
+      className={cn("toaster group font-sans", setup && "setup-toaster")}
+      closeButton={setup}
+      {...(setup && { icons: { error: <XCircleIcon className="size-4" /> } })}
       duration={NOTICE_DURATION_MS}
-      position="bottom-right"
+      position={setup ? "top-center" : "bottom-right"}
       theme="light"
       style={{ "--width": "min(356px, calc(100vw - 2rem))", ...style } as CSSProperties}
       toastOptions={{

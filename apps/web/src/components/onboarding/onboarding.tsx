@@ -7,11 +7,12 @@ import { Skeleton } from "skullet/react";
 import {
   IconArrowLeft,
   IconArrowRotateClockwise,
+  IconCheck,
   IconChevronsUpDown,
   IconLogOut,
+  IconMail,
   IconPlus,
 } from "@/components/icons/central";
-import { ConnectGoogleButton } from "@/components/google/connect-google";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { ChoiceBox, ChoiceBoxItem } from "@/components/ui/choice-box";
@@ -27,7 +28,7 @@ import type {
 import { Text, TextLink } from "@/components/ui/text";
 import { Tooltip, TooltipTrigger } from "@/components/ui/tooltip";
 import { TextField } from "@/components/ui/text-field";
-import { appToast } from "@/components/ui/toast";
+import { setupToast } from "@/components/ui/toast";
 import {
   useAddDomain,
   useCheckDomain,
@@ -39,7 +40,11 @@ import {
   useRotateChallenge,
 } from "@/hooks/use-onboarding";
 import { useBilling, useStartCheckout, useStartTrial } from "@/hooks/use-billing";
-import { useGoogleAccounts, useGoogleReturn } from "@/hooks/use-google-connection";
+import {
+  useConnectGoogle,
+  useGoogleAccounts,
+  useGoogleReturn,
+} from "@/hooks/use-google-connection";
 import { useInviteMember } from "@/hooks/use-organization";
 import { formatPrice, type Interval } from "@/lib/billing";
 import { googleErrorText, type GoogleOutcome } from "@/lib/google-connection";
@@ -161,7 +166,7 @@ const BackContext = createContext<(() => void) | undefined>(undefined);
  * nothing on the page shifts (dorks' onboarding). The buttons stay enabled: pressing one with
  * something missing says what. The same message twice replaces itself instead of stacking.
  */
-const notify = (message: string) => void appToast.error(message, { id: message });
+const notify = (message: string) => setupToast(message);
 
 /** Points Back somewhere else inside a step (the inbox step's own views), or hides it. */
 function WithBack(props: { onBack: (() => void) | undefined; children: ReactNode }) {
@@ -269,9 +274,7 @@ function AccountSwitcher() {
 function PageForm(props: {
   title: string;
   description?: ReactNode;
-  submit?: string;
-  /** Stands in for the submit button when the step's action isn't a form submit. */
-  primary?: ReactNode;
+  submit: string;
   /** Another way through the step, a ghost button beside the primary one. Back then moves under them. */
   secondary?: ReactNode;
   isPending?: boolean;
@@ -308,11 +311,9 @@ function PageForm(props: {
           </Button>
         )}
         {props.secondary}
-        {props.primary ?? (
-          <Button type="submit" isPending={props.isPending}>
-            {props.submit}
-          </Button>
-        )}
+        <Button type="submit" isPending={props.isPending}>
+          {props.submit}
+        </Button>
       </div>
       {onBack && props.secondary && (
         <div className="mt-4 flex justify-center">
@@ -436,47 +437,57 @@ function ConnectInboxForm(props: {
   onOwnDomain: () => void;
   onDone: () => void;
 }) {
-  const connected = props.mailboxes.length > 0;
+  const connect = useConnectGoogle("onboarding");
+  // An island of rows (dorks' connect step): each inbox connected, then rows to add one, at least
+  // three rows in all and always one to add, so the card never changes shape as it fills.
+  const open = Math.max(1, 3 - props.mailboxes.length);
   return (
     <PageForm
       title="Connect your inbox"
-      description={
-        connected
-          ? "Your mail is syncing. It shows up in Omni as it arrives."
-          : "Sign in with Google and your Gmail opens in Omni, ready to read and answer."
-      }
+      description="Sign in with Google and your Gmail opens in Omni, ready to read and answer."
       submit="Continue"
-      primary={
-        connected ? undefined : (
-          <ConnectGoogleButton from="onboarding" intent="primary" label="Connect Google" />
-        )
-      }
       problem={props.problem}
-      onSubmit={props.onDone}
+      onSubmit={() =>
+        props.mailboxes.length > 0 ? props.onDone() : notify("Connect an inbox first.")
+      }
       secondary={
-        connected ? (
-          <ConnectGoogleButton from="onboarding" intent="ghost" label="Add another" />
-        ) : (
-          <Button intent="ghost" onPress={props.onOwnDomain}>
-            Use Omni instead
-          </Button>
-        )
+        <Button intent="outline" onPress={props.onOwnDomain}>
+          Use Omni instead
+        </Button>
       }
     >
-      {connected && (
-        <ul className="flex flex-col gap-2">
-          {props.mailboxes.map((m) => (
-            <li
-              key={m.id}
-              className="flex h-8 items-center gap-2.5 rounded-lg border border-border px-2.5 text-sm"
+      <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border text-sm">
+        {props.mailboxes.map((m) => (
+          <li key={m.id} className="flex h-12 items-center gap-3 px-4">
+            {m.provider === "gmail" ? (
+              <Google aria-hidden className="size-4 shrink-0" />
+            ) : (
+              <IconMail aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+            )}
+            <span className="min-w-0 flex-1 truncate">{m.address}</span>
+            <span className="flex items-center gap-1.5">
+              <IconCheck aria-hidden className="size-3.5" />
+              Connected
+            </span>
+          </li>
+        ))}
+        {Array.from({ length: open }, (_, i) => (
+          <li key={`add-${i}`}>
+            <button
+              type="button"
+              className="group/row flex h-12 w-full items-center gap-3 px-4 text-start outline-hidden focus-visible:bg-hover"
+              disabled={connect.isPending}
+              onClick={() => connect.mutate()}
             >
-              {m.provider === "gmail" && <Google aria-hidden className="size-4 shrink-0" />}
-              <span className="min-w-0 flex-1 truncate">{m.address}</span>
-              <span className="text-muted-foreground">Connected</span>
-            </li>
-          ))}
-        </ul>
-      )}
+              <Google aria-hidden className="size-4 shrink-0" />
+              <span className="min-w-0 flex-1 truncate">Google account</span>
+              <span className="text-muted-foreground transition-colors group-hover/row:text-foreground">
+                {connect.isPending ? "Opening Google…" : "Connect"}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
     </PageForm>
   );
 }
@@ -621,12 +632,9 @@ function DomainForm(props: {
         if (!group) return;
         const type = group.records[0]!.type;
         const why = groupProblems(fresh, group);
-        if (why.length > 0)
-          appToast.message(`${type} record isn't right yet`, { description: why.join(" ") });
+        if (why.length > 0) setupToast(`${type} record isn't right yet`, why.join(" "));
         else
-          appToast.message(`${type} record not found yet`, {
-            description: "Still checking. DNS can take a few minutes.",
-          });
+          setupToast(`${type} record not found yet`, "Still checking. DNS can take a few minutes.");
       },
       onError: (error) => setProblem(error.message),
     });

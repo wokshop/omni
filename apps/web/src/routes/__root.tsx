@@ -30,7 +30,7 @@ function Root() {
   return (
     <RouterProvider navigate={(href, options) => router.navigate({ ...options, href })}>
       <Outlet />
-      <Toaster {...(setup && { position: "top-center" as const })} />
+      <Toaster setup={setup} />
     </RouterProvider>
   );
 }
