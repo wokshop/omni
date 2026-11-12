@@ -63,9 +63,13 @@ export type ConversationView = (typeof CONVERSATION_VIEWS)[number];
 /** How close to its due time an open conversation counts as at risk. */
 export const SLA_AT_RISK_MINUTES = 30;
 
-/** Keyset position: `at` is `last_message_at`, or the SLA due time in `sla_at_risk`. */
+/**
+ * Keyset position: `at` is `last_message_at`, or the SLA due time in `sla_at_risk`, as an ISO
+ * string with Postgres's full microsecond precision (a `Date` drops it, and the page boundary row
+ * would then come back on the next page).
+ */
 export interface ConversationCursor {
-  at: Date;
+  at: string;
   id: string;
 }
 
@@ -343,8 +347,8 @@ function mailQueries(db: Db, isGrantee: (memberId: AnyColumn | SQL) => SQL) {
       if (after) {
         filters.push(
           atRisk
-            ? sql`(${due}, ${threads.id}) > (${after.at.toISOString()}::timestamptz, ${after.id})`
-            : sql`(${threads.lastMessageAt}, ${threads.id}) < (${after.at.toISOString()}::timestamptz, ${after.id})`,
+            ? sql`(${due}, ${threads.id}) > (${after.at}::timestamptz, ${after.id})`
+            : sql`(${threads.lastMessageAt}, ${threads.id}) < (${after.at}::timestamptz, ${after.id})`,
         );
       }
       const order = atRisk
@@ -363,6 +367,11 @@ function mailQueries(db: Db, isGrantee: (memberId: AnyColumn | SQL) => SQL) {
         .select({
           ...rowFields,
           slaDueAt: sql<Date | null>`${due}`.mapWith(threads.lastMessageAt).as("sla_due_at"),
+          /** This row's keyset `at` (see `ConversationCursor`). */
+          pageAt:
+            sql<string>`to_char((${atRisk ? due : threads.lastMessageAt}) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`.as(
+              "page_at",
+            ),
           tags: sql<
             { id: string; name: string; color: string | null }[]
           >`(select coalesce(jsonb_agg(jsonb_build_object('id', tg.id, 'name', tg.name, 'color', tg.color) order by lower(tg.name)), '[]'::jsonb) from ${threadTags} tt join ${tags} tg on tg.id = tt.tag_id where tt.thread_id = ${threads.id})`.as(

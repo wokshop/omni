@@ -2,7 +2,7 @@
 // status rule on ingest, resolve filing the mail through the outbox, and the snooze clock.
 import { randomUUID } from "node:crypto";
 import { addLocation, schema, upsertFolder } from "@omni/db";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import {
   createMailbox,
@@ -527,14 +527,15 @@ describe("views and counts", () => {
       until: new Date(Date.now() + 3_600_000).toISOString(),
     });
     await post(`/threads/${c6}/resolve`, desk.anaCookie);
-    // SLA: c7 is overdue, c1 due in 10 minutes, c3 due tomorrow (not at risk).
+    // SLA: c7 is overdue, c1 due in 10 minutes, c3 due tomorrow (not at risk). Postgres keeps
+    // microseconds that a JS Date drops; a cursor built from a Date repeats the boundary row.
     await db
       .update(schema.threads)
-      .set({ firstResponseDueAt: at(5) })
+      .set({ firstResponseDueAt: sql`now() - interval '5 minutes 0.000123 seconds'` })
       .where(eq(schema.threads.id, c7!));
     await db
       .update(schema.threads)
-      .set({ nextResponseDueAt: at(-10) })
+      .set({ nextResponseDueAt: sql`now() + interval '10 minutes 0.000456 seconds'` })
       .where(eq(schema.threads.id, c1!));
     await db
       .update(schema.threads)

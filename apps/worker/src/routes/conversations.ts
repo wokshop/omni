@@ -32,7 +32,7 @@ const cursorParam = z
     try {
       const json = JSON.parse(atob(value.replaceAll("-", "+").replaceAll("_", "/")));
       const parsed = z.object({ t: z.iso.datetime(), id: z.string().min(1) }).parse(json);
-      return { at: new Date(parsed.t), id: parsed.id };
+      return { at: parsed.t, id: parsed.id };
     } catch {
       ctx.addIssue({ code: "custom", message: "invalid cursor" });
       return z.NEVER;
@@ -40,8 +40,8 @@ const cursorParam = z
   })
   .optional();
 
-function encodeCursor(at: Date, id: string) {
-  return btoa(JSON.stringify({ t: at.toISOString(), id }))
+function encodeCursor(at: Date | string, id: string) {
+  return btoa(JSON.stringify({ t: typeof at === "string" ? at : at.toISOString(), id }))
     .replaceAll("+", "-")
     .replaceAll("/", "_")
     .replace(/=+$/, "");
@@ -124,13 +124,8 @@ export const conversations = new Hono<AppEnv>()
     });
     const last = rows.at(-1);
     const nextCursor =
-      last && rows.length === query.limit
-        ? encodeCursor(
-            query.view === "sla_at_risk" && last.slaDueAt ? last.slaDueAt : last.lastMessageAt,
-            last.id,
-          )
-        : null;
-    return c.json({ conversations: rows, nextCursor });
+      last && rows.length === query.limit ? encodeCursor(last.pageAt, last.id) : null;
+    return c.json({ conversations: rows.map(({ pageAt: _pageAt, ...row }) => row), nextCursor });
   })
 
   /** Per shared inbox: each view's count (not `resolved`) and open or pending ones per tag. */
