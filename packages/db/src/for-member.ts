@@ -684,6 +684,8 @@ function mailQueries(db: Db, isGrantee: (memberId: AnyColumn | SQL) => SQL) {
             data: notifications.data,
             readAt: notifications.readAt,
             createdAt: notifications.createdAt,
+            /** This row's keyset `at` (see `ConversationCursor`). */
+            pageAt: sql<string>`to_char(${notifications.createdAt} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
             subject: sql<string>`coalesce((select m.subject from ${messages} m where m.thread_id = ${threads.id} order by m.sent_at desc, m.id desc limit 1), '')`,
           })
           .from(notifications)
@@ -695,7 +697,7 @@ function mailQueries(db: Db, isGrantee: (memberId: AnyColumn | SQL) => SQL) {
               visible,
               unreadOnly ? sql`${notifications.readAt} is null` : undefined,
               before
-                ? sql`(${notifications.createdAt}, ${notifications.id}) < (${before.at.toISOString()}::timestamptz, ${before.id})`
+                ? sql`(${notifications.createdAt}, ${notifications.id}) < (${before.at}::timestamptz, ${before.id})`
                 : undefined,
             ),
           )

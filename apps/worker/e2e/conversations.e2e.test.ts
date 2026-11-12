@@ -643,6 +643,28 @@ describe("notes and notifications", () => {
       ["mention", asked.threadId, note.id],
     ]);
     expect(bea.unread).toBe(3);
+    // One per page walks the same list, even for notifications inside one millisecond: the
+    // cursor keeps Postgres's microseconds, where a JS Date would skip the older ones.
+    for (const [i, n] of bea.notifications.entries()) {
+      await db
+        .update(schema.notifications)
+        .set({
+          createdAt: sql`date_trunc('milliseconds', now()) + make_interval(secs => ${(3 - i) * 0.0001})`,
+        })
+        .where(eq(schema.notifications.id, n.id));
+    }
+    const paged: string[] = [];
+    let cursor: string | null = null;
+    do {
+      const page = (await (
+        await api(`/notifications?limit=1${cursor ? `&cursor=${cursor}` : ""}`, beaCookie)
+      ).json()) as Notifications & { nextCursor: string | null };
+      paged.push(...page.notifications.map((n) => n.id));
+      cursor = page.nextCursor;
+    } while (cursor && paged.length < 10);
+    const whole = (await (await api("/notifications", beaCookie)).json()) as Notifications;
+    expect(paged).toEqual(whole.notifications.map((n) => n.id));
+    expect(paged).toHaveLength(3);
     const ana = (await (await api("/notifications", desk.anaCookie)).json()) as Notifications;
     expect(ana.notifications).toEqual([]);
     const carl = (await (await api("/notifications", desk.carlCookie)).json()) as Notifications;

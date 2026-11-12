@@ -45,8 +45,8 @@ const cursorParam = z
   })
   .optional();
 
-function encodeCursor(at: Date | string, id: string) {
-  return btoa(JSON.stringify({ t: typeof at === "string" ? at : at.toISOString(), id }))
+function encodeCursor(at: string, id: string) {
+  return btoa(JSON.stringify({ t: at, id }))
     .replaceAll("+", "-")
     .replaceAll("/", "_")
     .replace(/=+$/, "");
@@ -262,9 +262,10 @@ export const conversations = new Hono<AppEnv>()
     });
     const last = page.notifications.at(-1);
     return c.json({
-      ...page,
+      unread: page.unread,
+      notifications: page.notifications.map(({ pageAt: _pageAt, ...row }) => row),
       nextCursor:
-        last && page.notifications.length === limit ? encodeCursor(last.createdAt, last.id) : null,
+        last && page.notifications.length === limit ? encodeCursor(last.pageAt, last.id) : null,
     });
   })
 
