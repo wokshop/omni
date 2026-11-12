@@ -7,6 +7,7 @@
 import type { SlaTarget } from "@omni/contracts";
 import { addBusinessMinutes, type BusinessSchedule } from "@omni/mail-core/business-hours";
 import { and, eq, inArray, isNotNull, ne, or, sql } from "drizzle-orm";
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { uuidv7 } from "uuidv7";
 import type { Db } from "./client.ts";
 import { SLA_AT_RISK_MINUTES } from "./for-member.ts";
@@ -140,7 +141,7 @@ function sameTime(a: Date | null, b: Date | null) {
  * targets or hours changed. A row the workflow changed in between is left to the workflow (its
  * clocks or priority no longer match), so this never writes a stale due time.
  */
-export async function refreshInboxDueTimes(db: Db, mailboxId: string) {
+export async function refreshInboxDueTimes(db: Executor, mailboxId: string) {
   const rows = await db
     .select({
       id: threads.id,
@@ -189,14 +190,32 @@ export async function refreshInboxDueTimes(db: Db, mailboxId: string) {
 // Settings: one inbox's targets per priority and its business hours. Owners and admins of the
 // inbox's org change them (the route checks the role); the mailbox must be a shared one in it.
 
-async function sharedInbox(db: Executor, orgId: string, mailboxId: string) {
-  const [row] = await db
-    .select({ id: mailboxes.id })
-    .from(mailboxes)
-    .where(
-      and(eq(mailboxes.id, mailboxId), eq(mailboxes.orgId, orgId), eq(mailboxes.kind, "shared")),
-    );
-  return row !== undefined;
+/**
+ * Changes a shared inbox's settings with `change`, then recomputes its due times, in one
+ * transaction holding the mailbox row: concurrent changes run one after the other, so the due
+ * times always match the settings that end up stored. False when it is not a shared inbox of
+ * the org.
+ */
+async function changeInboxSettings(
+  db: Db,
+  orgId: string,
+  mailboxId: string,
+  change: (tx: Tx) => Promise<unknown>,
+) {
+  return db.transaction(async (tx) => {
+    // No key update: it does not block the foreign-key checks of rows written for the inbox.
+    const [row] = await tx
+      .select({ id: mailboxes.id })
+      .from(mailboxes)
+      .where(
+        and(eq(mailboxes.id, mailboxId), eq(mailboxes.orgId, orgId), eq(mailboxes.kind, "shared")),
+      )
+      .for("no key update");
+    if (!row) return false;
+    await change(tx);
+    await refreshInboxDueTimes(tx, mailboxId);
+    return true;
+  });
 }
 
 export interface SlaPolicyInput {
@@ -214,16 +233,15 @@ export async function putSlaPolicy(
   priority: Priority,
   input: SlaPolicyInput,
 ) {
-  if (!(await sharedInbox(db, orgId, mailboxId))) return false;
-  await db
-    .insert(slaPolicies)
-    .values({ id: uuidv7(), orgId, mailboxId, priority, ...input })
-    .onConflictDoUpdate({
-      target: [slaPolicies.mailboxId, slaPolicies.priority],
-      set: { ...input, updatedAt: new Date() },
-    });
-  await refreshInboxDueTimes(db, mailboxId);
-  return true;
+  return changeInboxSettings(db, orgId, mailboxId, (tx) =>
+    tx
+      .insert(slaPolicies)
+      .values({ id: uuidv7(), orgId, mailboxId, priority, ...input })
+      .onConflictDoUpdate({
+        target: [slaPolicies.mailboxId, slaPolicies.priority],
+        set: { ...input, updatedAt: new Date() },
+      }),
+  );
 }
 
 /** Stops tracking one priority. False when it is not a shared inbox of the org. */
@@ -233,12 +251,11 @@ export async function deleteSlaPolicy(
   mailboxId: string,
   priority: Priority,
 ) {
-  if (!(await sharedInbox(db, orgId, mailboxId))) return false;
-  await db
-    .delete(slaPolicies)
-    .where(and(eq(slaPolicies.mailboxId, mailboxId), eq(slaPolicies.priority, priority)));
-  await refreshInboxDueTimes(db, mailboxId);
-  return true;
+  return changeInboxSettings(db, orgId, mailboxId, (tx) =>
+    tx
+      .delete(slaPolicies)
+      .where(and(eq(slaPolicies.mailboxId, mailboxId), eq(slaPolicies.priority, priority))),
+  );
 }
 
 export interface BusinessHoursInput {
@@ -254,24 +271,22 @@ export async function putBusinessHours(
   mailboxId: string,
   input: BusinessHoursInput,
 ) {
-  if (!(await sharedInbox(db, orgId, mailboxId))) return false;
-  await db
-    .insert(businessHours)
-    .values({ id: uuidv7(), orgId, mailboxId, ...input })
-    .onConflictDoUpdate({
-      target: businessHours.mailboxId,
-      set: { ...input, updatedAt: new Date() },
-    });
-  await refreshInboxDueTimes(db, mailboxId);
-  return true;
+  return changeInboxSettings(db, orgId, mailboxId, (tx) =>
+    tx
+      .insert(businessHours)
+      .values({ id: uuidv7(), orgId, mailboxId, ...input })
+      .onConflictDoUpdate({
+        target: businessHours.mailboxId,
+        set: { ...input, updatedAt: new Date() },
+      }),
+  );
 }
 
 /** Back to always open. False when it is not a shared inbox of the org. */
 export async function deleteBusinessHours(db: Db, orgId: string, mailboxId: string) {
-  if (!(await sharedInbox(db, orgId, mailboxId))) return false;
-  await db.delete(businessHours).where(eq(businessHours.mailboxId, mailboxId));
-  await refreshInboxDueTimes(db, mailboxId);
-  return true;
+  return changeInboxSettings(db, orgId, mailboxId, (tx) =>
+    tx.delete(businessHours).where(eq(businessHours.mailboxId, mailboxId)),
+  );
 }
 
 // Alerts: the minute cron's half. Each (conversation, target, due time) alerts at risk once and
@@ -304,6 +319,18 @@ function alertKey(kind: SlaAlert["kind"], target: SlaTarget, dueAt: Date) {
   return `${kind}:${target}:${dueAt.toISOString()}`;
 }
 
+/** Whether the alert for one due column is owed at `now` and not yet written, as SQL. */
+function owedAlert(target: SlaTarget, column: AnyPgColumn, now: Date, horizon: Date) {
+  const at = sql`${now.toISOString()}::timestamptz`;
+  // Same text as alertKey: Date#toISOString is UTC with milliseconds.
+  const key = sql`(case when ${column} <= ${at} then 'sla_breached' else 'sla_at_risk' end)
+    || ${`:${target}:`} || to_char(${column} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`;
+  return sql`(${column} <= ${horizon.toISOString()}::timestamptz and not exists (
+    select 1 from ${conversationEvents}
+    where ${conversationEvents.threadId} = ${threads.id} and ${conversationEvents.dedupeKey} = ${key}
+  ))`;
+}
+
 /**
  * Writes the at-risk and breached events (and notifications) owed at `now`. Idempotent: an alert
  * already written is skipped, so a late or doubled run alerts once. Only open conversations
@@ -326,6 +353,9 @@ export async function emitSlaAlerts(db: Db, now: Date, limit = 1000): Promise<Sl
       and(
         eq(threads.status, "open"),
         sql`${slaDueAt(threads)} <= ${horizon.toISOString()}::timestamptz`,
+        // Skip conversations whose alerts were all delivered before the limit, so a backlog of
+        // already-alerted rows can never hide a newly owed alert.
+        or(...TARGETS.map(([target, column]) => owedAlert(target, threads[column], now, horizon))),
       ),
     )
     .orderBy(sql`${slaDueAt(threads)} desc`)

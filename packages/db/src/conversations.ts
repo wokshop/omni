@@ -12,7 +12,20 @@ import {
   type ConversationEvent,
   type ConversationState,
 } from "@omni/mail-core/conversation-status";
-import { and, asc, eq, exists, gt, inArray, isNotNull, isNull, lte, ne, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  exists,
+  gt,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  lte,
+  ne,
+  sql,
+} from "drizzle-orm";
 import { uuidv7 } from "uuidv7";
 import type { Db } from "./client.ts";
 import { setSlaClocks } from "./sla.ts";
@@ -681,11 +694,19 @@ export type InboundResult =
  * mailbox row lock makes concurrent ingests take turns instead of picking the same member.
  */
 async function nextInTurn(tx: Tx, row: ConversationRow) {
+  // Most inboxes don't auto-assign: read the flag before taking any lock.
+  const [flag] = await tx
+    .select({ on: mailboxes.autoAssign })
+    .from(mailboxes)
+    .where(eq(mailboxes.id, row.mailboxId));
+  if (!flag?.on) return null;
+  // "No key update" serializes turns without blocking the key-share locks that inserts referencing
+  // the inbox (messages, events) take, so concurrent ingests cannot deadlock on it.
   const [inbox] = await tx
     .select({ on: mailboxes.autoAssign, last: mailboxes.autoAssignLastMemberId })
     .from(mailboxes)
     .where(eq(mailboxes.id, row.mailboxId))
-    .for("update");
+    .for("no key update");
   if (!inbox?.on) return null;
   const team = (
     await tx
@@ -832,8 +853,32 @@ export async function applyInboundMessage(
           messageId: input.messageId,
         })
       : { row: status.row, changed: false };
-    // Our reply stops the response clock, unless the customer has written since (a late copy).
-    const answered = await setSlaClocks(tx, responded.row, newer ? {} : { responseClockAt: null });
+    // Our reply stops the response clock. A late Sent copy answers only what came before it: the
+    // customer has been waiting since their first counted message after it.
+    const clock = responded.row.responseClockAt;
+    let responseClockAt: Date | null = null;
+    if (newer && clock && clock >= message.sentAt) responseClockAt = clock;
+    else if (newer && mailbox) {
+      const [waiting] = await tx
+        .select({ sentAt: messages.sentAt })
+        .from(messages)
+        .where(
+          and(
+            eq(messages.threadId, row.id),
+            gt(messages.sentAt, message.sentAt),
+            gte(messages.sentAt, mailbox.createdAt),
+            eq(messages.automated, false),
+            ne(sql`lower(${messages.fromAddress})`, mailbox.address.toLowerCase()),
+          ),
+        )
+        .orderBy(asc(messages.sentAt))
+        .limit(1);
+      if (waiting) responseClockAt = waiting.sentAt > now ? now : waiting.sentAt;
+    }
+    const answered =
+      responseClockAt?.getTime() === clock?.getTime()
+        ? responded.row
+        : await setSlaClocks(tx, responded.row, { responseClockAt });
     return {
       applied: true,
       direction: "agent",

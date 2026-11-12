@@ -19,12 +19,12 @@ export interface BusinessSchedule {
 }
 
 const MINUTE = 60_000;
-/** How far ahead to look for opening hours before giving up (a schedule of only holidays). */
-const MAX_DAYS = 400;
+/** How many days in a row without staffed time before giving up (a schedule of only holidays). */
+const MAX_CLOSED_DAYS = 400;
 
 /**
  * The moment `minutes` of staffed time after `start` have passed. With no schedule, or one with no
- * windows, every minute counts. Null when the schedule never opens again within a year.
+ * windows, every minute counts. Null when the schedule stays closed for over a year at a stretch.
  */
 export function addBusinessMinutes(
   start: Date,
@@ -45,7 +45,8 @@ export function addBusinessMinutes(
   let cursor = start.getTime();
   let remaining = minutes * MINUTE;
   let day = localDate(start, schedule.timezone);
-  for (let i = 0; i < MAX_DAYS; i++, day = nextDay(day)) {
+  // However long the target, give up only after a long run of days with no staffed time.
+  for (let closed = 0; closed < MAX_CLOSED_DAYS; closed++, day = nextDay(day)) {
     const iso = isoDate(day);
     if (holidays.has(iso)) continue;
     const weekday = new Date(Date.UTC(day.y, day.m - 1, day.d)).getUTCDay();
@@ -57,6 +58,7 @@ export function addBusinessMinutes(
       if (remaining <= closes - opens) return new Date(opens + remaining);
       remaining -= closes - opens;
       cursor = closes;
+      closed = -1;
     }
   }
   return null;
@@ -142,10 +144,12 @@ function offsetAt(at: number, zone: string) {
  */
 function zonedTime(day: LocalDate, minutes: number, zone: string) {
   const wall = Date.UTC(day.y, day.m - 1, day.d) + minutes * MINUTE;
-  const first = wall - offsetAt(wall, zone);
-  const second = wall - offsetAt(first, zone);
-  if (first === second) return first;
-  // Two candidates: take the one whose wall clock matches, else (a skipped time) the later one.
-  const earlier = Math.min(first, second);
-  return earlier + offsetAt(earlier, zone) === wall ? earlier : Math.max(first, second);
+  // The offsets in force half a day either side cover any transition near this time: each gives
+  // a candidate instant. Those whose clock reads `wall` are real; the earliest is the first
+  // occurrence. None is real when the time was skipped: the later candidate is after the jump.
+  const candidates = [
+    ...new Set([12, -12].map((h) => wall - offsetAt(wall + h * 3_600_000, zone))),
+  ];
+  const real = candidates.filter((at) => at + offsetAt(at, zone) === wall);
+  return real.length ? Math.min(...real) : Math.max(...candidates);
 }
