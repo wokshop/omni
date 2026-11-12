@@ -81,7 +81,9 @@ export function Properties({ thread }: { thread: Thread }) {
   const applied = new Set(conversation.tags.map((t) => t.id));
 
   return (
-    <div className="flex min-w-0 items-center gap-1">
+    // Pulled left by the buttons' own inset (10px, or 6.5px once they are icon squares), so the
+    // first icon starts at the column's edge.
+    <div className="-ms-2.5 flex min-w-0 items-center gap-1 @max-[34rem]:-ms-[6.5px]">
       <MenuTrigger>
         <Button
           intent="ghost"
