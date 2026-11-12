@@ -6,8 +6,10 @@ import {
   conversationEvents,
   mailActions,
   mailboxAccess,
+  mailboxFolders,
   mailboxes,
   members,
+  messageLocations,
   messages,
   notes,
   notifications,
@@ -722,10 +724,16 @@ function mailQueries(db: Db, isGrantee: (memberId: AnyColumn | SQL) => SQL) {
       if (!mailbox) return null;
       const from = range.from.toISOString();
       const to = range.to.toISOString();
-      // A customer's message: not ours, not a machine's.
+      // A customer's message: not ours (by address, or filed in Sent, as ingest decides), not a
+      // machine's.
       const customer = (alias: string) => {
         const m = sql.raw(alias);
-        return sql`${m}.automated = false and lower(${m}.from_address) <> lower(${mailbox.address})`;
+        return sql`${m}.automated = false and lower(${m}.from_address) <> lower(${mailbox.address})
+          and not exists (
+            select 1 from ${messageLocations} l
+            join ${mailboxFolders} f on f.id = l.folder_id
+            where l.message_id = ${m}.id and f.role = 'sent'
+          )`;
       };
       // Conversations whose first customer message falls in the range.
       const fresh = sql`fresh as (
@@ -750,7 +758,9 @@ function mailQueries(db: Db, isGrantee: (memberId: AnyColumn | SQL) => SQL) {
           where e.mailbox_id = ${mailboxId} and e.kind = ${kind}
             and e.created_at >= ${from}::timestamptz and e.created_at < ${to}::timestamptz
             and ${extra}
-        ) t where secs is not null`;
+            -- greatest() skips a null and would count 0s: no customer message, no sample.
+            and ${asked} is not null
+        ) t`;
       const [created, byAssignee, byTag, firstResponse, resolved, resolvedBy] = await Promise.all([
         db.execute(sql`
           with ${fresh}

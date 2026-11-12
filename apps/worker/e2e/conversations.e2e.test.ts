@@ -1262,6 +1262,9 @@ describe("bulk actions and auto-assign", () => {
     await post(`/threads/${c3}/tags`, desk.anaCookie, { tagId: tag.tag.id });
     await put(`/threads/${c3}/assignee`, desk.anaCookie, { memberId: desk.bea.id });
     await post(`/threads/${c1}/resolve`, desk.anaCookie);
+    // Mail we sent first, from an alias, then resolved: not a new conversation, no timing sample.
+    const outbound = await deliver("sales@alias.test", at(200), undefined, "Sent");
+    await post(`/threads/${outbound}/resolve`, desk.anaCookie);
 
     const from = new Date(Date.now() - 86_400_000).toISOString();
     const response = await api(
@@ -1285,7 +1288,7 @@ describe("bulk actions and auto-assign", () => {
     // 600 s and 1800 s: median 1200, p90 interpolated to 1680.
     expect(report.firstResponse).toEqual({ count: 2, median: 1200, p90: 1680 });
     expect(report.resolved.count).toBe(1);
-    expect(report.resolved.byMember).toEqual([{ memberId: desk.ana.id, count: 1 }]);
+    expect(report.resolved.byMember).toEqual([{ memberId: desk.ana.id, count: 2 }]);
     // Resolved just now, five hours after the customer wrote.
     expect(Math.abs(report.resolved.median - 5 * 3600)).toBeLessThan(120);
 
