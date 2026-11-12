@@ -7,6 +7,8 @@ type PresenceEvent = Extract<RealtimeEvent, { type: "presence" }>;
 
 export interface Presence {
   memberId: string;
+  /** The workspace whose socket reported it, so a drop there clears only its entries. */
+  orgId: string;
   state: "viewing" | "replying";
   /** When the last event for this member arrived (ms since epoch). */
   at: number;
@@ -48,14 +50,14 @@ function expire() {
   emit();
 }
 
-export function applyPresence(event: PresenceEvent) {
+export function applyPresence(orgId: string, event: PresenceEvent) {
   const others = (byThread.get(event.threadId) ?? EMPTY).filter(
     (p) => p.memberId !== event.memberId,
   );
   const list =
     event.state === "left"
       ? others
-      : [...others, { memberId: event.memberId, state: event.state, at: Date.now() }];
+      : [...others, { memberId: event.memberId, orgId, state: event.state, at: Date.now() }];
   byThread = new Map(byThread);
   if (list.length) byThread.set(event.threadId, list);
   else byThread.delete(event.threadId);
@@ -63,12 +65,17 @@ export function applyPresence(event: PresenceEvent) {
 }
 
 /**
- * Forgets everyone: the socket dropped, so `left` events may have been missed. Teammates still
- * there reappear with their next repeat.
+ * Forgets everyone a workspace's socket reported (every workspace without `orgId`): it dropped, so
+ * `left` events may have been missed. Teammates still there reappear with their next repeat.
  */
-export function clearPresence() {
-  if (!byThread.size) return;
-  byThread = new Map();
+export function clearPresence(orgId?: string) {
+  const next = new Map<string, readonly Presence[]>();
+  for (const [threadId, list] of byThread) {
+    const kept = orgId ? list.filter((p) => p.orgId !== orgId) : [];
+    if (kept.length) next.set(threadId, kept);
+  }
+  if ([...next.values()].flat().length === [...byThread.values()].flat().length) return;
+  byThread = next;
   emit();
 }
 

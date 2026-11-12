@@ -138,6 +138,23 @@ export function useThreadListShortcuts(options: {
     }
   };
 
+  /**
+   * Undo: puts each thread back as it was before `applied`, from its own row as it was (a
+   * selection can mix done, deferred and plain threads). Done clears a deferral and defer clears
+   * done on the server, so the earlier state is set again rather than the action reversed.
+   */
+  const restore = (applied: "done" | "undone" | "defer" | "undefer") => (t: ThreadSummary) => {
+    if (t.done) {
+      if (applied !== "done") markDone.mutate({ threadId: t.id, through: t.lastMessageAt });
+    } else if (isDeferred(t.deferredUntil)) {
+      defer.mutate({ threadId: t.id, until: new Date(t.deferredUntil as string) });
+    } else if (applied === "done") {
+      markUndone.mutate({ threadId: t.id });
+    } else if (applied === "defer") {
+      defer.mutate({ threadId: t.id, until: null });
+    }
+  };
+
   const has = threads.length > 0;
   useShortcut("next", () => move(1), has);
   useShortcut("previous", () => move(-1), has);
@@ -172,10 +189,7 @@ export function useThreadListShortcuts(options: {
             : markDone.mutate({ threadId: t.id, through: t.lastMessageAt }),
         () => leavesView(undo ? "undone" : "done", view),
         (n) => `${plural(n)} ${undo ? "back in the Inbox" : "marked done"}`,
-        (t) =>
-          undo
-            ? markDone.mutate({ threadId: t.id, through: t.lastMessageAt })
-            : markUndone.mutate({ threadId: t.id }),
+        restore(undo ? "undone" : "done"),
       );
     },
     has,
@@ -189,12 +203,7 @@ export function useThreadListShortcuts(options: {
         (t) => defer.mutate({ threadId: t.id, until }),
         () => leavesView(back ? "undefer" : "defer", view),
         (n) => `${plural(n)} ${back ? "back in the Inbox" : "deferred until tomorrow"}`,
-        // Back to the deferral it had, or none.
-        (t) =>
-          defer.mutate({
-            threadId: t.id,
-            until: isDeferred(t.deferredUntil) ? new Date(t.deferredUntil as string) : null,
-          }),
+        restore(back ? "undefer" : "defer"),
       );
     },
     has,
