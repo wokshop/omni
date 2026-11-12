@@ -222,8 +222,10 @@ test("mail deleted on the server refreshes its threads for open apps and re-runs
   // A summary of the thread may quote a deleted message: every thread gets an AI job, and the
   // ones that are gone end as `missing` in the consumer.
   expect(await response.json()).toEqual({ ok: true, jobs: 150 });
-  expect(await anaSocket.next(1)).toEqual([
-    { type: "changed", mailboxId: box.id, threadIds: [kept.threadId, ...gone] },
+  const threadIds = [kept.threadId, ...gone];
+  expect(await anaSocket.next(2)).toEqual([
+    { type: "changed", mailboxId: box.id, threadIds },
+    { type: "thread.changed", mailboxId: box.id, threadIds },
   ]);
   anaSocket.socket.close();
 });
