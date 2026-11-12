@@ -6,8 +6,7 @@ import { suggestReply, type ReplyClient, type SuggestReplyInput } from "./index.
 
 const input: SuggestReplyInput = {
   subject: "Charged twice",
-  inbox: { name: "Support" },
-  agentName: "Bea",
+  inbox: "support@shop.example",
   messages: [
     {
       from: "Ana <ana@customer.example>",

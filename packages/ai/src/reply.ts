@@ -21,9 +21,8 @@ export type ReplyClient = Pick<Anthropic, "beta">;
 
 export interface SuggestReplyInput {
   subject: string;
-  /** The shared inbox the reply goes out from, and the agent who asked. */
-  inbox: { name: string };
-  agentName: string;
+  /** The shared inbox the reply goes out from: its address or display name. */
+  inbox: string;
   /** Oldest first, each message's `clean_text`. The newest fit the token budget. */
   messages: ReadonlyArray<{ from: string; fromUs: boolean; text: string }>;
   /** The inbox's and the agent's own templates; the first `MAX_CANNED_REPLIES` are offered. */
@@ -115,7 +114,7 @@ export function replyPrompt(input: SuggestReplyInput, maxInputTokens: number): s
         `--- ${oneLine(c.title)} ---\n${escapeCanned(truncateToTokens(c.body, CANNED_REPLY_TOKENS))}`,
     );
   return [
-    `Inbox: ${oneLine(input.inbox.name)}. Agent: ${oneLine(input.agentName)}.`,
+    `Inbox: ${oneLine(input.inbox)}.`,
     `<${CANNED_TAG}>\n${canned.length ? canned.join("\n") : "(none)"}\n</${CANNED_TAG}>`,
     `<${DATA_TAG}>\n${conversation.join("\n")}\n</${DATA_TAG}>`,
     "Draft the reply to the latest customer message.",
