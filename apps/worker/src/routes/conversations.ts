@@ -24,7 +24,7 @@ import { z } from "zod";
 import type { AppEnv } from "../context.ts";
 import { pingMailService } from "../mail-service.ts";
 import { limitPerMember } from "../rate-limiter.ts";
-import { fanOut } from "../realtime.ts";
+import { announceNote, fanOut, notifyMembers } from "../realtime.ts";
 import { zValidator } from "../validator.ts";
 
 const idempotencyHeader = z.object({
@@ -118,9 +118,18 @@ async function applyChange(c: Context<AppEnv>, threadId: string, change: Convers
   }
   if (result.queuedActions > 0) c.executionCtx.waitUntil(pingMailService(c.var));
   if (result.changed) {
-    const { mailboxId, id } = result.conversation;
+    const { mailboxId, id, orgId } = result.conversation;
     c.executionCtx.waitUntil(
-      fanOut(c.env, c.var.db, c.var.config, new Map([[mailboxId, new Set([id])]])),
+      Promise.all([
+        fanOut(c.env, c.var.db, c.var.config, new Map([[mailboxId, new Set([id])]])),
+        // Only an assignment notifies from here.
+        notifyMembers(c.env, c.var.db, {
+          orgId,
+          threadId: id,
+          memberIds: result.notified,
+          kind: "assigned",
+        }),
+      ]),
     );
   }
   return c.json({ conversation: result.conversation, changed: result.changed });
@@ -220,9 +229,18 @@ export const conversations = new Hono<AppEnv>()
         const [status, message] = failures[result.reason];
         throw new HTTPException(status, { message });
       }
-      const { mailboxId, id } = result.conversation;
+      const { mailboxId, id, orgId } = result.conversation;
       c.executionCtx.waitUntil(
-        fanOut(c.env, c.var.db, c.var.config, new Map([[mailboxId, new Set([id])]])),
+        Promise.all([
+          fanOut(c.env, c.var.db, c.var.config, new Map([[mailboxId, new Set([id])]])),
+          announceNote(c.env, c.var.db, { orgId, mailboxId, threadId: id, noteId: result.note.id }),
+          notifyMembers(c.env, c.var.db, {
+            orgId,
+            threadId: id,
+            memberIds: result.notified,
+            kind: "mention",
+          }),
+        ]),
       );
       return c.json({ note: result.note, notified: result.notified }, 201);
     },

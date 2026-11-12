@@ -23,6 +23,7 @@ import {
   mailboxAccess,
   mailboxFolders,
   mailboxes,
+  memberPreferences,
   members,
   messageLocations,
   messages,
@@ -172,7 +173,7 @@ async function writeEvents(
     .returning({ id: conversationEvents.id, kind: conversationEvents.kind });
 }
 
-type NotificationKind = (typeof notifications.$inferInsert)["kind"];
+export type NotificationKind = (typeof notifications.$inferInsert)["kind"];
 
 /**
  * Notifies members about this conversation, once per `dedupeKey` per member (a job that runs
@@ -644,7 +645,8 @@ async function recordFirstResponse(
 }
 
 export type InboundResult =
-  | { applied: false }
+  /** `fresh`: this is the message's first delivery (a personal mailbox, say); false on a replay. */
+  | { applied: false; fresh: boolean }
   | {
       applied: true;
       direction: "customer" | "agent";
@@ -678,9 +680,9 @@ export async function applyInboundMessage(
         automated: messages.automated,
         sentAt: messages.sentAt,
       });
-    if (!message) return { applied: false };
+    if (!message) return { applied: false, fresh: false };
     const locked = await lockConversation(tx, message.threadId, null);
-    if (!locked || locked.kind !== "shared") return { applied: false };
+    if (!locked || locked.kind !== "shared") return { applied: false, fresh: true };
     const [mailbox] = await tx
       .select({ address: mailboxes.address })
       .from(mailboxes)
@@ -1008,4 +1010,51 @@ export async function markNotificationsRead(db: Executor, memberId: string, ids:
     )
     .returning({ id: notifications.id });
   return rows.length;
+}
+
+// Realtime (B4): who hears about a conversation, and whose preferences let a notification out.
+
+/**
+ * The inbox of a thread `memberId` can see, and every member who can see it (presence goes to
+ * them). Null when the member cannot see the thread.
+ */
+export async function threadAudience(db: Executor, memberId: string, threadId: string) {
+  const [thread] = await db
+    .select({ mailboxId: threads.mailboxId, orgId: threads.orgId })
+    .from(threads)
+    .where(and(eq(threads.id, threadId), granted(db, memberId)));
+  if (!thread) return null;
+  const rows = await db
+    .select({ memberId: mailboxAccess.memberId })
+    .from(mailboxAccess)
+    .innerJoin(
+      members,
+      and(eq(members.id, mailboxAccess.memberId), eq(members.organizationId, thread.orgId)),
+    )
+    .where(eq(mailboxAccess.mailboxId, thread.mailboxId));
+  return { mailboxId: thread.mailboxId, memberIds: rows.map((r) => r.memberId) };
+}
+
+/**
+ * Of these members, those whose preferences let `kind` through `channel`. No preferences row, or
+ * no entry for the kind, means every channel is on.
+ */
+export async function membersAccepting(
+  db: Executor,
+  memberIds: string[],
+  kind: NotificationKind,
+  channel: "realtime" | "desktop" | "push",
+) {
+  if (memberIds.length === 0) return [];
+  const rows = await db
+    .select({
+      memberId: memberPreferences.memberId,
+      notifications: memberPreferences.notifications,
+    })
+    .from(memberPreferences)
+    .where(inArray(memberPreferences.memberId, memberIds));
+  const off = new Set(
+    rows.filter((r) => r.notifications[kind]?.[channel] === false).map((r) => r.memberId),
+  );
+  return memberIds.filter((m) => !off.has(m));
 }

@@ -258,11 +258,12 @@ test("the web app keeps a realtime socket per workspace, and only for the user's
     ).status,
   ).toBe(202);
   const deadline = Date.now() + 10_000;
-  while (southSocket.received.length === 0 && Date.now() < deadline) {
+  while (southSocket.received.length < 2 && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   expect(southSocket.received).toEqual([
     { type: "changed", mailboxId: southBox.id, threadIds: [thread.threadId] },
+    { type: "thread.changed", mailboxId: southBox.id, threadIds: [thread.threadId] },
   ]);
   southSocket.socket.close();
 });
