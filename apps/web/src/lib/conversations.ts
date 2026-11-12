@@ -126,12 +126,22 @@ export function inverseOf(
   switch (change.type) {
     case "resolve":
     case "snooze":
-      if (before.status === "snoozed" && before.snoozedUntil) {
-        return { type: "snooze", until: before.snoozedUntil };
+    case "reopen": {
+      // Back to the status it had: resolved, the same snooze (while still ahead), or open.
+      const unchanged =
+        (change.type === "resolve" && before.status === "resolved") ||
+        (change.type === "reopen" && (before.status === "open" || before.status === "pending")) ||
+        (change.type === "snooze" &&
+          before.status === "snoozed" &&
+          before.snoozedUntil === change.until);
+      if (unchanged) return null;
+      if (before.status === "resolved") return { type: "resolve" };
+      const until = before.snoozedUntil;
+      if (before.status === "snoozed" && until && Date.parse(until) > Date.now()) {
+        return { type: "snooze", until };
       }
-      return before.status === "resolved" ? null : { type: "reopen" };
-    case "reopen":
-      return before.status === "resolved" ? { type: "resolve" } : null;
+      return { type: "reopen" };
+    }
     case "claim":
     case "assign":
       return before.assigneeMemberId === change.memberId
