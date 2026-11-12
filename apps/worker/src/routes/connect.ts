@@ -114,9 +114,10 @@ export const connect = new Hono<AppEnv>()
 
   /**
    * Google sends the browser back here. The state must match the cookie this browser got from
-   * `/start` for this same member; then the code goes to the mail service, signed.
+   * `/start` for this same member; then the code goes to the mail service, signed. Counted with
+   * `/start`, so a kept copy of the cookie cannot be replayed into unlimited mail service calls.
    */
-  .get("/google/callback", async (c) => {
+  .get("/google/callback", limitPerMember("provision"), async (c) => {
     const raw = await getSignedCookie(c, c.var.config.auth.secret, COOKIE);
     deleteCookie(c, COOKIE, { path: COOKIE_PATH });
     let flow: { state?: string; verifier?: string; memberId?: string } = {};

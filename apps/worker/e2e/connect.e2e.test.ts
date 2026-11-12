@@ -146,6 +146,25 @@ describe("connecting a Google account", () => {
     );
   });
 
+  test("a kept flow cookie cannot be replayed into unlimited mail service calls", async () => {
+    // RATE_LIMIT_PROVISION is 30 an hour per member, shared with /start.
+    const mallory = await signedInMember("replay@connect.test");
+    const { consent, flow } = await start(mallory.session);
+    const state = consent.searchParams.get("state")!;
+    const before = mailService.requests.length;
+    const statuses: number[] = [];
+    for (let i = 0; i < 32; i++) {
+      const response = await api(
+        `/connect/google/callback?${new URLSearchParams({ code: `guess-${i}`, state })}`,
+        `${mallory.session}; ${flow}`,
+      );
+      await response.body?.cancel();
+      statuses.push(response.status);
+    }
+    expect(statuses.at(-1)).toBe(429);
+    expect(mailService.requests.length - before).toBeLessThan(30);
+  });
+
   test("a denied consent and an account in use come back as reasons, not errors", async () => {
     const cara = await signedInMember("cara@connect.test");
     const first = await start(cara.session);
