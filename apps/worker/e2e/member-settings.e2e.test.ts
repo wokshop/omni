@@ -90,6 +90,29 @@ describe("preferences", () => {
       body: JSON.stringify({ undoSendSeconds: 600 }),
     });
     expect(tooLong.status).toBe(400);
+
+    // Settings changed at once from two devices: each lands, none writes back a stale read.
+    const patches = [
+      { theme: "light" },
+      { undoSendSeconds: 20 },
+      { notifications: { assigned: { push: false } } },
+      { notifications: { customer_reply: { desktop: false } } },
+      { notifications: { mention: { realtime: false } } },
+    ];
+    await Promise.all(
+      patches.map((patch) =>
+        api("/preferences", cookie, { method: "PATCH", body: JSON.stringify(patch) }),
+      ),
+    );
+    expect(await (await api("/preferences", cookie)).json()).toMatchObject({
+      theme: "light",
+      undoSendSeconds: 20,
+      notifications: {
+        assigned: { realtime: true, desktop: true, push: false },
+        customer_reply: { realtime: true, desktop: false, push: true },
+        mention: { realtime: false, desktop: false, push: false },
+      },
+    });
   });
 });
 

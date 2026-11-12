@@ -197,7 +197,12 @@ describe("drafts", () => {
     const beaSave = await api(
       `/drafts/${draft.id}`,
       bea.cookie,
-      json("PUT", { version: 1, bodyText: "Hi Luis, the fix is out." }),
+      // Keeps the default recipient and copies Marta in.
+      json("PUT", {
+        version: 1,
+        bodyText: "Hi Luis, the fix is out.",
+        cc: [{ name: null, address: "marta@client.test" }],
+      }),
     );
     expect(((await beaSave.json()) as Draft).version).toBe(2);
     const stale = await api(
@@ -217,20 +222,27 @@ describe("drafts", () => {
         .status,
     ).toBe(404);
 
-    const send = () =>
-      api(`/drafts/${draft.id}/send`, ana.cookie, { method: "POST", key: "draft-send-1" });
-    const first = await send();
-    expect(first.status).toBe(202);
+    // Ana and Bea both click Send on the shared draft at once: one email, the other finds it gone.
+    const send = (who: { cookie: string }, key: string) =>
+      api(`/drafts/${draft.id}/send`, who.cookie, { method: "POST", key });
+    const raced = await Promise.all([send(ana, "draft-send-1"), send(bea, "draft-send-bea")]);
+    expect(raced.map((r) => r.status).toSorted()).toEqual([202, 404]);
+    const winner =
+      raced[0]!.status === 202
+        ? { who: ana, key: "draft-send-1" }
+        : { who: bea, key: "draft-send-bea" };
+    const first = raced.find((r) => r.status === 202)!;
     const { actionId } = (await first.json()) as { actionId: string };
     expect((await actionRow(actionId))?.payload).toMatchObject({
       to: ["luis@client.test"],
+      cc: ["marta@client.test"],
       subject: "Re: Broken invoice",
       text: "Hi Luis, the fix is out.",
       inReplyTo: "<invoice@client.test>",
     });
     expect((await api(`/drafts/${draft.id}`, ana.cookie)).status).toBe(404);
     // A retried click (lost response) answers the same send instead of 404 or a second mail.
-    const retry = await send();
+    const retry = await send(winner.who, winner.key);
     expect(((await retry.json()) as { actionId: string }).actionId).toBe(actionId);
     const sends = await db
       .select()

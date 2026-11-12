@@ -16,7 +16,7 @@ import {
   type Address,
   type DraftAttachment,
 } from "./schema/index.ts";
-import type { MailActionRequest, NewMailAction } from "./writers.ts";
+import type { MailActionRequest } from "./writers.ts";
 
 /** The member's undo-send window in seconds: their preference, else 5 (Rodrigo, Nov 12). */
 export async function undoSendSeconds(db: Db, memberId: string) {
@@ -25,28 +25,6 @@ export async function undoSendSeconds(db: Db, memberId: string) {
     .from(memberPreferences)
     .where(eq(memberPreferences.memberId, memberId));
   return row?.seconds ?? 5;
-}
-
-/**
- * Queues a send that the mail service may claim only after `delaySeconds`. A repeated idempotency
- * key returns the first row, as `enqueueAction` does.
- */
-export async function enqueueDelayedSend(
-  db: Db,
-  input: NewMailAction & { kind: "send" },
-  delaySeconds: number,
-) {
-  const [created] = await db
-    .insert(mailActions)
-    .values({ ...input, runAfter: sql`now() + make_interval(secs => ${delaySeconds})` })
-    .onConflictDoNothing({ target: mailActions.idempotencyKey })
-    .returning();
-  if (created) return created;
-  const [existing] = await db
-    .select()
-    .from(mailActions)
-    .where(eq(mailActions.idempotencyKey, input.idempotencyKey));
-  return existing!;
 }
 
 /**

@@ -4,11 +4,15 @@
 // transaction and queues the IMAP filing (archive on resolve, back to INBOX on reopen).
 import {
   applyConversationChange,
+  CONVERSATION_VIEWS,
+  createNote,
   createTag,
+  deleteNote,
   deleteTag,
+  markNotificationsRead,
+  NOTE_MAX_LENGTH,
+  updateNote,
   forMember,
-  listTags,
-  mailboxAssignees,
   PRIORITIES,
   updateTag,
   type ChangeResult,
@@ -26,6 +30,48 @@ import { zValidator } from "../validator.ts";
 const idempotencyHeader = z.object({
   "idempotency-key": z.string().regex(/^[A-Za-z0-9_.:-]{8,128}$/, "8-128 URL-safe characters"),
 });
+
+const cursorParam = z
+  .string()
+  .transform((value, ctx) => {
+    try {
+      const json = JSON.parse(atob(value.replaceAll("-", "+").replaceAll("_", "/")));
+      const parsed = z.object({ t: z.iso.datetime(), id: z.string().min(1) }).parse(json);
+      return { at: parsed.t, id: parsed.id };
+    } catch {
+      ctx.addIssue({ code: "custom", message: "invalid cursor" });
+      return z.NEVER;
+    }
+  })
+  .optional();
+
+function encodeCursor(at: string, id: string) {
+  return btoa(JSON.stringify({ t: at, id }))
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replace(/=+$/, "");
+}
+
+const listQuery = z.object({
+  mailboxId: z.string().min(1),
+  view: z.enum(CONVERSATION_VIEWS).default("open"),
+  tagId: z.string().min(1).optional(),
+  cursor: cursorParam,
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+});
+
+const noteBody = z.object({
+  body: z.string().trim().min(1).max(NOTE_MAX_LENGTH),
+  /** `members.id` of everyone @mentioned; the client resolves names from `/assignees`. */
+  mentions: z.array(z.string().min(1)).max(50).default([]),
+});
+const notePatchBody = z.object({ body: z.string().trim().min(1).max(NOTE_MAX_LENGTH) });
+const notificationsQuery = z.object({
+  unread: z.enum(["true", "false"]).default("false"),
+  cursor: cursorParam,
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+});
+const readBody = z.object({ ids: z.array(z.string().min(1)).min(1).max(500).optional() });
 
 const snoozeBody = z.object({ until: z.iso.datetime({ offset: true }) });
 const assigneeBody = z.object({ memberId: z.string().min(1).nullable() });
@@ -55,8 +101,8 @@ function notFound(): never {
 
 /**
  * Applies `change` as this member, then tells the inbox's members and the mail service. A retry
- * changes nothing (each change sets an absolute value, and filing is keyed by the transition),
- * so the idempotency key only has to be well formed.
+ * under the same Idempotency-Key changes nothing once the first attempt did, so it cannot undo a
+ * teammate's change made in between.
  */
 async function applyChange(c: Context<AppEnv>, threadId: string, change: ConversationChange) {
   const result: ChangeResult = await applyConversationChange(c.var.db, {
@@ -64,6 +110,7 @@ async function applyChange(c: Context<AppEnv>, threadId: string, change: Convers
     actorMemberId: c.var.member.id,
     change,
     requestId: c.var.requestId,
+    idempotencyKey: c.req.header("idempotency-key"),
   });
   if (!result.ok) {
     const [status, message] = failures[result.reason];
@@ -82,6 +129,33 @@ async function applyChange(c: Context<AppEnv>, threadId: string, change: Convers
 const writeGuards = [limitPerMember("actions"), zValidator("header", idempotencyHeader)] as const;
 
 export const conversations = new Hono<AppEnv>()
+  /**
+   * One shared inbox's conversations in a helpdesk view (`unassigned`, `mine`, `open`, `pending`,
+   * `snoozed`, `resolved`, `sla_at_risk`, `all`), optionally only those tagged `tagId`. Newest
+   * first; `sla_at_risk` soonest due first. `nextCursor` is null on the last page.
+   */
+  .get("/conversations", zValidator("query", listQuery), async (c) => {
+    const { cursor, ...query } = c.req.valid("query");
+    const rows = await forMember(c.var.db, c.var.member.id).listConversations({
+      ...query,
+      after: cursor,
+    });
+    const last = rows.at(-1);
+    const nextCursor =
+      last && rows.length === query.limit ? encodeCursor(last.pageAt, last.id) : null;
+    return c.json({ conversations: rows.map(({ pageAt: _pageAt, ...row }) => row), nextCursor });
+  })
+
+  /** Per shared inbox: each view's count (not `resolved`) and open or pending ones per tag. */
+  .get(
+    "/conversations/counts",
+    zValidator("query", z.object({ mailboxId: z.string().min(1).optional() })),
+    async (c) =>
+      c.json({
+        counts: await forMember(c.var.db, c.var.member.id).conversationCounts(c.req.valid("query")),
+      }),
+  )
+
   /** Status, assignee, priority, SLA due times, tags and the timeline events, oldest first. */
   .get("/threads/:id/conversation", async (c) => {
     const conversation = await forMember(c.var.db, c.var.member.id).getConversation(
@@ -131,15 +205,88 @@ export const conversations = new Hono<AppEnv>()
     applyChange(c, c.req.param("id"), { type: "tag", tagId: c.req.param("tagId"), add: false }),
   )
 
+  /** An internal note in the timeline; never sent. Each @mentioned teammate is notified. */
+  .post(
+    "/threads/:id/notes",
+    limitPerMember("actions"),
+    zValidator("json", noteBody),
+    async (c) => {
+      const result = await createNote(c.var.db, {
+        threadId: c.req.param("id"),
+        memberId: c.var.member.id,
+        ...c.req.valid("json"),
+      });
+      if (!result.ok) {
+        const [status, message] = failures[result.reason];
+        throw new HTTPException(status, { message });
+      }
+      const { mailboxId, id } = result.conversation;
+      c.executionCtx.waitUntil(
+        fanOut(c.env, c.var.db, c.var.config, new Map([[mailboxId, new Set([id])]])),
+      );
+      return c.json({ note: result.note, notified: result.notified }, 201);
+    },
+  )
+
+  /** The author edits their own note. */
+  .patch("/notes/:id", zValidator("json", notePatchBody), async (c) => {
+    const note = await updateNote(c.var.db, {
+      noteId: c.req.param("id"),
+      memberId: c.var.member.id,
+      body: c.req.valid("json").body,
+    });
+    if (!note) notFound();
+    return c.json({ note });
+  })
+
+  /** The author deletes their own note. */
+  .delete("/notes/:id", async (c) => {
+    const note = await deleteNote(c.var.db, {
+      noteId: c.req.param("id"),
+      memberId: c.var.member.id,
+    });
+    if (!note) notFound();
+    c.executionCtx.waitUntil(
+      fanOut(c.env, c.var.db, c.var.config, new Map([[note.mailboxId, new Set([note.threadId])]])),
+    );
+    return c.body(null, 204);
+  })
+
+  /** The member's notifications, newest first, and how many are unread. */
+  .get("/notifications", zValidator("query", notificationsQuery), async (c) => {
+    const { unread, cursor, limit } = c.req.valid("query");
+    const page = await forMember(c.var.db, c.var.member.id).listNotifications({
+      unreadOnly: unread === "true",
+      before: cursor,
+      limit,
+    });
+    const last = page.notifications.at(-1);
+    return c.json({
+      unread: page.unread,
+      notifications: page.notifications.map(({ pageAt: _pageAt, ...row }) => row),
+      nextCursor:
+        last && page.notifications.length === limit ? encodeCursor(last.pageAt, last.id) : null,
+    });
+  })
+
+  /** Marks these notifications read, or every one without `ids`. */
+  .post("/notifications/read", zValidator("json", readBody), async (c) => {
+    const { ids } = c.req.valid("json");
+    const marked = await markNotificationsRead(c.var.db, c.var.member.id, ids ?? "all");
+    return c.json({ marked });
+  })
+
   /** Who conversations in this inbox can be assigned to. */
   .get("/mailboxes/:id/assignees", async (c) => {
-    const assignees = await mailboxAssignees(c.var.db, c.var.member.id, c.req.param("id"));
+    const assignees = await forMember(c.var.db, c.var.member.id).mailboxAssignees(
+      c.req.param("id"),
+    );
     if (!assignees) notFound();
     return c.json({ assignees });
   })
 
   .get("/mailboxes/:id/tags", async (c) => {
-    const tags = await listTags(c.var.db, c.var.member.id, c.req.param("id"));
+    const tags = await forMember(c.var.db, c.var.member.id).listTags(c.req.param("id"));
     if (!tags) notFound();
     return c.json({ tags });
   })

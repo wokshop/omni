@@ -234,6 +234,15 @@ describe("replies and forwards", () => {
     expect(used?.usedAt).not.toBeNull();
     expect((await api(`/uploads/${file.id}`, ana.cookie, { method: "DELETE" })).status).toBe(404);
 
+    // The helpdesk side: the reply took the open conversation to pending, Ana claimed it by
+    // replying, and the first response is on record.
+    const [conversation] = await db
+      .select()
+      .from(schema.threads)
+      .where(eq(schema.threads.id, first.threadId));
+    expect(conversation).toMatchObject({ status: "pending", assigneeMemberId: ana.id });
+    expect(conversation?.firstRespondedAt).toBeInstanceOf(Date);
+
     // A retry (lost response) answers with the same send, though the upload is now used.
     const retried = await post(`/threads/${first.threadId}/reply`, ana.cookie, "reply-luis-1", {
       text: "Refund is on its way.",
@@ -338,6 +347,28 @@ describe("replies and forwards", () => {
     expect(
       (await action(((await bare.json()) as { actionId: string }).actionId)).payload,
     ).not.toHaveProperty("attachments");
+
+    // With 50 more files on the original, the forward would carry 51: the mail service would
+    // reject that payload for good, so the Worker refuses it up front and queues nothing.
+    await db.insert(schema.attachments).values(
+      Array.from({ length: 50 }, (_, i) => ({
+        orgId: org.id,
+        messageId: original.messageId,
+        filename: `page-${i}.pdf`,
+        mimeType: "application/pdf",
+        size: 1,
+        r2Key: `${org.id}/${inbox.id}/att/page-${i}`,
+      })),
+    );
+    const tooMany = await post(`/threads/${original.threadId}/forward`, bea.cookie, "forward-3", {
+      to: ["billing@acme.test"],
+    });
+    expect(tooMany.status).toBe(400);
+    const queued = await db
+      .select({ id: schema.mailActions.id })
+      .from(schema.mailActions)
+      .where(eq(schema.mailActions.mailboxId, inbox.id));
+    expect(queued).toHaveLength(2);
   });
 });
 

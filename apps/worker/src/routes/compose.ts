@@ -3,11 +3,11 @@
 // shared inbox the mail is from the inbox's address with the agent's name.
 import type { SendAttachment, SendPayload } from "@omni/contracts";
 import {
+  applyAgentReply,
   cancelSend,
   createDraft,
   createUpload,
   deleteDraft,
-  enqueueDelayedSend,
   getDraft,
   listDrafts,
   memberSendByKey,
@@ -15,17 +15,15 @@ import {
   undoSendSeconds,
   deleteUnsentUpload,
   forMember,
-  invalidSendAttachments,
-  markUploadsUsed,
+  enqueueSendWithAttachments,
   memberMailbox,
   memberUpload,
   newUploadId,
   senderIdentity,
   threadActionTargets,
   uploadKey,
-  type MailActionRequest,
 } from "@omni/db";
-import { sendAttachmentSchema } from "@omni/contracts";
+import { MAX_SEND_ATTACHMENTS, sendAttachmentSchema } from "@omni/contracts";
 import { forwardBody, forwardSubject, replySubject } from "@omni/mail-core/compose";
 import { Hono, type Context } from "hono";
 import { HTTPException } from "hono/http-exception";
@@ -33,6 +31,7 @@ import { z } from "zod";
 import type { AppEnv } from "../context.ts";
 import { limitPerMember } from "../rate-limiter.ts";
 import { zValidator } from "../validator.ts";
+import { fanOut } from "../realtime.ts";
 import { attachmentResponse } from "./assets.ts";
 import { idempotencyHeader, notFound, outboxKey, pingLater, type ActionMailbox } from "./mail.ts";
 
@@ -114,8 +113,8 @@ async function fromName(c: Context<AppEnv>, mailboxKind: "personal" | "shared") 
 }
 
 /**
- * Queues one send. Refuses (400) attachments the mailbox may not carry, and marks the uploads it
- * takes as used so the expiry cleanup leaves them for the mail service.
+ * Queues one send. Refuses (400) attachments the mailbox may not carry; the uploads it takes are
+ * marked used in the same transaction, so a delete or the expiry cleanup cannot remove them.
  */
 async function enqueueSend(
   c: Context<AppEnv>,
@@ -124,24 +123,16 @@ async function enqueueSend(
     attachments: SendAttachment[];
   },
   key: string,
+  draftId?: string,
 ) {
   const { attachments, ...rest } = payload;
-  const invalid = await invalidSendAttachments(c.var.db, mailbox.mailboxId, attachments);
-  if (invalid.length) {
-    throw new HTTPException(400, { message: "attachments not available to this mailbox" });
+  if (attachments.length > MAX_SEND_ATTACHMENTS) {
+    throw new HTTPException(400, {
+      message: `a message carries at most ${MAX_SEND_ATTACHMENTS} attachments`,
+    });
   }
   const name = await fromName(c, mailbox.kind);
-  const request: Extract<MailActionRequest, { kind: "send" }> = {
-    kind: "send",
-    payload: {
-      ...rest,
-      ...(name ? { fromName: name } : {}),
-      ...(attachments.length ? { attachments } : {}),
-      messageId: newMessageId(payload.from),
-    },
-  };
-  // Held for the member's undo window; cancelling inside it deletes the row (ADR 0021 §7).
-  const action = await enqueueDelayedSend(
+  const result = await enqueueSendWithAttachments(
     c.var.db,
     {
       orgId: mailbox.orgId,
@@ -149,16 +140,46 @@ async function enqueueSend(
       memberId: c.var.member.id,
       requestId: c.var.requestId,
       idempotencyKey: outboxKey(c, key, "send"),
-      ...request,
+      kind: "send",
+      payload: {
+        ...rest,
+        ...(name ? { fromName: name } : {}),
+        ...(attachments.length ? { attachments } : {}),
+        messageId: newMessageId(payload.from),
+      },
     },
-    await undoSendSeconds(c.var.db, c.var.member.id),
+    attachments,
+    {
+      // Held for the member's undo window; cancelling inside it deletes the row (ADR 0021 §7).
+      delaySeconds: await undoSendSeconds(c.var.db, c.var.member.id),
+      ...(draftId ? { draftId } : {}),
+    },
   );
-  await markUploadsUsed(
-    c.var.db,
-    attachments.flatMap((a) => (a.kind === "upload" ? [a.uploadId] : [])),
-  );
+  if ("invalid" in result) {
+    throw new HTTPException(400, { message: "attachments not available to this mailbox" });
+  }
+  if ("draftGone" in result) notFound();
   pingLater(c);
-  return action;
+  return result.action;
+}
+
+/**
+ * The helpdesk side of a reply (ADR 0021), once the send is queued: an open conversation goes
+ * pending, an unassigned one is claimed by whoever replied, and the first reply records the
+ * first response. A retried request changes nothing more; personal mailboxes are left alone.
+ */
+async function afterAgentReply(c: Context<AppEnv>, threadId: string) {
+  const result = await applyAgentReply(c.var.db, {
+    threadId,
+    memberId: c.var.member.id,
+    requestId: c.var.requestId,
+  });
+  if (!result.ok || !result.changed) return;
+  if (result.queuedActions > 0) pingLater(c);
+  const { mailboxId, id } = result.conversation;
+  c.executionCtx.waitUntil(
+    fanOut(c.env, c.var.db, c.var.config, new Map([[mailboxId, new Set([id])]])),
+  );
 }
 
 /** Drops empty optional recipient lists so payloads stay as small as before. */
@@ -184,7 +205,7 @@ type ReplyBody = z.output<typeof replyBody>;
 type ForwardBody = z.output<typeof forwardBodySchema>;
 
 /** New mail from one of the member's mailboxes. */
-async function sendNew(c: Context<AppEnv>, body: SendBody, key: string) {
+async function sendNew(c: Context<AppEnv>, body: SendBody, key: string, draftId?: string) {
   const { mailboxId, cc, bcc, ...message } = body;
   const mailbox = await memberMailbox(c.var.db, c.var.member.id, mailboxId);
   if (!mailbox) notFound();
@@ -193,10 +214,17 @@ async function sendNew(c: Context<AppEnv>, body: SendBody, key: string) {
     { orgId: mailbox.orgId, mailboxId: mailbox.id, kind: mailbox.kind },
     { from: mailbox.address, ...message, ...optionalList("cc", cc), ...optionalList("bcc", bcc) },
     key,
+    draftId,
   );
 }
 
-async function sendReply(c: Context<AppEnv>, threadId: string, body: ReplyBody, key: string) {
+async function sendReply(
+  c: Context<AppEnv>,
+  threadId: string,
+  body: ReplyBody,
+  key: string,
+  draftId?: string,
+) {
   const { found, message } = await threadMessage(c, threadId, body.messageId);
   const self = found.mailboxAddress.toLowerCase();
   const isSelf = (a: string) => a.toLowerCase() === self;
@@ -228,12 +256,19 @@ async function sendReply(c: Context<AppEnv>, threadId: string, body: ReplyBody, 
       attachments: body.attachments,
     },
     key,
+    draftId,
   );
-  // TODO(B1): applyAgentReply(db, { threadId, memberId }) once the workflow layer merges.
+  await afterAgentReply(c, threadId);
   return action;
 }
 
-async function sendForward(c: Context<AppEnv>, threadId: string, body: ForwardBody, key: string) {
+async function sendForward(
+  c: Context<AppEnv>,
+  threadId: string,
+  body: ForwardBody,
+  key: string,
+  draftId?: string,
+) {
   const { found, message } = await threadMessage(c, threadId, body.messageId);
   const kept: SendAttachment[] = body.includeAttachments
     ? message.attachments
@@ -269,6 +304,7 @@ async function sendForward(c: Context<AppEnv>, threadId: string, body: ForwardBo
       attachments: [...kept, ...body.attachments],
     },
     key,
+    draftId,
   );
 }
 
@@ -568,6 +604,7 @@ export const compose = new Hono<AppEnv>()
                 ...content,
               },
               key,
+              draft.id,
             )
           : draft.kind === "reply"
             ? await sendReply(
@@ -578,12 +615,14 @@ export const compose = new Hono<AppEnv>()
                   ...(html ? { html } : {}),
                   replyAll: false,
                   ...(draft.sourceMessageId ? { messageId: draft.sourceMessageId } : {}),
-                  // An untouched reply draft keeps the reply defaults.
+                  // An untouched reply draft keeps the default recipient; CC added to it stays.
                   ...(draft.to.length ? { to: addresses(draft.to), cc: content.cc } : {}),
+                  ...(!draft.to.length && content.cc.length ? { cc: content.cc } : {}),
                   bcc: content.bcc,
                   attachments: content.attachments,
                 },
                 key,
+                draft.id,
               )
             : await sendForward(
                 c,
@@ -600,8 +639,9 @@ export const compose = new Hono<AppEnv>()
                   attachments: content.attachments,
                 },
                 key,
+                draft.id,
               );
-      await deleteDraft(c.var.db, c.var.member.id, draft.id);
+      // The draft went with the send, in its transaction.
       return c.json(sendResponse(action), 202);
     },
   );

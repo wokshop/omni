@@ -67,12 +67,14 @@ export async function recordCustomer(db: Db, event: { messageId: string }) {
 
   const { domain, company } = companyFromAddress(address);
   const seen = message.sentAt.toISOString();
+  const newer = sql`(excluded.name is not null and (${customers.nameSeenAt} is null or excluded.name_seen_at >= ${customers.nameSeenAt}))`;
   const [customer] = await db
     .insert(customers)
     .values({
       orgId: message.orgId,
       address,
       name: message.fromName || null,
+      nameSeenAt: message.fromName ? message.sentAt : null,
       domain,
       company,
       firstSeenAt: message.sentAt,
@@ -81,8 +83,10 @@ export async function recordCustomer(db: Db, event: { messageId: string }) {
     .onConflictDoUpdate({
       target: [customers.orgId, customers.address],
       set: {
-        // The newest name a person used wins; a message without one keeps the old.
-        name: sql`case when excluded.last_seen_at >= ${customers.lastSeenAt} then coalesce(excluded.name, ${customers.name}) else coalesce(${customers.name}, excluded.name) end`,
+        // The name from the newest message that had one wins, in whatever order mail arrives;
+        // a message without a name changes nothing.
+        name: sql`case when ${newer} then excluded.name else ${customers.name} end`,
+        nameSeenAt: sql`case when ${newer} then excluded.name_seen_at else ${customers.nameSeenAt} end`,
         firstSeenAt: sql`least(${customers.firstSeenAt}, ${seen}::timestamptz)`,
         lastSeenAt: sql`greatest(${customers.lastSeenAt}, ${seen}::timestamptz)`,
         updatedAt: new Date(),

@@ -2,7 +2,7 @@
 // status rule on ingest, resolve filing the mail through the outbox, and the snooze clock.
 import { randomUUID } from "node:crypto";
 import { addLocation, schema, upsertFolder } from "@omni/db";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import {
   createMailbox,
@@ -152,7 +152,11 @@ describe("explicit actions", () => {
     expect(thread!.archived).toBe(true);
     await mailService.waitFor(1);
 
-    // The mail service filed it: the copy now lives in Archive.
+    // The mail service filed it: the archive ran and the copy now lives in Archive.
+    await db
+      .update(schema.mailActions)
+      .set({ status: "done" })
+      .where(eq(schema.mailActions.mailboxId, desk.inbox.id));
     await db
       .delete(schema.messageLocations)
       .where(eq(schema.messageLocations.messageId, asked.messageId));
@@ -244,6 +248,54 @@ describe("explicit actions", () => {
     });
     expect(await removed.json()).toMatchObject({ changed: true });
     expect((await conversation(threadId, desk.anaCookie)).tags).toEqual([]);
+  });
+
+  test("undoing a resolve before the archive runs cancels it, so the mail never leaves INBOX", async () => {
+    const { db } = database;
+    const desk = await supportDesk("undo");
+    const { threadId } = await seedMessage(db, desk.inbox, {
+      subject: "Undo me",
+      fromAddress: "x@client.test",
+      uid: 1,
+    });
+    await post(`/threads/${threadId}/resolve`, desk.anaCookie);
+    const [archive] = await db
+      .select({ runAfter: schema.mailActions.runAfter })
+      .from(schema.mailActions)
+      .where(eq(schema.mailActions.mailboxId, desk.inbox.id));
+    // Not claimable yet: the undo window is still open.
+    expect(archive!.runAfter.getTime()).toBeGreaterThan(Date.now());
+
+    await post(`/threads/${threadId}/reopen`, desk.anaCookie);
+    expect(await queued(db, desk.inbox.id)).toEqual([]);
+    const [thread] = await db
+      .select({ archived: schema.threads.archived, status: schema.threads.status })
+      .from(schema.threads)
+      .where(eq(schema.threads.id, threadId));
+    expect(thread).toEqual({ archived: false, status: "open" });
+  });
+
+  test("a retried request does not undo a teammate's change made in between", async () => {
+    const { db } = database;
+    const desk = await supportDesk("retry");
+    const beaCookie = await signIn(worker, db, "bea@retry.test");
+    const { threadId } = await seedMessage(db, desk.inbox, {
+      subject: "Retry",
+      fromAddress: "x@client.test",
+      uid: 1,
+    });
+    const key = { "idempotency-key": `assign-${randomUUID()}` };
+    const assignToAna = () =>
+      api(`/threads/${threadId}/assignee`, desk.anaCookie, {
+        method: "PUT",
+        headers: key,
+        body: JSON.stringify({ memberId: desk.ana.id }),
+      });
+    expect(await (await assignToAna()).json()).toMatchObject({ changed: true });
+    await put(`/threads/${threadId}/assignee`, beaCookie, { memberId: desk.bea.id });
+    // Ana's client retries after a timeout: Bea keeps it.
+    expect(await (await assignToAna()).json()).toMatchObject({ changed: false });
+    expect((await conversation(threadId, desk.anaCookie)).assigneeMemberId).toBe(desk.bea.id);
   });
 
   test("a personal mailbox has no conversation workflow", async () => {
@@ -346,7 +398,7 @@ describe("ingest", () => {
     ]);
   });
 
-  test("a Sent copy indexed after the customer already answered does not make it pending", async () => {
+  test("a Sent copy indexed after the customer already answered does not make it pending, but counts as the first response", async () => {
     const { db } = database;
     const desk = await supportDesk("late-sent");
     const t0 = Date.now() - 60_000;
@@ -373,7 +425,10 @@ describe("ingest", () => {
     });
     await created(desk, asked.threadId, answer.messageId);
     await created(desk, asked.threadId, reply.messageId, "sent");
-    expect((await conversation(asked.threadId, desk.anaCookie)).status).toBe("open");
+    const state = await conversation(asked.threadId, desk.anaCookie);
+    expect(state.status).toBe("open");
+    // It still answered the first question.
+    expect(state.firstRespondedAt).toBe(new Date(t0 + 1_000).toISOString());
   });
 });
 
@@ -423,4 +478,233 @@ test("the minute cron wakes a snooze that is over, and only that one", async () 
     ["snoozed", desk.ana.id],
     ["open", null],
   ]);
+});
+
+describe("views and counts", () => {
+  type Page = {
+    conversations: { id: string; tags: { id: string }[] }[];
+    nextCursor: string | null;
+  };
+
+  async function view(cookie: string, mailboxId: string, query: string) {
+    const ids: string[] = [];
+    let cursor: string | null = null;
+    // Pages of two, so a keyset bug drops or repeats a row.
+    do {
+      const response = await api(
+        `/conversations?mailboxId=${mailboxId}&limit=2&${query}${cursor ? `&cursor=${cursor}` : ""}`,
+        cookie,
+      );
+      expect(response.status).toBe(200);
+      const page = (await response.json()) as Page;
+      ids.push(...page.conversations.map((c) => c.id));
+      cursor = page.nextCursor;
+    } while (cursor);
+    return ids;
+  }
+
+  test("each view holds exactly its conversations, pages without gaps, and counts agree", async () => {
+    const { db } = database;
+    const desk = await supportDesk("views");
+    const at = (minutesAgo: number) => new Date(Date.now() - minutesAgo * 60_000);
+    const seed = async (n: number) =>
+      (
+        await seedMessage(db, desk.inbox, {
+          subject: `Case ${n}`,
+          fromAddress: `c${n}@client.test`,
+          uid: n,
+          sentAt: at(100 - n),
+        })
+      ).threadId;
+    // Newest last: c1 is the oldest.
+    const [c1, c2, c3, c4, c5, c6, c7] = await Promise.all([1, 2, 3, 4, 5, 6, 7].map(seed));
+
+    await post(`/threads/${c2}/claim`, desk.anaCookie);
+    await put(`/threads/${c3}/assignee`, desk.anaCookie, { memberId: desk.bea.id });
+    await post(`/threads/${c4}/claim`, desk.anaCookie);
+    await db.update(schema.threads).set({ status: "pending" }).where(eq(schema.threads.id, c4!));
+    await post(`/threads/${c5}/snooze`, desk.anaCookie, {
+      until: new Date(Date.now() + 3_600_000).toISOString(),
+    });
+    await post(`/threads/${c6}/resolve`, desk.anaCookie);
+    // SLA: c7 is overdue, c1 due in 10 minutes, c3 due tomorrow (not at risk). Postgres keeps
+    // microseconds that a JS Date drops; a cursor built from a Date repeats the boundary row.
+    await db
+      .update(schema.threads)
+      .set({ firstResponseDueAt: sql`now() - interval '5 minutes 0.000123 seconds'` })
+      .where(eq(schema.threads.id, c7!));
+    await db
+      .update(schema.threads)
+      .set({ nextResponseDueAt: sql`now() + interval '10 minutes 0.000456 seconds'` })
+      .where(eq(schema.threads.id, c1!));
+    await db
+      .update(schema.threads)
+      .set({ resolutionDueAt: at(-24 * 60) })
+      .where(eq(schema.threads.id, c3!));
+    const { tag } = (await (
+      await post(`/mailboxes/${desk.inbox.id}/tags`, desk.anaCookie, { name: "VIP" })
+    ).json()) as { tag: { id: string } };
+    await post(`/threads/${c1}/tags`, desk.anaCookie, { tagId: tag.id });
+    await post(`/threads/${c6}/tags`, desk.anaCookie, { tagId: tag.id });
+
+    const box = desk.inbox.id;
+    const expected = {
+      unassigned: [c7, c1],
+      mine: [c4, c2],
+      open: [c7, c3, c2, c1],
+      pending: [c4],
+      snoozed: [c5],
+      resolved: [c6],
+      sla_at_risk: [c7, c1],
+    };
+    for (const [name, ids] of Object.entries(expected)) {
+      expect([name, await view(desk.anaCookie, box, `view=${name}`)]).toEqual([name, ids]);
+    }
+    expect(await view(desk.anaCookie, box, `view=all&tagId=${tag.id}`)).toEqual([c6, c1]);
+    expect(await view(desk.anaCookie, box, `view=open&tagId=${tag.id}`)).toEqual([c1]);
+    // Carl cannot see the inbox: every view is empty for him.
+    expect(await view(desk.carlCookie, box, "view=open")).toEqual([]);
+
+    const counts = (await (
+      await api(`/conversations/counts?mailboxId=${box}`, desk.anaCookie)
+    ).json()) as {
+      counts: { mailboxId: string; views: Record<string, number>; tags: Record<string, number> }[];
+    };
+    expect(counts.counts).toEqual([
+      {
+        orgId: desk.org.id,
+        mailboxId: box,
+        views: { unassigned: 2, mine: 2, open: 4, pending: 1, snoozed: 1, sla_at_risk: 2 },
+        tags: { [tag.id]: 1 },
+      },
+    ]);
+  });
+});
+
+describe("notes and notifications", () => {
+  type Notifications = {
+    notifications: { id: string; kind: string; threadId: string; noteId: string | null }[];
+    unread: number;
+  };
+
+  test("mentions, assignment and customer replies notify the right teammate once, and only while they can see it", async () => {
+    const { db } = database;
+    const desk = await supportDesk("notes");
+    const beaCookie = await signIn(worker, db, "bea@notes.test");
+    const asked = await seedMessage(db, desk.inbox, {
+      subject: "Broken export",
+      fromAddress: "luis@client.test",
+      uid: 1,
+      sentAt: new Date(Date.now() - 60_000),
+    });
+
+    // Carl cannot see the inbox: his mention is dropped, Ana's own mention notifies nobody.
+    const created = await post(`/threads/${asked.threadId}/notes`, desk.anaCookie, {
+      body: "@Bea can you check the CSV path? cc @Carl",
+      mentions: [desk.bea.id, desk.carl.id, desk.ana.id],
+    });
+    expect(created.status).toBe(201);
+    const { note } = (await created.json()) as { note: { id: string; mentions: string[] } };
+    expect(note.mentions).toEqual([desk.bea.id, desk.ana.id]);
+    expect(
+      (await post(`/threads/${asked.threadId}/notes`, desk.carlCookie, { body: "x" })).status,
+    ).toBe(404);
+
+    // Claiming notifies nobody; handing it to Bea notifies Bea.
+    await post(`/threads/${asked.threadId}/claim`, desk.anaCookie);
+    await put(`/threads/${asked.threadId}/assignee`, desk.anaCookie, { memberId: desk.bea.id });
+
+    // Luis writes back on Bea's conversation; the event is delivered twice.
+    const back = await seedMessage(db, desk.inbox, {
+      subject: "Re: Broken export",
+      fromAddress: "luis@client.test",
+      uid: 2,
+      threadId: asked.threadId,
+    });
+    const event = {
+      events: [
+        {
+          type: "message.created" as const,
+          orgId: desk.org.id,
+          mailboxId: desk.inbox.id,
+          threadId: asked.threadId,
+          messageId: back.messageId,
+          folderRole: "inbox" as const,
+        },
+      ],
+    };
+    await postMailEvents(worker, event);
+    await postMailEvents(worker, event);
+
+    const bea = (await (await api("/notifications", beaCookie)).json()) as Notifications;
+    expect(bea.notifications.map((n) => [n.kind, n.threadId, n.noteId])).toEqual([
+      ["customer_reply", asked.threadId, null],
+      ["assigned", asked.threadId, null],
+      ["mention", asked.threadId, note.id],
+    ]);
+    expect(bea.unread).toBe(3);
+    // One per page walks the same list, even for notifications inside one millisecond: the
+    // cursor keeps Postgres's microseconds, where a JS Date would skip the older ones.
+    for (const [i, n] of bea.notifications.entries()) {
+      await db
+        .update(schema.notifications)
+        .set({
+          createdAt: sql`date_trunc('milliseconds', now()) + make_interval(secs => ${(3 - i) * 0.0001})`,
+        })
+        .where(eq(schema.notifications.id, n.id));
+    }
+    const paged: string[] = [];
+    let cursor: string | null = null;
+    do {
+      const page = (await (
+        await api(`/notifications?limit=1${cursor ? `&cursor=${cursor}` : ""}`, beaCookie)
+      ).json()) as Notifications & { nextCursor: string | null };
+      paged.push(...page.notifications.map((n) => n.id));
+      cursor = page.nextCursor;
+    } while (cursor && paged.length < 10);
+    const whole = (await (await api("/notifications", beaCookie)).json()) as Notifications;
+    expect(paged).toEqual(whole.notifications.map((n) => n.id));
+    expect(paged).toHaveLength(3);
+    const ana = (await (await api("/notifications", desk.anaCookie)).json()) as Notifications;
+    expect(ana.notifications).toEqual([]);
+    const carl = (await (await api("/notifications", desk.carlCookie)).json()) as Notifications;
+    expect(carl.notifications).toEqual([]);
+
+    // Read one, then all.
+    await post("/notifications/read", beaCookie, { ids: [bea.notifications[0]!.id] });
+    expect(
+      ((await (await api("/notifications?unread=true", beaCookie)).json()) as Notifications).unread,
+    ).toBe(2);
+    await post("/notifications/read", beaCookie, {});
+    expect(((await (await api("/notifications", beaCookie)).json()) as Notifications).unread).toBe(
+      0,
+    );
+
+    // Only the author edits or deletes a note; deleting takes its timeline event with it.
+    const patch = await api(`/notes/${note.id}`, beaCookie, {
+      method: "PATCH",
+      body: JSON.stringify({ body: "hijacked" }),
+    });
+    expect(patch.status).toBe(404);
+    let state = await conversation(asked.threadId, desk.anaCookie);
+    expect((state as unknown as { notes: { body: string }[] }).notes.map((n) => n.body)).toEqual([
+      "@Bea can you check the CSV path? cc @Carl",
+    ]);
+    expect((await api(`/notes/${note.id}`, desk.anaCookie, { method: "DELETE" })).status).toBe(204);
+    state = await conversation(asked.threadId, desk.anaCookie);
+    expect(state.events.some((e) => e.kind === "note")).toBe(false);
+
+    // Bea leaves the inbox: its notifications go with her access.
+    await db
+      .delete(schema.mailboxAccess)
+      .where(
+        and(
+          eq(schema.mailboxAccess.mailboxId, desk.inbox.id),
+          eq(schema.mailboxAccess.memberId, desk.bea.id),
+        ),
+      );
+    expect(
+      ((await (await api("/notifications", beaCookie)).json()) as Notifications).notifications,
+    ).toEqual([]);
+  });
 });
