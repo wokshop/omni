@@ -1,12 +1,18 @@
 import * as Sentry from "@sentry/cloudflare";
 import { REQUEST_ID_HEADER as SIGNED_REQUEST_ID_HEADER } from "@omni/crypto";
-import { forUser, orgSetupStep } from "@omni/db";
+import { orgSetupStep } from "@omni/db";
 import { Hono } from "hono";
 import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
 import { routePath } from "hono/route";
 import { requireWritableWorkspace } from "./billing.ts";
-import { findMember, requestScope, requireMember, type AppEnv } from "./context.ts";
+import {
+  findMember,
+  requestScope,
+  requireMember,
+  requireThreadMember,
+  type AppEnv,
+} from "./context.ts";
 import type { Config } from "./env.ts";
 import { createLogger, REQUEST_ID_HEADER, requestIdFrom } from "./log.ts";
 import { MEMBER_HEADER } from "./realtime.ts";
@@ -61,24 +67,12 @@ const trace = createMiddleware<AppEnv>(async (c, next) => {
   }
 });
 
-/**
- * Thread routes (mail and assets) act as the user's member in the thread's org (ADR 0014), so a
- * thread opened from the cross-workspace list reads and changes as that member without
- * switching the active org. A thread none of their members can see keeps the active member, and
- * the route answers 404 as before.
- */
-const actAsThreadMember = createMiddleware<AppEnv>(async (c, next) => {
-  const threadId = c.req.param("id");
-  const member = threadId && (await forUser(c.var.db, c.var.user.id).memberFor(threadId));
-  if (member) c.set("member", member);
-  await next();
-});
-
 const api = new Hono<AppEnv>()
+  // Thread routes (mail and assets) act as the user's member in the thread's org (ADR 0014).
+  .use("/threads/:id/*", requireThreadMember)
   .use(requireMember)
-  .use("/threads/:id/*", actAsThreadMember)
   // Deny by default: every write below needs a plan in good standing unless `READ_ONLY_ALLOWED`
-  // (billing.ts) names it. After `actAsThreadMember`, so a thread write checks the thread's org.
+  // (billing.ts) names it. After `requireThreadMember`, so a thread write checks the thread's org.
   .use(requireWritableWorkspace)
   /** The member in the active org, with how far that org's setup got (route guards read it). */
   .get("/me", async (c) =>
