@@ -87,6 +87,10 @@ export const connect = new Hono<AppEnv>()
     const state = randomToken(24);
     const verifier = randomToken(48);
     const back: Return = c.req.query("return") === "onboarding" ? "onboarding" : "settings";
+    // Pin setup where it stands before the mail service saves a mailbox: a workspace with a
+    // mailbox and no setup row reads as finished (`orgSetupStep`), which would skip the rest of
+    // setup. An org that already has a mailbox keeps the step it reads as now.
+    await advanceOrgSetup(c.var.db, c.var.member.orgId, "created");
     await setSignedCookie(
       c,
       COOKIE,

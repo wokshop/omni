@@ -49,11 +49,14 @@ export function googleErrorText(reason: string): string {
   }
 }
 
-/** Refetches what connecting or disconnecting changed: the lists, setup and the switcher. */
+/**
+ * Refetches what connecting or disconnecting changed: every mail query (a disconnected inbox's
+ * threads, counts and search results are gone, and nothing says so over realtime), setup and the
+ * switcher.
+ */
 export const refreshAfterGoogle = (client: QueryClient) =>
   Promise.all([
-    client.invalidateQueries({ queryKey: keys.googleAccounts() }),
-    client.invalidateQueries({ queryKey: keys.mailboxes() }),
+    client.invalidateQueries({ queryKey: keys.mail() }),
     client.invalidateQueries({ queryKey: keys.onboarding() }),
     client.invalidateQueries({ queryKey: keys.workspaces() }),
   ]);
