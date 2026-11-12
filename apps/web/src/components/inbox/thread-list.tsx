@@ -15,6 +15,7 @@ import { FluidHoverHighlight } from "@/components/ui/fluid-hover-highlight";
 import { GridList, GridListItem } from "@/components/ui/grid-list";
 import { Heading } from "@/components/ui/heading";
 import { useFluidHoverList } from "@/hooks/use-fluid-hover-list";
+import { ResizeGrip, useStoredWidth } from "@/components/ui/resize-grip";
 import { useFullScreen } from "@/hooks/use-full-screen.ts";
 import { useCounts, useThreads } from "@/hooks/use-mail.ts";
 import { useThreadListShortcuts } from "@/hooks/use-thread-list-shortcuts.ts";
@@ -22,6 +23,11 @@ import { useWorkspaceNames } from "@/hooks/use-workspaces.ts";
 import { ariaKeyShortcuts } from "@/lib/shortcuts.ts";
 import { senderLabel } from "@/lib/threads.ts";
 import type { ThreadFilter, ThreadSummary, ThreadView } from "@/lib/types.ts";
+
+// The list beside an open thread: wide enough for a sender, subject and preview line.
+const LIST_WIDTH = 440;
+const LIST_MIN = 320;
+const LIST_MAX = 720;
 
 /** What a list row shows. Threads and search results both map to it. */
 export interface ListRow {
@@ -103,6 +109,10 @@ export function List(
   // Full screen (toggled from the conversation's toolbar): an open thread takes the whole width.
   const hideList = fullScreen && !!threadId;
   const listRef = useRef<HTMLElement>(null);
+  // Beside an open thread the list keeps a width the person can drag; alone it fills the page.
+  const split = !!threadId && !hideList;
+  const listWidth = useStoredWidth("omni:list-width", LIST_WIDTH, LIST_MIN, LIST_MAX);
+  const [resizing, setResizing] = useState(false);
 
   return (
     // Viewport height, so the virtualized list is its own scroll container however tall the
@@ -139,10 +149,11 @@ export function List(
         </div>
       </header>
 
-      <div className="flex min-h-0 flex-1">
+      <div className={`flex min-h-0 flex-1 ${resizing ? "cursor-ew-resize select-none" : ""}`}>
         <section
           ref={listRef}
-          className={`flex min-w-0 flex-1 flex-col ${hideList ? "hidden" : ""}`}
+          style={split ? { width: listWidth.width } : undefined}
+          className={`flex min-w-0 flex-col ${split ? "flex-none" : "flex-1"} ${hideList ? "hidden" : ""}`}
         >
           <div className="flex h-10.5 items-center gap-2 border-b px-5">
             <CheckboxField
@@ -174,7 +185,21 @@ export function List(
             </RowHover>
           </ListSweepSlot>
         </section>
-        {props.children}
+        {/* Always the same wrapper, so full screen doesn't remount the thread (or its scroll). */}
+        {props.children && (
+          <div className="relative flex min-w-0 flex-1">
+            {split && (
+              <ResizeGrip
+                label="Resize list"
+                width={() => listWidth.width}
+                onResize={listWidth.set}
+                onReset={listWidth.reset}
+                onResizingChange={setResizing}
+              />
+            )}
+            {props.children}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -269,9 +294,10 @@ function ThreadRow({ thread, href }: { thread: ListRow; href: string }) {
         initials={sender.slice(0, 1).toUpperCase()}
         className="shrink-0 bg-accent text-foreground outline-0 [--avatar-radius:var(--radius-sm)] [--avatar-size:--spacing(7)]"
       />
-      {/* 16px gap plus 16px margin: the frame's 32px between avatar and sender. */}
+      {/* 16px gap plus 16px margin: the frame's 32px between avatar and sender. The sender
+          column narrows with the list beside an open thread, so the subject keeps room. */}
       <span
-        className={`ms-4 w-68 shrink-0 truncate ${thread.unread ? "text-foreground" : "text-muted-foreground"}`}
+        className={`ms-4 w-[min(--spacing(68),30%)] shrink-0 truncate ${thread.unread ? "text-foreground" : "text-muted-foreground"}`}
       >
         {sender}
       </span>
