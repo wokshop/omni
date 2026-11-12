@@ -62,7 +62,7 @@ export function Conversation({ threadId }: { threadId: string }) {
   const subject = thread.messages.at(-1)?.subject || thread.messages[0]?.subject || "";
 
   return (
-    <section aria-label="Conversation" className="flex min-w-0 flex-1 flex-col border-s">
+    <section aria-label="Conversation" className="flex min-w-0 flex-1 flex-col">
       <Actions thread={thread} />
       <div ref={scroller} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex max-w-3xl flex-col gap-6 px-5 py-6">
@@ -133,7 +133,7 @@ function Actions({ thread }: { thread: Thread }) {
   const deferred = isDeferred(thread.deferredUntil);
 
   return (
-    <div className="flex h-10.5 shrink-0 items-center gap-1 border-b px-3">
+    <div className="flex h-10.5 shrink-0 items-center gap-1 border-b pe-3">
       <Action label="Archive" onPress={() => archive.mutate({ threadId })}>
         <IconArchive />
       </Action>
