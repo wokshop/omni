@@ -1,11 +1,7 @@
-import {
-  ArrowsPointingOutIcon,
-  PencilSquareIcon,
-  ViewColumnsIcon,
-} from "@heroicons/react/24/outline";
+import { PencilSquareIcon } from "@heroicons/react/24/outline";
 import { useParams } from "@tanstack/react-router";
 import { memo, useMemo, useRef, useState, type ReactNode } from "react";
-import type { Key, Selection } from "react-aria-components";
+import type { Selection } from "react-aria-components";
 import { Collection } from "react-aria-components/Collection";
 import { GridListLoadMoreItem } from "react-aria-components/GridList";
 import { ListLayout, Virtualizer } from "react-aria-components/Virtualizer";
@@ -13,14 +9,13 @@ import { ListSweepSlot } from "@/components/inbox/list-sweep";
 import { SearchPopover } from "@/components/search/search-popover";
 import { buttonStyles } from "@/components/ui/button";
 import { Link } from "@/components/ui/link";
-import { Separator } from "@/components/ui/separator";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Avatar } from "@/components/ui/avatar";
 import { Checkbox, CheckboxField } from "@/components/ui/checkbox";
 import { FluidHoverHighlight } from "@/components/ui/fluid-hover-highlight";
 import { GridList, GridListItem } from "@/components/ui/grid-list";
 import { Heading } from "@/components/ui/heading";
 import { useFluidHoverList } from "@/hooks/use-fluid-hover-list";
+import { useFullScreen } from "@/hooks/use-full-screen.ts";
 import { useCounts, useThreads } from "@/hooks/use-mail.ts";
 import { useThreadListShortcuts } from "@/hooks/use-thread-list-shortcuts.ts";
 import { useWorkspaceNames } from "@/hooks/use-workspaces.ts";
@@ -103,10 +98,10 @@ export function List(
   const unread = props.count ?? 0;
   const [selected, setSelected] = useState<Selection>(new Set());
   const count = selected === "all" ? threads.length : selected.size;
-  const [view, setView] = useViewMode();
+  const [fullScreen] = useFullScreen();
   const { threadId } = useParams({ strict: false });
-  // List view: an open thread takes the whole width; split view: it sits beside the list.
-  const hideList = view === "list" && !!threadId;
+  // Full screen (toggled from the conversation's toolbar): an open thread takes the whole width.
+  const hideList = fullScreen && !!threadId;
   const listRef = useRef<HTMLElement>(null);
 
   return (
@@ -132,25 +127,6 @@ export function List(
           {unread > 0 && <span className="ms-1 text-primary tabular-nums">{unread}</span>}
         </Heading>
         <div className="ms-auto flex items-center gap-2">
-          <ToggleGroup
-            size="sq-xs"
-            aria-label="View"
-            selectionMode="single"
-            disallowEmptySelection
-            selectedKeys={[view]}
-            onSelectionChange={(keys: Set<Key>) => {
-              const next = [...keys][0];
-              if (next === "list" || next === "split") setView(next);
-            }}
-          >
-            <ToggleGroupItem id="list" aria-label="List">
-              <ArrowsPointingOutIcon />
-            </ToggleGroupItem>
-            <ToggleGroupItem id="split" aria-label="Split">
-              <ViewColumnsIcon />
-            </ToggleGroupItem>
-          </ToggleGroup>
-          <Separator orientation="vertical" className="mx-1 h-4" />
           <SearchPopover />
           <Link
             href="/compose"
@@ -277,28 +253,6 @@ interface ShortcutsSource {
 function ListShortcuts(props: Parameters<typeof useThreadListShortcuts>[0]) {
   useThreadListShortcuts(props);
   return null;
-}
-
-type ViewMode = "list" | "split";
-
-/** List or split, remembered in this browser. */
-function useViewMode() {
-  const [view, setView] = useState<ViewMode>(() => {
-    try {
-      return localStorage.getItem("omni:view") === "list" ? "list" : "split";
-    } catch {
-      return "split";
-    }
-  });
-  const set = (next: ViewMode) => {
-    setView(next);
-    try {
-      localStorage.setItem("omni:view", next);
-    } catch {
-      // Storage unavailable (private mode): the choice lasts for this page only.
-    }
-  };
-  return [view, set] as const;
 }
 
 function ThreadRow({ thread, href }: { thread: ListRow; href: string }) {

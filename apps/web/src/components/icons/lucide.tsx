@@ -25,6 +25,8 @@ import {
   Mail,
   Mailbox,
   MailOpen,
+  Maximize2,
+  Minimize2,
   Paperclip,
   Pencil,
   Plus,
@@ -77,6 +79,8 @@ export const IconList = thin(List, "IconList");
 export const IconMail = thin(Mail, "IconMail");
 export const IconMailbox = thin(Mailbox, "IconMailbox");
 export const IconMailOpen = thin(MailOpen, "IconMailOpen");
+export const IconMaximize = thin(Maximize2, "IconMaximize");
+export const IconMinimize = thin(Minimize2, "IconMinimize");
 export const IconPaperclip = thin(Paperclip, "IconPaperclip");
 export const IconPencil = thin(Pencil, "IconPencil");
 export const IconPlus = thin(Plus, "IconPlus");

@@ -6,12 +6,15 @@ import {
   IconInbox,
   IconMail,
   IconMailOpen,
+  IconMaximize,
+  IconMinimize,
 } from "@/components/icons/lucide";
 import { Button } from "@/components/ui/button";
 import { Heading } from "@/components/ui/heading";
 import { ShowMore } from "@/components/ui/show-more";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipTrigger } from "@/components/ui/tooltip";
+import { useFullScreen } from "@/hooks/use-full-screen.ts";
 import { useThread } from "@/hooks/use-mail.ts";
 import {
   useArchive,
@@ -122,7 +125,7 @@ function Entry({ children }: { children: ReactNode }) {
   );
 }
 
-/** Archive, done, defer and read state, over the conversation like the list's caption bar. */
+/** Archive, done, defer, read state and full screen, at the right of the bar over the conversation. */
 function Actions({ thread }: { thread: Thread }) {
   const threadId = thread.id;
   const archive = useArchive();
@@ -131,9 +134,10 @@ function Actions({ thread }: { thread: Thread }) {
   const markDone = useMarkDone();
   const markUndone = useMarkUndone();
   const deferred = isDeferred(thread.deferredUntil);
+  const [fullScreen, toggleFullScreen] = useFullScreen();
 
   return (
-    <div className="flex h-10.5 shrink-0 items-center gap-1 border-b pe-3">
+    <div className="flex h-10.5 shrink-0 items-center justify-end gap-1 border-b pe-2">
       <Action label="Archive" onPress={() => archive.mutate({ threadId })}>
         <IconArchive />
       </Action>
@@ -163,6 +167,9 @@ function Actions({ thread }: { thread: Thread }) {
         onPress={() => markRead.mutate({ threadId, read: !thread.read })}
       >
         {thread.read ? <IconMail /> : <IconMailOpen />}
+      </Action>
+      <Action label={fullScreen ? "Side by side" : "Full screen"} onPress={toggleFullScreen}>
+        {fullScreen ? <IconMinimize /> : <IconMaximize />}
       </Action>
     </div>
   );
