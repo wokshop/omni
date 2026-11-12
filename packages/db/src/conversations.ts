@@ -931,7 +931,7 @@ export async function createNote(
  */
 export async function updateNote(
   db: Executor,
-  input: { noteId: string; memberId: string; body: string },
+  input: { threadId: string; noteId: string; memberId: string; body: string },
 ) {
   const [row] = await db
     .update(notes)
@@ -939,6 +939,7 @@ export async function updateNote(
     .where(
       and(
         eq(notes.id, input.noteId),
+        eq(notes.threadId, input.threadId),
         eq(notes.authorMemberId, input.memberId),
         exists(
           db
@@ -958,13 +959,17 @@ export async function updateNote(
 }
 
 /** Deletes the author's own note (its timeline event and notifications go with it). */
-export async function deleteNote(db: Executor, input: { noteId: string; memberId: string }) {
+export async function deleteNote(
+  db: Executor,
+  input: { threadId: string; noteId: string; memberId: string },
+) {
   return db.transaction(async (tx) => {
     const [row] = await tx
       .delete(notes)
       .where(
         and(
           eq(notes.id, input.noteId),
+          eq(notes.threadId, input.threadId),
           eq(notes.authorMemberId, input.memberId),
           exists(
             tx

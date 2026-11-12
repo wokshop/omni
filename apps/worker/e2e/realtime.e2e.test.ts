@@ -308,7 +308,13 @@ test("notes and assignments notify teammates live, as their preferences allow", 
     (await api(`/threads/${desk.threadId}/assignee`, "PUT", { memberId: desk.bea.id })).status,
   ).toBe(200);
 
-  await bea.next(6);
+  // Editing the note refreshes it for teammates too.
+  expect(
+    (await api(`/threads/${desk.threadId}/notes/${note.id}`, "PATCH", { body: "@Bea please" }))
+      .status,
+  ).toBe(200);
+
+  await bea.next(8);
   await quiet();
   // The two requests' fan-outs run after their responses, so they may interleave.
   const helpdesk = bea.received
@@ -318,7 +324,7 @@ test("notes and assignments notify teammates live, as their preferences allow", 
     { type: "note.created", mailboxId: desk.inbox.id, threadId: desk.threadId, noteId: note.id },
     { type: "notification", threadId: desk.threadId, kind: "assigned" },
   ]);
-  expect(bea.received.filter((e) => e.type === "thread.changed")).toHaveLength(2);
+  expect(bea.received.filter((e) => e.type === "thread.changed")).toHaveLength(3);
   expect(carl.received).toEqual([]);
   bea.socket.close();
   carl.socket.close();

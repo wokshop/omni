@@ -246,21 +246,29 @@ export const conversations = new Hono<AppEnv>()
     },
   )
 
-  /** The author edits their own note. */
-  .patch("/notes/:id", zValidator("json", notePatchBody), async (c) => {
+  /**
+   * The author edits their own note. Under `/threads/:id`, so the member is the thread's
+   * workspace's (a note opened from All mailboxes is in another workspace than the active one).
+   */
+  .patch("/threads/:id/notes/:noteId", zValidator("json", notePatchBody), async (c) => {
     const note = await updateNote(c.var.db, {
-      noteId: c.req.param("id"),
+      threadId: c.req.param("id"),
+      noteId: c.req.param("noteId"),
       memberId: c.var.member.id,
       body: c.req.valid("json").body,
     });
     if (!note) notFound();
+    c.executionCtx.waitUntil(
+      fanOut(c.env, c.var.db, c.var.config, new Map([[note.mailboxId, new Set([note.threadId])]])),
+    );
     return c.json({ note });
   })
 
   /** The author deletes their own note. */
-  .delete("/notes/:id", async (c) => {
+  .delete("/threads/:id/notes/:noteId", async (c) => {
     const note = await deleteNote(c.var.db, {
-      noteId: c.req.param("id"),
+      threadId: c.req.param("id"),
+      noteId: c.req.param("noteId"),
       memberId: c.var.member.id,
     });
     if (!note) notFound();
