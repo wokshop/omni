@@ -898,6 +898,30 @@ describe("SLAs", () => {
       iso(t1 + minutes(180)),
     );
 
+    // A Sent copy indexed late answers only what came before it: the customer has waited since
+    // their next message, not since the one it answered.
+    const t2 = t0 + minutes(9);
+    const more = await seedMessage(db, desk.inbox, {
+      subject: "Re: Broken",
+      fromAddress: "luis@client.test",
+      uid: 3,
+      threadId: asked.threadId,
+      sentAt: new Date(t2),
+    });
+    await delivered(desk, asked.threadId, more.messageId);
+    const lateCopy = await seedMessage(db, desk.inbox, {
+      subject: "Re: Broken",
+      fromAddress: desk.inbox.address,
+      folder: "Sent",
+      uid: 2,
+      threadId: asked.threadId,
+      sentAt: new Date(t1 + 30_000),
+    });
+    await delivered(desk, asked.threadId, lateCopy.messageId, "sent");
+    expect((await dueOf(asked.threadId, desk.anaCookie)).nextResponseDueAt).toBe(
+      iso(t2 + minutes(180)),
+    );
+
     await post(`/threads/${asked.threadId}/resolve`, desk.anaCookie);
     expect(await dueOf(asked.threadId, desk.anaCookie)).toEqual({
       firstResponseDueAt: null,

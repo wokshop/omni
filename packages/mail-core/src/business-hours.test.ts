@@ -36,6 +36,31 @@ describe("addBusinessMinutes", () => {
     expect(addBusinessMinutes(friday, 90, ny)).toEqual(new Date("2026-03-09T13:30:00Z"));
   });
 
+  test("a window in the hour repeated when DST ends opens at its first occurrence", () => {
+    // Bug: east of UTC both offset guesses converge on the second 02:00, an hour late.
+    const berlin: BusinessSchedule = {
+      timezone: "Europe/Berlin",
+      windows: [{ day: 0, start: "02:00", end: "03:00" }],
+      holidays: [],
+    };
+    // Sunday 2026-10-25: 02:00 CEST is 00:00Z, the repeated 02:00 CET is 01:00Z.
+    expect(addBusinessMinutes(new Date("2026-10-24T22:00:00Z"), 30, berlin)).toEqual(
+      new Date("2026-10-25T00:30:00Z"),
+    );
+  });
+
+  test("a target longer than a year of staffed time still gets a due time", () => {
+    // Bug: a fixed 400-day search turned a long but valid target into "untracked".
+    const due = addBusinessMinutes(
+      cdmx("2026-11-12T09:00:00"),
+      525_600,
+      weekdays("09:00", "17:00"),
+    );
+    expect(due).not.toBeNull();
+    // 525,600 staffed minutes at 40 hours a week is about 4.2 years.
+    expect(due!.getUTCFullYear()).toBe(2031);
+  });
+
   test("holidays are closed all day", () => {
     // Bug: a holiday's hours count, so tickets breach over the closure.
     const schedule = { ...weekdays("09:00", "17:00"), holidays: ["2026-11-16"] };
