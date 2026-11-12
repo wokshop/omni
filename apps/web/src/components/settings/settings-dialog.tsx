@@ -205,7 +205,7 @@ function useWorkspacePages() {
 }
 
 /** The paths that only open settings: closing it there returns to the inbox. */
-const SETTINGS_PATHS = new Set(["/settings", "/settings/billing"]);
+const SETTINGS_PATHS = new Set(["/settings", "/settings/billing", "/settings/accounts"]);
 
 function matches(page: Pick<PageDefinition, "title" | "terms">, query: string) {
   const q = query.trim().toLowerCase();

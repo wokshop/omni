@@ -49,27 +49,17 @@ export function ConnectedAccountsPage() {
   const disconnect = useDisconnectGoogle();
   const [leaving, setLeaving] = useState<{ mailboxId: string; address: string } | null>(null);
 
-  if (google.data && !google.data.available) {
-    return (
-      <SettingsSections>
-        <SettingsSection title="Google">
-          <SettingsEmptyState
-            variant="restricted"
-            title="Google isn't set up on this server"
-            description="Whoever runs this Omni can add a Google OAuth client to turn it on."
-          />
-        </SettingsSection>
-      </SettingsSections>
-    );
-  }
-
   const accounts = google.data?.accounts;
+  // Without an OAuth client nothing new connects, but accounts made before stay listed, so they
+  // can still be disconnected (the mail service needs no client for that).
+  const available = google.data?.available !== false;
   return (
     <SettingsSections>
       <SettingsSection
         title="Google"
         info="Your own Gmail, read and answered in Omni. Only you see it."
         actions={
+          available &&
           accounts &&
           accounts.length > 0 && <ConnectGoogleButton from="settings" label="Connect another" />
         }
@@ -81,10 +71,18 @@ export function ConnectedAccountsPage() {
         >
           {(list) =>
             list.length === 0 ? (
-              <SettingsEmptyState
-                title="No Google account connected"
-                action={<ConnectGoogleButton from="settings" />}
-              />
+              available ? (
+                <SettingsEmptyState
+                  title="No Google account connected"
+                  action={<ConnectGoogleButton from="settings" />}
+                />
+              ) : (
+                <SettingsEmptyState
+                  variant="restricted"
+                  title="Google isn't set up on this server"
+                  description="Whoever runs this Omni can add a Google OAuth client to turn it on."
+                />
+              )
             ) : (
               <SettingsGroup>
                 {list.map((account) => (
