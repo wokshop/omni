@@ -1,12 +1,15 @@
-// The thread list's keys (`j`/`k`, `o`, `x`, `e`, `h`, `u`, Esc). The cursor is the focused row:
+// The thread list's keys (`j`/`k`, `o`, `x`, `e`, `h`, `u`, `z`, Esc). The cursor is the focused row:
 // moving it moves real focus, so React Aria and screen readers follow it.
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, type RefObject } from "react";
 import type { Selection } from "react-aria-components";
 import { DEFER_MS, isDeferred, leavesView } from "../lib/threads.ts";
 import type { ThreadSummary, ThreadView } from "../lib/types.ts";
+import { offerUndo } from "../lib/undo.ts";
+import { usePrefetchThread } from "./use-mail.ts";
 import { useDefer, useMarkDone, useMarkRead, useMarkUndone } from "./use-mail-actions.ts";
 import { announce, useShortcut } from "./use-shortcuts.ts";
+import { useUndo } from "./use-undo.ts";
 
 const plural = (n: number) => (n === 1 ? "Thread" : `${n} threads`);
 
@@ -31,6 +34,9 @@ export function useThreadListShortcuts(options: {
   const markDone = useMarkDone();
   const markUndone = useMarkUndone();
   const defer = useDefer();
+  const prefetch = usePrefetchThread();
+  // Binds `z` to the standing undo offer wherever the list is, toast or not.
+  useUndo();
   // The last row that had focus, so the cursor survives focus moving to the thread pane.
   const cursorRef = useRef<string | null>(null);
   const ids = threads.map((t) => t.id);
@@ -82,6 +88,11 @@ export function useThreadListShortcuts(options: {
     if (next >= ids.length) options.loadMore?.();
     const id = ids[Math.max(0, Math.min(ids.length - 1, next))];
     if (!id) return;
+    // Warm the row landed on and the one after it, so opening (or the next j/k with the list
+    // hidden) renders from cache.
+    prefetch(id);
+    const ahead = ids[next + delta];
+    if (ahead) prefetch(ahead);
     if (listHidden) open(id);
     else focusRow(id);
   };
@@ -102,6 +113,7 @@ export function useThreadListShortcuts(options: {
     run: (t: ThreadSummary) => void,
     leaves: (t: ThreadSummary) => boolean,
     said: (n: number) => string,
+    inverse?: (t: ThreadSummary) => void,
   ) => {
     const list = targets();
     if (!list.length) return;
@@ -114,6 +126,7 @@ export function useThreadListShortcuts(options: {
     list.forEach(run);
     setSelected(new Set());
     announce(said(list.length));
+    if (inverse) offerUndo(said(list.length), () => list.forEach(inverse));
     const current = cursor();
     if (current && gone.has(current) && neighbour) {
       cursorRef.current = neighbour;
@@ -159,6 +172,10 @@ export function useThreadListShortcuts(options: {
             : markDone.mutate({ threadId: t.id, through: t.lastMessageAt }),
         () => leavesView(undo ? "undone" : "done", view),
         (n) => `${plural(n)} ${undo ? "back in the Inbox" : "marked done"}`,
+        (t) =>
+          undo
+            ? markDone.mutate({ threadId: t.id, through: t.lastMessageAt })
+            : markUndone.mutate({ threadId: t.id }),
       );
     },
     has,
@@ -172,6 +189,12 @@ export function useThreadListShortcuts(options: {
         (t) => defer.mutate({ threadId: t.id, until }),
         () => leavesView(back ? "undefer" : "defer", view),
         (n) => `${plural(n)} ${back ? "back in the Inbox" : "deferred until tomorrow"}`,
+        // Back to the deferral it had, or none.
+        (t) =>
+          defer.mutate({
+            threadId: t.id,
+            until: isDeferred(t.deferredUntil) ? new Date(t.deferredUntil as string) : null,
+          }),
       );
     },
     has,
