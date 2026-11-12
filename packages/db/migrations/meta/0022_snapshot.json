@@ -1,6 +1,6 @@
 {
-  "id": "3cc6f650-ca3b-4df9-8883-647e76f70429",
-  "prevId": "33bea192-f934-44a0-9e55-51d502805ad9",
+  "id": "36241ea3-8498-4350-a773-e57586575776",
+  "prevId": "16eea9e0-5f1c-4774-961b-2470cdf4b84c",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2052,6 +2052,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "name_seen_at": {
+          "name": "name_seen_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
         "domain": {
           "name": "domain",
           "type": "text",
@@ -3649,12 +3655,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": 0
-        },
-        "forwarded": {
-          "name": "forwarded",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
         },
         "notify_pending": {
           "name": "notify_pending",
