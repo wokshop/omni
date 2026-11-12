@@ -9,7 +9,13 @@ export type NotificationKind = (typeof schema.notificationKind.enumValues)[numbe
  * This member has a new notification about the thread (`GET /api/notifications` lists it). Sent
  * only to members whose preferences allow realtime notifications of that kind.
  */
-export type NotificationEvent = { type: "notification"; threadId: string; kind: NotificationKind };
+export type NotificationEvent =
+  | { type: "notification"; threadId: string; kind: NotificationKind }
+  /**
+   * Notifications this member had about the thread were withdrawn (the note that mentioned them
+   * was deleted): refetch the list. Never show it as a new notification.
+   */
+  | { type: "notification.removed"; threadId: string };
 
 /**
  * What the Worker's realtime Durable Object broadcasts: the events typed from its `broadcast`,
@@ -227,6 +233,11 @@ function parseEvent(data: string): RealtimeEvent | undefined {
       return undefined;
     }
     return { type: "notification", threadId, kind: kind as NotificationKind };
+  }
+  if (event.type === "notification.removed") {
+    return isId(event.threadId)
+      ? { type: "notification.removed", threadId: event.threadId }
+      : undefined;
   }
   return parseHelpdeskEvent(value as Record<string, unknown>);
 }

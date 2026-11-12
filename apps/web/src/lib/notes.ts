@@ -89,8 +89,13 @@ export const editNoteMutation = (client: QueryClient) =>
   mutationOptions({
     mutationKey: [...keys.mail(), "note-edit"],
     scope,
-    mutationFn: ({ noteId, body }: { threadId: string; noteId: string; body: string }) =>
-      call(api.notes[":id"].$patch({ param: { id: noteId }, json: { body } })),
+    mutationFn: ({ threadId, noteId, body }: { threadId: string; noteId: string; body: string }) =>
+      call(
+        api.threads[":id"].notes[":noteId"].$patch({
+          param: { id: threadId, noteId },
+          json: { body },
+        }),
+      ),
     onMutate: async ({ threadId, noteId, body }) => {
       const before = await snapshotConversation(client, threadId);
       const now = new Date().toISOString();
@@ -112,8 +117,8 @@ export const deleteNoteMutation = (client: QueryClient) =>
   mutationOptions({
     mutationKey: [...keys.mail(), "note-delete"],
     scope,
-    mutationFn: ({ noteId }: { threadId: string; noteId: string }) =>
-      call(api.notes[":id"].$delete({ param: { id: noteId } })),
+    mutationFn: ({ threadId, noteId }: { threadId: string; noteId: string }) =>
+      call(api.threads[":id"].notes[":noteId"].$delete({ param: { id: threadId, noteId } })),
     onMutate: async ({ threadId, noteId }) => {
       const before = await snapshotConversation(client, threadId);
       setNotes(client, threadId, (notes) => notes.filter((n) => n.id !== noteId));
