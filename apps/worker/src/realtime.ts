@@ -1,5 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
-import type { HelpdeskRealtimeEvent } from "@omni/contracts";
+import type { HelpdeskRealtimeEvent, SlaTarget } from "@omni/contracts";
 import {
   forMember,
   mailboxAudience,
@@ -292,6 +292,34 @@ export async function announceNote(
       mailboxId: note.mailboxId,
       threadId: note.threadId,
       noteId: note.noteId,
+    },
+  );
+}
+
+/** Tells everyone who can see the inbox that a conversation's SLA is at risk or breached. */
+export async function announceSla(
+  env: Env,
+  db: Db,
+  alert: {
+    orgId: string;
+    mailboxId: string;
+    threadId: string;
+    target: SlaTarget;
+    kind: "sla_at_risk" | "sla_breached";
+    dueAt: Date;
+  },
+) {
+  const audience = await mailboxAudience(db, [alert.mailboxId]);
+  if (audience.length === 0) return;
+  const stub = env.REALTIME.get(env.REALTIME.idFromName(alert.orgId));
+  await stub.broadcast(
+    audience.map((row) => row.memberId),
+    {
+      type: alert.kind === "sla_at_risk" ? "sla.at_risk" : "sla.breached",
+      mailboxId: alert.mailboxId,
+      threadId: alert.threadId,
+      target: alert.target,
+      dueAt: alert.dueAt.toISOString(),
     },
   );
 }

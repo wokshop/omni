@@ -7,17 +7,22 @@ import {
   CONVERSATION_VIEWS,
   createNote,
   createTag,
+  deleteBusinessHours,
   deleteNote,
+  deleteSlaPolicy,
   deleteTag,
   markNotificationsRead,
   NOTE_MAX_LENGTH,
   updateNote,
   forMember,
   PRIORITIES,
+  putBusinessHours,
+  putSlaPolicy,
   updateTag,
   type ChangeResult,
   type ConversationChange,
 } from "@omni/db";
+import { isTimeZone, type BusinessHoursWindow } from "@omni/mail-core/business-hours";
 import { Hono, type Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
@@ -86,6 +91,45 @@ const newTagBody = z.object({ name: z.string().trim().min(1).max(64), color: tag
 const tagPatchBody = z
   .object({ name: z.string().trim().min(1).max(64).optional(), color: tagColor.optional() })
   .refine((patch) => patch.name !== undefined || patch.color !== undefined, "nothing to change");
+
+/** A target in minutes, up to a year; null leaves it untracked. */
+const targetMinutes = z.number().int().min(1).max(525_600).nullable();
+const slaPolicyBody = z.object({
+  firstResponseMinutes: targetMinutes,
+  nextResponseMinutes: targetMinutes,
+  resolutionMinutes: targetMinutes,
+  businessHoursOnly: z.boolean().default(true),
+});
+const clockTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$|^24:00$/, "HH:MM");
+const businessHoursBody = z.object({
+  timezone: z.string().refine(isTimeZone, "an IANA time zone, e.g. America/Mexico_City"),
+  windows: z
+    .array(
+      z
+        .object({
+          /** 0 is Sunday. */
+          day: z
+            .number()
+            .int()
+            .min(0)
+            .max(6)
+            .transform((d) => d as BusinessHoursWindow["day"]),
+          start: clockTime,
+          end: clockTime,
+        })
+        .refine((w) => w.start < w.end, "end after start"),
+    )
+    .max(70),
+  holidays: z.array(z.iso.date()).max(400).default([]),
+});
+
+/** Owners and admins change inbox settings. Better Auth stores several roles as a comma list. */
+function requireManager(c: Context<AppEnv>) {
+  const { role } = c.var.member;
+  if (!role.split(",").some((r) => r.trim() === "owner" || r.trim() === "admin")) {
+    throw new HTTPException(403, { message: "only owners and admins change SLA settings" });
+  }
+}
 
 const failures = {
   not_found: [404, "not found"],
@@ -309,6 +353,63 @@ export const conversations = new Hono<AppEnv>()
     );
     if (!assignees) notFound();
     return c.json({ assignees });
+  })
+
+  /** The inbox's SLA targets per priority and its business hours (null: always open). */
+  .get("/mailboxes/:id/sla", async (c) => {
+    const settings = await forMember(c.var.db, c.var.member.id).slaSettings(c.req.param("id"));
+    if (!settings) notFound();
+    return c.json(settings);
+  })
+
+  /**
+   * Sets the inbox's targets for one priority. Open conversations' due times move to match; an
+   * alert already sent for the old due time is not sent again for it.
+   */
+  .put("/mailboxes/:id/sla/:priority", zValidator("json", slaPolicyBody), async (c) => {
+    requireManager(c);
+    const priority = z.enum(PRIORITIES).safeParse(c.req.param("priority"));
+    if (!priority.success) notFound();
+    const ok = await putSlaPolicy(
+      c.var.db,
+      c.var.member.orgId,
+      c.req.param("id"),
+      priority.data,
+      c.req.valid("json"),
+    );
+    if (!ok) notFound();
+    return c.json({ ok: true as const });
+  })
+
+  /** Stops tracking SLAs for one priority. */
+  .delete("/mailboxes/:id/sla/:priority", async (c) => {
+    requireManager(c);
+    const priority = z.enum(PRIORITIES).safeParse(c.req.param("priority"));
+    if (!priority.success) notFound();
+    if (!(await deleteSlaPolicy(c.var.db, c.var.member.orgId, c.req.param("id"), priority.data))) {
+      notFound();
+    }
+    return c.body(null, 204);
+  })
+
+  /** When the inbox is staffed; SLA targets with `businessHoursOnly` count only these hours. */
+  .put("/mailboxes/:id/business-hours", zValidator("json", businessHoursBody), async (c) => {
+    requireManager(c);
+    const ok = await putBusinessHours(
+      c.var.db,
+      c.var.member.orgId,
+      c.req.param("id"),
+      c.req.valid("json"),
+    );
+    if (!ok) notFound();
+    return c.json({ ok: true as const });
+  })
+
+  /** Back to always open. */
+  .delete("/mailboxes/:id/business-hours", async (c) => {
+    requireManager(c);
+    if (!(await deleteBusinessHours(c.var.db, c.var.member.orgId, c.req.param("id")))) notFound();
+    return c.body(null, 204);
   })
 
   .get("/mailboxes/:id/tags", async (c) => {

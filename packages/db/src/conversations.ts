@@ -15,6 +15,7 @@ import {
 import { and, asc, eq, exists, gt, inArray, isNotNull, isNull, lte, ne, sql } from "drizzle-orm";
 import { uuidv7 } from "uuidv7";
 import type { Db } from "./client.ts";
+import { setSlaClocks } from "./sla.ts";
 import {
   conversationEvents,
   conversationPriority,
@@ -91,6 +92,8 @@ const conversationColumns = {
   firstResponseDueAt: threads.firstResponseDueAt,
   nextResponseDueAt: threads.nextResponseDueAt,
   resolutionDueAt: threads.resolutionDueAt,
+  responseClockAt: threads.responseClockAt,
+  resolutionClockAt: threads.resolutionClockAt,
   customerId: threads.customerId,
 };
 
@@ -107,6 +110,8 @@ export type ConversationRow = {
   firstResponseDueAt: Date | null;
   nextResponseDueAt: Date | null;
   resolutionDueAt: Date | null;
+  responseClockAt: Date | null;
+  resolutionClockAt: Date | null;
   customerId: string | null;
 };
 
@@ -381,6 +386,11 @@ async function applyStatus(
   if (!written) return { row, changed: false, queuedActions: 0 };
   let queuedActions = 0;
   if (updated.status === "resolved" && row.status !== "resolved") {
+    // Resolved: nobody is waiting on us any more (ADR 0023).
+    Object.assign(
+      updated,
+      await setSlaClocks(tx, updated, { responseClockAt: null, resolutionClockAt: null }),
+    );
     queuedActions = await fileMail(
       tx,
       updated,
@@ -545,7 +555,12 @@ export async function applyConversationChange(
             dedupeKey,
           },
         ]);
-        applied = { row: { ...row, priority: change.priority }, changed: true, queuedActions: 0 };
+        // The new priority's targets apply to the clocks already running.
+        applied = {
+          row: await setSlaClocks(tx, { ...row, priority: change.priority }),
+          changed: true,
+          queuedActions: 0,
+        };
         break;
       case "tag": {
         const [tag] = await tx
@@ -612,10 +627,11 @@ export async function applyAgentReply(
       ? { row: status.row, changed: false }
       : await assign(tx, status.row, input.memberId, input.memberId, now, { cause: "first_reply" });
     const responded = await recordFirstResponse(tx, claimed.row, input.memberId, now);
+    const answered = await setSlaClocks(tx, responded.row, { responseClockAt: null });
     return {
       ok: true,
       changed: status.changed || claimed.changed || responded.changed,
-      conversation: responded.row,
+      conversation: answered,
       queuedActions: status.queuedActions,
       notified: [],
     };
@@ -684,7 +700,7 @@ export async function applyInboundMessage(
     const locked = await lockConversation(tx, message.threadId, null);
     if (!locked || locked.kind !== "shared") return { applied: false, fresh: true };
     const [mailbox] = await tx
-      .select({ address: mailboxes.address })
+      .select({ address: mailboxes.address, createdAt: mailboxes.createdAt })
       .from(mailboxes)
       .where(eq(mailboxes.id, locked.mailboxId));
     const { kind: _kind, ...row } = locked;
@@ -701,6 +717,15 @@ export async function applyInboundMessage(
         null,
         { data: { messageId: input.messageId } },
       );
+      // The customer is waiting from when they wrote (never later than now). Mail sent before the
+      // inbox was connected is history: a first sync must not start, and breach, every clock.
+      if (!message.automated && mailbox && message.sentAt >= mailbox.createdAt) {
+        const since = message.sentAt > now ? now : message.sentAt;
+        applied.row = await setSlaClocks(tx, applied.row, {
+          responseClockAt: applied.row.responseClockAt ?? since,
+          resolutionClockAt: applied.row.resolutionClockAt ?? since,
+        });
+      }
       // The assignee hears when their customer writes back (not for an auto-reply).
       const notified =
         applied.row.assigneeMemberId && !message.automated
@@ -758,11 +783,13 @@ export async function applyInboundMessage(
           messageId: input.messageId,
         })
       : { row: status.row, changed: false };
+    // Our reply stops the response clock, unless the customer has written since (a late copy).
+    const answered = await setSlaClocks(tx, responded.row, newer ? {} : { responseClockAt: null });
     return {
       applied: true,
       direction: "agent",
       changed: status.changed || responded.changed,
-      conversation: responded.row,
+      conversation: answered,
       queuedActions: status.queuedActions,
       notified: [],
     };

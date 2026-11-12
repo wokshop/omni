@@ -399,6 +399,13 @@ export const threads = pgTable(
     firstResponseDueAt: timestamptz("first_response_due_at"),
     nextResponseDueAt: timestamptz("next_response_due_at"),
     resolutionDueAt: timestamptz("resolution_due_at"),
+    /**
+     * SLA clocks (ADR 0023). When the customer started waiting for the reply we owe (cleared by
+     * our reply), and when the current open stretch began (cleared by resolve). The due times
+     * above are these plus the inbox's targets for the priority, in business hours.
+     */
+    responseClockAt: timestamptz("response_clock_at"),
+    resolutionClockAt: timestamptz("resolution_clock_at"),
     firstRespondedAt: timestamptz("first_responded_at"),
     resolvedAt: timestamptz("resolved_at"),
     createdAt: createdAt(),

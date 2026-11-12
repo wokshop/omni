@@ -714,3 +714,338 @@ describe("notes and notifications", () => {
     ).toEqual([]);
   });
 });
+
+describe("SLAs", () => {
+  const minutes = (n: number) => n * 60_000;
+
+  // One desk for every SLA test (sign-ins are rate limited); each test gets its own inbox.
+  let team: Awaited<ReturnType<typeof supportDesk>> & { beaCookie: string };
+  beforeAll(async () => {
+    const { db } = database;
+    const desk = await supportDesk("sla");
+    await db
+      .update(schema.members)
+      .set({ role: "admin" })
+      .where(eq(schema.members.id, desk.ana.id));
+    team = { ...desk, beaCookie: await signIn(worker, database.db, "bea@sla.test") };
+  });
+
+  /** A new inbox of the desk that Ana and Bea see, connected a day ago. Ana is an org admin. */
+  async function slaDesk(name: string) {
+    const { db } = database;
+    const inbox = await createMailbox(db, team.org.id, `${name}@sla.test`);
+    await grant(db, team.org.id, inbox.id, team.ana.id);
+    await grant(db, team.org.id, inbox.id, team.bea.id);
+    await db
+      .update(schema.mailboxes)
+      .set({ createdAt: new Date(Date.now() - minutes(24 * 60)) })
+      .where(eq(schema.mailboxes.id, inbox.id));
+    return { ...team, inbox };
+  }
+
+  function delivered(
+    desk: { org: { id: string }; inbox: { id: string } },
+    threadId: string,
+    messageId: string,
+    folderRole: "inbox" | "sent" = "inbox",
+  ) {
+    return postMailEvents(worker, {
+      events: [
+        {
+          type: "message.created",
+          orgId: desk.org.id,
+          mailboxId: desk.inbox.id,
+          threadId,
+          messageId,
+          folderRole,
+        },
+      ],
+    });
+  }
+
+  type Due = {
+    firstResponseDueAt: string | null;
+    nextResponseDueAt: string | null;
+    resolutionDueAt: string | null;
+  };
+  const dueOf = async (threadId: string, cookie: string) => {
+    const { firstResponseDueAt, nextResponseDueAt, resolutionDueAt } = (await conversation(
+      threadId,
+      cookie,
+    )) as unknown as Due;
+    return { firstResponseDueAt, nextResponseDueAt, resolutionDueAt };
+  };
+  const iso = (ms: number) => new Date(ms).toISOString();
+
+  test("only owners and admins change targets and hours; teammates read them; others see nothing", async () => {
+    const desk = await slaDesk("sla-settings");
+    const policy = {
+      firstResponseMinutes: 60,
+      nextResponseMinutes: 240,
+      resolutionMinutes: null,
+      businessHoursOnly: false,
+    };
+    expect((await put(`/mailboxes/${desk.inbox.id}/sla/high`, desk.beaCookie, policy)).status).toBe(
+      403,
+    );
+    expect((await put(`/mailboxes/${desk.inbox.id}/sla/high`, desk.anaCookie, policy)).status).toBe(
+      200,
+    );
+    expect((await put(`/mailboxes/${desk.inbox.id}/sla/vip`, desk.anaCookie, policy)).status).toBe(
+      404,
+    );
+    const badZone = await put(`/mailboxes/${desk.inbox.id}/business-hours`, desk.anaCookie, {
+      timezone: "Mars/Olympus",
+      windows: [],
+    });
+    expect(badZone.status).toBe(400);
+    const hours = {
+      timezone: "America/Mexico_City",
+      windows: [{ day: 1, start: "09:00", end: "17:00" }],
+      holidays: ["2026-12-25"],
+    };
+    expect(
+      (await put(`/mailboxes/${desk.inbox.id}/business-hours`, desk.anaCookie, hours)).status,
+    ).toBe(200);
+
+    const read = await api(`/mailboxes/${desk.inbox.id}/sla`, desk.beaCookie);
+    expect(await read.json()).toEqual({
+      policies: [{ priority: "high", ...policy }],
+      businessHours: hours,
+    });
+    // Carl is in the org but cannot see the inbox: not even its settings.
+    expect((await api(`/mailboxes/${desk.inbox.id}/sla`, desk.carlCookie)).status).toBe(404);
+  });
+
+  test("clocks start on a customer's message, stop on our reply, restart as next response, and clear on resolve", async () => {
+    const { db } = database;
+    const desk = await slaDesk("sla-clocks");
+    await put(`/mailboxes/${desk.inbox.id}/sla/normal`, desk.anaCookie, {
+      firstResponseMinutes: 60,
+      nextResponseMinutes: 120,
+      resolutionMinutes: 600,
+      businessHoursOnly: false,
+    });
+    const t0 = Date.now() - minutes(10);
+    const asked = await seedMessage(db, desk.inbox, {
+      subject: "Broken",
+      fromAddress: "luis@client.test",
+      uid: 1,
+      sentAt: new Date(t0),
+    });
+    await delivered(desk, asked.threadId, asked.messageId);
+    // Due from when the customer wrote, not from when we indexed it.
+    expect(await dueOf(asked.threadId, desk.anaCookie)).toEqual({
+      firstResponseDueAt: iso(t0 + minutes(60)),
+      nextResponseDueAt: null,
+      resolutionDueAt: iso(t0 + minutes(600)),
+    });
+
+    // Triage (or a teammate) raises the priority: the urgent targets apply to the same clocks.
+    await put(`/mailboxes/${desk.inbox.id}/sla/urgent`, desk.anaCookie, {
+      firstResponseMinutes: 15,
+      nextResponseMinutes: 30,
+      resolutionMinutes: null,
+      businessHoursOnly: false,
+    });
+    await put(`/threads/${asked.threadId}/priority`, desk.anaCookie, { priority: "urgent" });
+    expect(await dueOf(asked.threadId, desk.anaCookie)).toEqual({
+      firstResponseDueAt: iso(t0 + minutes(15)),
+      nextResponseDueAt: null,
+      resolutionDueAt: null,
+    });
+    await put(`/threads/${asked.threadId}/priority`, desk.anaCookie, { priority: "normal" });
+
+    const reply = await seedMessage(db, desk.inbox, {
+      subject: "Re: Broken",
+      fromAddress: desk.inbox.address,
+      folder: "Sent",
+      uid: 1,
+      threadId: asked.threadId,
+      sentAt: new Date(t0 + minutes(5)),
+    });
+    await delivered(desk, asked.threadId, reply.messageId, "sent");
+    expect(await dueOf(asked.threadId, desk.anaCookie)).toEqual({
+      firstResponseDueAt: null,
+      nextResponseDueAt: null,
+      resolutionDueAt: iso(t0 + minutes(600)),
+    });
+
+    const t1 = t0 + minutes(8);
+    const again = await seedMessage(db, desk.inbox, {
+      subject: "Re: Broken",
+      fromAddress: "luis@client.test",
+      uid: 2,
+      threadId: asked.threadId,
+      sentAt: new Date(t1),
+    });
+    await delivered(desk, asked.threadId, again.messageId);
+    // The resolution clock keeps running from the first message.
+    expect(await dueOf(asked.threadId, desk.anaCookie)).toEqual({
+      firstResponseDueAt: null,
+      nextResponseDueAt: iso(t1 + minutes(120)),
+      resolutionDueAt: iso(t0 + minutes(600)),
+    });
+
+    // A looser target moves open conversations' due times at once.
+    await put(`/mailboxes/${desk.inbox.id}/sla/normal`, desk.anaCookie, {
+      firstResponseMinutes: 60,
+      nextResponseMinutes: 180,
+      resolutionMinutes: 600,
+      businessHoursOnly: false,
+    });
+    expect((await dueOf(asked.threadId, desk.anaCookie)).nextResponseDueAt).toBe(
+      iso(t1 + minutes(180)),
+    );
+
+    await post(`/threads/${asked.threadId}/resolve`, desk.anaCookie);
+    expect(await dueOf(asked.threadId, desk.anaCookie)).toEqual({
+      firstResponseDueAt: null,
+      nextResponseDueAt: null,
+      resolutionDueAt: null,
+    });
+  });
+
+  test("mail from before the inbox was connected, and auto-replies, start no clock", async () => {
+    const { db } = database;
+    const desk = await slaDesk("sla-history");
+    await put(`/mailboxes/${desk.inbox.id}/sla/normal`, desk.anaCookie, {
+      firstResponseMinutes: 60,
+      nextResponseMinutes: null,
+      resolutionMinutes: null,
+      businessHoursOnly: false,
+    });
+    // A first sync brings in last year's mail: it must not all breach at once.
+    const old = await seedMessage(db, desk.inbox, {
+      subject: "Old",
+      fromAddress: "a@client.test",
+      uid: 1,
+      sentAt: new Date(Date.now() - minutes(3 * 24 * 60)),
+    });
+    await delivered(desk, old.threadId, old.messageId);
+    expect((await dueOf(old.threadId, desk.anaCookie)).firstResponseDueAt).toBeNull();
+
+    const bounce = await seedMessage(db, desk.inbox, {
+      subject: "Out of office",
+      fromAddress: "b@client.test",
+      uid: 2,
+    });
+    await db
+      .update(schema.messages)
+      .set({ automated: true })
+      .where(eq(schema.messages.id, bounce.messageId));
+    await delivered(desk, bounce.threadId, bounce.messageId);
+    expect((await dueOf(bounce.threadId, desk.anaCookie)).firstResponseDueAt).toBeNull();
+  });
+
+  test("business hours push a due time past closing to the next opening", async () => {
+    const { db } = database;
+    const desk = await slaDesk("sla-hours");
+    await put(`/mailboxes/${desk.inbox.id}/business-hours`, desk.anaCookie, {
+      timezone: "UTC",
+      // Open one hour a day, every day.
+      windows: [0, 1, 2, 3, 4, 5, 6].map((day) => ({ day, start: "09:00", end: "10:00" })),
+    });
+    await put(`/mailboxes/${desk.inbox.id}/sla/normal`, desk.anaCookie, {
+      firstResponseMinutes: 90,
+      nextResponseMinutes: null,
+      resolutionMinutes: null,
+      businessHoursOnly: true,
+    });
+    const sentAt = new Date(Date.now() - minutes(1));
+    const asked = await seedMessage(db, desk.inbox, {
+      subject: "Hours",
+      fromAddress: "a@client.test",
+      uid: 1,
+      sentAt,
+    });
+    await delivered(desk, asked.threadId, asked.messageId);
+    const due = new Date((await dueOf(asked.threadId, desk.anaCookie)).firstResponseDueAt!);
+    // 90 staffed minutes at one hour a day always ends at 09:30 UTC, a day or two later.
+    expect(due.toISOString().slice(11)).toBe("09:30:00.000Z");
+    expect(due.getTime() - sentAt.getTime()).toBeGreaterThan(minutes(24 * 60));
+  });
+
+  test("the minute cron alerts at risk and breached once each, to the whole inbox while nobody owns it", async () => {
+    const { db } = database;
+    const desk = await slaDesk("sla-cron");
+    await put(`/mailboxes/${desk.inbox.id}/sla/normal`, desk.anaCookie, {
+      firstResponseMinutes: 5,
+      nextResponseMinutes: null,
+      resolutionMinutes: 30,
+      businessHoursOnly: false,
+    });
+    const t0 = Date.now() - minutes(10);
+    const late = await seedMessage(db, desk.inbox, {
+      subject: "Late",
+      fromAddress: "a@client.test",
+      uid: 1,
+      sentAt: new Date(t0),
+    });
+    await delivered(desk, late.threadId, late.messageId);
+    // Snoozed: it alerts only once it is open again.
+    const fine = await seedMessage(db, desk.inbox, {
+      subject: "Fine",
+      fromAddress: "b@client.test",
+      uid: 2,
+      sentAt: new Date(t0),
+    });
+    await delivered(desk, fine.threadId, fine.messageId);
+    await post(`/threads/${fine.threadId}/snooze`, desk.anaCookie, {
+      until: new Date(Date.now() + minutes(60)).toISOString(),
+    });
+
+    for (let run = 0; run < 2; run++) {
+      const result = await worker.server.getWorker().scheduled({ cron: "* * * * *" });
+      expect(result.outcome).toBe("ok");
+    }
+
+    const alerts = await db
+      .select({
+        threadId: schema.conversationEvents.threadId,
+        kind: schema.conversationEvents.kind,
+        data: schema.conversationEvents.data,
+      })
+      .from(schema.conversationEvents)
+      .where(
+        and(
+          eq(schema.conversationEvents.mailboxId, desk.inbox.id),
+          sql`${schema.conversationEvents.kind} in ('sla_at_risk', 'sla_breached')`,
+        ),
+      )
+      .orderBy(schema.conversationEvents.kind);
+    expect(alerts).toEqual([
+      {
+        threadId: late.threadId,
+        kind: "sla_at_risk",
+        data: { target: "resolution", dueAt: iso(t0 + minutes(30)) },
+      },
+      {
+        threadId: late.threadId,
+        kind: "sla_breached",
+        data: { target: "first_response", dueAt: iso(t0 + minutes(5)) },
+      },
+    ]);
+    const notified = await db
+      .select({ memberId: schema.notifications.memberId, kind: schema.notifications.kind })
+      .from(schema.notifications)
+      .where(eq(schema.notifications.threadId, late.threadId))
+      .orderBy(schema.notifications.kind, schema.notifications.memberId);
+    expect(notified).toEqual(
+      [
+        { memberId: desk.ana.id, kind: "sla_at_risk" },
+        { memberId: desk.bea.id, kind: "sla_at_risk" },
+        { memberId: desk.ana.id, kind: "sla_breached" },
+        { memberId: desk.bea.id, kind: "sla_breached" },
+      ].sort((a, b) => a.kind.localeCompare(b.kind) || a.memberId.localeCompare(b.memberId)),
+    );
+    // It shows in the SLA at risk view.
+    const view = await api(
+      `/conversations?mailboxId=${desk.inbox.id}&view=sla_at_risk`,
+      desk.anaCookie,
+    );
+    expect(
+      ((await view.json()) as { conversations: { id: string }[] }).conversations.map((c) => c.id),
+    ).toEqual([late.threadId]);
+  });
+});
