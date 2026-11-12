@@ -4,8 +4,8 @@
 //   doppler run -p omni -c dev_mail -- env GMAIL_E2E=1 pnpm --filter @omni/mail test:e2e google-live
 //
 // It needs GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET (the OAuth client), GMAIL_E2E_ADDRESS (the
-// test account) and GMAIL_E2E_REFRESH_TOKEN (its grant; `google:connect --refresh-token-to`
-// writes one). It sends mail from the test account to itself.
+// test account) and GMAIL_E2E_REFRESH_TOKEN (its grant: `google:connect --pipe-refresh-token |
+// doppler secrets set GMAIL_E2E_REFRESH_TOKEN -p omni -c dev_mail`). It sends mail from the test account to itself.
 import { randomBytes, randomUUID } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
