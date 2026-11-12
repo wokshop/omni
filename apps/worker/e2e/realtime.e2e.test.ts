@@ -255,8 +255,10 @@ test("merged threads refresh both ids, tell readers where to go and re-summarize
   expect(response.status).toBe(202);
   // Only the survivor needs a new summary; the merged id is gone.
   expect(await response.json()).toEqual({ ok: true, jobs: 1 });
-  expect(await anaSocket.next(2)).toEqual([
-    { type: "changed", mailboxId: box.id, threadIds: [kept.threadId, "merged-thread"] },
+  const threadIds = [kept.threadId, "merged-thread"];
+  expect(await anaSocket.next(3)).toEqual([
+    { type: "changed", mailboxId: box.id, threadIds },
+    { type: "thread.changed", mailboxId: box.id, threadIds },
     {
       type: "merged",
       mailboxId: box.id,
