@@ -285,7 +285,7 @@ export class PgMailStore implements MailStore {
     return this.oneAtATime(mailboxId, async () => {
       const threadId =
         knownThreadId ??
-          (await this.assignThread(mailboxId, mailbox, message, sentAt, fetched.providerThreadId));
+        (await this.assignThread(mailboxId, mailbox, message, sentAt, fetched.providerThreadId));
       return upsertMessage(this.db, {
         orgId: mailbox.orgId,
         mailboxId,
