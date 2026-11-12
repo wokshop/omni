@@ -13,7 +13,7 @@ import { onWake, reportAnswer } from "./connectivity.ts";
 import { addFailure, allPending, failPendingByAction } from "./pending.ts";
 import { applyPresence, clearPresence } from "./presence.ts";
 import { actionQuery } from "./mail-queries.ts";
-import { filterOf, keys } from "./query-keys.ts";
+import { conversationFilterOf, filterOf, keys } from "./query-keys.ts";
 
 /** Bursts of new mail (an import, a busy thread) collapse into one refetch per window. */
 const FLUSH_MS = 150;
@@ -68,6 +68,14 @@ export function startRealtime(
     });
     void client.invalidateQueries({ queryKey: keys.counts() });
     void client.invalidateQueries({ queryKey: keys.searches() });
+    void client.invalidateQueries({
+      queryKey: keys.conversationLists(),
+      predicate: (query) => {
+        const mailbox = conversationFilterOf(query.queryKey)?.mailbox;
+        return !mailbox || mailboxes.has(mailbox);
+      },
+    });
+    void client.invalidateQueries({ queryKey: keys.conversationCounts() });
   };
 
   const changed = (mailboxId: string, threadIds: readonly string[]) => {
@@ -91,6 +99,11 @@ export function startRealtime(
         return changed(event.mailboxId, [event.threadId]);
       case "presence":
         return applyPresence(orgId, event);
+      // You were assigned, mentioned, or a customer replied: refetch your notifications.
+      case "notification":
+      // One you had was withdrawn (its note was deleted).
+      case "notification.removed":
+        return void client.invalidateQueries({ queryKey: keys.notifications() });
       case "action.succeeded": {
         // A reply went out: refetch its thread now rather than waiting for the sync's event.
         const pending = allPending(client).find((p) => p.actionId === event.actionId);
