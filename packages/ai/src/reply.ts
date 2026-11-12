@@ -133,14 +133,24 @@ function escapeCanned(text: string): string {
 }
 
 /**
+ * Drops tags until none are left (a removed tag can join `<scr` and `ipt>` into a new one), then
+ * any stray angle bracket.
+ */
+function withoutTags(text: string): string {
+  let current = text;
+  for (;;) {
+    const next = current.replace(/<[^<>]*>/g, "");
+    if (next === current) return next.replace(/[<>]/g, "");
+    current = next;
+  }
+}
+
+/**
  * Model output goes into a text box, never into HTML. Keeps paragraphs, drops tags, control and
  * bidi characters and markdown emphasis, and caps the length. Null if nothing is left.
  */
 export function toReplyText(text: string): string | null {
-  const plain = text
-    .replace(/\r\n?/g, "\n")
-    .replace(/<[^>]*>/g, "")
-    .replace(/[<>]/g, "")
+  const plain = withoutTags(text.replace(/\r\n?/g, "\n"))
     // oxlint-disable-next-line no-control-regex
     .replace(/[\u0000-\u0009\u000B-\u001F\u007F-\u009F​-‏‪-‮⁦-⁩]/g, "")
     .replace(/\*\*|__|`/g, "")
