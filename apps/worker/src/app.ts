@@ -137,7 +137,9 @@ export const app = new Hono<AppEnv>()
   .route("/api/pictures", pictures)
   .route("/api", api)
   .onError((error, c) => {
-    if (error instanceof HTTPException) return c.json({ error: error.message }, error.status);
+    if (error instanceof HTTPException) {
+      return c.json({ error: error.message, requestId: c.var.requestId }, error.status);
+    }
     // Hono catches it before `withSentry` could, so the logger reports it.
     (c.var.log ?? createLogger()).error("http.error", { error, orgId: c.var.member?.orgId });
     return c.json({ error: "internal error", requestId: c.var.requestId }, 500);
