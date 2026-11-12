@@ -423,7 +423,10 @@ async function reconcileThreads(db: Pick<Db, "execute">, messageIds: SQL) {
     where ${threadState}.read is distinct from excluded.read`);
 }
 
-/** Messages of the mailbox with no IMAP copy left in any stored folder. */
+/**
+ * Messages of the mailbox with no IMAP copy left in any stored folder. A send still in the outbox
+ * is not one: it was indexed when SMTP accepted it and its Sent copy is still to be filed.
+ */
 export async function orphanedMessages(db: Db, mailboxId: string): Promise<string[]> {
   const rows = await db
     .select({ id: messages.id })
@@ -432,6 +435,10 @@ export async function orphanedMessages(db: Db, mailboxId: string): Promise<strin
       and(
         eq(messages.mailboxId, mailboxId),
         sql`not exists (select 1 from ${messageLocations} l where l.message_id = ${messages.id})`,
+        sql`not exists (select 1 from ${mailActions} a
+          where a.mailbox_id = ${messages.mailboxId} and a.kind = 'send'
+            and a.status in ('pending', 'running')
+            and a.payload->>'messageId' = ${messages.messageIdHeader})`,
       ),
     );
   return rows.map((row) => row.id);

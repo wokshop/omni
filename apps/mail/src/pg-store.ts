@@ -68,7 +68,8 @@ export interface IngestedMessage {
   mailboxId: string;
   messageId: string;
   threadId: string;
-  folder: string;
+  /** Null for a sent message indexed before its Sent copy exists. */
+  folder: string | null;
   folderRole: StoredRole;
 }
 
@@ -175,6 +176,29 @@ export class PgMailStore implements MailStore {
     return { created };
   }
 
+  async storeSent(mailboxId: string, raw: Uint8Array): Promise<void> {
+    const mailbox = await this.mailbox(mailboxId);
+    const parsed = await parseMessage(raw);
+    if (await findMessageByHeader(this.db, mailboxId, parsed.message.messageId)) return;
+    const result = await this.insert(
+      mailboxId,
+      mailbox,
+      null,
+      { raw, uid: null, internalDate: null },
+      parsed,
+    );
+    if (result.inserted) {
+      this.onIngested({
+        orgId: mailbox.orgId,
+        mailboxId,
+        messageId: result.id,
+        threadId: result.threadId,
+        folder: null,
+        folderRole: "sent",
+      });
+    }
+  }
+
   async applyFlags(mailboxId: string, folder: string, changes: FlagChange[]): Promise<void> {
     await setLocationFlags(this.db, { mailboxId, path: folder, changes });
   }
@@ -198,8 +222,8 @@ export class PgMailStore implements MailStore {
   private async insert(
     mailboxId: string,
     mailbox: MailboxRow,
-    folderId: string,
-    fetched: FetchedMessage,
+    folderId: string | null,
+    fetched: Pick<FetchedMessage, "raw" | "internalDate"> & { uid: number | null },
     parsed: Awaited<ReturnType<typeof parseMessage>>,
   ) {
     const { message, attachmentContents } = parsed;
