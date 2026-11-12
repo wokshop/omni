@@ -19,6 +19,9 @@ import {
   getFolderPosition,
   hasLocation,
   markActionSmtpAccepted,
+  messageThread,
+  nextActionDue,
+  sendAttachmentFiles,
   orphanedMessages,
   pruneMessages,
   removeLocations,
@@ -45,14 +48,16 @@ import type {
   FolderRole,
   MailAction,
   MailStore,
+  SendAttachment,
+  SendFile,
+  SendFiles,
   SyncPosition,
 } from "./ports.ts";
+import { MissingFileError } from "./ports.ts";
 
-/** The schema's folder roles; drafts and junk are just folders to the index. */
+/** The schema stores every role the engine detects. */
 type StoredRole = (typeof schema.mailboxFolders.$inferSelect)["role"];
-const STORED_ROLES = new Set<FolderRole>(["inbox", "sent", "archive", "trash"]);
-const storedRole = (role: FolderRole): StoredRole =>
-  STORED_ROLES.has(role) ? (role as StoredRole) : "other";
+const storedRole = (role: FolderRole): StoredRole => role;
 
 /** Subject threading only looks this far back; `decideThread` applies the exact window. */
 const SUBJECT_LOOKBACK_MS = 31 * 24 * 60 * 60 * 1000;
@@ -68,7 +73,8 @@ export interface IngestedMessage {
   mailboxId: string;
   messageId: string;
   threadId: string;
-  folder: string;
+  /** Null for a sent message indexed before its Sent copy exists. */
+  folder: string | null;
   folderRole: StoredRole;
 }
 
@@ -94,6 +100,8 @@ export class PgMailStore implements MailStore {
   private readonly links: ContentLinks;
   private readonly onIngested: (message: IngestedMessage) => void;
   private readonly mailboxes = new Map<string, MailboxRow>();
+  /** The tail of each mailbox's thread-and-insert chain (see `oneAtATime`). */
+  private readonly inserting = new Map<string, Promise<void>>();
 
   constructor(options: PgMailStoreOptions) {
     this.db = options.db;
@@ -175,6 +183,37 @@ export class PgMailStore implements MailStore {
     return { created };
   }
 
+  async storeSent(
+    mailboxId: string,
+    raw: Uint8Array,
+    options: { threadOf?: string } = {},
+  ): Promise<void> {
+    const mailbox = await this.mailbox(mailboxId);
+    const parsed = await parseMessage(raw);
+    if (await findMessageByHeader(this.db, mailboxId, parsed.message.messageId)) return;
+    const threadId = options.threadOf
+      ? await messageThread(this.db, mailboxId, options.threadOf)
+      : null;
+    const result = await this.insert(
+      mailboxId,
+      mailbox,
+      null,
+      { raw, uid: null, internalDate: null },
+      parsed,
+      threadId,
+    );
+    if (result.inserted) {
+      this.onIngested({
+        orgId: mailbox.orgId,
+        mailboxId,
+        messageId: result.id,
+        threadId: result.threadId,
+        folder: null,
+        folderRole: "sent",
+      });
+    }
+  }
+
   async applyFlags(mailboxId: string, folder: string, changes: FlagChange[]): Promise<void> {
     await setLocationFlags(this.db, { mailboxId, path: folder, changes });
   }
@@ -198,9 +237,10 @@ export class PgMailStore implements MailStore {
   private async insert(
     mailboxId: string,
     mailbox: MailboxRow,
-    folderId: string,
-    fetched: FetchedMessage,
+    folderId: string | null,
+    fetched: Pick<FetchedMessage, "raw" | "internalDate"> & { uid: number | null },
     parsed: Awaited<ReturnType<typeof parseMessage>>,
+    knownThreadId: string | null = null,
   ) {
     const { message, attachmentContents } = parsed;
     // Objects first: a row never points at an object that is not there.
@@ -235,33 +275,53 @@ export class PgMailStore implements MailStore {
     }
 
     const sentAt = message.sentAt ?? fetched.internalDate ?? new Date();
-    const threadId = await this.assignThread(mailboxId, mailbox, message, sentAt);
     const { cleanText } = cleanMessage(message);
-    return upsertMessage(this.db, {
-      orgId: mailbox.orgId,
-      mailboxId,
-      threadId,
-      folderId,
-      imapUid: fetched.uid,
-      messageIdHeader: message.messageId,
-      inReplyTo: message.inReplyTo,
-      references: message.references,
-      subject: message.subject,
-      fromName: message.from?.name || null,
-      fromAddress: message.from?.address ?? "",
-      to: message.to.map(toAddress),
-      cc: message.cc.map(toAddress),
-      sentAt,
-      r2Key,
-      htmlR2Key,
-      cleanText,
-      attachments: files.map((f) => ({
-        filename: f.meta.filename ?? "attachment",
-        mimeType: f.meta.mimeType,
-        size: f.meta.size,
-        r2Key: f.key,
-      })),
+    // One insert per mailbox at a time: an outbox send and an IMAP sync running together would
+    // otherwise both miss each other's row when matching a thread, and split one conversation.
+    return this.oneAtATime(mailboxId, async () => {
+      const threadId =
+        knownThreadId ?? (await this.assignThread(mailboxId, mailbox, message, sentAt));
+      return upsertMessage(this.db, {
+        orgId: mailbox.orgId,
+        mailboxId,
+        threadId,
+        folderId,
+        imapUid: fetched.uid,
+        messageIdHeader: message.messageId,
+        inReplyTo: message.inReplyTo,
+        references: message.references,
+        subject: message.subject,
+        fromName: message.from?.name || null,
+        fromAddress: message.from?.address ?? "",
+        to: message.to.map(toAddress),
+        cc: message.cc.map(toAddress),
+        sentAt,
+        r2Key,
+        htmlR2Key,
+        cleanText,
+        // Cleared once the Worker accepts `message.created`; until then the sweep re-sends it.
+        notifyPending: true,
+        attachments: files.map((f) => ({
+          filename: f.meta.filename ?? "attachment",
+          mimeType: f.meta.mimeType,
+          size: f.meta.size,
+          r2Key: f.key,
+        })),
+      });
     });
+  }
+
+  private oneAtATime<T>(mailboxId: string, task: () => Promise<T>): Promise<T> {
+    const result = (this.inserting.get(mailboxId) ?? Promise.resolve()).then(task);
+    const tail = result.then(
+      () => {},
+      () => {},
+    );
+    this.inserting.set(mailboxId, tail);
+    void tail.then(() => {
+      if (this.inserting.get(mailboxId) === tail) this.inserting.delete(mailboxId);
+    });
+    return result;
   }
 
   private async assignThread(
@@ -382,8 +442,36 @@ export class PgActionSource implements ActionSource {
     await deferAction(this.db, actionId, retryAt);
   }
 
+  nextDueAt(): Promise<Date | null> {
+    return nextActionDue(this.db);
+  }
+
   sendingPaused(address: string): Promise<boolean> {
     return sendingPaused(this.db, address.slice(address.lastIndexOf("@") + 1).toLowerCase());
+  }
+}
+
+/** Send attachments from Postgres rows and the object store. */
+export class PgSendFiles implements SendFiles {
+  private readonly options: { db: Db; objects: ObjectStore };
+
+  constructor(options: { db: Db; objects: ObjectStore }) {
+    this.options = options;
+  }
+
+  async resolve(mailboxId: string, refs: SendAttachment[]): Promise<SendFile[]> {
+    if (refs.length === 0) return [];
+    const rows = await sendAttachmentFiles(this.options.db, mailboxId, refs);
+    if (rows.length !== refs.length) {
+      throw new MissingFileError(`${refs.length - rows.length} attachment(s) not found`);
+    }
+    return Promise.all(
+      rows.map(async (row) => {
+        const content = await this.options.objects.get(row.r2Key);
+        if (!content) throw new MissingFileError(`attachment object ${row.r2Key} is gone`);
+        return { filename: row.filename, contentType: row.mimeType, content };
+      }),
+    );
   }
 }
 

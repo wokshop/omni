@@ -1,7 +1,9 @@
+import { schema } from "@omni/db";
+import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { MailboxConnection } from "../src/mailbox-connection.ts";
 import { deterministicMessageId, OutboxExecutor } from "../src/outbox.ts";
-import { PgActionSource, PgMailStore } from "../src/pg-store.ts";
+import { PgActionSource, PgMailStore, PgSendFiles } from "../src/pg-store.ts";
 import {
   actionRow,
   asClaimed,
@@ -30,6 +32,8 @@ async function setup(kind: "personal" | "shared" = "personal") {
   const executor = new OutboxExecutor({
     actions,
     logger,
+    store,
+    files: new PgSendFiles({ db, objects }),
     connection: (id) => (id === box.id ? connection : undefined),
   });
   return { seeded, box, store, actions, connection, executor };
@@ -163,6 +167,274 @@ describe("OutboxExecutor against GreenMail", () => {
     expect(archived.map((r) => r.subject)).toEqual(["to archive"]);
     // Same row, now located in Archive: a move is not a new message.
     expect(archived[0]?.messageId).toBe(message.messageId);
+  });
+
+  it("a reply shows in its thread once SMTP accepts it, before the mailbox can file it in Sent", async () => {
+    const { seeded, box, connection, executor } = await setup("shared");
+    const parent = `<question.${box.id}@outside.test>`;
+    await deliver(box.address, "Where is my order?", { messageId: parent });
+    await connection.start();
+    const [question] = await stored(db, box.id, "INBOX");
+    await connection.stop();
+
+    // The mailbox is reconnecting: SMTP still works, the Sent append has to wait.
+    const reply = await enqueue(db, seeded, {
+      kind: "send",
+      idempotencyKey: `idem-early-${box.id}`,
+      payload: {
+        from: box.address,
+        to: ["customer@outside.test"],
+        subject: "Re: Where is my order?",
+        text: "On its way.",
+        inReplyTo: parent,
+        references: [parent],
+        messageId: `<reply.${box.id}@omni.test>`,
+      },
+    });
+    await executor.drain();
+    expect((await actionRow(db, reply.id)).status).toBe("pending");
+    const early = (await messageRows(db, box.id)).find((m) => m.subject.startsWith("Re:"));
+    expect(early).toMatchObject({ threadId: question?.threadId, folderId: null });
+    // A full sync while the send waits does not take the reply for a deleted message.
+    await connection.start();
+    await connection.syncAll();
+    expect(await messageRows(db, box.id)).toHaveLength(2);
+
+    await db
+      .update(schema.mailActions)
+      .set({ runAfter: new Date() })
+      .where(eq(schema.mailActions.id, reply.id));
+    await executor.drain();
+    expect((await actionRow(db, reply.id)).status).toBe("done");
+    // The Sent copy became the same row's location: one row, one notification.
+    const [filed] = await stored(db, box.id, "Sent");
+    expect(filed?.messageId).toBe(early?.id);
+    expect(await messageRows(db, box.id)).toHaveLength(2);
+  });
+
+  it("archiving a conversation leaves our reply in Sent", async () => {
+    const { seeded, box, store, connection, executor } = await setup("shared");
+    await deliver(box.address, "Refund please");
+    await connection.start();
+    const [inbound] = await stored(db, box.id, "INBOX");
+    await enqueue(db, seeded, {
+      kind: "send",
+      idempotencyKey: `idem-refund-${box.id}`,
+      payload: {
+        from: box.address,
+        to: ["customer@outside.test"],
+        subject: "Re: Refund please",
+        text: "Done.",
+      },
+    });
+    await executor.drain();
+    const [sent] = await stored(db, box.id, "Sent");
+    if (!inbound || !sent) throw new Error("not synced");
+
+    // What the Worker's archive route writes: one action per folder holding a copy.
+    for (const [folder, uid] of [
+      ["INBOX", inbound.uid],
+      ["Sent", sent.uid],
+    ] as const) {
+      const position = await store.getSyncPosition(box.id, folder);
+      await enqueue(db, seeded, {
+        kind: "archive",
+        idempotencyKey: `idem-archive-${folder}-${box.id}`,
+        payload: { folder, uidValidity: position!.uidValidity.toString(), uids: [uid] },
+      });
+    }
+    await executor.drain();
+
+    expect((await stored(db, box.id, "Archive")).map((r) => r.subject)).toEqual(["Refund please"]);
+    expect((await stored(db, box.id, "Sent")).map((r) => r.subject)).toEqual(["Re: Refund please"]);
+  });
+
+  it("forwards with the original's attachment plus an upload, From the agent, sent once", async () => {
+    const { seeded, box, connection, executor } = await setup("shared");
+    const original = [
+      "From: customer@outside.test",
+      `To: ${box.address}`,
+      "Subject: Broken invoice",
+      `Message-ID: <invoice.${box.id}@outside.test>`,
+      "MIME-Version: 1.0",
+      'Content-Type: multipart/mixed; boundary="b"',
+      "",
+      "--b",
+      "Content-Type: text/plain",
+      "",
+      "See attached.",
+      "--b",
+      'Content-Type: application/pdf; name="invoice.pdf"',
+      'Content-Disposition: attachment; filename="invoice.pdf"',
+      "Content-Transfer-Encoding: base64",
+      "",
+      Buffer.from("%PDF original invoice").toString("base64"),
+      "--b--",
+      "",
+    ].join("\r\n");
+    await otherClient(box, (client) => client.append("INBOX", original, []));
+    await connection.start();
+    const [message] = await messageRows(db, box.id);
+    const [attachment] = await db
+      .select()
+      .from(schema.attachments)
+      .where(eq(schema.attachments.messageId, message!.id));
+    // What `POST /api/uploads` leaves behind: the object and its row.
+    const uploadKey = `${seeded.orgId}/${box.id}/uploads/screenshot`;
+    await objects.put(uploadKey, "PNG screenshot bytes", "image/png");
+    const [upload] = await db
+      .insert(schema.uploads)
+      .values({
+        orgId: seeded.orgId,
+        mailboxId: box.id,
+        filename: "screenshot.png",
+        mimeType: "image/png",
+        size: 20,
+        r2Key: uploadKey,
+        expiresAt: new Date(Date.now() + 3600_000),
+      })
+      .returning();
+
+    const recipient = mailbox();
+    const row = await enqueue(db, seeded, {
+      kind: "send",
+      idempotencyKey: `idem-forward-${box.id}`,
+      payload: {
+        from: box.address,
+        fromName: "Ana from Acme",
+        to: [recipient.address],
+        subject: "Fwd: Broken invoice",
+        text: "Billing, can you look at this?",
+        inReplyToMessageId: message!.id,
+        attachments: [
+          { kind: "attachment", attachmentId: attachment!.id },
+          { kind: "upload", uploadId: upload!.id },
+        ],
+        messageId: `<forward.${box.id}@omni.test>`,
+      },
+    });
+    const [claimed] = await new PgActionSource({ db }).claim(1);
+    await executor.execute(claimed!);
+    // Crashed before `complete`: the retry must not send again.
+    await executor.execute(await asClaimed(db, row.id));
+    expect((await actionRow(db, row.id)).status).toBe("done");
+
+    const received = await otherClient(recipient, async (client) => {
+      const lock = await client.getMailboxLock("INBOX");
+      try {
+        return await client.fetchAll("1:*", { source: true });
+      } finally {
+        lock.release();
+      }
+    });
+    expect(received).toHaveLength(1);
+    const raw = received[0]?.source?.toString() ?? "";
+    expect(raw).toContain(`From: Ana from Acme <${box.address}>`);
+    expect(raw).toContain("Content-Type: application/pdf; name=invoice.pdf");
+    expect(raw).toContain(Buffer.from("%PDF original invoice").toString("base64"));
+    expect(raw).toContain("Content-Type: image/png; name=screenshot.png");
+    expect(raw).toContain(Buffer.from("PNG screenshot bytes").toString("base64"));
+    // Filed with the conversation it forwards, though a forward carries no reply headers.
+    const forward = (await messageRows(db, box.id)).find((m) => m.subject.startsWith("Fwd:"));
+    expect(forward?.threadId).toBe(message!.threadId);
+  });
+
+  it("fails a send whose upload is gone without sending anything", async () => {
+    const { seeded, box, connection, executor } = await setup();
+    await connection.start();
+    const recipient = mailbox();
+    const row = await enqueue(db, seeded, {
+      kind: "send",
+      idempotencyKey: `idem-missing-${box.id}`,
+      payload: {
+        from: box.address,
+        to: [recipient.address],
+        subject: "with a lost file",
+        text: "see attached",
+        attachments: [{ kind: "upload", uploadId: "upload-that-never-existed" }],
+      },
+    });
+    await executor.drain();
+
+    expect(await actionRow(db, row.id)).toMatchObject({ status: "failed", smtpAcceptedAt: null });
+    const delivered = await otherClient(recipient, async (client) => {
+      const status = await client.status("INBOX", { messages: true });
+      return status ? status.messages : -1;
+    });
+    expect(delivered).toBe(0);
+  });
+
+  it("spam moves a conversation to Junk and out of the inbox; not spam and trash follow", async () => {
+    const { seeded, box, store, connection, executor } = await setup("shared");
+    await deliver(box.address, "Win a prize");
+    await connection.start();
+    const thread = async () => {
+      const [row] = await messageRows(db, box.id);
+      const [t] = await db
+        .select()
+        .from(schema.threads)
+        .where(eq(schema.threads.id, row!.threadId));
+      return t!;
+    };
+    const run = async (kind: "spam" | "not_spam" | "trash", folder: string) => {
+      const [copy] = await stored(db, box.id, folder);
+      const position = await store.getSyncPosition(box.id, folder);
+      const row = await enqueue(db, seeded, {
+        kind,
+        idempotencyKey: `idem-${kind}-${box.id}`,
+        payload: { folder, uidValidity: position!.uidValidity.toString(), uids: [copy!.uid] },
+      });
+      await executor.drain();
+      expect((await actionRow(db, row.id)).status).toBe("done");
+    };
+
+    await run("spam", "INBOX");
+    expect(await stored(db, box.id, "INBOX")).toHaveLength(0);
+    expect((await stored(db, box.id, "Junk")).map((r) => r.subject)).toEqual(["Win a prize"]);
+    const [junk] = await db
+      .select({ role: schema.mailboxFolders.role })
+      .from(schema.mailboxFolders)
+      .where(eq(schema.mailboxFolders.path, "Junk"));
+    expect(junk?.role).toBe("junk");
+    expect((await thread()).archived).toBe(true);
+
+    await run("not_spam", "Junk");
+    expect((await stored(db, box.id, "INBOX")).map((r) => r.subject)).toEqual(["Win a prize"]);
+    expect((await thread()).archived).toBe(false);
+
+    await run("trash", "INBOX");
+    expect((await stored(db, box.id, "Trash")).map((r) => r.subject)).toEqual(["Win a prize"]);
+    expect((await thread()).archived).toBe(true);
+    // One row throughout: moves are never new messages.
+    expect(await messageRows(db, box.id)).toHaveLength(1);
+  });
+
+  it("a send SMTP already accepted is done, not failed, when its upload is gone by the retry", async () => {
+    const { seeded, box, actions, connection, executor } = await setup();
+    await connection.start();
+    const recipient = mailbox();
+    const row = await enqueue(db, seeded, {
+      kind: "send",
+      idempotencyKey: `idem-accepted-missing-${box.id}`,
+      payload: {
+        from: box.address,
+        to: [recipient.address],
+        subject: "delivered, then its file was deleted",
+        text: "see attached",
+        attachments: [{ kind: "upload", uploadId: "upload-deleted-after-send" }],
+      },
+    });
+    // SMTP accepted it, the attempt died before filing, and the upload was deleted since.
+    await actions.claim(1);
+    await actions.markSmtpAccepted(row.id);
+    await executor.execute(await asClaimed(db, row.id));
+
+    expect((await actionRow(db, row.id)).status).toBe("done");
+    const resent = await otherClient(recipient, async (client) => {
+      const status = await client.status("INBOX", { messages: true });
+      return status ? status.messages : -1;
+    });
+    expect(resent).toBe(0);
   });
 
   it("refuses to touch UIDs whose folder UIDVALIDITY changed", async () => {
