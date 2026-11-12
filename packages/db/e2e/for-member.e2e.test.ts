@@ -126,6 +126,7 @@ describe("forMember isolation", () => {
     expect(await asAlice.slaSettings(aliceThread!.mailboxId)).toEqual({
       policies: [],
       businessHours: null,
+      autoAssign: false,
     });
     expect(await asAlice.slaSettings(billingThread!.mailboxId)).toBeNull();
     expect(await forMember(db, carol).slaSettings(aliceThread!.mailboxId)).toBeNull();

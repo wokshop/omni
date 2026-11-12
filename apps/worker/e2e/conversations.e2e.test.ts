@@ -812,6 +812,7 @@ describe("SLAs", () => {
     expect(await read.json()).toEqual({
       policies: [{ priority: "high", ...policy }],
       businessHours: hours,
+      autoAssign: false,
     });
     // Carl is in the org but cannot see the inbox: not even its settings.
     expect((await api(`/mailboxes/${desk.inbox.id}/sla`, desk.carlCookie)).status).toBe(404);
@@ -1047,5 +1048,142 @@ describe("SLAs", () => {
     expect(
       ((await view.json()) as { conversations: { id: string }[] }).conversations.map((c) => c.id),
     ).toEqual([late.threadId]);
+  });
+});
+
+describe("bulk actions and auto-assign", () => {
+  let desk: Awaited<ReturnType<typeof supportDesk>>;
+  let beaCookie: string;
+  beforeAll(async () => {
+    desk = await supportDesk("bulk");
+    beaCookie = await signIn(worker, database.db, "bea@bulk.test");
+    await database.db
+      .update(schema.members)
+      .set({ role: "admin" })
+      .where(eq(schema.members.id, desk.ana.id));
+  });
+
+  const bulk = (body: unknown, key = `bulk-${randomUUID()}`) =>
+    api("/conversations/bulk", desk.anaCookie, {
+      method: "POST",
+      body: JSON.stringify(body),
+      headers: { "idempotency-key": key },
+    });
+
+  test("a bulk change applies to each conversation on its own, and a retry undoes nothing done since", async () => {
+    const { db } = database;
+    const [a, b] = await Promise.all(
+      [1, 2].map((uid) =>
+        seedMessage(db, desk.inbox, { subject: `Bulk ${uid}`, fromAddress: "c@client.test", uid }),
+      ),
+    );
+    // A conversation in an inbox Ana cannot see: that one fails, the others still apply.
+    const other = await createMailbox(db, desk.org.id, "billing@bulk.test");
+    const hidden = await seedMessage(db, other, {
+      subject: "Hidden",
+      fromAddress: "c@client.test",
+      uid: 1,
+    });
+
+    const key = `bulk-${randomUUID()}`;
+    const ids = [a!.threadId, hidden.threadId, b!.threadId];
+    const first = await bulk({ threadIds: ids, change: { type: "resolve" } }, key);
+    expect(first.status).toBe(200);
+    expect(await first.json()).toEqual({
+      results: [
+        { threadId: a!.threadId, ok: true, changed: true },
+        { threadId: hidden.threadId, ok: false, error: "not found" },
+        { threadId: b!.threadId, ok: true, changed: true },
+      ],
+    });
+    // Each resolve files its mail once.
+    expect((await queued(db, desk.inbox.id)).filter((x) => x.kind === "archive")).toHaveLength(2);
+
+    // Bea reopens one; Ana's client retries the same request: Bea's reopen stands.
+    await post(`/threads/${b!.threadId}/reopen`, beaCookie);
+    const retry = await bulk({ threadIds: ids, change: { type: "resolve" } }, key);
+    expect(((await retry.json()) as { results: { changed?: boolean }[] }).results[2]).toEqual({
+      threadId: b!.threadId,
+      ok: true,
+      changed: false,
+    });
+    expect((await conversation(b!.threadId, desk.anaCookie)).status).toBe("open");
+
+    // Claim assigns each to the member asking.
+    await bulk({ threadIds: [a!.threadId, b!.threadId], change: { type: "claim" } });
+    for (const id of [a!.threadId, b!.threadId]) {
+      expect((await conversation(id, desk.anaCookie)).assigneeMemberId).toBe(desk.ana.id);
+    }
+    expect((await bulk({ threadIds: [], change: { type: "resolve" } })).status).toBe(400);
+  });
+
+  test("auto-assign hands new conversations out in turn, never history or auto-replies", async () => {
+    const { db } = database;
+    const inbox = await createMailbox(db, desk.org.id, "help@bulk.test");
+    await grant(db, desk.org.id, inbox.id, desk.ana.id);
+    await grant(db, desk.org.id, inbox.id, desk.bea.id);
+    await db
+      .update(schema.mailboxes)
+      .set({ createdAt: new Date(Date.now() - 60 * 60_000) })
+      .where(eq(schema.mailboxes.id, inbox.id));
+    const turnOn = await put(`/mailboxes/${inbox.id}/auto-assign`, desk.anaCookie, {
+      enabled: true,
+    });
+    expect(turnOn.status).toBe(200);
+    expect(
+      (
+        (await (await api(`/mailboxes/${inbox.id}/sla`, desk.anaCookie)).json()) as {
+          autoAssign: boolean;
+        }
+      ).autoAssign,
+    ).toBe(true);
+
+    const deliver = async (n: number, options: { sentAt?: Date; automated?: boolean } = {}) => {
+      const message = await seedMessage(db, inbox, {
+        subject: `Help ${n}`,
+        fromAddress: `c${n}@client.test`,
+        uid: n,
+        sentAt: options.sentAt,
+      });
+      if (options.automated) {
+        await db
+          .update(schema.messages)
+          .set({ automated: true })
+          .where(eq(schema.messages.id, message.messageId));
+      }
+      const response = await postMailEvents(worker, {
+        events: [
+          {
+            type: "message.created",
+            orgId: desk.org.id,
+            mailboxId: inbox.id,
+            threadId: message.threadId,
+            messageId: message.messageId,
+            folderRole: "inbox",
+          },
+        ],
+      });
+      expect(response.status).toBe(202);
+      return (await conversation(message.threadId, desk.anaCookie)).assigneeMemberId;
+    };
+
+    const [first, second] = [desk.ana.id, desk.bea.id].sort();
+    expect([await deliver(1), await deliver(2), await deliver(3)]).toEqual([first, second, first]);
+    // History from before the inbox was connected, and an out-of-office, stay unassigned.
+    expect(await deliver(4, { sentAt: new Date(Date.now() - 2 * 60 * 60_000) })).toBeNull();
+    expect(await deliver(5, { automated: true })).toBeNull();
+
+    // The member it went to hears "assigned", not also "your customer replied".
+    const kinds = await db
+      .select({ kind: schema.notifications.kind })
+      .from(schema.notifications)
+      .innerJoin(schema.threads, eq(schema.threads.id, schema.notifications.threadId))
+      .where(eq(schema.threads.mailboxId, inbox.id));
+    expect(kinds.map((k) => k.kind)).toEqual(["assigned", "assigned", "assigned"]);
+
+    // Only owners and admins switch it.
+    expect(
+      (await put(`/mailboxes/${inbox.id}/auto-assign`, beaCookie, { enabled: false })).status,
+    ).toBe(403);
   });
 });

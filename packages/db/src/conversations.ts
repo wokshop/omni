@@ -671,7 +671,42 @@ export type InboundResult =
       queuedActions: number;
       /** Members who got a new notification: tell them in realtime. */
       notified: string[];
+      /** The member auto-assign handed it to (notified as `assigned`), if any. */
+      autoAssigned: string | null;
     };
+
+/**
+ * The inbox's next member in turn, by member id after the last one handed a conversation, among
+ * those who can see the inbox. Null when the inbox does not auto-assign or nobody sees it. The
+ * mailbox row lock makes concurrent ingests take turns instead of picking the same member.
+ */
+async function nextInTurn(tx: Tx, row: ConversationRow) {
+  const [inbox] = await tx
+    .select({ on: mailboxes.autoAssign, last: mailboxes.autoAssignLastMemberId })
+    .from(mailboxes)
+    .where(eq(mailboxes.id, row.mailboxId))
+    .for("update");
+  if (!inbox?.on) return null;
+  const team = (
+    await tx
+      .select({ id: mailboxAccess.memberId })
+      .from(mailboxAccess)
+      .innerJoin(
+        members,
+        and(eq(members.id, mailboxAccess.memberId), eq(members.organizationId, row.orgId)),
+      )
+      .where(eq(mailboxAccess.mailboxId, row.mailboxId))
+      .orderBy(asc(mailboxAccess.memberId))
+  ).map((m) => m.id);
+  if (team.length === 0) return null;
+  const last = inbox.last;
+  const next = (last !== null && team.find((id) => id > last)) || team[0]!;
+  await tx
+    .update(mailboxes)
+    .set({ autoAssignLastMemberId: next })
+    .where(eq(mailboxes.id, row.mailboxId));
+  return next;
+}
 
 /**
  * The `message.created` ingest for one message: a customer's message reopens the conversation
@@ -718,8 +753,20 @@ export async function applyInboundMessage(
         { data: { messageId: input.messageId } },
       );
       // The customer is waiting from when they wrote (never later than now). Mail sent before the
-      // inbox was connected is history: a first sync must not start, and breach, every clock.
-      if (!message.automated && mailbox && message.sentAt >= mailbox.createdAt) {
+      // inbox was connected is history: a first sync must not start, and breach, every clock, nor
+      // hand the backlog out.
+      const live =
+        !message.automated && mailbox !== undefined && message.sentAt >= mailbox.createdAt;
+      let autoAssigned: string | null = null;
+      if (live && applied.row.status === "open" && !applied.row.assigneeMemberId) {
+        const next = await nextInTurn(tx, applied.row);
+        if (next) {
+          const handed = await assign(tx, applied.row, next, null, now, { cause: "auto_assign" });
+          applied.row = handed.row;
+          if (handed.changed) autoAssigned = next;
+        }
+      }
+      if (live) {
         const since = message.sentAt > now ? now : message.sentAt;
         applied.row = await setSlaClocks(tx, applied.row, {
           responseClockAt: applied.row.responseClockAt ?? since,
@@ -728,7 +775,8 @@ export async function applyInboundMessage(
       }
       // The assignee hears when their customer writes back (not for an auto-reply).
       const notified =
-        applied.row.assigneeMemberId && !message.automated
+        // (Not when it was just handed to them: they hear `assigned` instead.)
+        applied.row.assigneeMemberId && !message.automated && !autoAssigned
           ? await notify(tx, applied.row, {
               memberIds: [applied.row.assigneeMemberId],
               kind: "customer_reply",
@@ -744,6 +792,7 @@ export async function applyInboundMessage(
         conversation: applied.row,
         queuedActions: applied.queuedActions,
         notified,
+        autoAssigned,
       };
     }
 
@@ -792,6 +841,7 @@ export async function applyInboundMessage(
       conversation: answered,
       queuedActions: status.queuedActions,
       notified: [],
+      autoAssigned: null,
     };
   });
 }
@@ -804,6 +854,34 @@ export async function dueSnoozes(db: Executor, now: Date, limit = 500) {
     .where(and(eq(threads.status, "snoozed"), lte(threads.snoozedUntil, now)))
     .orderBy(asc(threads.snoozedUntil))
     .limit(limit);
+}
+
+/**
+ * Turns round-robin auto-assign on or off for a shared inbox of the org. False when there is no
+ * such inbox. Turning it on starts with whoever comes first; turning it off forgets the turn.
+ */
+export async function setAutoAssign(db: Executor, orgId: string, mailboxId: string, on: boolean) {
+  const rows = await db
+    .update(mailboxes)
+    .set({ autoAssign: on, autoAssignLastMemberId: null, updatedAt: new Date() })
+    .where(
+      and(
+        eq(mailboxes.id, mailboxId),
+        eq(mailboxes.orgId, orgId),
+        eq(mailboxes.kind, "shared"),
+        // Already in that state: keep the turn.
+        ne(mailboxes.autoAssign, on),
+      ),
+    )
+    .returning({ id: mailboxes.id });
+  if (rows.length) return true;
+  const [exists] = await db
+    .select({ id: mailboxes.id })
+    .from(mailboxes)
+    .where(
+      and(eq(mailboxes.id, mailboxId), eq(mailboxes.orgId, orgId), eq(mailboxes.kind, "shared")),
+    );
+  return exists !== undefined;
 }
 
 // Tags: an inbox's list, managed by anyone who can see the inbox.
@@ -1011,7 +1089,13 @@ export async function deleteNote(
           ),
         ),
       )
-      .returning({ id: notes.id, threadId: notes.threadId, mailboxId: notes.mailboxId });
+      .returning({
+        id: notes.id,
+        threadId: notes.threadId,
+        mailboxId: notes.mailboxId,
+        orgId: notes.orgId,
+        mentions: notes.mentions,
+      });
     if (!row) return null;
     await tx
       .delete(conversationEvents)

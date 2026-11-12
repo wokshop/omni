@@ -18,6 +18,7 @@ import {
   PRIORITIES,
   putBusinessHours,
   putSlaPolicy,
+  setAutoAssign,
   updateTag,
   type ChangeResult,
   type ConversationChange,
@@ -29,7 +30,7 @@ import { z } from "zod";
 import type { AppEnv } from "../context.ts";
 import { pingMailService } from "../mail-service.ts";
 import { limitPerMember } from "../rate-limiter.ts";
-import { announceNote, fanOut, notifyMembers } from "../realtime.ts";
+import { announceNote, fanOut, notifyMembers, withdrawNotifications } from "../realtime.ts";
 import { zValidator } from "../validator.ts";
 
 const idempotencyHeader = z.object({
@@ -123,11 +124,38 @@ const businessHoursBody = z.object({
   holidays: z.array(z.iso.date()).max(400).default([]),
 });
 
+/** One change for many conversations; `claim` assigns each to the member asking. */
+const bulkChange = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("resolve") }),
+  z.object({ type: z.literal("reopen") }),
+  z.object({ type: z.literal("snooze"), until: z.iso.datetime({ offset: true }) }),
+  z.object({ type: z.literal("claim") }),
+  z.object({ type: z.literal("assign"), memberId: z.string().min(1).nullable() }),
+  z.object({ type: z.literal("priority"), priority: z.enum(PRIORITIES) }),
+  z.object({ type: z.literal("tag"), tagId: z.string().min(1), add: z.boolean() }),
+]);
+const bulkBody = z.object({
+  threadIds: z.array(z.string().min(1)).min(1).max(100),
+  change: bulkChange,
+});
+const autoAssignBody = z.object({ enabled: z.boolean() });
+
+function domainChange(change: z.infer<typeof bulkChange>, memberId: string): ConversationChange {
+  switch (change.type) {
+    case "snooze":
+      return { type: "snooze", until: new Date(change.until) };
+    case "claim":
+      return { type: "assign", memberId };
+    default:
+      return change;
+  }
+}
+
 /** Owners and admins change inbox settings. Better Auth stores several roles as a comma list. */
 function requireManager(c: Context<AppEnv>) {
   const { role } = c.var.member;
   if (!role.split(",").some((r) => r.trim() === "owner" || r.trim() === "admin")) {
-    throw new HTTPException(403, { message: "only owners and admins change SLA settings" });
+    throw new HTTPException(403, { message: "only owners and admins change inbox settings" });
   }
 }
 
@@ -208,6 +236,55 @@ export const conversations = new Hono<AppEnv>()
         counts: await forMember(c.var.db, c.var.member.id).conversationCounts(c.req.valid("query")),
       }),
   )
+
+  /**
+   * Applies one change to up to 100 conversations, each on its own (one failing does not stop the
+   * rest), and answers each one's result in order. A retry under the same Idempotency-Key changes
+   * nothing that the first attempt already changed.
+   */
+  .post("/conversations/bulk", ...writeGuards, zValidator("json", bulkBody), async (c) => {
+    const { threadIds, change } = c.req.valid("json");
+    const key = c.req.header("idempotency-key")!;
+    const memberId = c.var.member.id;
+    const results: (
+      | { threadId: string; ok: true; changed: boolean }
+      | { threadId: string; ok: false; error: string }
+    )[] = [];
+    const changed = new Map<string, Set<string>>();
+    const assigned: { orgId: string; threadId: string; memberIds: string[] }[] = [];
+    let queuedActions = 0;
+    for (const threadId of new Set(threadIds)) {
+      const result = await applyConversationChange(c.var.db, {
+        threadId,
+        actorMemberId: memberId,
+        change: domainChange(change, memberId),
+        requestId: c.var.requestId,
+        // Per conversation, so a retry skips exactly the ones already done.
+        idempotencyKey: `${key}:${threadId}`,
+      });
+      if (!result.ok) {
+        results.push({ threadId, ok: false, error: failures[result.reason][1] });
+        continue;
+      }
+      results.push({ threadId, ok: true, changed: result.changed });
+      if (!result.changed) continue;
+      const { mailboxId, id, orgId } = result.conversation;
+      changed.set(mailboxId, (changed.get(mailboxId) ?? new Set()).add(id));
+      queuedActions += result.queuedActions;
+      if (result.notified.length)
+        assigned.push({ orgId, threadId: id, memberIds: result.notified });
+    }
+    if (queuedActions > 0) c.executionCtx.waitUntil(pingMailService(c.var));
+    if (changed.size) {
+      c.executionCtx.waitUntil(
+        Promise.all([
+          fanOut(c.env, c.var.db, c.var.config, changed),
+          ...assigned.map((a) => notifyMembers(c.env, c.var.db, { ...a, kind: "assigned" })),
+        ]),
+      );
+    }
+    return c.json({ results });
+  })
 
   /** Status, assignee, priority, SLA due times, tags and the timeline events, oldest first. */
   .get("/threads/:id/conversation", async (c) => {
@@ -317,7 +394,20 @@ export const conversations = new Hono<AppEnv>()
     });
     if (!note) notFound();
     c.executionCtx.waitUntil(
-      fanOut(c.env, c.var.db, c.var.config, new Map([[note.mailboxId, new Set([note.threadId])]])),
+      Promise.all([
+        fanOut(
+          c.env,
+          c.var.db,
+          c.var.config,
+          new Map([[note.mailboxId, new Set([note.threadId])]]),
+        ),
+        // Its mention notifications went with it: the mentioned refetch theirs.
+        withdrawNotifications(c.env, {
+          orgId: note.orgId,
+          threadId: note.threadId,
+          memberIds: note.mentions.filter((m) => m !== c.var.member.id),
+        }),
+      ]),
     );
     return c.body(null, 204);
   })
@@ -410,6 +500,22 @@ export const conversations = new Hono<AppEnv>()
     requireManager(c);
     if (!(await deleteBusinessHours(c.var.db, c.var.member.orgId, c.req.param("id")))) notFound();
     return c.body(null, 204);
+  })
+
+  /**
+   * Round-robin auto-assign for the inbox: each new conversation from a customer goes to the next
+   * member who can see it, in turn.
+   */
+  .put("/mailboxes/:id/auto-assign", zValidator("json", autoAssignBody), async (c) => {
+    requireManager(c);
+    const ok = await setAutoAssign(
+      c.var.db,
+      c.var.member.orgId,
+      c.req.param("id"),
+      c.req.valid("json").enabled,
+    );
+    if (!ok) notFound();
+    return c.json({ ok: true as const });
   })
 
   .get("/mailboxes/:id/tags", async (c) => {

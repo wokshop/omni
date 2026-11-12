@@ -656,15 +656,15 @@ function mailQueries(db: Db, isGrantee: (memberId: AnyColumn | SQL) => SQL) {
     },
 
     /**
-     * A shared inbox's SLA targets per priority and its business hours (null: always open). Null
-     * when no grantee can see the inbox.
+     * A shared inbox's SLA targets per priority, its business hours (null: always open) and
+     * whether it auto-assigns. Null when no grantee can see the inbox.
      */
     async slaSettings(mailboxId: string) {
       const [mailboxGrant, mailboxOrg] = access(mailboxes.id, mailboxes.orgId);
       const visible = and(eq(mailboxes.id, mailboxId), eq(mailboxes.kind, "shared"));
       const [[mailbox], policies, [hours]] = await Promise.all([
         db
-          .select({ id: mailboxes.id })
+          .select({ id: mailboxes.id, autoAssign: mailboxes.autoAssign })
           .from(mailboxes)
           .innerJoin(...mailboxGrant)
           .innerJoin(...mailboxOrg)
@@ -698,7 +698,7 @@ function mailQueries(db: Db, isGrantee: (memberId: AnyColumn | SQL) => SQL) {
           .limit(1),
       ]);
       if (!mailbox) return null;
-      return { policies, businessHours: hours ?? null };
+      return { policies, businessHours: hours ?? null, autoAssign: mailbox.autoAssign };
     },
 
     /**

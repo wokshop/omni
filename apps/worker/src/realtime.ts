@@ -23,7 +23,12 @@ export type RealtimeEvent =
   /** A domain's DNS was checked again (ADR 0011): refetch the onboarding status. */
   | { type: "domain"; domainId: string }
   /** This member got a new notification (`GET /api/notifications` has it). */
-  | { type: "notification"; threadId: string; kind: NotificationKind };
+  | { type: "notification"; threadId: string; kind: NotificationKind }
+  /**
+   * Notifications this member had were withdrawn (the note that mentioned them was deleted):
+   * refetch `GET /api/notifications`. Never shown as a new notification.
+   */
+  | { type: "notification.removed"; threadId: string };
 
 type OutboundEvent = RealtimeEvent | HelpdeskRealtimeEvent;
 
@@ -274,6 +279,16 @@ export async function notifyMembers(
     threadId: input.threadId,
     kind: input.kind,
   });
+}
+
+/** Tells these members that notifications they had about the thread are gone. */
+export async function withdrawNotifications(
+  env: Env,
+  input: { orgId: string; threadId: string; memberIds: string[] },
+) {
+  if (input.memberIds.length === 0) return;
+  const stub = env.REALTIME.get(env.REALTIME.idFromName(input.orgId));
+  await stub.broadcast(input.memberIds, { type: "notification.removed", threadId: input.threadId });
 }
 
 /** Tells everyone who can see the inbox that a note was added. */
