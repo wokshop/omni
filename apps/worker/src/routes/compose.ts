@@ -6,17 +6,15 @@ import {
   createUpload,
   deleteUnsentUpload,
   forMember,
-  invalidSendAttachments,
-  markUploadsUsed,
+  enqueueSendWithAttachments,
   memberMailbox,
   memberUpload,
   newUploadId,
   senderIdentity,
   threadActionTargets,
   uploadKey,
-  type MailActionRequest,
 } from "@omni/db";
-import { sendAttachmentSchema } from "@omni/contracts";
+import { MAX_SEND_ATTACHMENTS, sendAttachmentSchema } from "@omni/contracts";
 import { forwardBody, forwardSubject, replySubject } from "@omni/mail-core/compose";
 import { Hono, type Context } from "hono";
 import { HTTPException } from "hono/http-exception";
@@ -25,14 +23,7 @@ import type { AppEnv } from "../context.ts";
 import { limitPerMember } from "../rate-limiter.ts";
 import { zValidator } from "../validator.ts";
 import { attachmentResponse } from "./assets.ts";
-import {
-  enqueue,
-  idempotencyHeader,
-  notFound,
-  outboxKey,
-  pingLater,
-  type ActionMailbox,
-} from "./mail.ts";
+import { idempotencyHeader, notFound, outboxKey, pingLater, type ActionMailbox } from "./mail.ts";
 
 /** An upload nobody sends is deleted after this long. */
 const UPLOAD_TTL_MS = 24 * 60 * 60 * 1000;
@@ -110,8 +101,8 @@ async function fromName(c: Context<AppEnv>, mailboxKind: "personal" | "shared") 
 }
 
 /**
- * Queues one send. Refuses (400) attachments the mailbox may not carry, and marks the uploads it
- * takes as used so the expiry cleanup leaves them for the mail service.
+ * Queues one send. Refuses (400) attachments the mailbox may not carry; the uploads it takes are
+ * marked used in the same transaction, so a delete or the expiry cleanup cannot remove them.
  */
 async function enqueueSend(
   c: Context<AppEnv>,
@@ -122,27 +113,35 @@ async function enqueueSend(
   key: string,
 ) {
   const { attachments, ...rest } = payload;
-  const invalid = await invalidSendAttachments(c.var.db, mailbox.mailboxId, attachments);
-  if (invalid.length) {
-    throw new HTTPException(400, { message: "attachments not available to this mailbox" });
+  if (attachments.length > MAX_SEND_ATTACHMENTS) {
+    throw new HTTPException(400, {
+      message: `a message carries at most ${MAX_SEND_ATTACHMENTS} attachments`,
+    });
   }
   const name = await fromName(c, mailbox.kind);
-  const request: MailActionRequest = {
-    kind: "send",
-    payload: {
-      ...rest,
-      ...(name ? { fromName: name } : {}),
-      ...(attachments.length ? { attachments } : {}),
-      messageId: newMessageId(payload.from),
-    },
-  };
-  const action = await enqueue(c, mailbox, request, outboxKey(c, key, "send"));
-  await markUploadsUsed(
+  const result = await enqueueSendWithAttachments(
     c.var.db,
-    attachments.flatMap((a) => (a.kind === "upload" ? [a.uploadId] : [])),
+    {
+      orgId: mailbox.orgId,
+      mailboxId: mailbox.mailboxId,
+      memberId: c.var.member.id,
+      requestId: c.var.requestId,
+      idempotencyKey: outboxKey(c, key, "send"),
+      kind: "send",
+      payload: {
+        ...rest,
+        ...(name ? { fromName: name } : {}),
+        ...(attachments.length ? { attachments } : {}),
+        messageId: newMessageId(payload.from),
+      },
+    },
+    attachments,
   );
+  if ("invalid" in result) {
+    throw new HTTPException(400, { message: "attachments not available to this mailbox" });
+  }
   pingLater(c);
-  return action;
+  return result.action;
 }
 
 /** Drops empty optional recipient lists so payloads stay as small as before. */
