@@ -80,9 +80,15 @@ export function NoteComposer({ thread, toggle }: { thread: Thread; toggle: React
     const body = text.trim();
     const mentions = picked.filter((p) => body.includes(`@${nameOf(p)}`)).map((p) => p.memberId);
     addNote.mutateAsync({ threadId: thread.id, body, mentions }).catch((error: Error) => {
-      appToast.error(error.message);
-      // Back in the box, unless something new was written meanwhile.
-      setText((current) => (current.trim() ? current : body));
+      // Back in the box; if a new note was started meanwhile, keep it and hand the failed one
+      // over on the clipboard, so neither is lost.
+      if (textarea.current?.value.trim()) {
+        void navigator.clipboard?.writeText(body).catch(() => undefined);
+        appToast.error(error.message, { description: "The note's text is on your clipboard." });
+      } else {
+        setText(body);
+        appToast.error(error.message);
+      }
     });
     setText("");
     setPicked([]);

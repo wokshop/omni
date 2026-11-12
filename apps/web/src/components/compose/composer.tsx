@@ -113,7 +113,9 @@ type Mode = "reply" | "forward" | "note";
  * while they wait in the outbox.
  */
 export function ReplyComposer({ thread, shared = false }: { thread: Thread; shared?: boolean }) {
-  const [mode, setMode] = useState<Mode>("reply");
+  const [picked, setMode] = useState<Mode>("reply");
+  // Note is for shared inboxes only: a personal thread opened next in the same list replies.
+  const mode = picked === "note" && !shared ? "reply" : picked;
   const toggle = <ModeToggle mode={mode} setMode={setMode} note={shared} />;
   // A fresh composer per mode: its own recipients, body and draft.
   if (mode === "note") return <NoteComposer key={thread.id} thread={thread} toggle={toggle} />;
