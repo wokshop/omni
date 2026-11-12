@@ -115,10 +115,10 @@ if (!DATABASE_URL || !MAIL_SERVICE_URL || !MAIL_SERVICE_HMAC_SECRET) {
   fail("connecting needs DATABASE_URL, MAIL_SERVICE_URL and MAIL_SERVICE_HMAC_SECRET");
 }
 const { db, close } = createDb(DATABASE_URL, { onnotice: () => {} });
-const ownerMemberId = await findMemberByEmail(db, values.org!, values.owner!).finally(close);
-if (!ownerMemberId) fail(`no member with email ${values.owner} in org ${values.org}`);
+const memberId = await findMemberByEmail(db, values.org!, values.owner!).finally(close);
+if (!memberId) fail(`no member with email ${values.owner} in org ${values.org}`);
 
-const body = JSON.stringify({ orgId: values.org, ownerMemberId, code, redirectUri, codeVerifier });
+const body = JSON.stringify({ orgId: values.org, memberId, code, codeVerifier, redirectUri });
 const headers = await signRequest({
   secret: MAIL_SERVICE_HMAC_SECRET,
   method: "POST",
