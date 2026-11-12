@@ -297,9 +297,13 @@ test("a customer's mail goes from Unassigned to resolved and archived, with note
     inReplyTo: replyMessageId,
     headers: { "Auto-Submitted": "auto-replied" },
   });
-  await waitFor(async () => {
-    const rows = await db
-      .select({ id: schema.messages.id })
+  // Stored is not enough: wait until the Worker applied the status rule to it, in this thread.
+  const autoReply = await waitFor(async () => {
+    const [row] = await db
+      .select({
+        threadId: schema.messages.threadId,
+        workflowAppliedAt: schema.messages.workflowAppliedAt,
+      })
       .from(schema.messages)
       .where(
         and(
@@ -307,8 +311,9 @@ test("a customer's mail goes from Unassigned to resolved and archived, with note
           eq(schema.messages.subject, `Automatic reply: Re: ${subject}`),
         ),
       );
-    return rows.length === 1;
+    return row?.workflowAppliedAt ? row : undefined;
   });
+  expect(autoReply.threadId).toBe(threadId);
   expect(await conversation()).toMatchObject({ status: "resolved" });
 
   /** Puts the staged file where the mail service reads it (one R2 bucket in production). */
