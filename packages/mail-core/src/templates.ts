@@ -17,7 +17,10 @@ export const TEMPLATE_VARIABLES = [
 export type TemplateVariable = (typeof TEMPLATE_VARIABLES)[number];
 export type TemplateValues = Partial<Record<TemplateVariable, string | null>>;
 
-const PATTERN = /\{\{\s*([a-z_]+(?:\.[a-z_]+)*)\s*(?:\|\s*([^}]*?)\s*)?\}\}/gi;
+// `{{ name }}` or `{{ name | fallback }}`. The classes are disjoint (no braces anywhere, no pipe in
+// the name), so matching stays linear on any input; the name's shape is checked afterwards.
+const PATTERN = /\{\{([^{}|]*)(?:\|([^{}]*))?\}\}/g;
+const NAME = /^[a-z_]+(?:\.[a-z_]+)*$/i;
 
 function escapeHtml(value: string) {
   return value
@@ -44,10 +47,16 @@ export function renderTemplate(
   options: { html?: boolean } = {},
 ): { text: string; missing: string[] } {
   const missing = new Set<string>();
-  const text = template.replace(PATTERN, (_match, rawName: string, fallback?: string) => {
-    const name = rawName.toLowerCase() as TemplateVariable;
-    const value = values[name]?.trim() || fallback || "";
-    if (!values[name]?.trim() && !fallback) missing.add(name);
+  const text = template.replace(PATTERN, (match, rawName: string, rawFallback?: string) => {
+    const trimmed = rawName.trim();
+    if (!NAME.test(trimmed)) return match;
+    const name = trimmed.toLowerCase();
+    // Own string values only: `{{constructor}}` must not reach Object.prototype.
+    const own = Object.hasOwn(values, name) ? values[name as TemplateVariable] : undefined;
+    const given = typeof own === "string" ? own.trim() : "";
+    const fallback = rawFallback?.trim() ?? "";
+    if (!given && !fallback) missing.add(name);
+    const value = given || fallback;
     return options.html ? escapeHtml(value) : value;
   });
   return { text, missing: [...missing] };
