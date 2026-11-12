@@ -26,7 +26,6 @@ import type {
 } from "@/components/domain/domain-registry-utils";
 import { Text, TextLink } from "@/components/ui/text";
 import { Tooltip, TooltipTrigger } from "@/components/ui/tooltip";
-import { FieldRevealedError, SlotError } from "@/components/ui/revealed-error";
 import { TextField } from "@/components/ui/text-field";
 import { appToast } from "@/components/ui/toast";
 import {
@@ -157,6 +156,13 @@ function useFinish() {
 
 const BackContext = createContext<(() => void) | undefined>(undefined);
 
+/**
+ * Validation and failures go to a toast (top centre during setup), never under a field, so
+ * nothing on the page shifts (dorks' onboarding). The buttons stay enabled: pressing one with
+ * something missing says what. The same message twice replaces itself instead of stacking.
+ */
+const notify = (message: string) => void appToast.error(message, { id: message });
+
 /** Points Back somewhere else inside a step (the inbox step's own views), or hides it. */
 function WithBack(props: { onBack: (() => void) | undefined; children: ReactNode }) {
   return <BackContext.Provider value={props.onBack}>{props.children}</BackContext.Provider>;
@@ -266,8 +272,8 @@ function PageForm(props: {
   submit?: string;
   /** Stands in for the submit button when the step's action isn't a form submit. */
   primary?: ReactNode;
-  /** A quiet way to do the step differently, under the buttons. */
-  footer?: ReactNode;
+  /** Another way through the step, a ghost button beside the primary one. Back then moves under them. */
+  secondary?: ReactNode;
   isPending?: boolean;
   /** Why the last submit failed. */
   problem?: string | null;
@@ -275,6 +281,9 @@ function PageForm(props: {
   children: ReactNode;
 }) {
   const onBack = useContext(BackContext);
+  useEffect(() => {
+    if (props.problem) notify(props.problem);
+  }, [props.problem]);
   return (
     <form
       className="flex flex-col"
@@ -290,22 +299,28 @@ function PageForm(props: {
         </header>
         {props.children}
       </div>
-      {/* The 40px above the buttons holds the form's error: one line (12 + 16 + 12) appears without
-          moving anything; a longer one grows the gap. */}
-      <SlotError className="min-h-10 py-3 *:justify-center">{props.problem}</SlotError>
+      {/* 40px over the buttons. Errors are toasts (`notify`), so nothing here moves. */}
+      <div className="h-10" />
       <div className="flex items-center justify-center gap-2">
-        {onBack && (
+        {onBack && !props.secondary && (
           <Button intent="ghost" className="text-muted-foreground" onPress={onBack}>
             Back
           </Button>
         )}
+        {props.secondary}
         {props.primary ?? (
           <Button type="submit" isPending={props.isPending}>
             {props.submit}
           </Button>
         )}
       </div>
-      {props.footer && <div className="mt-6 flex justify-center">{props.footer}</div>}
+      {onBack && props.secondary && (
+        <div className="mt-4 flex justify-center">
+          <Button intent="ghost" className="text-muted-foreground" onPress={onBack}>
+            Back
+          </Button>
+        </div>
+      )}
     </form>
   );
 }
@@ -327,16 +342,16 @@ function WorkspaceForm(props: { existing?: string; onDone: () => void }) {
       onSubmit={() => {
         setProblem(null);
         if (exists) return props.onDone();
+        if (!name.trim()) return notify("Enter a name for the workspace.");
         createWorkspace.mutate(name, {
           onSuccess: props.onDone,
           onError: (error) => setProblem(error.message),
         });
       }}
     >
-      <TextField value={name} onChange={setName} isRequired isReadOnly={exists} autoFocus>
+      <TextField value={name} onChange={setName} isReadOnly={exists} autoFocus>
         <Label>Workspace name</Label>
         <Input placeholder="Acme" />
-        <FieldRevealedError message="Enter a name for the workspace." />
       </TextField>
     </PageForm>
   );
@@ -438,14 +453,12 @@ function ConnectInboxForm(props: {
       }
       problem={props.problem}
       onSubmit={props.onDone}
-      footer={
-        !connected && (
-          <Button
-            intent="plain"
-            className="h-auto px-0 text-muted-foreground hover:text-foreground"
-            onPress={props.onOwnDomain}
-          >
-            Use your own domain instead
+      secondary={
+        connected ? (
+          <ConnectGoogleButton from="onboarding" intent="ghost" label="Add another" />
+        ) : (
+          <Button intent="ghost" onPress={props.onOwnDomain}>
+            Use Omni instead
           </Button>
         )
       }
@@ -482,16 +495,16 @@ function DomainEntryForm(props: { onDone: () => void }) {
       problem={problem}
       onSubmit={() => {
         setProblem(null);
+        if (!domain.trim()) return notify("Enter your domain, like acme.com.");
         addDomain.mutate(domain, {
           onSuccess: props.onDone,
           onError: (error) => setProblem(error.message),
         });
       }}
     >
-      <TextField value={domain} onChange={setDomain} isRequired autoFocus>
+      <TextField value={domain} onChange={setDomain} autoFocus>
         <Label>Domain</Label>
         <Input placeholder="acme.com" />
-        <FieldRevealedError message="Enter your domain, like acme.com." />
       </TextField>
     </PageForm>
   );
@@ -830,9 +843,13 @@ function MailboxesForm(props: {
       onSubmit={() => {
         setProblem(null);
         if (saved) return props.onDone();
+        if (!name.trim()) return notify("Enter the mailbox's name.");
+        if (ask && !password) return notify(`Enter the password for ${name.trim()}${suffix}.`);
+        if (ask && !imap.trim()) return notify("Enter the IMAP server.");
+        if (ask && !smtp.trim()) return notify("Enter the SMTP server.");
         const servers = ask ? { imap: server(imap, 993), smtp: server(smtp, 465) } : null;
         if (servers && (!servers.imap || !servers.smtp))
-          return setProblem("Enter each server as host or host:port.");
+          return notify("Enter each server as host or host:port.");
         createMailboxes.mutate(
           {
             domainId: props.domain.id,
@@ -846,7 +863,7 @@ function MailboxesForm(props: {
       }}
     >
       <div className="flex flex-col gap-2">
-        <TextField value={name} onChange={setName} isReadOnly={!!saved} isRequired autoFocus>
+        <TextField value={name} onChange={setName} isReadOnly={!!saved} autoFocus>
           <Label>Address</Label>
           <InputGroup className="[--input-gutter-end:--spacing(4)]">
             <Input placeholder="name" />
@@ -854,38 +871,25 @@ function MailboxesForm(props: {
               {suffix}
             </span>
           </InputGroup>
-          <FieldRevealedError message="Enter the mailbox's name." />
         </TextField>
         {ask && (
-          <TextField
-            aria-label="Password"
-            type="password"
-            value={password}
-            onChange={setPassword}
-            isRequired
-          >
+          <TextField aria-label="Password" type="password" value={password} onChange={setPassword}>
             <Input
-              size="lg"
               placeholder="Password (an app password if your host has them)"
               autoComplete="off"
-            />
-            <FieldRevealedError
-              message={`Enter the password for ${name.trim() || "this mailbox"}${suffix}.`}
             />
           </TextField>
         )}
       </div>
       {ask && (
         <>
-          <TextField value={imap} onChange={setImap} isRequired>
+          <TextField value={imap} onChange={setImap}>
             <Label>IMAP server</Label>
             <Input placeholder={`imap.${props.domain.domain}:993`} />
-            <FieldRevealedError message="Enter the IMAP server." />
           </TextField>
-          <TextField value={smtp} onChange={setSmtp} isRequired>
+          <TextField value={smtp} onChange={setSmtp}>
             <Label>SMTP server</Label>
             <Input placeholder={`smtp.${props.domain.domain}:465`} />
-            <FieldRevealedError message="Enter the SMTP server." />
           </TextField>
         </>
       )}
@@ -1010,6 +1014,10 @@ function InviteForm(props: {
 
   async function submit() {
     setProblem(null);
+    const wrong = emails
+      .map((e) => e.trim())
+      .find((e) => e && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
+    if (wrong) return notify(`${wrong} isn't an email address.`);
     setSending(true);
     try {
       // Each address leaves the list once invited, so a retry after an error sends only the rest.
@@ -1046,14 +1054,12 @@ function InviteForm(props: {
         render={(value, set, i) => (
           <TextField
             aria-label={`Email ${i + 1}`}
-            type="email"
             value={value}
             onChange={set}
             // The first field on arrival; a field just added after that.
             autoFocus={emails.length <= 3 ? i === 0 : i === emails.length - 1}
           >
             <Input placeholder="teammate@acme.com" />
-            <FieldRevealedError message="Enter a valid email address." />
           </TextField>
         )}
       />

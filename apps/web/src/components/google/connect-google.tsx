@@ -8,7 +8,7 @@ import type { GoogleReturn } from "@/lib/google-connection";
 
 export function ConnectGoogleButton(props: {
   from: GoogleReturn;
-  intent?: "primary" | "outline";
+  intent?: "primary" | "outline" | "ghost";
   label?: string;
   className?: string;
 }) {
