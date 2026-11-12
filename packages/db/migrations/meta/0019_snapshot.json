@@ -1,5 +1,5 @@
 {
-  "id": "c4b19ffe-3bce-42ca-9d5c-7edfc039aed4",
+  "id": "43d304a6-01c6-4876-87b8-be3abfbf397f",
   "prevId": "97c4a1c7-0785-4c4f-a2e9-c0e96edb39fd",
   "version": "7",
   "dialect": "postgresql",
@@ -2049,12 +2049,6 @@
         "name": {
           "name": "name",
           "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "name_seen_at": {
-          "name": "name_seen_at",
-          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },
@@ -5188,6 +5182,18 @@
         },
         "resolution_due_at": {
           "name": "resolution_due_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "response_clock_at": {
+          "name": "response_clock_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "resolution_clock_at": {
+          "name": "resolution_clock_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false

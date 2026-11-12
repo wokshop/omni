@@ -116,6 +116,21 @@ describe("forMember isolation", () => {
       (await asAlice.mailboxAssignees(aliceThread!.mailboxId))?.map((m) => m.memberId),
     ).toEqual([alice]);
     expect(await asAlice.mailboxAssignees(billingThread!.mailboxId)).toBeNull();
+    // Presence: only teammates in the inbox's own org hear it (Carol's grant crosses orgs).
+    expect(await asAlice.threadAudience(hello.threadId)).toEqual({
+      mailboxId: aliceThread!.mailboxId,
+      memberIds: [alice],
+    });
+    expect(await asAlice.threadAudience(billing.threadId)).toBeNull();
+    // SLA settings: the inbox's own, and none of another inbox's or org's.
+    expect(await asAlice.slaSettings(aliceThread!.mailboxId)).toEqual({
+      policies: [],
+      businessHours: null,
+      autoAssign: false,
+    });
+    expect(await asAlice.slaSettings(billingThread!.mailboxId)).toBeNull();
+    expect(await forMember(db, carol).slaSettings(aliceThread!.mailboxId)).toBeNull();
+    expect(await forMember(db, carol).threadAudience(hello.threadId)).toBeNull();
     expect(
       (await asAlice.listConversations({ mailboxId: aliceThread!.mailboxId, view: "all" })).map(
         (c) => c.id,
