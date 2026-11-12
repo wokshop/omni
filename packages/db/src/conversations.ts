@@ -694,11 +694,19 @@ export type InboundResult =
  * mailbox row lock makes concurrent ingests take turns instead of picking the same member.
  */
 async function nextInTurn(tx: Tx, row: ConversationRow) {
+  // Most inboxes don't auto-assign: read the flag before taking any lock.
+  const [flag] = await tx
+    .select({ on: mailboxes.autoAssign })
+    .from(mailboxes)
+    .where(eq(mailboxes.id, row.mailboxId));
+  if (!flag?.on) return null;
+  // "No key update" serializes turns without blocking the key-share locks that inserts referencing
+  // the inbox (messages, events) take, so concurrent ingests cannot deadlock on it.
   const [inbox] = await tx
     .select({ on: mailboxes.autoAssign, last: mailboxes.autoAssignLastMemberId })
     .from(mailboxes)
     .where(eq(mailboxes.id, row.mailboxId))
-    .for("update");
+    .for("no key update");
   if (!inbox?.on) return null;
   const team = (
     await tx
