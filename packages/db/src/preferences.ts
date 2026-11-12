@@ -2,6 +2,7 @@
 // window, and Expo push tokens. No preferences row means every default.
 import { and, eq, sql } from "drizzle-orm";
 import type { Db } from "./client.ts";
+import type { NotificationKind } from "./conversations.ts";
 import {
   memberPreferences,
   members,
@@ -10,7 +11,6 @@ import {
   type NotificationChannels,
 } from "./schema/index.ts";
 
-export type NotificationKind = (typeof notificationKind.enumValues)[number];
 export const NOTIFICATION_KINDS = notificationKind.enumValues;
 
 const ALL_ON: NotificationChannels = { realtime: true, desktop: true, push: true };
