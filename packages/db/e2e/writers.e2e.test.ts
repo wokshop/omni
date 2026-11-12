@@ -2,11 +2,16 @@ import { eq, sql } from "drizzle-orm";
 import { afterAll, describe, expect, test } from "vitest";
 import { createDb } from "../src/client.ts";
 import { moveMessageToThread, rescheduleAction, setLocationFlags } from "../src/mail-sync.ts";
+import { mergeThreads } from "../src/thread-merge.ts";
 import {
   attachments,
+  conversationEvents,
   mailActions,
   messageLocations,
   messages,
+  tags,
+  threadState,
+  threadTags,
   threads,
 } from "../src/schema/index.ts";
 import {
@@ -17,7 +22,7 @@ import {
   upsertFolder,
   upsertMessage,
 } from "../src/writers.ts";
-import { createMailbox, createOrg, createTestDatabase } from "./support.ts";
+import { createMailbox, createMember, createOrg, createTestDatabase } from "./support.ts";
 
 const { db, url, teardown } = await createTestDatabase();
 afterAll(teardown);
@@ -278,5 +283,52 @@ describe("moveMessageToThread", () => {
     expect(await db.select().from(threads).where(eq(threads.id, ours))).toEqual([]);
     const [joined] = await db.select().from(threads).where(eq(threads.id, gmails));
     expect(joined?.lastMessageAt.toISOString()).toBe(sentAt.toISOString());
+  });
+});
+
+describe("mergeThreads", () => {
+  test("rows both threads hold once (tag, member state, dedupe key) do not abort the merge", async () => {
+    const member = await createMember(db, org.id, "merger");
+    const make = (at: string) =>
+      createThread(db, {
+        orgId: org.id,
+        mailboxId: mailbox.id,
+        subjectKey: "merge",
+        lastMessageAt: new Date(at),
+      });
+    const older = await make("2026-10-01T00:00:00Z");
+    const newer = await make("2026-10-02T00:00:00Z");
+    const [tag] = await db
+      .insert(tags)
+      .values({ orgId: org.id, mailboxId: mailbox.id, name: "billing" })
+      .returning();
+    for (const threadId of [older, newer]) {
+      await db.insert(threadTags).values({ orgId: org.id, threadId, tagId: tag?.id ?? "" });
+      await db.insert(threadState).values({ orgId: org.id, threadId, memberId: member.id });
+      await db.insert(conversationEvents).values({
+        orgId: org.id,
+        mailboxId: mailbox.id,
+        threadId,
+        kind: "first_response",
+        dedupeKey: "first_response",
+      });
+    }
+
+    const merged = await mergeThreads(db, { mailboxId: mailbox.id, threadIds: [newer, older] });
+
+    expect(merged).toEqual({ intoThreadId: older, fromThreadIds: [newer] });
+    expect(await db.select().from(threads).where(eq(threads.id, newer))).toEqual([]);
+    const kept = await db.select().from(threadTags).where(eq(threadTags.threadId, older));
+    expect(kept.map((t) => t.tagId)).toEqual([tag?.id]);
+    const events = await db
+      .select()
+      .from(conversationEvents)
+      .where(eq(conversationEvents.threadId, older));
+    expect(events.map((e) => e.kind).toSorted()).toEqual(["first_response", "merged"]);
+    // Run again (a retried ingest): nothing left to merge, nothing changes.
+    expect(await mergeThreads(db, { mailboxId: mailbox.id, threadIds: [newer, older] })).toEqual({
+      intoThreadId: older,
+      fromThreadIds: [],
+    });
   });
 });
