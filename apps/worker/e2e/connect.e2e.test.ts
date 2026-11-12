@@ -68,8 +68,8 @@ function api(path: string, cookie: string, init: RequestInit = {}) {
 }
 
 /** Starts the flow: Google's consent URL and the flow cookie the browser now holds. */
-async function start(session: string) {
-  const response = await api("/connect/google/start", session);
+async function start(session: string, from?: "onboarding") {
+  const response = await api(`/connect/google/start${from ? `?return=${from}` : ""}`, session);
   expect(response.status).toBe(302);
   const consent = new URL(response.headers.get("location")!);
   const flow = response.headers
@@ -180,6 +180,41 @@ describe("connecting a Google account", () => {
       state: second.consent.searchParams.get("state")!,
     });
     expect(Object.fromEntries(taken.searchParams)).toEqual({ google: "error", reason: "in_use" });
+  });
+
+  test("started in setup, it returns to setup, and only a connected account lets setup finish", async () => {
+    const dee = await signedInMember("dee@connect.test");
+    // Setting up a workspace is its owner's job.
+    await database.db
+      .update(schema.members)
+      .set({ role: "owner" })
+      .where(eq(schema.members.id, dee.member.id));
+    const setup = async () =>
+      (
+        (await (await api("/onboarding", dee.session)).json()) as {
+          organization: { setup: string };
+        }
+      ).organization.setup;
+
+    const first = await start(dee.session, "onboarding");
+    const taken = await callback(`${dee.session}; ${first.flow}`, {
+      code: "taken-code",
+      state: first.consent.searchParams.get("state")!,
+    });
+    expect(taken.origin + taken.pathname).toBe(`${WEB_ORIGIN}/onboarding`);
+    expect(taken.searchParams.get("reason")).toBe("in_use");
+    expect(await setup()).toBe("created");
+    expect((await api("/onboarding/complete", dee.session, { method: "POST" })).status).toBe(409);
+
+    const second = await start(dee.session, "onboarding");
+    const landed = await callback(`${dee.session}; ${second.flow}`, {
+      code: "google-code",
+      state: second.consent.searchParams.get("state")!,
+    });
+    expect(landed.origin + landed.pathname).toBe(`${WEB_ORIGIN}/onboarding`);
+    expect(landed.searchParams.get("google")).toBe("connected");
+    expect(await setup()).toBe("mailboxes_created");
+    expect((await api("/onboarding/complete", dee.session, { method: "POST" })).status).toBe(200);
   });
 });
 
