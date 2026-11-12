@@ -1,5 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { request } from "node:http";
+import { schema } from "@omni/db";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import {
   createMailbox,
@@ -68,7 +70,7 @@ async function connect(cookie: string) {
   const socket = new WebSocket(url, {
     headers: { cookie, origin: WEB_ORIGIN },
   } as unknown as string[]);
-  const received: { type: string; mailboxId: string; threadIds: string[] }[] = [];
+  const received: Record<string, unknown>[] = [];
   socket.addEventListener("message", (e) => received.push(JSON.parse(String(e.data))));
   await new Promise<void>((resolve, reject) => {
     socket.addEventListener("open", () => resolve());
@@ -77,6 +79,9 @@ async function connect(cookie: string) {
   return {
     socket,
     received,
+    presence(threadId: string, state: "viewing" | "replying" | "left") {
+      socket.send(JSON.stringify({ type: "presence", threadId, state }));
+    },
     async next(count: number) {
       const deadline = Date.now() + 10_000;
       while (received.length < count) {
@@ -136,15 +141,15 @@ test("mail events reach only members who can see the mailbox, also after hiberna
     .evictDurableObject("Realtime", { name: org.id, webSockets: "hibernate" });
   expect((await postMailEvents(worker, event(beaBox, beaThread))).status).toBe(202);
 
-  expect(await beaSocket.next(1)).toEqual([
-    { type: "changed", mailboxId: beaBox.id, threadIds: [beaThread.threadId] },
-  ]);
-  expect(await anaSocket.next(1)).toEqual([
-    { type: "changed", mailboxId: anaBox.id, threadIds: [anaThread.threadId] },
-  ]);
+  const changed = (mailboxId: string, threadId: string) => [
+    { type: "changed", mailboxId, threadIds: [threadId] },
+    { type: "thread.changed", mailboxId, threadIds: [threadId] },
+  ];
+  expect(await beaSocket.next(2)).toEqual(changed(beaBox.id, beaThread.threadId));
+  expect(await anaSocket.next(2)).toEqual(changed(anaBox.id, anaThread.threadId));
   // Ana's event went out before Bea's, so had it leaked Bea would have seen it first.
-  expect(beaSocket.received).toHaveLength(1);
-  expect(anaSocket.received).toHaveLength(1);
+  expect(beaSocket.received).toHaveLength(2);
+  expect(anaSocket.received).toHaveLength(2);
 
   anaSocket.socket.close();
   beaSocket.socket.close();
@@ -189,6 +194,81 @@ test("a send that failed for good is told to the member who sent it, and nobody 
   beaSocket.socket.close();
 });
 
+test("mail deleted on the server refreshes its threads for open apps and re-runs their AI", async () => {
+  const { db } = database;
+  const org = await createOrg(db, "initech");
+  await createMailbox(db, org.id, SYSTEM_MAIL_FROM);
+  const ana = await createMember(db, org.id, "ana@initech.test");
+  const box = await createMailbox(db, org.id, "help@initech.test");
+  await grant(db, org.id, box.id, ana.id);
+  const kept = await seedMessage(db, box, { subject: "Kept", fromAddress: "x@c.test", uid: 1 });
+  const anaSocket = await connect(await signIn(worker, db, "ana@initech.test"));
+
+  // One thread survives with fewer messages; the others were emptied and deleted. A big purge
+  // names more threads than one Queue `sendBatch` takes (100).
+  const gone = Array.from({ length: 149 }, (_, i) => `deleted-thread-${i}`);
+  const response = await postMailEvents(worker, {
+    events: [
+      {
+        type: "messages.pruned",
+        orgId: org.id,
+        mailboxId: box.id,
+        threadIds: [kept.threadId, ...gone],
+      },
+    ],
+  });
+
+  expect(response.status).toBe(202);
+  // A summary of the thread may quote a deleted message: every thread gets an AI job, and the
+  // ones that are gone end as `missing` in the consumer.
+  expect(await response.json()).toEqual({ ok: true, jobs: 150 });
+  const threadIds = [kept.threadId, ...gone];
+  expect(await anaSocket.next(2)).toEqual([
+    { type: "changed", mailboxId: box.id, threadIds },
+    { type: "thread.changed", mailboxId: box.id, threadIds },
+  ]);
+  anaSocket.socket.close();
+});
+
+test("merged threads refresh both ids, tell readers where to go and re-summarize the survivor", async () => {
+  const { db } = database;
+  const org = await createOrg(db, "hooli");
+  await createMailbox(db, org.id, SYSTEM_MAIL_FROM);
+  const ana = await createMember(db, org.id, "ana@hooli.test");
+  const box = await createMailbox(db, org.id, "help@hooli.test");
+  await grant(db, org.id, box.id, ana.id);
+  const kept = await seedMessage(db, box, { subject: "Refund", fromAddress: "x@c.test", uid: 1 });
+  const anaSocket = await connect(await signIn(worker, db, "ana@hooli.test"));
+
+  const response = await postMailEvents(worker, {
+    events: [
+      {
+        type: "threads.merged",
+        orgId: org.id,
+        mailboxId: box.id,
+        intoThreadId: kept.threadId,
+        fromThreadIds: ["merged-thread"],
+      },
+    ],
+  });
+
+  expect(response.status).toBe(202);
+  // Only the survivor needs a new summary; the merged id is gone.
+  expect(await response.json()).toEqual({ ok: true, jobs: 1 });
+  const threadIds = [kept.threadId, "merged-thread"];
+  expect(await anaSocket.next(3)).toEqual([
+    { type: "changed", mailboxId: box.id, threadIds },
+    { type: "thread.changed", mailboxId: box.id, threadIds },
+    {
+      type: "merged",
+      mailboxId: box.id,
+      intoThreadId: kept.threadId,
+      fromThreadIds: ["merged-thread"],
+    },
+  ]);
+  anaSocket.socket.close();
+});
+
 test("a page on a foreign origin cannot open the member's socket with their cookie", async () => {
   const { db } = database;
   const org = await createOrg(db, "origins");
@@ -201,4 +281,170 @@ test("a page on a foreign origin cannot open the member's socket with their cook
   expect(await handshake(cookie, WEB_ORIGIN)).toBe(101);
   // Native clients send no Origin and hold the session themselves.
   expect(await handshake(cookie)).toBe(101);
+});
+
+/** A support inbox Ana and Bea work in, with Carl in the org but not in the inbox. */
+async function supportDesk(slug: string) {
+  const { db } = database;
+  const org = await createOrg(db, slug);
+  await createMailbox(db, org.id, SYSTEM_MAIL_FROM);
+  const inbox = await createMailbox(db, org.id, `support@${slug}.test`);
+  const ana = await createMember(db, org.id, `ana@${slug}.test`);
+  const bea = await createMember(db, org.id, `bea@${slug}.test`);
+  const carl = await createMember(db, org.id, `carl@${slug}.test`);
+  await grant(db, org.id, inbox.id, ana.id);
+  await grant(db, org.id, inbox.id, bea.id);
+  const { threadId } = await seedMessage(db, inbox, {
+    subject: "Broken export",
+    fromAddress: "luis@client.test",
+    uid: 1,
+  });
+  return { org, inbox, ana, bea, carl, threadId };
+}
+
+const quiet = () => new Promise((resolve) => setTimeout(resolve, 300));
+
+test("presence reaches only teammates who can see the conversation, survives hibernation, and clears on close", async () => {
+  const { db } = database;
+  const desk = await supportDesk("presence");
+  const ana = await connect(await signIn(worker, db, "ana@presence.test"));
+  const bea = await connect(await signIn(worker, db, "bea@presence.test"));
+  const carl = await connect(await signIn(worker, db, "carl@presence.test"));
+  const at = (memberId: string, state: string) => ({
+    type: "presence",
+    mailboxId: desk.inbox.id,
+    threadId: desk.threadId,
+    memberId,
+    state,
+  });
+
+  ana.presence(desk.threadId, "viewing");
+  expect(await bea.next(1)).toEqual([at(desk.ana.id, "viewing")]);
+  // Ana's state is kept on her socket, not in memory: a hibernated object still knows it.
+  await worker.server
+    .getWorker()
+    .evictDurableObject("Realtime", { name: desk.org.id, webSockets: "hibernate" });
+  bea.presence(desk.threadId, "replying");
+  // The newcomer hears who is already there; Ana hears Bea.
+  expect(await bea.next(2)).toEqual([at(desk.ana.id, "viewing"), at(desk.ana.id, "viewing")]);
+  expect(await ana.next(1)).toEqual([at(desk.bea.id, "replying")]);
+
+  // Carl cannot see the inbox: his claim to be there is dropped, and he hears nothing.
+  carl.presence(desk.threadId, "viewing");
+  // Oversized and malformed messages are ignored.
+  ana.presence(desk.threadId, "x".repeat(2000) as "viewing");
+  ana.socket.send("not json");
+  await quiet();
+  expect(carl.received).toEqual([]);
+  expect(ana.received).toHaveLength(1);
+  expect(bea.received).toHaveLength(2);
+
+  // Closing the app tells the others Ana left.
+  ana.socket.close();
+  expect(await bea.next(3)).toEqual([
+    at(desk.ana.id, "viewing"),
+    at(desk.ana.id, "viewing"),
+    at(desk.ana.id, "left"),
+  ]);
+  expect(carl.received).toEqual([]);
+  bea.socket.close();
+  carl.socket.close();
+});
+
+test("a repeated heartbeat refreshes teammates, and a second tab viewing never hides one replying", async () => {
+  const { db } = database;
+  const desk = await supportDesk("heartbeat");
+  const anaCookie = await signIn(worker, db, "ana@heartbeat.test");
+  const replyingTab = await connect(anaCookie);
+  const viewingTab = await connect(anaCookie);
+  const bea = await connect(await signIn(worker, db, "bea@heartbeat.test"));
+  const ana = (state: string) => ({
+    type: "presence",
+    mailboxId: desk.inbox.id,
+    threadId: desk.threadId,
+    memberId: desk.ana.id,
+    state,
+  });
+
+  replyingTab.presence(desk.threadId, "replying");
+  expect(await bea.next(1)).toEqual([ana("replying")]);
+  // The web app repeats its state every 30 s and drops a teammate unheard for 70 s.
+  replyingTab.presence(desk.threadId, "replying");
+  expect(await bea.next(2)).toEqual([ana("replying"), ana("replying")]);
+  viewingTab.presence(desk.threadId, "viewing");
+  expect(await bea.next(3)).toEqual([ana("replying"), ana("replying"), ana("replying")]);
+  for (const socket of [replyingTab, viewingTab, bea]) socket.socket.close();
+});
+
+test("notes and assignments notify teammates live, as their preferences allow", async () => {
+  const { db } = database;
+  const desk = await supportDesk("live");
+  const anaCookie = await signIn(worker, db, "ana@live.test");
+  const bea = await connect(await signIn(worker, db, "bea@live.test"));
+  const carl = await connect(await signIn(worker, db, "carl@live.test"));
+  // Bea turned off live mention alerts, but not assignment alerts.
+  await db.insert(schema.memberPreferences).values({
+    orgId: desk.org.id,
+    memberId: desk.bea.id,
+    notifications: { mention: { realtime: false, desktop: true, push: true } },
+  });
+  const api = (path: string, method: string, body: unknown) =>
+    fetch(new URL(`/api${path}`, worker.url), {
+      method,
+      headers: {
+        cookie: anaCookie,
+        "content-type": "application/json",
+        "idempotency-key": `key-${randomBytes(8).toString("hex")}`,
+      },
+      body: JSON.stringify(body),
+    });
+
+  const created = await api(`/threads/${desk.threadId}/notes`, "POST", {
+    body: "@Bea can you look?",
+    mentions: [desk.bea.id],
+  });
+  expect(created.status).toBe(201);
+  const { note } = (await created.json()) as { note: { id: string } };
+  expect(
+    (await api(`/threads/${desk.threadId}/assignee`, "PUT", { memberId: desk.bea.id })).status,
+  ).toBe(200);
+
+  // Editing the note refreshes it for teammates too.
+  expect(
+    (await api(`/threads/${desk.threadId}/notes/${note.id}`, "PATCH", { body: "@Bea please" }))
+      .status,
+  ).toBe(200);
+
+  await bea.next(8);
+  await quiet();
+  // The two requests' fan-outs run after their responses, so they may interleave.
+  const helpdesk = bea.received
+    .filter((e) => e.type !== "changed" && e.type !== "thread.changed")
+    .sort((a, b) => String(a.type).localeCompare(String(b.type)));
+  expect(helpdesk).toEqual([
+    { type: "note.created", mailboxId: desk.inbox.id, threadId: desk.threadId, noteId: note.id },
+    { type: "notification", threadId: desk.threadId, kind: "assigned" },
+  ]);
+  expect(bea.received.filter((e) => e.type === "thread.changed")).toHaveLength(3);
+  expect(carl.received).toEqual([]);
+
+  // Deleting the note withdraws Bea's mention: gone from her list, and her app hears it live.
+  const mentionsOf = () =>
+    db
+      .select({ id: schema.notifications.id })
+      .from(schema.notifications)
+      .where(eq(schema.notifications.noteId, note.id));
+  expect(await mentionsOf()).toHaveLength(1);
+  const seen = bea.received.length;
+  expect(
+    (await api(`/threads/${desk.threadId}/notes/${note.id}`, "DELETE", undefined)).status,
+  ).toBe(204);
+  await bea.next(seen + 3);
+  await quiet();
+  expect(bea.received.slice(seen).filter((e) => e.type === "notification.removed")).toEqual([
+    { type: "notification.removed", threadId: desk.threadId },
+  ]);
+  expect(await mentionsOf()).toEqual([]);
+  bea.socket.close();
+  carl.socket.close();
 });

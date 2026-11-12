@@ -1,6 +1,13 @@
 import {
   DNS_LOOKUP_PATH,
   dnsLookupBodySchema,
+  GOOGLE_CONNECT_PATH,
+  GOOGLE_DISCONNECT_PATH,
+  type GoogleConnectBody,
+  type GoogleConnectResult,
+  googleConnectBodySchema,
+  type GoogleDisconnectBody,
+  googleDisconnectBodySchema,
   MAIL_PING_PATH,
   PROVISION_DOMAIN_PATH,
   PROVISION_MAILBOX_PATH,
@@ -77,6 +84,10 @@ export interface HttpDeps {
   health(): Promise<{ ok: boolean } & Record<string, unknown>>;
   /** Onboarding's domain and mailbox setup. Absent: those routes answer 404. */
   provisioner?: Provisioner;
+  /** Connects a Google account from an OAuth code (ADR 0023). Absent: that route answers 404. */
+  connectGoogle?(input: GoogleConnectBody): Promise<GoogleConnectResult>;
+  /** Disconnects a Google account (ADR 0023). Absent: that route answers 404. */
+  disconnectGoogle?(input: GoogleDisconnectBody): Promise<{ mailboxId: string }>;
   /** Authoritative DNS lookups for domain verification. Absent: that route answers 404. */
   dns?: DnsLookup;
   onError?(error: unknown): void;
@@ -143,6 +154,22 @@ export function createApp(deps: HttpDeps): Hono {
     const body = await signedBody(c, provisionMailboxBodySchema, deps.provisioner !== undefined);
     if (body instanceof Response) return body;
     return answer(c, () => deps.provisioner!.mailbox(body));
+  });
+
+  app.post(GOOGLE_CONNECT_PATH, async (c) => {
+    const body = await signedBody(c, googleConnectBodySchema, deps.connectGoogle !== undefined);
+    if (body instanceof Response) return body;
+    return answer(c, () => deps.connectGoogle!(body));
+  });
+
+  app.post(GOOGLE_DISCONNECT_PATH, async (c) => {
+    const body = await signedBody(
+      c,
+      googleDisconnectBodySchema,
+      deps.disconnectGoogle !== undefined,
+    );
+    if (body instanceof Response) return body;
+    return answer(c, () => deps.disconnectGoogle!(body));
   });
 
   app.post(DNS_LOOKUP_PATH, async (c) => {

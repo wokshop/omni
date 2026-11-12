@@ -1,8 +1,16 @@
 import { EventEmitter } from "node:events";
 import { Data, Deferred, Duration, Effect, Fiber, Schedule, Semaphore } from "effect";
-import { ImapFlow, type ListResponse } from "imapflow";
+import { type FetchMessageObject, ImapFlow, type ListResponse } from "imapflow";
 import type { Logger } from "./log.ts";
-import type { FlagChange, FolderInfo, FolderRole, MailStore, SyncPosition } from "./ports.ts";
+import type {
+  FetchedMessage,
+  FlagChange,
+  FolderInfo,
+  FolderRole,
+  MailStore,
+  SyncPosition,
+} from "./ports.ts";
+import { discard, isSpooled, spool } from "./spool.ts";
 import { backoff } from "./timing.ts";
 
 export interface ServerEndpoint {
@@ -12,7 +20,20 @@ export interface ServerEndpoint {
   secure: boolean;
 }
 
-/** A mailbox with its decrypted app password. Lives only inside the mail service. */
+/** Mints OAuth2 access tokens for one mailbox (XOAUTH2). */
+export interface TokenSource {
+  /** A token valid for at least the next few minutes. */
+  get(): Promise<string>;
+  /** The server refused the last token: the next `get` mints a new one. */
+  invalidate(): void;
+  /** `get` failed because the grant is gone: retrying cannot help, the person must reconnect. */
+  isRevoked(error: unknown): boolean;
+}
+
+/** How a mailbox logs in to IMAP and SMTP. */
+export type MailAuth = { kind: "password"; pass: string } | { kind: "oauth2"; token: TokenSource };
+
+/** A mailbox with its decrypted login. Lives only inside the mail service. */
 export interface MailboxConfig {
   id: string;
   orgId: string;
@@ -20,9 +41,18 @@ export interface MailboxConfig {
   /** Shared mailboxes keep read state per person in Postgres; we never touch their `\Seen`. */
   kind: "personal" | "shared";
   user: string;
-  pass: string;
+  auth: MailAuth;
   imap: ServerEndpoint;
   smtp: ServerEndpoint;
+}
+
+/** ImapFlow's and Nodemailer's `auth` for this mailbox, with a fresh token for OAuth2. */
+export async function loginFor(
+  mailbox: Pick<MailboxConfig, "user" | "auth">,
+): Promise<{ user: string; pass: string } | { user: string; accessToken: string }> {
+  return mailbox.auth.kind === "password"
+    ? { user: mailbox.user, pass: mailbox.auth.pass }
+    : { user: mailbox.user, accessToken: await mailbox.auth.token.get() };
 }
 
 export interface Capabilities {
@@ -30,6 +60,8 @@ export interface Capabilities {
   condstore: boolean;
   uidplus: boolean;
   move: boolean;
+  /** Gmail (`X-GM-EXT-1`): system folders only, All Mail is the archive, X-GM-THRID threads. */
+  gmail: boolean;
   /** Every capability the server advertised, logged on connect to show what a host supports. */
   all: string[];
 }
@@ -70,6 +102,11 @@ export interface ConnectionOptions {
   batchSize?: number;
   /** A fetch batch also stops at this many bytes, so big messages come one at a time. */
   batchBytes?: number;
+  /**
+   * A message larger than this is streamed to a temp file and parsed from there, never held in
+   * memory: parsing costs several times a message's size, and the VM is small.
+   */
+  streamAboveBytes?: number;
   reconnectBaseMs?: number;
   reconnectMaxMs?: number;
   /**
@@ -146,6 +183,7 @@ export class MailboxConnection extends EventEmitter<Events> {
   private readonly log: Logger;
   private readonly batchSize: number;
   private readonly batchBytes: number;
+  private readonly streamAboveBytes: number;
   private readonly reconnectBaseMs: number;
   private readonly reconnectMaxMs: number;
   private readonly stableAfterMs: number;
@@ -175,6 +213,7 @@ export class MailboxConnection extends EventEmitter<Events> {
     this.log = options.logger.child({ mailboxId: mailbox.id });
     this.batchSize = options.batchSize ?? 50;
     this.batchBytes = options.batchBytes ?? 16 * 1024 * 1024;
+    this.streamAboveBytes = options.streamAboveBytes ?? 4 * 1024 * 1024;
     this.reconnectBaseMs = options.reconnectBaseMs ?? 1_000;
     this.reconnectMaxMs = options.reconnectMaxMs ?? 5 * 60_000;
     this.stableAfterMs = options.stableAfterMs ?? 60_000;
@@ -343,6 +382,8 @@ export class MailboxConnection extends EventEmitter<Events> {
       Effect.tapError((error) =>
         Effect.sync(() => {
           if (!(error instanceof ImapAuthFailed)) return;
+          // The token may have been revoked or rotated under us: mint a new one next attempt.
+          if (this.mailbox.auth.kind === "oauth2") this.mailbox.auth.token.invalidate();
           this.authFailures++;
           this.emit("auth_failed");
         }),
@@ -370,8 +411,16 @@ export class MailboxConnection extends EventEmitter<Events> {
    */
   private session(): Effect.Effect<void, SessionError> {
     return Effect.gen({ self: this }, function* () {
+      // A revoked Google grant is a rejected login; a token endpoint outage is a failed connect.
+      const login = yield* Effect.tryPromise({
+        try: () => loginFor(this.mailbox),
+        catch: (cause) =>
+          this.mailbox.auth.kind === "oauth2" && this.mailbox.auth.token.isRevoked(cause)
+            ? new ImapAuthFailed({ cause })
+            : new ImapConnectFailed({ cause }),
+      });
       const client = yield* Effect.acquireRelease(
-        Effect.sync(() => this.createClient()),
+        Effect.sync(() => this.createClient(login)),
         (created) => this.release(created),
       );
       const closed = Deferred.makeUnsafe<void>();
@@ -418,13 +467,13 @@ export class MailboxConnection extends EventEmitter<Events> {
     }).pipe(Effect.scoped);
   }
 
-  private createClient(): ImapFlow {
-    const { imap, user, pass } = this.mailbox;
+  private createClient(auth: Awaited<ReturnType<typeof loginFor>>): ImapFlow {
+    const { imap } = this.mailbox;
     const client = new ImapFlow({
       host: imap.host,
       port: imap.port,
       secure: imap.secure,
-      auth: { user, pass },
+      auth,
       logger: false,
       clientInfo: { name: "omni" },
       // Start IDLE soon after our own commands finish, and restart it before NATs drop it.
@@ -524,16 +573,20 @@ export class MailboxConnection extends EventEmitter<Events> {
 
   private async discoverFolders(): Promise<void> {
     const listed = await this.requireClient().list();
+    const gmail = this.capabilities?.gmail === true;
     const taken = new Set<FolderRole>();
     this.folders = listed
       .filter((f) => !f.flags.has("\\Noselect") && !f.flags.has("\\NonExistent"))
       .map((f) => {
         // One folder per role; a second "Sent Messages" next to "Sent" is just another folder.
-        let role = roleOf(f);
+        let role = roleOf(f, gmail);
         if (role !== "other" && taken.has(role)) role = "other";
         taken.add(role);
         return { path: f.path, role };
-      });
+      })
+      // Gmail's labels (and Starred, Important) are views of All Mail: syncing them only adds
+      // copies of messages All Mail already has (ADR 0023).
+      .filter((f) => !gmail || f.role !== "other");
     await this.store.saveFolders(this.mailbox.id, this.folders);
   }
 
@@ -637,39 +690,53 @@ export class MailboxConnection extends EventEmitter<Events> {
       result.flagsChanged = flagChanges.length;
 
       let consecutiveFailures = 0;
-      for await (const batch of this.sizedBatches(client, added)) {
+      const store = async (fetched: FetchedMessage) => {
+        try {
+          const { created } = await this.store.storeMessage(mailboxId, fetched);
+          consecutiveFailures = 0;
+          if (created) {
+            result.added++;
+            this.emit("message", { mailboxId, folder: path, role, uid: fetched.uid });
+          }
+        } catch (error) {
+          // One unparseable or unstorable message must not block the folder. It stays out of the
+          // index, so the next sync's UID diff retries it. A run of failures means storage is
+          // down: give up on the folder rather than walking the whole mailbox.
+          result.failed++;
+          consecutiveFailures++;
+          this.log.warn("sync.message_failed", { folder: path, uid: fetched.uid, error });
+          if (consecutiveFailures >= MAX_CONSECUTIVE_STORE_FAILURES) throw error;
+        }
+      };
+      for await (const { uids: batch, large } of this.sizedBatches(client, added)) {
         this.throwIfStopped();
+        if (large) {
+          // One message too big to hold in memory: streamed to a temp file, never buffered.
+          const fetched = await this.fetchLarge(client, path, batch[0] ?? 0);
+          if (!fetched) continue;
+          try {
+            await store(fetched);
+          } finally {
+            if (isSpooled(fetched.raw)) await discard(fetched.raw.path);
+          }
+          this.throwIfStopped();
+          continue;
+        }
         for await (const msg of client.fetch(
           batch.join(","),
-          { uid: true, flags: true, source: true, internalDate: true },
+          {
+            uid: true,
+            flags: true,
+            source: true,
+            internalDate: true,
+            ...(this.capabilities?.gmail ? { threadId: true } : {}),
+          },
           { uid: true },
         )) {
           // Finish the message in hand, then stop; the rest of the batch is fetched next start.
           if (this.stopped) continue;
           if (!msg.source) continue;
-          try {
-            const { created } = await this.store.storeMessage(mailboxId, {
-              folder: path,
-              uid: msg.uid,
-              raw: msg.source,
-              flags: sortedFlags(msg.flags),
-              modseq: msg.modseq ?? null,
-              internalDate: msg.internalDate ? new Date(msg.internalDate) : null,
-            });
-            consecutiveFailures = 0;
-            if (created) {
-              result.added++;
-              this.emit("message", { mailboxId, folder: path, role, uid: msg.uid });
-            }
-          } catch (error) {
-            // One unparseable or unstorable message must not block the folder. It stays out of the
-            // index, so the next sync's UID diff retries it. A run of failures means storage is
-            // down: give up on the folder rather than walking the whole mailbox.
-            result.failed++;
-            consecutiveFailures++;
-            this.log.warn("sync.message_failed", { folder: path, uid: msg.uid, error });
-            if (consecutiveFailures >= MAX_CONSECUTIVE_STORE_FAILURES) throw error;
-          }
+          await store({ ...fetchedFields(path, msg), raw: msg.source });
         }
         this.throwIfStopped();
       }
@@ -697,9 +764,13 @@ export class MailboxConnection extends EventEmitter<Events> {
   /**
    * Splits `uids` (newest first) into fetch batches of at most `batchSize` messages and
    * `batchBytes` bytes, so memory stays bounded however big the mail is: a message larger than
-   * the byte budget is fetched on its own. Sizes come from one cheap RFC822.SIZE fetch per chunk.
+   * the byte budget is fetched on its own, and one above `streamAboveBytes` is marked `large`
+   * to be streamed. Sizes come from one cheap RFC822.SIZE fetch per chunk.
    */
-  private async *sizedBatches(client: ImapFlow, uids: number[]): AsyncGenerator<number[]> {
+  private async *sizedBatches(
+    client: ImapFlow,
+    uids: number[],
+  ): AsyncGenerator<{ uids: number[]; large: boolean }> {
     const SIZE_CHUNK = 500;
     let batch: number[] = [];
     let bytes = 0;
@@ -717,11 +788,15 @@ export class MailboxConnection extends EventEmitter<Events> {
         // Expunged since the UID search: nothing to fetch.
         if (!sizes.has(uid)) continue;
         const size = sizes.get(uid) ?? 0;
+        if (size > this.streamAboveBytes) {
+          yield { uids: [uid], large: true };
+          continue;
+        }
         if (
           batch.length > 0 &&
           (batch.length >= this.batchSize || bytes + size > this.batchBytes)
         ) {
-          yield batch;
+          yield { uids: batch, large: false };
           batch = [];
           bytes = 0;
         }
@@ -729,7 +804,32 @@ export class MailboxConnection extends EventEmitter<Events> {
         bytes += size;
       }
     }
-    if (batch.length > 0) yield batch;
+    if (batch.length > 0) yield { uids: batch, large: false };
+  }
+
+  /** A message's fields, then its bytes streamed to a temp file. Null if it was expunged. */
+  private async fetchLarge(
+    client: ImapFlow,
+    path: string,
+    uid: number,
+  ): Promise<FetchedMessage | null> {
+    const msg = await client.fetchOne(
+      String(uid),
+      {
+        uid: true,
+        flags: true,
+        internalDate: true,
+        ...(this.capabilities?.gmail ? { threadId: true } : {}),
+      },
+      { uid: true },
+    );
+    if (!msg) return null;
+    const download = await client.download(String(uid), undefined, {
+      uid: true,
+      chunkSize: 1024 * 1024,
+    });
+    if (!download.content) return null;
+    return { ...fetchedFields(path, msg), raw: await spool(download.content) };
   }
 }
 
@@ -740,13 +840,27 @@ function detectCapabilities(client: ImapFlow): Capabilities {
     condstore: client.enabled.has("CONDSTORE") || has("CONDSTORE"),
     uidplus: has("UIDPLUS"),
     move: has("MOVE"),
+    gmail: has("X-GM-EXT-1"),
     all: [...client.capabilities.keys()].toSorted(),
   };
 }
 
-function roleOf(folder: ListResponse): FolderRole {
+function roleOf(folder: ListResponse, gmail: boolean): FolderRole {
   if (folder.path.toUpperCase() === "INBOX") return "inbox";
+  // Gmail archives by removing the Inbox label, which leaves the message in All Mail only.
+  if (gmail && folder.specialUse === "\\All") return "archive";
   return (folder.specialUse && ROLE_BY_SPECIAL_USE[folder.specialUse]) || "other";
+}
+
+function fetchedFields(path: string, msg: FetchMessageObject): Omit<FetchedMessage, "raw"> {
+  return {
+    folder: path,
+    uid: msg.uid,
+    flags: sortedFlags(msg.flags),
+    modseq: msg.modseq ?? null,
+    internalDate: msg.internalDate ? new Date(msg.internalDate) : null,
+    ...(msg.threadId ? { providerThreadId: msg.threadId } : {}),
+  };
 }
 
 function sortedFlags(flags: Set<string> | undefined): string[] {

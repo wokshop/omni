@@ -7,9 +7,10 @@ import { reconcileSubscriptions } from "./billing-reconcile.ts";
 import { openDb } from "./db.ts";
 import { recheckLocks } from "./domains.ts";
 import { loadConfig } from "./env.ts";
-import { wakeSnoozed } from "./sla.ts";
+import { alertSlas, wakeSnoozed } from "./sla.ts";
 import { createLogger } from "./log.ts";
 import { consumeQueue, type AiJob } from "./queue.ts";
+import { cleanupExpiredUploads } from "./uploads.ts";
 
 export type { AppType } from "./app.ts";
 export { DomainWatch } from "./domain-watch.ts";
@@ -49,24 +50,33 @@ const DAILY_CRON = "47 3 * * *";
 /** Must match the every-minute cron in wrangler.jsonc: the helpdesk's snooze clock. */
 const MINUTE_CRON = "* * * * *";
 
-/** The helpdesk's clock: wakes snoozed conversations whose time has come. Safe to run twice. */
+/**
+ * The helpdesk's clock: wakes snoozed conversations whose time has come, then raises SLA alerts
+ * (a woken conversation may already be late). Safe to run twice.
+ */
 async function scheduledMinute(env: Env) {
   const { db, close } = openDb(env);
   const log = createLogger({ component: "helpdesk", requestId: crypto.randomUUID() });
   try {
     const result = await wakeSnoozed({ env, db, config: loadConfig(env), log });
     if (result.woken) log.info("helpdesk.snoozes_woken", result);
+    const alerts = await alertSlas({ env, db });
+    if (alerts.atRisk || alerts.breached) log.info("helpdesk.sla_alerts", alerts);
   } finally {
     await close();
   }
 }
 
 /**
- * The daily cron: billing reconcile and the abandoned sign-up sweep. Each runs even if the other
+ * The daily cron: billing reconcile, the abandoned sign-up sweep and expired uploads. Each runs even if the other
  * fails; the run still fails so the error is visible.
  */
 async function scheduledDaily(env: Env) {
-  const results = await Promise.allSettled([scheduledReconcile(env), scheduledPrune(env)]);
+  const results = await Promise.allSettled([
+    scheduledReconcile(env),
+    scheduledPrune(env),
+    cleanupExpiredUploads(env),
+  ]);
   const failed = results.find((r) => r.status === "rejected");
   if (failed) throw failed.reason;
 }

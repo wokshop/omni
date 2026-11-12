@@ -8,8 +8,10 @@ import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { serve } from "@hono/node-server";
 import { schema } from "@omni/db";
+import { createMember } from "@omni/db/testing";
 import { eq } from "drizzle-orm";
 import {
+  GOOGLE_DISCONNECT_PATH,
   MAIL_EVENTS_PATH,
   MAIL_PING_PATH,
   type MailEvent,
@@ -34,7 +36,14 @@ import {
   stored,
   type TestDb,
 } from "./support/db.ts";
-import { deliver, logger, mailbox, otherClient, waitFor } from "./support/greenmail.ts";
+import {
+  deliver,
+  GREENMAIL_PASSWORD,
+  logger,
+  mailbox,
+  otherClient,
+  waitFor,
+} from "./support/greenmail.ts";
 import { createTestBucket } from "./support/objects.ts";
 
 const secret = randomBytes(32).toString("hex");
@@ -109,7 +118,7 @@ afterEach(async () => {
   await stopService();
 });
 
-async function startMailService() {
+async function startMailService(overrides: Partial<ServiceConfig> = {}) {
   const config: ServiceConfig = {
     DATABASE_URL: database.url,
     MAIL_CREDENTIALS_KEY: keyring,
@@ -126,6 +135,7 @@ async function startMailService() {
     SYNC_INTERVAL_MS: 60 * 60_000,
     OUTBOX_INTERVAL_MS: 60 * 60_000,
     MAILBOX_CONCURRENCY: 4,
+    ...overrides,
   };
   service = await startService(config, logger);
   const server = serve({ fetch: service.app.fetch, port: 0, hostname: "127.0.0.1" });
@@ -148,7 +158,7 @@ async function seedConnectable(kind: "personal" | "shared" = "personal") {
   const { box } = seeded;
   const credentialsEnc = await sealCredentials(keyring, box.id, {
     user: box.user,
-    pass: box.pass,
+    pass: GREENMAIL_PASSWORD,
     imap: box.imap,
     smtp: box.smtp,
   });
@@ -480,5 +490,125 @@ describe("what the app learns about its own actions", () => {
         requestId: null,
       },
     ]);
+  });
+});
+
+describe("a Google account (ADR 0023)", () => {
+  it("logs in with XOAUTH2 on IMAP and SMTP, and waits for the OAuth client when it is missing", async () => {
+    const seeded = await seedMailbox(db);
+    const { box } = seeded;
+    // GreenMail speaks XOAUTH2 like Gmail. The token is the one the code exchange stored, still
+    // valid, so nothing asks Google for a new one (refreshing is proven against Google itself in
+    // google-live.e2e.test.ts).
+    await setCredentials(
+      db,
+      box.id,
+      await sealCredentials(keyring, box.id, {
+        oauth: "google",
+        user: box.user,
+        refreshToken: "never-used-while-the-access-token-is-valid",
+        accessToken: `ya29.e2e-${randomUUID()}`,
+        accessTokenExpiresAt: Date.now() + 60 * 60_000,
+        imap: box.imap,
+        smtp: box.smtp,
+      }),
+    );
+
+    // A self-hoster who has not set the Google client yet sees the mailbox in error, not a crash.
+    await startMailService();
+    await waitFor(async () => (await mailboxStatus(db, box.id)) === "error");
+    await stopService();
+
+    await startMailService({
+      GOOGLE_CLIENT_ID: "e2e.apps.googleusercontent.com",
+      GOOGLE_CLIENT_SECRET: "e2e-secret",
+    });
+    await connected(box.id);
+    await deliver(box.address, "over xoauth2");
+    await waitFor(async () => (await stored(db, box.id, "INBOX")).length > 0);
+
+    const recipient = mailbox();
+    const send = await enqueue(db, seeded, {
+      kind: "send",
+      idempotencyKey: `xoauth2-send-${box.id}`,
+      payload: {
+        from: box.address,
+        to: [recipient.address],
+        subject: "sent with a token",
+        text: "hi",
+      },
+    });
+    const headers = await signRequest({
+      secret,
+      method: "POST",
+      path: MAIL_PING_PATH,
+      nonce: randomUUID(),
+    });
+    expect((await ping({ headers })).status).toBe(202);
+    await waitFor(async () => (await actionRow(db, send.id)).status === "done", 10_000);
+    const delivered = await otherClient(recipient, async (client) => {
+      await client.mailboxOpen("INBOX");
+      return (await client.search({ subject: "sent with a token" }, { uid: true })) || [];
+    });
+    expect(delivered).toHaveLength(1);
+  });
+
+  it("disconnects only for its owner: syncing stops, the mailbox and its mail are gone, a retry is fine", async () => {
+    const seeded = await seedMailbox(db);
+    const { box, orgId, ownerId } = seeded;
+    await db
+      .update(schema.mailboxes)
+      .set({ provider: "gmail" })
+      .where(eq(schema.mailboxes.id, box.id));
+    await setCredentials(
+      db,
+      box.id,
+      await sealCredentials(keyring, box.id, {
+        oauth: "google",
+        user: box.user,
+        // Not a grant Google issued: revoking it is refused, which must not block disconnecting.
+        refreshToken: `1//e2e-${randomUUID()}`,
+        accessToken: `ya29.e2e-${randomUUID()}`,
+        accessTokenExpiresAt: Date.now() + 60 * 60_000,
+        imap: box.imap,
+        smtp: box.smtp,
+      }),
+    );
+    const service = await startMailService({
+      GOOGLE_CLIENT_ID: "e2e.apps.googleusercontent.com",
+      GOOGLE_CLIENT_SECRET: "e2e-secret",
+    });
+    await connected(box.id);
+    await deliver(box.address, "before disconnecting");
+    await waitFor(async () => (await stored(db, box.id, "INBOX")).length > 0);
+
+    const disconnect = async (memberId: string) => {
+      const body = JSON.stringify({ orgId, memberId, mailboxId: box.id });
+      const headers = await signRequest({
+        secret,
+        method: "POST",
+        path: GOOGLE_DISCONNECT_PATH,
+        body,
+        nonce: randomUUID(),
+      });
+      const response = await fetch(`${serviceUrl}${GOOGLE_DISCONNECT_PATH}`, {
+        method: "POST",
+        headers: { ...headers, "content-type": "application/json" },
+        body,
+      });
+      return { status: response.status, json: (await response.json()) as unknown };
+    };
+
+    // A teammate in the same workspace cannot cut someone's personal Gmail.
+    const teammate = await createMember(db, orgId, "teammate");
+    expect((await disconnect(teammate.id)).status).toBe(404);
+    expect(await mailboxStatus(db, box.id)).toBe("active");
+
+    expect(await disconnect(ownerId)).toEqual({ status: 200, json: { mailboxId: box.id } });
+    expect(service.supervisor.has(box.id)).toBe(false);
+    expect(await mailboxStatus(db, box.id)).toBeUndefined();
+    expect(await messageRows(db, box.id)).toEqual([]);
+    // The Worker retries on a timeout; the second call finds nothing left to do.
+    expect(await disconnect(ownerId)).toEqual({ status: 200, json: { mailboxId: box.id } });
   });
 });

@@ -16,6 +16,7 @@ export {
 } from "./for-member.ts";
 export * from "./writers.ts";
 export * from "./mail-sync.ts";
+export * from "./thread-merge.ts";
 export * as schema from "./schema/index.ts";
 export * from "./system.ts";
 export * from "./member-mail.ts";
@@ -31,4 +32,10 @@ export * from "./pictures.ts";
 export * from "./billing.ts";
 export * from "./sign-in-emails.ts";
 export * from "./abandoned-sign-ups.ts";
+export * from "./compose.ts";
+export * from "./library.ts";
+export * from "./customers.ts";
+export * from "./drafts.ts";
+export * from "./preferences.ts";
 export * from "./conversations.ts";
+export * from "./sla.ts";

@@ -7,11 +7,16 @@
 //   ├─ mail ─ mailboxes · workspace-mailboxes · mailbox-members(id) · counts · threads(filter)
 //   │        · thread(id) ─ conversation · search(q) · action(id) · tags(mailbox)
 //   │        · assignees(mailbox) · conversations(filter) · conversation-counts
+//   │        · notifications ─ { unread } · sla(mailbox)
 //   └─ local ─ pending(threadId) · failures       (client-only state, never fetched)
 //
 // Switching organization or account clears the whole cache (see `session.ts`), so keys do not
 // carry the org id.
 import type { ConversationFilter, ThreadFilter } from "./types.ts";
+
+export interface NotificationFilter {
+  unread: boolean;
+}
 
 const root = ["omni"] as const;
 const mail = [...root, "mail"] as const;
@@ -78,12 +83,27 @@ export const keys = {
     ] as const,
   /** Every shared inbox's view and tag counts, for the navigation. */
   conversationCounts: () => [...mail, "conversation-counts"] as const,
+  /** A shared inbox's SLA targets, business hours and auto-assign. */
+  sla: (mailboxId: string) => [...mail, "sla", mailboxId] as const,
   /** Who a shared inbox's conversations can be assigned to. */
   assignees: (mailboxId: string) => [...mail, "assignees", mailboxId] as const,
+  /** Your notifications: every list (all, unread only). Under `mail`, so a reconnect refetches them. */
+  notifications: () => [...mail, "notifications"] as const,
+  notificationList: (filter: NotificationFilter) =>
+    [...mail, "notifications", { unread: filter.unread }] as const,
   searches: () => [...mail, "search"] as const,
   search: (q: string, mailbox?: string) =>
     [...mail, "search", { q, ...(mailbox ? { mailbox } : {}) }] as const,
   action: (id: string) => [...mail, "action", id] as const,
+  /** An inbox's signature and the member's own on it. */
+  signatures: (mailboxId: string) => [...mail, "signatures", mailboxId] as const,
+  /** An inbox's canned replies with the member's own. */
+  cannedReplies: (mailboxId: string) => [...mail, "canned-replies", mailboxId] as const,
+  customerSearch: (q: string) => [...mail, "customers", { q }] as const,
+  /** Shared drafts: one conversation's, or an inbox's new mail. */
+  draftLists: () => [...mail, "drafts"] as const,
+  drafts: (where: { threadId: string } | { mailboxId: string }) =>
+    [...mail, "drafts", where] as const,
 
   /** App-only state, never fetched (`query-client.ts` keeps it forever). */
   local: () => local,
@@ -102,4 +122,10 @@ export function filterOf(queryKey: readonly unknown[]): ThreadFilter | undefined
 export function conversationFilterOf(queryKey: readonly unknown[]): ConversationFilter | undefined {
   const filter = queryKey[3];
   return typeof filter === "object" && filter !== null ? (filter as ConversationFilter) : undefined;
+}
+
+/** Reads the filter back out of a `keys.notificationList(...)` key. */
+export function notificationFilterOf(queryKey: readonly unknown[]): NotificationFilter | undefined {
+  const filter = queryKey[3];
+  return typeof filter === "object" && filter !== null ? (filter as NotificationFilter) : undefined;
 }

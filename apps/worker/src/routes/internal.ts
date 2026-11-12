@@ -7,7 +7,7 @@ import {
   mailEventSchema,
   type MailEvent,
 } from "@omni/contracts";
-import { applyInboundMessage } from "@omni/db";
+import { applyInboundMessage, recordCustomer } from "@omni/db";
 import { z } from "zod";
 import { Hono } from "hono";
 import type { AppEnv } from "../context.ts";
@@ -15,7 +15,7 @@ import { openDb } from "../db.ts";
 import { loadConfig } from "../env.ts";
 import { pingMailService } from "../mail-service.ts";
 import type { AiJob } from "../queue.ts";
-import { fanOut, notifyFailedActions } from "../realtime.ts";
+import { announceMerges, fanOut, notifyFailedActions, notifyMembers } from "../realtime.ts";
 
 export const internal = new Hono<AppEnv>().post(MAIL_EVENTS_PATH, async (c) => {
   const config = loadConfig(c.env);
@@ -67,30 +67,64 @@ export const internal = new Hono<AppEnv>().post(MAIL_EVENTS_PATH, async (c) => {
       actionRequestId: event.requestId ?? null,
     });
   }
-  if (jobs.length) await c.env.AI_QUEUE.sendBatch(jobs.map((body) => ({ body })));
+  // A Queue takes at most 100 messages per `sendBatch`; one prune can name 500 threads.
+  for (let i = 0; i < jobs.length; i += QUEUE_BATCH_MAX) {
+    await c.env.AI_QUEUE.sendBatch(jobs.slice(i, i + QUEUE_BATCH_MAX).map((body) => ({ body })));
+  }
 
   const { db, close } = openDb(c.env);
   try {
     const created = events.filter((e) => e.type === "message.created");
+    for (const event of created) await recordCustomer(db, event);
     // The helpdesk status rule, once per message and in order (ADR 0021): a customer message
     // reopens, our own reply goes pending. A failure answers 500, so the mail service retries.
     let queuedActions = 0;
+    // A replayed event (the mail service retries until we answer) is fanned out again, which is
+    // harmless, but pushes only for mail seen here for the first time.
+    const fresh = new Set<string>();
     for (const event of created) {
       const applied = await applyInboundMessage(db, {
         messageId: event.messageId,
         folderRole: event.folderRole,
       });
-      if (applied.applied) queuedActions += applied.queuedActions;
+      if (applied.applied || applied.fresh) fresh.add(event.mailboxId);
+      if (!applied.applied) continue;
+      queuedActions += applied.queuedActions;
+      await notifyMembers(c.env, db, {
+        orgId: applied.conversation.orgId,
+        threadId: applied.conversation.id,
+        memberIds: applied.notified,
+        kind: "customer_reply",
+      });
+      if (applied.autoAssigned) {
+        await notifyMembers(c.env, db, {
+          orgId: applied.conversation.orgId,
+          threadId: applied.conversation.id,
+          memberIds: [applied.autoAssigned],
+          kind: "assigned",
+        });
+      }
     }
     if (queuedActions > 0)
       c.executionCtx.waitUntil(pingMailService({ config, log, requestId: c.var.requestId }));
-    if (created.length) await fanOut(c.env, db, config, changedThreads(created), { push: true });
+    if (created.length) await fanOut(c.env, db, config, changedThreads(created), { push: fresh });
+    // Deleted mail: open apps refetch those threads (some are gone); no push for a removal.
+    const pruned = events.filter((e) => e.type === "messages.pruned");
+    if (pruned.length) await fanOut(c.env, db, config, prunedThreads(pruned));
+    // Merged threads: the survivor and the ids that are gone refresh, and readers follow.
+    const merged = events.filter((e) => e.type === "threads.merged");
+    if (merged.length) {
+      await fanOut(c.env, db, config, mergedThreads(merged));
+      await announceMerges(c.env, db, merged);
+    }
     await notifyFailedActions(c.env, failed);
   } finally {
     c.executionCtx.waitUntil(close());
   }
   return c.json({ ok: true, jobs: jobs.length }, 202);
 });
+
+const QUEUE_BATCH_MAX = 100;
 
 const envelope = z.object({
   events: z
@@ -110,19 +144,46 @@ function changedThreads(events: Extract<MailEvent, { type: "message.created" }>[
   return byMailbox;
 }
 
-/** One AI job per thread that got a new message; flag changes need no AI. */
+function prunedThreads(events: Extract<MailEvent, { type: "messages.pruned" }>[]) {
+  const byMailbox = new Map<string, Set<string>>();
+  for (const event of events) {
+    const threads = byMailbox.get(event.mailboxId) ?? new Set();
+    for (const threadId of event.threadIds) threads.add(threadId);
+    byMailbox.set(event.mailboxId, threads);
+  }
+  return byMailbox;
+}
+
+function mergedThreads(events: Extract<MailEvent, { type: "threads.merged" }>[]) {
+  const byMailbox = new Map<string, Set<string>>();
+  for (const event of events) {
+    const threads = byMailbox.get(event.mailboxId) ?? new Set();
+    for (const threadId of [event.intoThreadId, ...event.fromThreadIds]) threads.add(threadId);
+    byMailbox.set(event.mailboxId, threads);
+  }
+  return byMailbox;
+}
+
+/**
+ * One AI job per thread that got a new message or lost one (its latest message may differ now);
+ * flag changes need no AI. A job for a thread that is gone ends as `missing`.
+ */
 function aiJobsFor(events: MailEvent[], requestId: string): AiJob[] {
   const threads = new Map<string, AiJob>();
-  for (const event of events) {
-    if (event.type !== "message.created") continue;
-    threads.set(event.threadId, {
+  const add = (event: { orgId: string; mailboxId: string }, threadId: string) =>
+    threads.set(threadId, {
       kind: "thread",
-      threadId: event.threadId,
+      threadId,
       mailboxId: event.mailboxId,
       orgId: event.orgId,
       jobId: crypto.randomUUID(),
       requestId,
     });
+  for (const event of events) {
+    if (event.type === "message.created") add(event, event.threadId);
+    if (event.type === "messages.pruned") for (const id of event.threadIds) add(event, id);
+    // The survivor's summary was cleared; the job writes one for the whole conversation.
+    if (event.type === "threads.merged") add(event, event.intoThreadId);
   }
   return [...threads.values()];
 }

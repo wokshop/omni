@@ -14,7 +14,7 @@ import type {
 import type { Keyring } from "@omni/crypto";
 import { type Db, findOrgDomain, findOrgMailbox, saveMailbox } from "@omni/db";
 import { purelymailDnsRecords, purelymailDomainState, withChecks } from "@omni/mail-core/domains";
-import { type MailboxCredentials, openCredentials, sealCredentials } from "./credentials.ts";
+import { type PasswordCredentials, openCredentials, sealCredentials } from "./credentials.ts";
 import type { Logger } from "./log.ts";
 import {
   type PurelymailClient,
@@ -26,8 +26,8 @@ import { verifyImapLogin } from "./verify-login.ts";
 /** A refusal the Worker passes on to the member, with the status to use. */
 export class ProvisionError extends Error {
   override name = "ProvisionError";
-  readonly status: 400 | 409 | 422 | 502;
-  constructor(status: 400 | 409 | 422 | 502, message: string) {
+  readonly status: 400 | 404 | 409 | 422 | 502;
+  constructor(status: 400 | 404 | 409 | 422 | 502, message: string) {
     super(message);
     this.status = status;
   }
@@ -117,7 +117,7 @@ export function createProvisioner(deps: {
       throw new ProvisionError(409, `${domainName} is set up for ${claim.provider}`);
     }
 
-    let credentials: MailboxCredentials;
+    let credentials: PasswordCredentials;
     let mailboxId: string;
     if (input.login.provider === "purelymail") {
       if (!purelymail) throw new ProvisionError(409, "Purelymail is not configured here");
@@ -182,7 +182,7 @@ export function createProvisioner(deps: {
   /** The stored login is this one already: nothing to save or reconnect. */
   async function sameLogin(
     existing: { id: string; credentialsEnc: string },
-    next: MailboxCredentials,
+    next: PasswordCredentials,
   ) {
     try {
       const stored = await openCredentials(keyring, existing.id, existing.credentialsEnc);

@@ -22,6 +22,19 @@ import {
 import { uuidv7 } from "uuidv7";
 import { members, organizations, teams } from "./auth.ts";
 
+/**
+ * A forwarded message as `@omni/mail-core/clean` `cleanMessage` extracts it. Declared here, not
+ * imported: the web app type-checks against this schema and must not pull in the Node-only parser.
+ */
+export interface ForwardedMessage {
+  from: string | null;
+  date: string | null;
+  subject: string | null;
+  to: string | null;
+  /** The forwarded body, unstripped: it renders as a quoted card. */
+  text: string;
+}
+
 // Text ids holding a UUIDv7: time-ordered (index friendly) and generated in the app, so a row's
 // id is known before the insert and can double as an idempotency handle.
 const id = () =>
@@ -111,6 +124,8 @@ export const conversationEventKind = pgEnum("conversation_event_kind", [
   "first_response",
   "sla_at_risk",
   "sla_breached",
+  /** Another thread was merged into this one: `{ fromThreadId }`. */
+  "merged",
 ]);
 export const notificationKind = pgEnum("notification_kind", [
   "assigned",
@@ -146,6 +161,12 @@ export const mailboxes = pgTable(
      * until `ensureMailboxTeam` runs. Same org as the mailbox, enforced where it is read.
      */
     teamId: text("team_id").references(() => teams.id, { onDelete: "set null" }),
+    /**
+     * Shared inboxes: hand each new conversation to the next member in turn (round robin by
+     * member id). `auto_assign_last_member_id` is whose turn it was last.
+     */
+    autoAssign: boolean("auto_assign").notNull().default(false),
+    autoAssignLastMemberId: text("auto_assign_last_member_id"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -384,6 +405,11 @@ export const threads = pgTable(
      * allowance (ADR 0015): when the allowance resets. Cleared by the next triage.
      */
     triagePausedUntil: timestamptz("triage_paused_until"),
+    /**
+     * The provider's own thread id, when it has one: Gmail's X-GM-THRID (ADR 0023). Messages with
+     * one join its thread, so a conversation is the same one the provider shows.
+     */
+    providerThreadId: text("provider_thread_id"),
     // Helpdesk conversation state (ADR 0021): shared by everyone who can see the inbox. Read
     // state stays per member in `thread_state`. Personal mailboxes ignore these columns.
     status: conversationStatus("status").notNull().default("open"),
@@ -399,6 +425,13 @@ export const threads = pgTable(
     firstResponseDueAt: timestamptz("first_response_due_at"),
     nextResponseDueAt: timestamptz("next_response_due_at"),
     resolutionDueAt: timestamptz("resolution_due_at"),
+    /**
+     * SLA clocks (ADR 0023). When the customer started waiting for the reply we owe (cleared by
+     * our reply), and when the current open stretch began (cleared by resolve). The due times
+     * above are these plus the inbox's targets for the priority, in business hours.
+     */
+    responseClockAt: timestamptz("response_clock_at"),
+    resolutionClockAt: timestamptz("resolution_clock_at"),
     firstRespondedAt: timestamptz("first_responded_at"),
     resolvedAt: timestamptz("resolved_at"),
     createdAt: createdAt(),
@@ -478,6 +511,10 @@ export const threads = pgTable(
     index("threads_assignee_member_id_idx")
       .on(t.assigneeMemberId)
       .where(sql`${t.assigneeMemberId} is not null`),
+    // Every Gmail message looks its thread up by X-GM-THRID; one Omni thread per Gmail thread.
+    uniqueIndex("threads_mailbox_provider_thread_unique")
+      .on(t.mailboxId, t.providerThreadId)
+      .where(sql`${t.providerThreadId} is not null`),
   ],
 );
 
@@ -524,6 +561,8 @@ export const messages = pgTable(
     cleanText: text("clean_text").notNull().default(""),
     /** Remote images the sanitizer replaced; the reader offers to load them. */
     remoteImageCount: integer("remote_image_count").notNull().default(0),
+    /** The message it forwards, when it is a forward (`@omni/mail-core` `cleanMessage`). */
+    forwarded: jsonb("forwarded").$type<ForwardedMessage>(),
     /**
      * Set when the mail service stores the row; cleared once the Worker accepts its
      * `message.created`. A sweep re-sends what is still set after a crash or Worker outage.
@@ -1077,6 +1116,8 @@ export const customers = pgTable(
     /** Normalized: lowercase. */
     address: text("address").notNull(),
     name: text("name"),
+    /** When the message that gave `name` was sent: a later name wins, whatever order mail is indexed in. */
+    nameSeenAt: timestamptz("name_seen_at"),
     /** The address's domain, unless it is a webmail one; the company is guessed from it. */
     domain: text("domain"),
     company: text("company"),

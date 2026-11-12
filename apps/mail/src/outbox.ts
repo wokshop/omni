@@ -5,6 +5,7 @@ import MailComposer from "nodemailer/lib/mail-composer/index.js";
 import type { Logger } from "./log.ts";
 import {
   type ImapSession,
+  loginFor,
   type MailboxConfig,
   type MailboxConnection,
   MailboxUnavailableError,
@@ -191,9 +192,10 @@ export class OutboxExecutor {
       case "archive":
         return connection.run(async (session) => {
           // Our own replies stay in Sent and junk stays in Junk: archiving a conversation files
-          // what arrived in the inbox, not every copy of it.
+          // what arrived in the inbox, not every copy of it. A copy already in the archive (every
+          // Gmail message has one in All Mail) is where it should be.
           const role = session.folders().find((f) => f.path === action.payload.folder)?.role;
-          if (role === "sent" || role === "junk") return;
+          if (role === "sent" || role === "junk" || role === "archive") return;
           const archive = await session.ensureFolder("archive", "Archive");
           await move(session, action.payload, archive.path);
         });
@@ -301,6 +303,11 @@ export class OutboxExecutor {
 
     await connection.run(async (session) => {
       const sent = await session.ensureFolder("sent", "Sent");
+      // Gmail files every SMTP submission in Sent itself (ADR 0023); appending would add a copy.
+      if (session.capabilities.gmail) {
+        await session.syncFolder(sent.path);
+        return;
+      }
       // Already filed by an earlier attempt that died before `complete`, or by a server that files
       // SMTP submissions itself: the deterministic Message-ID finds it either way.
       if ((await findByMessageId(session, sent.path, messageId)) !== null) return;
@@ -368,11 +375,20 @@ function composeMessage(
 }
 
 async function smtpSend(mailbox: MailboxConfig, payload: SendPayload, raw: Buffer): Promise<void> {
+  const { auth } = mailbox;
+  const login = await loginFor(mailbox).catch((error: unknown) => {
+    // A revoked Google grant will not come back on a retry; the mailbox shows it needs reconnecting.
+    if (auth.kind === "oauth2" && auth.token.isRevoked(error)) {
+      throw new PermanentActionError("the Google account's access was revoked: reconnect it");
+    }
+    throw error;
+  });
   const transport = createTransport({
     host: mailbox.smtp.host,
     port: mailbox.smtp.port,
     secure: mailbox.smtp.secure,
-    auth: { user: mailbox.user, pass: mailbox.pass },
+    // Nodemailer's XOAUTH2 with a token we minted; it never refreshes on its own.
+    auth: "accessToken" in login ? { type: "OAuth2", ...login } : login,
     // Well inside the claim lease (5 min): a send still hanging when the lease ran out could be
     // claimed and sent again by another process.
     connectionTimeout: 30_000,
@@ -387,6 +403,12 @@ async function smtpSend(mailbox: MailboxConfig, payload: SendPayload, raw: Buffe
       },
       raw,
     });
+  } catch (error) {
+    // The token was refused (revoked or expired early): the retry mints a new one.
+    if (auth.kind === "oauth2" && (error as { code?: string }).code === "EAUTH") {
+      auth.token.invalidate();
+    }
+    throw error;
   } finally {
     transport.close();
   }

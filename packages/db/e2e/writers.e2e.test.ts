@@ -1,12 +1,18 @@
-import { eq, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { afterAll, describe, expect, test } from "vitest";
+import { saveSummary } from "../src/ai-jobs.ts";
 import { createDb } from "../src/client.ts";
-import { rescheduleAction, setLocationFlags } from "../src/mail-sync.ts";
+import { moveMessageToThread, rescheduleAction, setLocationFlags } from "../src/mail-sync.ts";
+import { mergeThreads } from "../src/thread-merge.ts";
 import {
   attachments,
+  conversationEvents,
   mailActions,
   messageLocations,
   messages,
+  tags,
+  threadState,
+  threadTags,
   threads,
 } from "../src/schema/index.ts";
 import {
@@ -17,7 +23,7 @@ import {
   upsertFolder,
   upsertMessage,
 } from "../src/writers.ts";
-import { createMailbox, createOrg, createTestDatabase } from "./support.ts";
+import { createMailbox, createMember, createOrg, createTestDatabase } from "./support.ts";
 
 const { db, url, teardown } = await createTestDatabase();
 afterAll(teardown);
@@ -237,4 +243,159 @@ test("setLocationFlags rewrites the named folder's copies and leaves the same UI
   for (const untouched of [at(1, 1), at(1, 2), at(2, 1), at(2, 2)]) {
     expect(untouched).toMatchObject({ flags: [], modseq: null });
   }
+});
+
+describe("moveMessageToThread", () => {
+  test("Gmail regrouping a message moves it, drops the thread it emptied, and dates the new one", async () => {
+    const thread = (subjectKey: string, at: string) =>
+      createThread(db, {
+        orgId: org.id,
+        mailboxId: mailbox.id,
+        subjectKey,
+        lastMessageAt: new Date(at),
+      });
+    const ours = await thread("quote", "2026-10-01T00:00:00Z");
+    const gmails = await thread("quote v2", "2026-09-01T00:00:00Z");
+    const sentAt = new Date("2026-10-02T09:00:00Z");
+    const { id } = await upsertMessage(db, {
+      orgId: org.id,
+      mailboxId: mailbox.id,
+      threadId: ours,
+      folderId: null,
+      imapUid: null,
+      messageIdHeader: "<moved-1@example.test>",
+      inReplyTo: null,
+      references: [],
+      subject: "Quote v2",
+      fromName: null,
+      fromAddress: "inbox@writers.test",
+      to: [],
+      cc: [],
+      sentAt,
+      r2Key: "raw/moved-1.eml",
+      htmlR2Key: null,
+      cleanText: "",
+    });
+
+    await moveMessageToThread(db, { mailboxId: mailbox.id, messageId: id, threadId: gmails });
+
+    const [message] = await db.select().from(messages).where(eq(messages.id, id));
+    expect(message?.threadId).toBe(gmails);
+    expect(await db.select().from(threads).where(eq(threads.id, ours))).toEqual([]);
+    const [joined] = await db.select().from(threads).where(eq(threads.id, gmails));
+    expect(joined?.lastMessageAt.toISOString()).toBe(sentAt.toISOString());
+  });
+});
+
+describe("mergeThreads", () => {
+  test("rows several threads hold once (tag, dedupe key) and members' read state combine", async () => {
+    const member = await createMember(db, org.id, "merger");
+    const make = (at: string) =>
+      createThread(db, {
+        orgId: org.id,
+        mailboxId: mailbox.id,
+        subjectKey: "merge",
+        lastMessageAt: new Date(at),
+      });
+    const oldest = await make("2026-10-01T00:00:00Z");
+    const middle = await make("2026-10-02T00:00:00Z");
+    const newest = await make("2026-10-03T00:00:00Z");
+    const [tag] = await db
+      .insert(tags)
+      .values({ orgId: org.id, mailboxId: mailbox.id, name: "billing" })
+      .returning();
+    for (const threadId of [oldest, middle, newest]) {
+      await db.insert(threadTags).values({ orgId: org.id, threadId, tagId: tag?.id ?? "" });
+    }
+    // Two merged threads share a dedupe key the survivor does not have.
+    for (const threadId of [middle, newest]) {
+      await db.insert(conversationEvents).values({
+        orgId: org.id,
+        mailboxId: mailbox.id,
+        threadId,
+        kind: "first_response",
+        dedupeKey: "first_response",
+      });
+    }
+    // The member read the survivor and one part, but never opened the newest part.
+    for (const threadId of [oldest, middle]) {
+      await db
+        .insert(threadState)
+        .values({ orgId: org.id, threadId, memberId: member.id, read: true });
+    }
+
+    const merged = await mergeThreads(db, {
+      mailboxId: mailbox.id,
+      threadIds: [newest, oldest, middle],
+    });
+
+    expect(merged).toEqual({ intoThreadId: oldest, fromThreadIds: [middle, newest] });
+    expect(
+      await db
+        .select()
+        .from(threads)
+        .where(inArray(threads.id, [middle, newest])),
+    ).toEqual([]);
+    const kept = await db.select().from(threadTags).where(eq(threadTags.threadId, oldest));
+    expect(kept.map((t) => t.tagId)).toEqual([tag?.id]);
+    const events = await db
+      .select()
+      .from(conversationEvents)
+      .where(eq(conversationEvents.threadId, oldest));
+    expect(events.map((e) => e.kind).toSorted()).toEqual(["first_response", "merged", "merged"]);
+    const state = await db.select().from(threadState).where(eq(threadState.threadId, oldest));
+    expect(state.map((row) => [row.memberId, row.read])).toEqual([[member.id, false]]);
+    // Run again (a retried ingest): nothing left to merge, nothing changes.
+    expect(
+      await mergeThreads(db, { mailboxId: mailbox.id, threadIds: [newest, oldest, middle] }),
+    ).toEqual({ intoThreadId: oldest, fromThreadIds: [] });
+  });
+});
+
+describe("saveSummary", () => {
+  test("a summary of fewer messages than the thread now holds is not saved", async () => {
+    const threadId = await createThread(db, {
+      orgId: org.id,
+      mailboxId: mailbox.id,
+      subjectKey: "summary",
+      lastMessageAt: new Date("2026-10-01T00:00:00Z"),
+    });
+    const message = (n: number) =>
+      upsertMessage(db, {
+        orgId: org.id,
+        mailboxId: mailbox.id,
+        threadId,
+        folderId: null,
+        imapUid: null,
+        messageIdHeader: `<summary-${n}@example.test>`,
+        inReplyTo: null,
+        references: [],
+        subject: "Refund",
+        fromName: null,
+        fromAddress: "customer@example.test",
+        to: [],
+        cc: [],
+        sentAt: new Date(`2026-10-0${n}T00:00:00Z`),
+        r2Key: `raw/summary-${n}.eml`,
+        htmlR2Key: null,
+        cleanText: `part ${n}`,
+      });
+    const latest = await message(2);
+    // The job read one message; then an older half of the conversation was merged in.
+    await message(1);
+
+    const saved = await saveSummary(db, threadId, {
+      summary: "Only the second half",
+      messageId: latest.id,
+      messageCount: 1,
+    });
+
+    expect(saved).toBe(false);
+    const [thread] = await db.select().from(threads).where(eq(threads.id, threadId));
+    expect(thread).toMatchObject({ summary: null, summaryMessageId: null });
+    // The job queued for the merge read both and saves.
+    expect(
+      await saveSummary(db, threadId, { summary: "Both", messageId: latest.id, messageCount: 2 }),
+    ).toBe(true);
+  });
 });

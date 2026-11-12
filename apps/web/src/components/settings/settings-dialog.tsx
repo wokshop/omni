@@ -7,16 +7,18 @@
 // group labels, the search field on top), set at the right of the left 35%; the page is a 640px
 // column in the right 65%, its title 17px. The page body is transitive's settings kit (`./kit`).
 import {
+  IconClock3,
   IconCreditCard,
   IconInbox,
   IconKeyboard,
+  IconMail,
   IconLaptop,
   IconMailbox,
   IconSettings,
   IconShield,
   IconUsers,
   IconUsersRound,
-} from "@/components/icons/lucide";
+} from "@/components/icons/central";
 import { cn } from "cn";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { type ComponentType, type CSSProperties, type ReactNode, useMemo, useState } from "react";
@@ -52,6 +54,8 @@ import { BillingPage } from "./billing-page";
 import { SettingsPageHeader } from "./kit/settings-layout";
 import { SettingsConfirmDialog } from "./kit/settings-stacked-dialog";
 import { WorkspaceChooser } from "./workspace-chooser";
+import { HelpdeskPage } from "./helpdesk-pages";
+import { NotificationsPage } from "./notification-pages";
 import { InboxesPage, SharedMailboxesPage } from "./mailbox-pages";
 import { GeneralPage, PeoplePage } from "./workspace-pages";
 
@@ -64,7 +68,7 @@ interface PageDefinition {
   render: () => ReactNode;
 }
 
-/** A Lucide icon (round, outlined, stroke 1.5) at the nav's 15px icon size. */
+/** A Central icon (round outlined, stroke 1.5) at the nav's 15px icon size. */
 const glyph = (Icon: ComponentType<{ className?: string }>) => <Icon className="size-icon" />;
 
 function useAccountPages(): PageDefinition[] {
@@ -94,6 +98,13 @@ function useAccountPages(): PageDefinition[] {
         icon: glyph(IconShield),
         terms: ["passkeys", "sign in", "fingerprint", "face", "devices", "sessions", "sign out"],
         render: () => <SecurityPage />,
+      },
+      {
+        id: "notifications",
+        title: "Notifications",
+        icon: glyph(IconMail),
+        terms: ["desktop", "alerts", "assigned", "mentions", "customer replies", "due", "overdue"],
+        render: () => <NotificationsPage />,
       },
       {
         id: "shortcuts",
@@ -147,6 +158,24 @@ const WORKSPACE_PAGES: PageDefinition[] = [
     icon: glyph(IconMailbox),
     terms: ["shared mailboxes", "access", "who can see", "team", "add mailbox", "hello"],
     render: () => <SharedMailboxesPage />,
+  },
+  {
+    id: "helpdesk",
+    title: "Helpdesk",
+    icon: glyph(IconClock3),
+    terms: [
+      "sla",
+      "response targets",
+      "first reply",
+      "resolution",
+      "business hours",
+      "time zone",
+      "auto-assign",
+      "round robin",
+      "assignment",
+      "tags",
+    ],
+    render: () => <HelpdeskPage />,
   },
   {
     id: "billing",
