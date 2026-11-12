@@ -116,8 +116,13 @@ export function MessageItem({ threadId, message }: { threadId: string; message: 
 
 /** A reply sent from here that has not come back as a message yet. */
 export function PendingItem({ send }: { send: PendingSend }) {
+  // Queued: the outbox has it and the mail service will send it, even if this tab closes.
   const label =
-    send.status === "failed" ? `Not sent${send.error ? `: ${send.error}` : ""}` : "Sending…";
+    send.status === "failed"
+      ? `Not sent${send.error ? `: ${send.error}` : ""}`
+      : send.status === "queued"
+        ? "Queued"
+        : "Sending…";
   return (
     <article aria-label="You, sending" className="flex flex-col items-end gap-2">
       <div className="max-w-[80%] rounded-xl bg-primary-subtle px-3 py-2 text-foreground opacity-70">
