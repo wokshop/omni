@@ -6,6 +6,7 @@ import { cn } from "cn";
 import { Skeleton } from "skullet/react";
 import {
   IconArrowLeft,
+  IconArrowRotateClockwise,
   IconChevronsUpDown,
   IconLogOut,
   IconPlus,
@@ -13,7 +14,6 @@ import {
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { ChoiceBox, ChoiceBoxItem } from "@/components/ui/choice-box";
-import { RenewField } from "@/components/ui/copy-field";
 import { Label } from "@/components/ui/field";
 import { Menu, MenuItem, MenuLabel, MenuTrigger } from "@/components/ui/menu";
 import { Heading } from "@/components/ui/heading";
@@ -152,10 +152,10 @@ function OnboardingPage(props: {
       </div>
       <BackContext.Provider value={props.onBack}>
         {/* Keyed by page so each page enters on its own instead of morphing out of the last.
-            480px of content (dorks' is 450): the DNS records table needs the room. */}
+            450px of content, as in dorks. */}
         <main
           key={props.current}
-          className="mx-auto flex w-full max-w-152 flex-1 flex-col justify-center px-4 pt-20 pb-24 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-bottom-1 motion-safe:duration-300 md:px-12"
+          className="mx-auto flex w-full max-w-136.5 flex-1 flex-col justify-center px-4 pt-20 pb-24 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-bottom-1 motion-safe:duration-300 md:px-12"
         >
           {props.children}
         </main>
@@ -228,7 +228,7 @@ function AccountSwitcher() {
 
 /**
  * Heading, an optional line or two under it, the fields, then the step's buttons: Back (when there
- * is a page behind) and the primary one, both 40px pills (dorks' onboarding). The primary button is
+ * is a page behind) and the primary one, both Omni's 32px buttons, centred (dorks' onboarding layout). The primary button is
  * never disabled: a page that isn't ready says why when it is pressed.
  */
 function PageForm(props: {
@@ -252,7 +252,7 @@ function PageForm(props: {
     >
       <div className="flex flex-col gap-6">
         <header className="flex flex-col items-center gap-3 text-center">
-          <Heading className="font-medium">{props.title}</Heading>
+          <Heading>{props.title}</Heading>
           {props.description && <Text className="max-w-100 text-balance">{props.description}</Text>}
         </header>
         {props.children}
@@ -262,17 +262,11 @@ function PageForm(props: {
       <SlotError className="min-h-10 py-3 *:justify-center">{props.problem}</SlotError>
       <div className="flex items-center justify-center gap-2">
         {onBack && (
-          <Button
-            intent="ghost"
-            size="lg"
-            isCircle
-            className="px-4 text-muted-foreground"
-            onPress={onBack}
-          >
+          <Button intent="ghost" className="text-muted-foreground" onPress={onBack}>
             Back
           </Button>
         )}
-        <Button type="submit" size="lg" isCircle className="px-4" isPending={props.isPending}>
+        <Button type="submit" isPending={props.isPending}>
           {props.submit}
         </Button>
       </div>
@@ -325,7 +319,7 @@ function WorkspaceFields(props: {
         autoFocus={!props.nameSaved}
       >
         <Label>Workspace name</Label>
-        <Input size="lg" placeholder="Acme" />
+        <Input placeholder="Acme" />
         <FieldRevealedError message="Enter a name for the workspace." />
       </TextField>
       <TextField
@@ -336,16 +330,17 @@ function WorkspaceFields(props: {
         autoFocus={props.nameSaved && !props.domainSaved}
       >
         <Label>Domain</Label>
-        <Input size="lg" placeholder="acme.com" />
+        <Input placeholder="acme.com" />
         <FieldRevealedError message="Enter your domain, like acme.com." />
       </TextField>
     </>
   );
 }
 
-// The page is named for its step, as in the rail; the rail's own title says what the flow is.
-const WORKSPACE_TITLE = "Workspace";
-const WORKSPACE_DESCRIPTION = "Mail keeps flowing as it does today until DNS changes.";
+// The first page is the welcome: it says what is being made, since nothing else on screen does.
+const WORKSPACE_TITLE = "Create your workspace";
+const WORKSPACE_DESCRIPTION =
+  "Name it and add the domain your team gets mail on. Your mail keeps flowing as it does today.";
 
 /**
  * Creates the workspace (unless it exists already), then claims its domain. The page stays: the
@@ -585,14 +580,26 @@ function DomainForm(props: {
             const shown = records.find((r) => r.challenge);
             if (!shown || shown.name !== record.name || shown.value !== null) return undefined;
             return passes(shown) ? (
-              <span className="text-xs/4 text-muted-foreground">In your DNS</span>
+              <span className="text-xs/4 text-foreground">In your DNS</span>
             ) : (
-              <RenewField
-                placeholder="Hidden"
-                tooltip="Make a new value. It replaces the old one."
-                isPending={rotateChallenge.isPending}
-                onPress={rotate}
-              />
+              // Styled like every other value, with its action where their copy button sits:
+              // the line's 12px gap, then a 26px icon button.
+              <span className="flex min-w-0 items-center justify-end gap-3">
+                <span className="text-xs/4 text-foreground">Hidden</span>
+                <TooltipTrigger delay={300}>
+                  <Button
+                    intent="plain"
+                    size="sq-xs"
+                    className="-my-px -me-1.5 text-muted-foreground *:[svg]:size-3.25 hover:text-foreground"
+                    aria-label="Make a new value. It replaces the old one."
+                    isPending={rotateChallenge.isPending}
+                    onPress={rotate}
+                  >
+                    <IconArrowRotateClockwise aria-hidden />
+                  </Button>
+                  <Tooltip arrow={false}>Make a new value. It replaces the old one.</Tooltip>
+                </TooltipTrigger>
+              </span>
             );
           }}
         />
@@ -719,7 +726,7 @@ function MailboxesForm(props: {
       description={
         ask
           ? `${props.domain.domain} stays on its mail host. Omni signs in to it like a mail app.`
-          : undefined
+          : `The shared address your team answers from, like support@${props.domain.domain}.`
       }
       submit="Continue"
       isPending={createMailboxes.isPending}
@@ -746,7 +753,7 @@ function MailboxesForm(props: {
         <TextField value={name} onChange={setName} isReadOnly={!!saved} isRequired autoFocus>
           <Label>Address</Label>
           <InputGroup className="[--input-gutter-end:--spacing(4)]">
-            <Input size="lg" placeholder="name" />
+            <Input placeholder="name" />
             <span data-slot="text" className="text-sm text-muted-foreground">
               {suffix}
             </span>
@@ -776,12 +783,12 @@ function MailboxesForm(props: {
         <>
           <TextField value={imap} onChange={setImap} isRequired>
             <Label>IMAP server</Label>
-            <Input size="lg" placeholder={`imap.${props.domain.domain}:993`} />
+            <Input placeholder={`imap.${props.domain.domain}:993`} />
             <FieldRevealedError message="Enter the IMAP server." />
           </TextField>
           <TextField value={smtp} onChange={setSmtp} isRequired>
             <Label>SMTP server</Label>
-            <Input size="lg" placeholder={`smtp.${props.domain.domain}:465`} />
+            <Input placeholder={`smtp.${props.domain.domain}:465`} />
             <FieldRevealedError message="Enter the SMTP server." />
           </TextField>
         </>
@@ -926,6 +933,7 @@ function InviteForm(props: { domain?: string }) {
   return (
     <PageForm
       title="Invite your team"
+      description="Add teammates by email. They'll get an invite to join."
       submit="Finish setup"
       isPending={sending}
       problem={problem}
@@ -946,7 +954,7 @@ function InviteForm(props: { domain?: string }) {
             // The first field on arrival; a field just added after that.
             autoFocus={emails.length <= 3 ? i === 0 : i === emails.length - 1}
           >
-            <Input size="lg" placeholder={`teammate@${props.domain ?? "acme.com"}`} />
+            <Input placeholder={`teammate@${props.domain ?? "acme.com"}`} />
             <FieldRevealedError message="Enter a valid email address." />
           </TextField>
         )}
