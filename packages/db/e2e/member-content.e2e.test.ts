@@ -88,7 +88,8 @@ describe("canned replies", () => {
       mailboxId: supportId,
     });
     const own = await createCannedReply(db, ana, { ...fields, title: "Mine", mailboxId: null });
-    if (!("reply" in shared) || !("reply" in own)) throw new Error("create failed");
+    if (!shared.reply || !own.reply) throw new Error("create failed");
+    const ids = [shared.reply.id, own.reply.id];
     const threadId = await createThread(db, {
       orgId: orgAId,
       mailboxId: supportId,
@@ -103,7 +104,7 @@ describe("canned replies", () => {
 
     for (const outsider of [bo, cy]) {
       expect(await listCannedReplies(db, outsider, { mailboxId: supportId })).toEqual([]);
-      for (const id of [shared.reply.id, own.reply.id]) {
+      for (const id of ids) {
         expect(await getCannedReply(db, outsider, id)).toBeNull();
         expect(await updateCannedReply(db, outsider, id, { title: "x" })).toEqual({
           error: "not_found",
