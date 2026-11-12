@@ -118,6 +118,34 @@ describe("customers", () => {
       .from(schema.customers)
       .where(eq(schema.customers.address, "maria@gmail.com"));
     expect(maria).toMatchObject({ domain: null, company: null });
+
+    // Indexed out of order: a later message without a name, then an older one with a new name.
+    // The name follows the newest message that had one, not the newest message.
+    await deliver(support, {
+      subject: "Again",
+      fromAddress: "ana@shop.test",
+      fromName: "Ana",
+      uid: 4,
+      sentAt: new Date("2026-11-01T10:00:00Z"),
+    });
+    await deliver(support, {
+      subject: "Again 2",
+      fromAddress: "ana@shop.test",
+      uid: 5,
+      sentAt: new Date("2026-11-05T10:00:00Z"),
+    });
+    await deliver(support, {
+      subject: "Again 3",
+      fromAddress: "ana@shop.test",
+      fromName: "Ana Ruiz",
+      uid: 6,
+      sentAt: new Date("2026-11-03T10:00:00Z"),
+    });
+    const [ana] = await db
+      .select()
+      .from(schema.customers)
+      .where(eq(schema.customers.address, "ana@shop.test"));
+    expect(ana).toMatchObject({ name: "Ana Ruiz", lastSeenAt: new Date("2026-11-05T10:00:00Z") });
   });
 
   test("profile, history and autocomplete show only conversations the member can see", async () => {

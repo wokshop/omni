@@ -338,6 +338,28 @@ describe("replies and forwards", () => {
     expect(
       (await action(((await bare.json()) as { actionId: string }).actionId)).payload,
     ).not.toHaveProperty("attachments");
+
+    // With 50 more files on the original, the forward would carry 51: the mail service would
+    // reject that payload for good, so the Worker refuses it up front and queues nothing.
+    await db.insert(schema.attachments).values(
+      Array.from({ length: 50 }, (_, i) => ({
+        orgId: org.id,
+        messageId: original.messageId,
+        filename: `page-${i}.pdf`,
+        mimeType: "application/pdf",
+        size: 1,
+        r2Key: `${org.id}/${inbox.id}/att/page-${i}`,
+      })),
+    );
+    const tooMany = await post(`/threads/${original.threadId}/forward`, bea.cookie, "forward-3", {
+      to: ["billing@acme.test"],
+    });
+    expect(tooMany.status).toBe(400);
+    const queued = await db
+      .select({ id: schema.mailActions.id })
+      .from(schema.mailActions)
+      .where(eq(schema.mailActions.mailboxId, inbox.id));
+    expect(queued).toHaveLength(2);
   });
 });
 
