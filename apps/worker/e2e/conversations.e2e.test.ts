@@ -1255,6 +1255,8 @@ describe("bulk actions and auto-assign", () => {
     // A conversation that started 40 days ago is not new this week, though it has new mail.
     const old = await deliver("d@client.test", new Date(Date.now() - 40 * 86_400_000));
     await deliver("d@client.test", at(180), old);
+    // Its first reply, indexed only now, belongs to 40 days ago, not to this report.
+    await deliver(inbox.address, new Date(Date.now() - 40 * 86_400_000 + 300_000), old, "Sent");
 
     const tag = (await (
       await post(`/mailboxes/${inbox.id}/tags`, desk.anaCookie, { name: "Billing" })

@@ -748,6 +748,7 @@ function mailQueries(db: Db, isGrantee: (memberId: AnyColumn | SQL) => SQL) {
       )`;
       const asked = sql`(select min(m.sent_at) from ${messages} m
         where m.thread_id = e.thread_id and ${customer("m")})`;
+      // `at` is when it happened (a late-indexed reply keeps its sent time), and picks the period.
       const timing = (kind: string, extra: SQL, at: SQL) => sql`
         select count(*)::int as count,
           percentile_cont(0.5) within group (order by secs) as median,
@@ -756,7 +757,7 @@ function mailQueries(db: Db, isGrantee: (memberId: AnyColumn | SQL) => SQL) {
           select greatest(0, extract(epoch from (${at} - ${asked}))) as secs
           from ${conversationEvents} e
           where e.mailbox_id = ${mailboxId} and e.kind = ${kind}
-            and e.created_at >= ${from}::timestamptz and e.created_at < ${to}::timestamptz
+            and ${at} >= ${from}::timestamptz and ${at} < ${to}::timestamptz
             and ${extra}
             -- greatest() skips a null and would count 0s: no customer message, no sample.
             and ${asked} is not null
