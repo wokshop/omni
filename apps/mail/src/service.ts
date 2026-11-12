@@ -7,6 +7,7 @@ import {
   pendingNotifications,
   setMailboxStatus,
 } from "@omni/db";
+import { MAX_PRUNED_THREADS_PER_EVENT } from "@omni/contracts";
 import { sql } from "drizzle-orm";
 import { Effect, Fiber } from "effect";
 import type { Hono } from "hono";
@@ -18,7 +19,7 @@ import type { Logger } from "./log.ts";
 import { WorkerNotifier } from "./notify.ts";
 import { createS3Store } from "./objects.ts";
 import { PgActionSource, PgMailStore, PgSendFiles } from "./pg-store.ts";
-import { connectGoogle, createGoogleOAuth } from "./providers/gmail.ts";
+import { connectGoogle, createGoogleOAuth, disconnectGoogle } from "./providers/gmail.ts";
 import { createPurelymailClient } from "./providers/purelymail.ts";
 import { createProvisioner } from "./provisioning.ts";
 import { Supervisor } from "./supervisor.ts";
@@ -102,6 +103,16 @@ export async function startService(config: ServiceConfig, log: Logger): Promise<
     db,
     onIngested: ({ folder: _folder, ...message }) =>
       notifier.push({ type: "message.created", ...message }),
+    // Not swept like `message.created`: lost in a crash, the threads only keep a stale summary
+    // until their next message.
+    onPruned: ({ threadIds, ...pruned }) => {
+      for (let i = 0; i < threadIds.length; i += MAX_PRUNED_THREADS_PER_EVENT) {
+        const chunk = threadIds.slice(i, i + MAX_PRUNED_THREADS_PER_EVENT);
+        notifier.push({ type: "messages.pruned", ...pruned, threadIds: chunk });
+      }
+    },
+    // Not swept either: lost, open apps show the merged threads until their next refresh.
+    onMerged: (merged) => notifier.push({ type: "threads.merged", ...merged }),
     objects,
     links: { imageProxyUrl: config.IMAGE_PROXY_URL, attachmentUrl: config.ATTACHMENT_URL },
   });
@@ -228,6 +239,18 @@ export async function startService(config: ServiceConfig, log: Logger): Promise<
             ),
         }
       : {}),
+    // Works without the OAuth client too: revoking needs none, and a self-hoster who removed it
+    // can still let people disconnect.
+    disconnectGoogle: (input) =>
+      disconnectGoogle(
+        {
+          db,
+          keyring: config.MAIL_CREDENTIALS_KEY,
+          stop: (mailboxId) => supervisor.retire(mailboxId),
+          logger: log,
+        },
+        input,
+      ),
     log: httpLog,
     dns: createDnsLookup({
       resolvers: config.DNS_RESOLVERS ?? [],

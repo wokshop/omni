@@ -22,6 +22,7 @@ import {
   hasLocation,
   markActionSmtpAccepted,
   messageThread,
+  moveMessageToThread,
   nextActionDue,
   sendAttachmentFiles,
   orphanedMessages,
@@ -35,13 +36,24 @@ import {
   setLocationFlags,
   subjectThreadCandidates,
   threadReferencing,
+  threadsReplyingTo,
+  mergeThreads,
   threadsByMessageIds,
   upsertMessage,
+  type MergedThreads,
 } from "@omni/db";
-import { decideThread, normalizeSubject, type ParsedMessage, parseMessage } from "@omni/mail-core";
+import {
+  decideThread,
+  normalizeSubject,
+  type ParsedMessage,
+  parseMessage,
+  parseMessageStream,
+} from "@omni/mail-core";
 import { cleanMessage, sanitizeHtml } from "@omni/mail-core/clean";
 import { createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
 import type { ObjectStore } from "./objects.ts";
+import { discard, isSpooled, spool, type SpooledFile } from "./spool.ts";
 import type {
   ActionSource,
   FetchedMessage,
@@ -94,6 +106,17 @@ export interface PgMailStoreOptions {
   links: ContentLinks;
   /** Called once per new message row, after it is committed. Must not throw. */
   onIngested?: (message: IngestedMessage) => void;
+  /** Called after a prune removed messages, with every thread that lost one. Must not throw. */
+  onPruned?: (pruned: PrunedThreads) => void;
+  /** Called after threads were merged into one (see `mergeThreads`). Must not throw. */
+  onMerged?: (merged: { orgId: string; mailboxId: string } & MergedThreads) => void;
+}
+
+/** Threads that lost messages deleted on the server; some may be gone (see `pruneMessages`). */
+export interface PrunedThreads {
+  orgId: string;
+  mailboxId: string;
+  threadIds: string[];
 }
 
 export class PgMailStore implements MailStore {
@@ -101,6 +124,8 @@ export class PgMailStore implements MailStore {
   private readonly objects: ObjectStore;
   private readonly links: ContentLinks;
   private readonly onIngested: (message: IngestedMessage) => void;
+  private readonly onPruned: (pruned: PrunedThreads) => void;
+  private readonly onMerged: NonNullable<PgMailStoreOptions["onMerged"]>;
   private readonly mailboxes = new Map<string, MailboxRow>();
   /** The tail of each mailbox's thread-and-insert chain (see `oneAtATime`). */
   private readonly inserting = new Map<string, Promise<void>>();
@@ -110,6 +135,8 @@ export class PgMailStore implements MailStore {
     this.objects = options.objects;
     this.links = options.links;
     this.onIngested = options.onIngested ?? (() => {});
+    this.onPruned = options.onPruned ?? (() => {});
+    this.onMerged = options.onMerged ?? (() => {});
   }
 
   async saveFolders(mailboxId: string, folders: FolderInfo[]): Promise<void> {
@@ -151,7 +178,21 @@ export class PgMailStore implements MailStore {
     const folder = await findFolder(this.db, mailboxId, fetched.folder);
     if (!folder) throw new Error(`folder ${fetched.folder} is not stored`);
 
-    const parsed = await parseMessage(fetched.raw);
+    const parsed = await parse(fetched.raw);
+    try {
+      return await this.storeParsed(mailboxId, mailbox, folder, fetched, parsed);
+    } finally {
+      await Promise.all(parsed.attachments.filter(isSpooled).map((file) => discard(file.path)));
+    }
+  }
+
+  private async storeParsed(
+    mailboxId: string,
+    mailbox: MailboxRow,
+    folder: NonNullable<Awaited<ReturnType<typeof findFolder>>>,
+    fetched: FetchedMessage,
+    parsed: Parsed,
+  ): Promise<{ created: boolean }> {
     const { message } = parsed;
     // A copy of a message we already indexed (moved, or filed in two folders): record where it
     // is and stop. Parsing again is cheap; re-threading and re-notifying would not be.
@@ -161,6 +202,17 @@ export class PgMailStore implements MailStore {
       const result = await this.insert(mailboxId, mailbox, folder.id, fetched, parsed);
       stored = { id: result.id, threadId: result.threadId };
       inserted = result.inserted;
+    } else if (fetched.providerThreadId) {
+      // Indexed before Gmail's copy arrived (our own send, stored as SMTP accepted it): the
+      // message's thread takes Gmail's id, or the message moves to the thread that has it.
+      const providerThreadId = fetched.providerThreadId;
+      const found = stored;
+      await this.oneAtATime(mailboxId, () =>
+        this.followProviderThread(mailboxId, mailbox, found, providerThreadId, {
+          subjectKey: normalizeSubject(message.subject),
+          lastMessageAt: message.sentAt ?? fetched.internalDate ?? new Date(),
+        }),
+      );
     }
 
     const created = await addLocation(this.db, {
@@ -191,7 +243,7 @@ export class PgMailStore implements MailStore {
     options: { threadOf?: string } = {},
   ): Promise<void> {
     const mailbox = await this.mailbox(mailboxId);
-    const parsed = await parseMessage(raw);
+    const parsed = await parse(raw);
     if (await findMessageByHeader(this.db, mailboxId, parsed.message.messageId)) return;
     const threadId = options.threadOf
       ? await messageThread(this.db, mailboxId, options.threadOf)
@@ -232,8 +284,13 @@ export class PgMailStore implements MailStore {
     return orphanedMessages(this.db, mailboxId);
   }
 
-  pruneMessages(mailboxId: string, messageIds: string[]) {
-    return pruneMessages(this.db, { mailboxId, messageIds });
+  async pruneMessages(mailboxId: string, messageIds: string[]) {
+    const pruned = await pruneMessages(this.db, { mailboxId, messageIds });
+    if (pruned.threadIds.length > 0) {
+      const { orgId } = await this.mailbox(mailboxId);
+      this.onPruned({ orgId, mailboxId, threadIds: pruned.threadIds });
+    }
+    return pruned;
   }
 
   private async insert(
@@ -243,43 +300,46 @@ export class PgMailStore implements MailStore {
     fetched: Pick<FetchedMessage, "raw" | "internalDate" | "providerThreadId"> & {
       uid: number | null;
     },
-    parsed: Awaited<ReturnType<typeof parseMessage>>,
+    parsed: Parsed,
     knownThreadId: string | null = null,
   ) {
-    const { message, attachmentContents } = parsed;
+    const { message } = parsed;
     // Objects first: a row never points at an object that is not there.
     const prefix = `${mailbox.orgId}/${mailboxId}`;
-    const r2Key = `${prefix}/raw/${sha256(fetched.raw)}.eml`;
-    await this.objects.put(r2Key, fetched.raw, "message/rfc822");
+    const rawHash = isSpooled(fetched.raw) ? fetched.raw.sha256 : sha256(fetched.raw);
+    const r2Key = `${prefix}/raw/${rawHash}.eml`;
+    await this.put(r2Key, fetched.raw, "message/rfc822");
 
     const files = await Promise.all(
       message.attachments.map(async (meta, i) => {
-        const content = attachmentContents[i] ?? new Uint8Array();
-        const hash = sha256(content);
+        const content = parsed.attachments[i] ?? new Uint8Array();
+        const hash = isSpooled(content) ? content.sha256 : sha256(content);
         const key = `${prefix}/att/${hash}`;
-        await this.objects.put(key, content, meta.mimeType);
+        await this.put(key, content, meta.mimeType);
         return { meta, hash, key };
       }),
     );
 
     let htmlR2Key: string | null = null;
+    let remoteImageCount = 0;
     if (message.html !== null) {
       const byCid = new Map(
         files.filter((f) => f.meta.contentId).map((f) => [f.meta.contentId as string, f.hash]),
       );
-      const { html } = sanitizeHtml(message.html, {
+      const sanitized = sanitizeHtml(message.html, {
         proxyUrl: (src) => `${this.links.imageProxyUrl}?url=${encodeURIComponent(src)}`,
         cidUrl: (cid) => {
           const hash = byCid.get(cid);
           return hash ? `${this.links.attachmentUrl}/${hash}` : null;
         },
       });
-      htmlR2Key = `${prefix}/html/${sha256(fetched.raw)}.html`;
-      await this.objects.put(htmlR2Key, html, "text/html; charset=utf-8");
+      remoteImageCount = sanitized.remoteImageCount;
+      htmlR2Key = `${prefix}/html/${rawHash}.html`;
+      await this.objects.put(htmlR2Key, sanitized.html, "text/html; charset=utf-8");
     }
 
     const sentAt = message.sentAt ?? fetched.internalDate ?? new Date();
-    const { cleanText } = cleanMessage(message);
+    const { cleanText, forwarded } = cleanMessage(message);
     // One insert per mailbox at a time: an outbox send and an IMAP sync running together would
     // otherwise both miss each other's row when matching a thread, and split one conversation.
     return this.oneAtATime(mailboxId, async () => {
@@ -304,6 +364,10 @@ export class PgMailStore implements MailStore {
         r2Key,
         htmlR2Key,
         cleanText,
+        forwarded,
+        remoteImageCount,
+        // Bounces and auto-replies never reopen a conversation or start an SLA (ADR 0021).
+        automated: parsed.message.automated !== null,
         // Cleared once the Worker accepts `message.created`; until then the sweep re-sends it.
         notifyPending: true,
         attachments: files.map((f) => ({
@@ -311,9 +375,32 @@ export class PgMailStore implements MailStore {
           mimeType: f.meta.mimeType,
           size: f.meta.size,
           r2Key: f.key,
+          inline: f.meta.inline,
+          contentId: f.meta.contentId,
         })),
       });
     });
+  }
+
+  private async followProviderThread(
+    mailboxId: string,
+    mailbox: MailboxRow,
+    stored: { id: string; threadId: string },
+    providerThreadId: string,
+    fresh: { subjectKey: string; lastMessageAt: Date },
+  ) {
+    const known = await findThreadByProviderId(this.db, mailboxId, providerThreadId);
+    if (known === stored.threadId) return;
+    if (!known && (await claimProviderThread(this.db, stored.threadId, providerThreadId))) return;
+    const threadId =
+      known ??
+      (await createThread(this.db, {
+        orgId: mailbox.orgId,
+        mailboxId,
+        ...fresh,
+        providerThreadId,
+      }));
+    await moveMessageToThread(this.db, { mailboxId, messageId: stored.id, threadId });
   }
 
   private oneAtATime<T>(mailboxId: string, task: () => Promise<T>): Promise<T> {
@@ -363,6 +450,22 @@ export class PgMailStore implements MailStore {
       { ...message, sentAt },
       { knownMessageIds, candidates, selfAddresses: [mailbox.address], relatedThreadId },
     );
+    if (decision.kind === "headers" && !providerThreadId) {
+      // A reply stored before this message started its own thread: this message links it to
+      // the thread it joins, so the two are one conversation again.
+      const linked = new Set([
+        decision.threadId,
+        ...knownMessageIds.values(),
+        ...(await threadsReplyingTo(this.db, mailboxId, message.messageId)),
+      ]);
+      if (linked.size > 1) {
+        const merged = await mergeThreads(this.db, { mailboxId, threadIds: [...linked] });
+        if (merged.fromThreadIds.length > 0) {
+          this.onMerged({ orgId: mailbox.orgId, mailboxId, ...merged });
+        }
+        return merged.intoThreadId;
+      }
+    }
     if (decision.kind !== "new") {
       // A thread started before Gmail's id was known (our own send, indexed before its Sent copy)
       // takes this id; one that already belongs to another Gmail thread is not this conversation.
@@ -380,6 +483,12 @@ export class PgMailStore implements MailStore {
     });
   }
 
+  private put(key: string, body: Uint8Array | SpooledFile, contentType: string) {
+    return isSpooled(body)
+      ? this.objects.putFile(key, body, contentType)
+      : this.objects.put(key, body, contentType);
+  }
+
   private async mailbox(mailboxId: string): Promise<MailboxRow> {
     const cached = this.mailboxes.get(mailboxId);
     if (cached) return cached;
@@ -387,6 +496,36 @@ export class PgMailStore implements MailStore {
     if (!row) throw new Error(`mailbox ${mailboxId} is not stored`);
     this.mailboxes.set(mailboxId, row);
     return row;
+  }
+}
+
+/** A parsed message and its attachments' content, in memory or spooled to temp files. */
+interface Parsed {
+  message: ParsedMessage;
+  attachments: (Uint8Array | SpooledFile)[];
+}
+
+/** A spooled message is parsed from its file, and its attachments spool too. */
+async function parse(raw: Uint8Array | SpooledFile): Promise<Parsed> {
+  if (!isSpooled(raw)) {
+    const { message, attachmentContents } = await parseMessage(raw);
+    return { message, attachments: attachmentContents };
+  }
+  const attachments: SpooledFile[] = [];
+  try {
+    const { message } = await parseMessageStream(
+      () => createReadStream(raw.path),
+      async (index, content) => {
+        attachments[index] = await spool(content);
+      },
+    );
+    // The MIME-limit fallback keeps no attachments; drop any spooled before it gave up.
+    const kept = attachments.slice(0, message.attachments.length);
+    await Promise.all(attachments.slice(kept.length).map((file) => discard(file.path)));
+    return { message, attachments: kept };
+  } catch (error) {
+    await Promise.all(attachments.map((file) => file && discard(file.path)));
+    throw error;
   }
 }
 
