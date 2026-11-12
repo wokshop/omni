@@ -1,18 +1,15 @@
 import { Cloudflare } from "@ridemountainpig/svgl-react";
 import { useNavigate } from "@tanstack/react-router";
-import { useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import type { Key } from "react-aria-components";
 import { cn } from "cn";
 import { Skeleton } from "skullet/react";
-import { IconRedirectArrow } from "@/components/icons";
 import {
   IconArrowLeft,
-  IconCheck,
   IconChevronsUpDown,
   IconLogOut,
   IconPlus,
 } from "@/components/icons/central";
-import { IconChevronRight } from "@/components/icons/sidebar";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { ChoiceBox, ChoiceBoxItem } from "@/components/ui/choice-box";
@@ -85,19 +82,14 @@ export function Onboarding() {
   const [page, setPage] = useState<OnboardingPage>(() =>
     resuming && status.data ? resumePage(status.data, domain) : "Workspace",
   );
-  // A step can be opened once every step before it is done: back to any of them, forward only
-  // as far as setup got. Nothing moves on by itself; each page's button does.
-  const reachable = (p: OnboardingPage) => pages.slice(0, pages.indexOf(p)).every(done);
+  const index = pages.indexOf(page);
   const next = (from: OnboardingPage) => setPage(pages[pages.indexOf(from) + 1] ?? "Team");
+  // Back steps to the page before; the dots only show where setup is (dorks' onboarding).
+  const previous = pages[index - 1];
+  const back = previous ? () => setPage(previous) : undefined;
 
   return (
-    <OnboardingPage
-      pages={pages}
-      current={page}
-      done={done}
-      reachable={reachable}
-      onSelect={setPage}
-    >
+    <OnboardingPage pages={pages} current={page} onBack={back}>
       {page === "Workspace" &&
         (domain ? (
           <DomainForm
@@ -139,110 +131,56 @@ export function Onboarding() {
   );
 }
 
+const BackContext = createContext<(() => void) | undefined>(undefined);
+
 /**
- * The frame every page shares: a rail on the left (above the page on phones) with the setup's
- * title, the steps under it, and the account switcher at its foot; the page's form beside it.
+ * The frame every page shares, after dorks' onboarding: no rail or app chrome, one column in the
+ * middle, the progress dots at the bottom, and the account in the top corner as the way out. The
+ * dots and the column read the same `current`, so they cannot disagree.
  */
 function OnboardingPage(props: {
   pages: readonly OnboardingPage[];
   current: OnboardingPage;
-  done: (p: OnboardingPage) => boolean;
-  reachable: (p: OnboardingPage) => boolean;
-  onSelect: (p: OnboardingPage) => void;
+  onBack?: () => void;
   children: ReactNode;
 }) {
+  const index = props.pages.indexOf(props.current);
   return (
-    <main className="min-h-dvh bg-background">
-      {/* The rail sits 32px from the screen's top, left and bottom on wide screens; the logo and
-          title share one row, the steps hang under it, and the account switcher sits at the foot. */}
-      <aside className="flex flex-col gap-8 px-4 pt-6 md:fixed md:inset-y-8 md:left-8 md:w-60 md:p-0">
-        <div className="flex items-center gap-3">
-          <IconRedirectArrow />
-          <span className="text-sm text-foreground">Set up your workspace</span>
-        </div>
-        <StepList {...props} />
-        {/* At the rail's foot on wide screens; on phones, at the page's foot (below). */}
-        <div className="-ms-0.5 mt-auto hidden md:block">
-          <AccountSwitcher />
-        </div>
-      </aside>
-      {/* `pt-9.5`: the page heading's ink top lines up with the rail title's (41.5px down;
-          measured). The page sits right of the screen's centre on wide screens: the rail weighs the left
-          side, and true centre reads as pushed left. Narrower, it keeps clear of the rail. */}
-      <div className="flex justify-center px-4 py-10 md:pt-9.5 md:pb-16 md:pr-4 md:pl-72 xl:pl-28">
-        {/* One width for every page, so the column doesn't jump between steps. */}
-        <div className="flex w-120 max-w-full flex-col">
-          {props.children}
-          <div className="mt-10 md:hidden">
-            <AccountSwitcher />
-          </div>
-        </div>
+    <div className="relative isolate flex min-h-dvh flex-col overflow-clip bg-background">
+      <div className="absolute top-4 right-4 md:top-6 md:right-6">
+        <AccountSwitcher />
       </div>
-    </main>
-  );
-}
-
-/**
- * Setup's steps, numbered, down the rail: finished ones carry a green check, the current one is
- * marked, and every step already reached is a button back to it.
- */
-function StepList(props: {
-  pages: readonly OnboardingPage[];
-  current: OnboardingPage;
-  done: (p: OnboardingPage) => boolean;
-  reachable: (p: OnboardingPage) => boolean;
-  onSelect: (p: OnboardingPage) => void;
-}) {
-  return (
-    <nav aria-label="Setup steps">
-      <ol className="-ms-0.5 flex flex-col gap-2">
-        {props.pages.map((p, i) => {
-          const current = p === props.current;
-          const done = props.done(p);
-          return (
-            <li key={p}>
-              <Button
-                intent="plain"
-                size="sm"
-                className="w-full justify-start gap-2.5 px-1.5 text-start"
-                isDisabled={!current && !props.reachable(p)}
-                aria-current={current ? "step" : undefined}
-                onPress={() => props.onSelect(p)}
-              >
-                <span
-                  aria-hidden
-                  className={cn(
-                    "flex size-4 shrink-0 items-center justify-center rounded-full text-xs/none tabular-nums",
-                    done
-                      ? "bg-success text-success-foreground"
-                      : // `pt-px`: the figures sit half a pixel high in their line box (ink-measured).
-                        current
-                        ? "bg-foreground pt-px text-background"
-                        : "pt-px ring-1 ring-border text-muted-foreground",
-                  )}
-                >
-                  {done ? <IconCheck className="size-2.5" strokeWidth={3} /> : i + 1}
-                </span>
-                <span
-                  className={cn(
-                    "truncate text-sm",
-                    current ? "text-foreground" : "text-muted-foreground",
-                  )}
-                >
-                  {PAGE_TITLES[p]}
-                </span>
-                {done && <span className="sr-only">(done)</span>}
-              </Button>
-            </li>
-          );
-        })}
+      <BackContext.Provider value={props.onBack}>
+        {/* Keyed by page so each page enters on its own instead of morphing out of the last.
+            480px of content (dorks' is 450): the DNS records table needs the room. */}
+        <main
+          key={props.current}
+          className="mx-auto flex w-full max-w-152 flex-1 flex-col justify-center px-4 pt-20 pb-24 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-bottom-1 motion-safe:duration-300 md:px-12"
+        >
+          {props.children}
+        </main>
+      </BackContext.Provider>
+      <ol
+        aria-label={`Step ${index + 1} of ${props.pages.length}, ${PAGE_TITLES[props.current]}`}
+        className="absolute inset-x-0 bottom-12 flex justify-center gap-3"
+      >
+        {props.pages.map((p, i) => (
+          <li
+            key={p}
+            aria-current={i === index ? "step" : undefined}
+            className={cn(
+              "size-2 rounded-full transition-colors duration-300",
+              i === index ? "bg-primary" : "bg-foreground/15",
+            )}
+          />
+        ))}
       </ol>
-    </nav>
+    </div>
   );
 }
 
 /**
- * The signed-in account at the rail's foot, as the app sidebar's switcher: a plain trigger (avatar,
+ * The signed-in account in the top corner, as the app sidebar's switcher: a plain trigger (avatar,
  * name, chevron) whose menu is the way out: back to the inbox or a workspace that's ready (setup
  * stays saved and resumes), and Log out.
  */
@@ -259,10 +197,10 @@ function AccountSwitcher() {
         intent="plain"
         aria-label={`Account, ${name}`}
         // The sidebar switcher's trigger: hover, pressed and open share the accent fill.
-        className="h-7 w-full min-w-0 justify-start gap-2.5 rounded-sm px-1.5 [--btn-overlay:var(--color-accent)] aria-expanded:[--btn-bg:var(--color-accent)]"
+        className="h-7 max-w-60 min-w-0 justify-start gap-2.5 rounded-sm px-1.5 [--btn-overlay:var(--color-accent)] aria-expanded:[--btn-bg:var(--color-accent)]"
       >
-        {/* 16px like the step markers above it and on their axis; at that size an initial is a
-            speck, so a person without a picture gets a plain disc. */}
+        {/* 16px: at that size an initial is a speck, so a person without a picture gets a plain
+            disc. */}
         <Avatar
           src={user.image ?? null}
           className="bg-accent outline-0 [--avatar-size:--spacing(4)]"
@@ -270,7 +208,7 @@ function AccountSwitcher() {
         <span className="min-w-0 truncate">{name}</span>
         <IconChevronsUpDown className="size-3.5 shrink-0 text-subtle-foreground" />
       </Button>
-      <Menu placement="top start" popover={{ offset: 8 }}>
+      <Menu placement="bottom end" popover={{ offset: 8 }}>
         {exit.kind !== "sign-out" && (
           <MenuItem onAction={leave}>
             <IconArrowLeft data-slot="icon" />
@@ -289,9 +227,9 @@ function AccountSwitcher() {
 }
 
 /**
- * Heading, an optional one-line description, the fields, and the submit button. The submit button
- * is the page's one primary action and is never disabled: a page that isn't ready says why when
- * it is pressed.
+ * Heading, an optional line or two under it, the fields, then the step's buttons: Back (when there
+ * is a page behind) and the primary one, both 40px pills (dorks' onboarding). The primary button is
+ * never disabled: a page that isn't ready says why when it is pressed.
  */
 function PageForm(props: {
   title: string;
@@ -303,6 +241,7 @@ function PageForm(props: {
   onSubmit: () => void;
   children: ReactNode;
 }) {
+  const onBack = useContext(BackContext);
   return (
     <form
       className="flex flex-col"
@@ -311,18 +250,32 @@ function PageForm(props: {
         if (!props.isPending) props.onSubmit();
       }}
     >
-      <div className="flex flex-col gap-1.5">
-        <Heading>{props.title}</Heading>
-        {props.description && <Text>{props.description}</Text>}
+      <div className="flex flex-col gap-6">
+        <header className="flex flex-col items-center gap-3 text-center">
+          <Heading className="font-medium">{props.title}</Heading>
+          {props.description && <Text className="max-w-100 text-balance">{props.description}</Text>}
+        </header>
+        {props.children}
       </div>
-      <div className="flex flex-col gap-6 pt-8">{props.children}</div>
-      {/* The 40px above the button holds the form's error: one line (12 + 16 + 12) appears without
-          moving anything, a longer one grows the gap and keeps 12px above the button. */}
-      <SlotError className="min-h-10 py-3">{props.problem}</SlotError>
-      <Button type="submit" size="lg" className="w-full" isPending={props.isPending}>
-        {props.submit}
-        <IconChevronRight />
-      </Button>
+      {/* The 40px above the buttons holds the form's error: one line (12 + 16 + 12) appears without
+          moving anything; a longer one grows the gap. */}
+      <SlotError className="min-h-10 py-3 *:justify-center">{props.problem}</SlotError>
+      <div className="flex items-center justify-center gap-2">
+        {onBack && (
+          <Button
+            intent="ghost"
+            size="lg"
+            isCircle
+            className="px-4 text-muted-foreground"
+            onPress={onBack}
+          >
+            Back
+          </Button>
+        )}
+        <Button type="submit" size="lg" isCircle className="px-4" isPending={props.isPending}>
+          {props.submit}
+        </Button>
+      </div>
     </form>
   );
 }
@@ -372,7 +325,7 @@ function WorkspaceFields(props: {
         autoFocus={!props.nameSaved}
       >
         <Label>Workspace name</Label>
-        <Input placeholder="Acme" />
+        <Input size="lg" placeholder="Acme" />
         <FieldRevealedError message="Enter a name for the workspace." />
       </TextField>
       <TextField
@@ -383,7 +336,7 @@ function WorkspaceFields(props: {
         autoFocus={props.nameSaved && !props.domainSaved}
       >
         <Label>Domain</Label>
-        <Input placeholder="acme.com" />
+        <Input size="lg" placeholder="acme.com" />
         <FieldRevealedError message="Enter your domain, like acme.com." />
       </TextField>
     </>
@@ -793,7 +746,7 @@ function MailboxesForm(props: {
         <TextField value={name} onChange={setName} isReadOnly={!!saved} isRequired autoFocus>
           <Label>Address</Label>
           <InputGroup className="[--input-gutter-end:--spacing(4)]">
-            <Input placeholder="name" />
+            <Input size="lg" placeholder="name" />
             <span data-slot="text" className="text-sm text-muted-foreground">
               {suffix}
             </span>
@@ -809,6 +762,7 @@ function MailboxesForm(props: {
             isRequired
           >
             <Input
+              size="lg"
               placeholder="Password (an app password if your host has them)"
               autoComplete="off"
             />
@@ -822,12 +776,12 @@ function MailboxesForm(props: {
         <>
           <TextField value={imap} onChange={setImap} isRequired>
             <Label>IMAP server</Label>
-            <Input placeholder={`imap.${props.domain.domain}:993`} />
+            <Input size="lg" placeholder={`imap.${props.domain.domain}:993`} />
             <FieldRevealedError message="Enter the IMAP server." />
           </TextField>
           <TextField value={smtp} onChange={setSmtp} isRequired>
             <Label>SMTP server</Label>
-            <Input placeholder={`smtp.${props.domain.domain}:465`} />
+            <Input size="lg" placeholder={`smtp.${props.domain.domain}:465`} />
             <FieldRevealedError message="Enter the SMTP server." />
           </TextField>
         </>
@@ -992,7 +946,7 @@ function InviteForm(props: { domain?: string }) {
             // The first field on arrival; a field just added after that.
             autoFocus={emails.length <= 3 ? i === 0 : i === emails.length - 1}
           >
-            <Input placeholder={`teammate@${props.domain ?? "acme.com"}`} />
+            <Input size="lg" placeholder={`teammate@${props.domain ?? "acme.com"}`} />
             <FieldRevealedError message="Enter a valid email address." />
           </TextField>
         )}
