@@ -1,6 +1,6 @@
 {
-  "id": "c74ab904-9172-4a30-8125-b9d084f3ca8d",
-  "prevId": "cb94aa83-9308-4029-b75e-3b5d24c0b876",
+  "id": "33bea192-f934-44a0-9e55-51d502805ad9",
+  "prevId": "2aaaf6bd-d9a0-42df-83df-91c081614c9a",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3215,6 +3215,19 @@
           "primaryKey": false,
           "notNull": false
         },
+        "auto_assign": {
+          "name": "auto_assign",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "auto_assign_last_member_id": {
+          "name": "auto_assign_last_member_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -3636,12 +3649,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": 0
-        },
-        "forwarded": {
-          "name": "forwarded",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
         },
         "notify_pending": {
           "name": "notify_pending",
@@ -5198,6 +5205,18 @@
           "primaryKey": false,
           "notNull": false
         },
+        "response_clock_at": {
+          "name": "response_clock_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "resolution_clock_at": {
+          "name": "resolution_clock_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
         "first_responded_at": {
           "name": "first_responded_at",
           "type": "timestamp with time zone",
@@ -6044,8 +6063,7 @@
         "note",
         "first_response",
         "sla_at_risk",
-        "sla_breached",
-        "merged"
+        "sla_breached"
       ]
     },
     "public.conversation_priority": {
