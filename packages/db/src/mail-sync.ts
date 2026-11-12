@@ -72,15 +72,29 @@ export async function replaceFolders(
 ) {
   const { orgId, mailboxId, folders } = input;
   await db.transaction(async (tx) => {
+    // Folders that are new or changed role. A role change moves threads in or out of the inbox
+    // (Junk stored as `other`, later detected as `junk`), so their messages are reconciled below.
+    const changed: string[] = [];
     for (const folder of folders) {
-      await tx
+      const rows = await tx
         .insert(mailboxFolders)
         .values({ orgId, mailboxId, path: folder.path, role: folder.role })
         .onConflictDoUpdate({
           target: [mailboxFolders.mailboxId, mailboxFolders.path],
           set: { role: folder.role, updatedAt: new Date() },
           setWhere: ne(mailboxFolders.role, folder.role),
-        });
+        })
+        .returning({ id: mailboxFolders.id });
+      changed.push(...rows.map((row) => row.id));
+    }
+    if (changed.length > 0) {
+      await reconcileThreads(
+        tx,
+        sql`select message_id from ${messageLocations} where folder_id in (${sql.join(
+          changed.map((id) => sql`${id}`),
+          sql`, `,
+        )})`,
+      );
     }
     const keep = folders.map((f) => f.path);
     await tx
