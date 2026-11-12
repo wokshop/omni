@@ -39,32 +39,36 @@ export interface SettingsPatch {
 
 /**
  * Changes only what `patch` names; a notification kind merges channel by channel, so turning
- * off desktop for mentions leaves push for mentions as it was.
+ * off desktop for mentions leaves push for mentions as it was. The merge happens in the upsert
+ * against the stored row, so two overlapping patches (a theme change and an undo-window change)
+ * both land instead of the later one writing back what the earlier one read.
  */
 export async function updateMemberSettings(db: Db, memberId: string, patch: SettingsPatch) {
-  const current = await memberSettings(db, memberId);
-  const notifications = { ...current.notifications };
-  for (const [kind, channels] of Object.entries(patch.notifications ?? {})) {
-    notifications[kind as NotificationKind] = {
-      ...notifications[kind as NotificationKind],
-      ...channels,
-    };
+  const changed = Object.entries(patch.notifications ?? {}).filter(
+    (entry): entry is [string, Partial<NotificationChannels>] => entry[1] !== undefined,
+  );
+  // Stored overrides only; `memberSettings` fills every default on read.
+  let notifications = sql`coalesce(${memberPreferences.notifications}, '{}'::jsonb)`;
+  for (const [kind, channels] of changed) {
+    notifications = sql`(${notifications} || jsonb_build_object(${kind}::text, coalesce(${notifications} -> ${kind}::text, '{}'::jsonb) || ${JSON.stringify(channels)}::jsonb))`;
   }
-  const values = {
-    notifications,
-    theme: patch.theme ?? current.theme,
-    undoSendSeconds: patch.undoSendSeconds ?? current.undoSendSeconds,
-  };
   await db
     .insert(memberPreferences)
     .values({
       memberId,
       orgId: sql`(select ${members.organizationId} from ${members} where ${members.id} = ${memberId})`,
-      ...values,
+      notifications: Object.fromEntries(changed) as Record<string, NotificationChannels>,
+      ...(patch.theme ? { theme: patch.theme } : {}),
+      ...(patch.undoSendSeconds !== undefined ? { undoSendSeconds: patch.undoSendSeconds } : {}),
     })
     .onConflictDoUpdate({
       target: memberPreferences.memberId,
-      set: { ...values, updatedAt: new Date() },
+      set: {
+        notifications,
+        ...(patch.theme ? { theme: patch.theme } : {}),
+        ...(patch.undoSendSeconds !== undefined ? { undoSendSeconds: patch.undoSendSeconds } : {}),
+        updatedAt: new Date(),
+      },
     });
   return memberSettings(db, memberId);
 }
