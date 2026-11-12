@@ -100,7 +100,8 @@ export async function consumeDeadLetters(batch: MessageBatch<AiJob>, env: Env) {
 }
 
 /**
- * `superseded`: a newer message arrived mid-job; that message's own job files the thread.
+ * `superseded`: a newer message arrived mid-job, or mail was merged in or pruned; that change's
+ *   own job writes the result.
  * `triage_paused`: the workspace used its monthly allowance; the thread records until when.
  * `billing_inactive`: no plan in good standing, so no AI at all (ADR 0015).
  */
@@ -242,8 +243,12 @@ export async function runAiJob(
 
   // Noise never gets a summary, so the job is complete.
   if (bucket === "noise") {
-    await saveSummary(db, thread.id, { summary: null, messageId: latest.id });
-    return "triaged";
+    const saved = await saveSummary(db, thread.id, {
+      summary: null,
+      messageId: latest.id,
+      messageCount: thread.messages.length,
+    });
+    return saved ? "triaged" : "superseded";
   }
   if (!summaryEnabled) return nothingNew;
   if (!(await inGoodStanding(db, config, thread.orgId))) return nothingNew;
@@ -263,6 +268,10 @@ export async function runAiJob(
     })),
   });
   await addAiUsage(db, thread.orgId, day, summary.usage);
-  await saveSummary(db, thread.id, { summary: summary.summary, messageId: latest.id });
-  return "summarized";
+  const saved = await saveSummary(db, thread.id, {
+    summary: summary.summary,
+    messageId: latest.id,
+    messageCount: thread.messages.length,
+  });
+  return saved ? "summarized" : "superseded";
 }
