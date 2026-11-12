@@ -1,5 +1,5 @@
 {
-  "id": "33bea192-f934-44a0-9e55-51d502805ad9",
+  "id": "16eea9e0-5f1c-4774-961b-2470cdf4b84c",
   "prevId": "2aaaf6bd-d9a0-42df-83df-91c081614c9a",
   "version": "7",
   "dialect": "postgresql",
@@ -2049,6 +2049,12 @@
         "name": {
           "name": "name",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "name_seen_at": {
+          "name": "name_seen_at",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },
@@ -5147,12 +5153,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "provider_thread_id": {
-          "name": "provider_thread_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "status": {
           "name": "status",
           "type": "conversation_status",
@@ -5600,28 +5600,6 @@
           ],
           "isUnique": false,
           "where": "\"threads\".\"assignee_member_id\" is not null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "threads_mailbox_provider_thread_unique": {
-          "name": "threads_mailbox_provider_thread_unique",
-          "columns": [
-            {
-              "expression": "mailbox_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "provider_thread_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"threads\".\"provider_thread_id\" is not null",
           "concurrently": false,
           "method": "btree",
           "with": {}
