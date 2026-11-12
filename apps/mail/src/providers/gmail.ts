@@ -4,11 +4,7 @@
 // IMAP and SMTP. Endpoints follow Google's OAuth 2.0 web-server flow
 // (https://developers.google.com/identity/protocols/oauth2/web-server).
 import { randomUUIDv7 } from "node:crypto";
-import {
-  GOOGLE_MAIL_SCOPES,
-  type GoogleConnectBody,
-  type GoogleConnectResult,
-} from "@omni/contracts";
+import type { GoogleConnectBody, GoogleConnectResult } from "@omni/contracts";
 import type { Keyring } from "@omni/crypto";
 import { type Db, findOrgMailbox, mailboxOwnerIds, saveMailbox } from "@omni/db";
 import { z } from "zod";
@@ -26,6 +22,14 @@ export const GMAIL_SERVERS: { imap: ServerEndpoint; smtp: ServerEndpoint } = {
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const REVOKE_URL = "https://oauth2.googleapis.com/revoke";
 const MAIL_SCOPE = "https://mail.google.com/";
+
+/**
+ * Scopes to ask Google for. `https://mail.google.com/` is the only scope Gmail's IMAP and SMTP
+ * accept (a restricted scope: unverified apps are capped at 100 users). The authorization URL must
+ * also carry `access_type=offline` and `prompt=consent`, or Google returns no refresh token. The
+ * Worker's consent redirect asks for the same three.
+ */
+export const GOOGLE_MAIL_SCOPES = [MAIL_SCOPE, "openid", "email"] as const;
 /** An access token this close to expiry is refreshed before use, so a login never races it. */
 const REFRESH_MARGIN_MS = 5 * 60_000;
 
@@ -266,7 +270,7 @@ async function save(
   // must not gain access to it, nor restore access after its owner's grant was revoked.
   if (existing) {
     const owners = await mailboxOwnerIds(db, existing.id);
-    if (!owners.includes(input.ownerMemberId)) {
+    if (!owners.includes(input.memberId)) {
       throw new ProvisionError(409, `${address} is connected by someone else in this workspace`);
     }
   }
@@ -286,7 +290,7 @@ async function save(
     kind: "personal",
     provider: "gmail",
     credentialsEnc: await sealCredentials(keyring, mailboxId, credentials),
-    ownerMemberId: input.ownerMemberId,
+    ownerMemberId: input.memberId,
   });
   logger.info("google.connected", { orgId: input.orgId, mailboxId, reconnect: !!existing });
   void deps

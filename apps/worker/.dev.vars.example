@@ -18,8 +18,9 @@ APP_NAME=Omni
 # BETTER_AUTH_URL (the Worker serves the web app on the same origin). Locally, Vite's origin.
 WEB_APP_URL=http://localhost:5173
 # Optional. Google OAuth client ("Web application" type, Google Cloud console). Set both to show
-# "Sign in with Google"; leave both empty to hide it. Authorized redirect URI:
-# <BETTER_AUTH_URL>/api/auth/callback/google.
+# "Sign in with Google" and let members connect a Gmail account; leave both empty to hide both.
+# Authorized redirect URIs: <BETTER_AUTH_URL>/api/auth/callback/google (sign-in) and
+# <BETTER_AUTH_URL>/api/connect/google/callback (connecting Gmail).
 GOOGLE_CLIENT_ID=
 # Secret.
 GOOGLE_CLIENT_SECRET=
@@ -38,6 +39,9 @@ MAIL_SERVICE_HMAC_SECRET=
 # Address magic links, invitations and notices come from, sent with Cloudflare Email Sending
 # (its domain onboarded there; `wrangler dev` only simulates it). Leave empty to disable email sign-in.
 SYSTEM_MAIL_FROM=
+
+# Optional. Largest file one upload may stage for a send, in bytes. Empty: 26214400 (25 MB).
+UPLOAD_MAX_BYTES=
 
 # --- AI ---
 # Secret. Summaries, and triage when TYPESAFE_API_KEY is empty. With neither key, threads stay
