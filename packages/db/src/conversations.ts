@@ -12,9 +12,23 @@ import {
   type ConversationEvent,
   type ConversationState,
 } from "@omni/mail-core/conversation-status";
-import { and, asc, eq, exists, gt, isNotNull, isNull, lte, ne, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  exists,
+  gt,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  lte,
+  ne,
+  sql,
+} from "drizzle-orm";
 import { uuidv7 } from "uuidv7";
 import type { Db } from "./client.ts";
+import { setSlaClocks } from "./sla.ts";
 import {
   conversationEvents,
   conversationPriority,
@@ -23,13 +37,15 @@ import {
   mailboxAccess,
   mailboxFolders,
   mailboxes,
+  memberPreferences,
   members,
   messageLocations,
   messages,
+  notes,
+  notifications,
   tags,
   threadTags,
   threads,
-  users,
 } from "./schema/index.ts";
 
 export type Priority = (typeof conversationPriority.enumValues)[number];
@@ -71,6 +87,8 @@ export type ChangeResult =
       conversation: ConversationRow;
       /** Outbox rows written (archive on resolve, back to INBOX on reopen): ping the mail service. */
       queuedActions: number;
+      /** Members who got a new notification: tell them in realtime. */
+      notified: string[];
     }
   | { ok: false; reason: ChangeFailure };
 
@@ -87,6 +105,8 @@ const conversationColumns = {
   firstResponseDueAt: threads.firstResponseDueAt,
   nextResponseDueAt: threads.nextResponseDueAt,
   resolutionDueAt: threads.resolutionDueAt,
+  responseClockAt: threads.responseClockAt,
+  resolutionClockAt: threads.resolutionClockAt,
   customerId: threads.customerId,
 };
 
@@ -103,6 +123,8 @@ export type ConversationRow = {
   firstResponseDueAt: Date | null;
   nextResponseDueAt: Date | null;
   resolutionDueAt: Date | null;
+  responseClockAt: Date | null;
+  resolutionClockAt: Date | null;
   customerId: string | null;
 };
 
@@ -169,6 +191,46 @@ async function writeEvents(
     .returning({ id: conversationEvents.id, kind: conversationEvents.kind });
 }
 
+export type NotificationKind = (typeof notifications.$inferInsert)["kind"];
+
+/**
+ * Notifies members about this conversation, once per `dedupeKey` per member (a job that runs
+ * twice notifies once). Returns the members who got a new notification.
+ */
+async function notify(
+  tx: Tx,
+  row: ConversationRow,
+  input: {
+    memberIds: string[];
+    kind: NotificationKind;
+    actorMemberId: string | null;
+    dedupeKey: string;
+    noteId?: string;
+    data?: Record<string, unknown>;
+  },
+) {
+  const memberIds = [...new Set(input.memberIds)].filter((m) => m !== input.actorMemberId);
+  if (memberIds.length === 0) return [];
+  const rows = await tx
+    .insert(notifications)
+    .values(
+      memberIds.map((memberId) => ({
+        id: uuidv7(),
+        orgId: row.orgId,
+        memberId,
+        kind: input.kind,
+        threadId: row.id,
+        noteId: input.noteId ?? null,
+        actorMemberId: input.actorMemberId,
+        data: { mailboxId: row.mailboxId, ...input.data },
+        dedupeKey: input.dedupeKey,
+      })),
+    )
+    .onConflictDoNothing()
+    .returning({ memberId: notifications.memberId });
+  return rows.map((r) => r.memberId);
+}
+
 /** Every IMAP copy of the thread's messages, grouped by folder, as outbox targets. */
 async function folderTargets(tx: Tx, threadId: string) {
   const rows = await tx
@@ -198,6 +260,12 @@ async function folderTargets(tx: Tx, threadId: string) {
 }
 
 /**
+ * How long a resolve waits before its archive runs. Reopening inside it cancels the archive, so
+ * an undo never has to move mail back. Reopening later moves the archived copies back to INBOX.
+ */
+export const ARCHIVE_DELAY_SECONDS = 10;
+
+/**
  * Resolve files the mail (ADR 0021 §5): the INBOX copies are archived, and leaving resolved moves
  * the archived copies back to INBOX. Sent, Junk, Trash and other folders are left where they are.
  * Keyed by the status event, so each transition queues its moves once.
@@ -214,6 +282,19 @@ async function fileMail(
     .update(threads)
     .set({ archived: direction === "archive", updatedAt: new Date() })
     .where(eq(threads.id, row.id));
+  if (direction === "unarchive") {
+    // An archive still waiting out its delay never runs: the mail has not left INBOX yet.
+    await tx
+      .delete(mailActions)
+      .where(
+        and(
+          eq(mailActions.mailboxId, row.mailboxId),
+          eq(mailActions.kind, "archive"),
+          eq(mailActions.status, "pending"),
+          sql`${mailActions.idempotencyKey} like ${`conversation:${row.id}:%`}`,
+        ),
+      );
+  }
   const targets = await folderTargets(tx, row.id);
   let actions: { kind: "archive" | "move"; payload: Record<string, unknown>; folder: string }[];
   if (direction === "archive") {
@@ -250,8 +331,13 @@ async function fileMail(
         memberId: actorMemberId,
         kind: action.kind,
         payload: action.payload,
-        idempotencyKey: `conversation:${eventId}:${action.kind}:${action.folder}`,
+        idempotencyKey: `conversation:${row.id}:${eventId}:${action.kind}:${action.folder}`,
         requestId: requestId ?? null,
+        // A resolve can be undone for a while before the mail moves (the web app's undo).
+        runAfter:
+          action.kind === "archive"
+            ? new Date(Date.now() + ARCHIVE_DELAY_SECONDS * 1000)
+            : undefined,
       })),
     )
     .onConflictDoNothing()
@@ -263,6 +349,8 @@ interface Applied {
   row: ConversationRow;
   changed: boolean;
   queuedActions: number;
+  /** Members who got a new notification from this change. */
+  notified?: string[];
 }
 
 /**
@@ -311,6 +399,11 @@ async function applyStatus(
   if (!written) return { row, changed: false, queuedActions: 0 };
   let queuedActions = 0;
   if (updated.status === "resolved" && row.status !== "resolved") {
+    // Resolved: nobody is waiting on us any more (ADR 0023).
+    Object.assign(
+      updated,
+      await setSlaClocks(tx, updated, { responseClockAt: null, resolutionClockAt: null }),
+    );
     queuedActions = await fileMail(
       tx,
       updated,
@@ -356,16 +449,31 @@ async function assign(
   actorMemberId: string | null,
   now: Date,
   data: Record<string, unknown> = {},
+  dedupeKey?: string,
 ): Promise<Applied> {
   if (row.assigneeMemberId === memberId) return { row, changed: false, queuedActions: 0 };
   await tx
     .update(threads)
     .set({ assigneeMemberId: memberId, updatedAt: now })
     .where(eq(threads.id, row.id));
-  await writeEvents(tx, row, actorMemberId, [
-    { kind: "assigned", data: { from: row.assigneeMemberId, to: memberId, ...data } },
+  const [event] = await writeEvents(tx, row, actorMemberId, [
+    { kind: "assigned", data: { from: row.assigneeMemberId, to: memberId, ...data }, dedupeKey },
   ]);
-  return { row: { ...row, assigneeMemberId: memberId }, changed: true, queuedActions: 0 };
+  const notified =
+    memberId && event
+      ? await notify(tx, row, {
+          memberIds: [memberId],
+          kind: "assigned",
+          actorMemberId,
+          dedupeKey: `assigned:${event.id}`,
+        })
+      : [];
+  return {
+    row: { ...row, assigneeMemberId: memberId },
+    changed: true,
+    queuedActions: 0,
+    notified,
+  };
 }
 
 /**
@@ -379,34 +487,56 @@ export async function applyConversationChange(
     actorMemberId: string | null;
     change: ConversationChange;
     requestId?: string;
+    /**
+     * The request's `Idempotency-Key`. A retry of a request that already changed the conversation
+     * changes nothing, so it cannot undo a teammate's change made in between.
+     */
+    idempotencyKey?: string;
     now?: Date;
   },
 ): Promise<ChangeResult> {
   const { threadId, actorMemberId, change } = input;
   const now = input.now ?? new Date();
+  const dedupeKey = input.idempotencyKey
+    ? `request:${actorMemberId ?? "system"}:${input.idempotencyKey}`
+    : undefined;
   return db.transaction(async (tx): Promise<ChangeResult> => {
     const locked = await lockConversation(tx, threadId, actorMemberId);
     if (!locked) return { ok: false, reason: "not_found" };
     const { kind, ...row } = locked;
     if (kind !== "shared") return { ok: false, reason: "personal_mailbox" };
+    if (dedupeKey) {
+      const [seen] = await tx
+        .select({ id: conversationEvents.id })
+        .from(conversationEvents)
+        .where(
+          and(eq(conversationEvents.threadId, row.id), eq(conversationEvents.dedupeKey, dedupeKey)),
+        );
+      if (seen) {
+        return { ok: true, changed: false, conversation: row, queuedActions: 0, notified: [] };
+      }
+    }
 
     let applied: Applied;
     switch (change.type) {
       case "resolve":
         applied = await applyStatus(tx, row, { type: "resolve" }, now, actorMemberId, {
           requestId: input.requestId,
+          dedupeKey,
           data: change.reason ? { reason: change.reason } : undefined,
         });
         break;
       case "reopen":
         applied = await applyStatus(tx, row, { type: "reopen" }, now, actorMemberId, {
           requestId: input.requestId,
+          dedupeKey,
         });
         break;
       case "snooze":
         if (change.until.getTime() <= now.getTime()) return { ok: false, reason: "invalid_snooze" };
         applied = await applyStatus(tx, row, change, now, actorMemberId, {
           requestId: input.requestId,
+          dedupeKey,
         });
         break;
       case "snooze_expired":
@@ -416,7 +546,7 @@ export async function applyConversationChange(
         if (change.memberId && !(await canSee(tx, change.memberId, row.mailboxId, row.orgId))) {
           return { ok: false, reason: "not_assignable" };
         }
-        applied = await assign(tx, row, change.memberId, actorMemberId, now);
+        applied = await assign(tx, row, change.memberId, actorMemberId, now, {}, dedupeKey);
         break;
       case "priority":
         if (row.priority === change.priority) {
@@ -435,9 +565,15 @@ export async function applyConversationChange(
               to: change.priority,
               ...(change.source ? { source: change.source } : {}),
             },
+            dedupeKey,
           },
         ]);
-        applied = { row: { ...row, priority: change.priority }, changed: true, queuedActions: 0 };
+        // The new priority's targets apply to the clocks already running.
+        applied = {
+          row: await setSlaClocks(tx, { ...row, priority: change.priority }),
+          changed: true,
+          queuedActions: 0,
+        };
         break;
       case "tag": {
         const [tag] = await tx
@@ -466,6 +602,7 @@ export async function applyConversationChange(
             {
               kind: change.add ? "tag_added" : "tag_removed",
               data: { tagId: tag.id, ...(change.source ? { source: change.source } : {}) },
+              dedupeKey,
             },
           ]);
         }
@@ -478,6 +615,7 @@ export async function applyConversationChange(
       changed: applied.changed,
       conversation: applied.row,
       queuedActions: applied.queuedActions,
+      notified: applied.notified ?? [],
     };
   });
 }
@@ -502,11 +640,13 @@ export async function applyAgentReply(
       ? { row: status.row, changed: false }
       : await assign(tx, status.row, input.memberId, input.memberId, now, { cause: "first_reply" });
     const responded = await recordFirstResponse(tx, claimed.row, input.memberId, now);
+    const answered = await setSlaClocks(tx, responded.row, { responseClockAt: null });
     return {
       ok: true,
       changed: status.changed || claimed.changed || responded.changed,
-      conversation: responded.row,
+      conversation: answered,
       queuedActions: status.queuedActions,
+      notified: [],
     };
   });
 }
@@ -534,14 +674,60 @@ async function recordFirstResponse(
 }
 
 export type InboundResult =
-  | { applied: false }
+  /** `fresh`: this is the message's first delivery (a personal mailbox, say); false on a replay. */
+  | { applied: false; fresh: boolean }
   | {
       applied: true;
       direction: "customer" | "agent";
       changed: boolean;
       conversation: ConversationRow;
       queuedActions: number;
+      /** Members who got a new notification: tell them in realtime. */
+      notified: string[];
+      /** The member auto-assign handed it to (notified as `assigned`), if any. */
+      autoAssigned: string | null;
     };
+
+/**
+ * The inbox's next member in turn, by member id after the last one handed a conversation, among
+ * those who can see the inbox. Null when the inbox does not auto-assign or nobody sees it. The
+ * mailbox row lock makes concurrent ingests take turns instead of picking the same member.
+ */
+async function nextInTurn(tx: Tx, row: ConversationRow) {
+  // Most inboxes don't auto-assign: read the flag before taking any lock.
+  const [flag] = await tx
+    .select({ on: mailboxes.autoAssign })
+    .from(mailboxes)
+    .where(eq(mailboxes.id, row.mailboxId));
+  if (!flag?.on) return null;
+  // "No key update" serializes turns without blocking the key-share locks that inserts referencing
+  // the inbox (messages, events) take, so concurrent ingests cannot deadlock on it.
+  const [inbox] = await tx
+    .select({ on: mailboxes.autoAssign, last: mailboxes.autoAssignLastMemberId })
+    .from(mailboxes)
+    .where(eq(mailboxes.id, row.mailboxId))
+    .for("no key update");
+  if (!inbox?.on) return null;
+  const team = (
+    await tx
+      .select({ id: mailboxAccess.memberId })
+      .from(mailboxAccess)
+      .innerJoin(
+        members,
+        and(eq(members.id, mailboxAccess.memberId), eq(members.organizationId, row.orgId)),
+      )
+      .where(eq(mailboxAccess.mailboxId, row.mailboxId))
+      .orderBy(asc(mailboxAccess.memberId))
+  ).map((m) => m.id);
+  if (team.length === 0) return null;
+  const last = inbox.last;
+  const next = (last !== null && team.find((id) => id > last)) || team[0]!;
+  await tx
+    .update(mailboxes)
+    .set({ autoAssignLastMemberId: next })
+    .where(eq(mailboxes.id, row.mailboxId));
+  return next;
+}
 
 /**
  * The `message.created` ingest for one message: a customer's message reopens the conversation
@@ -566,11 +752,11 @@ export async function applyInboundMessage(
         automated: messages.automated,
         sentAt: messages.sentAt,
       });
-    if (!message) return { applied: false };
+    if (!message) return { applied: false, fresh: false };
     const locked = await lockConversation(tx, message.threadId, null);
-    if (!locked || locked.kind !== "shared") return { applied: false };
+    if (!locked || locked.kind !== "shared") return { applied: false, fresh: true };
     const [mailbox] = await tx
-      .select({ address: mailboxes.address })
+      .select({ address: mailboxes.address, createdAt: mailboxes.createdAt })
       .from(mailboxes)
       .where(eq(mailboxes.id, locked.mailboxId));
     const { kind: _kind, ...row } = locked;
@@ -587,7 +773,48 @@ export async function applyInboundMessage(
         null,
         { data: { messageId: input.messageId } },
       );
-      return { applied: true, direction: "customer", ...applied, conversation: applied.row };
+      // The customer is waiting from when they wrote (never later than now). Mail sent before the
+      // inbox was connected is history: a first sync must not start, and breach, every clock, nor
+      // hand the backlog out.
+      const live =
+        !message.automated && mailbox !== undefined && message.sentAt >= mailbox.createdAt;
+      let autoAssigned: string | null = null;
+      if (live && applied.row.status === "open" && !applied.row.assigneeMemberId) {
+        const next = await nextInTurn(tx, applied.row);
+        if (next) {
+          const handed = await assign(tx, applied.row, next, null, now, { cause: "auto_assign" });
+          applied.row = handed.row;
+          if (handed.changed) autoAssigned = next;
+        }
+      }
+      if (live) {
+        const since = message.sentAt > now ? now : message.sentAt;
+        applied.row = await setSlaClocks(tx, applied.row, {
+          responseClockAt: applied.row.responseClockAt ?? since,
+          resolutionClockAt: applied.row.resolutionClockAt ?? since,
+        });
+      }
+      // The assignee hears when their customer writes back (not for an auto-reply).
+      const notified =
+        // (Not when it was just handed to them: they hear `assigned` instead.)
+        applied.row.assigneeMemberId && !message.automated && !autoAssigned
+          ? await notify(tx, applied.row, {
+              memberIds: [applied.row.assigneeMemberId],
+              kind: "customer_reply",
+              actorMemberId: null,
+              dedupeKey: `customer_reply:${input.messageId}`,
+              data: { messageId: input.messageId },
+            })
+          : [];
+      return {
+        applied: true,
+        direction: "customer",
+        changed: applied.changed,
+        conversation: applied.row,
+        queuedActions: applied.queuedActions,
+        notified,
+        autoAssigned,
+      };
     }
 
     const [newer] = await tx
@@ -602,17 +829,13 @@ export async function applyInboundMessage(
         ),
       )
       .limit(1);
-    if (newer)
-      return {
-        applied: true,
-        direction: "agent",
-        changed: false,
-        conversation: row,
-        queuedActions: 0,
-      };
-    const status = await applyStatus(tx, row, { type: "agent_reply" }, now, null, {
-      data: { messageId: input.messageId },
-    });
+    // A Sent copy indexed after the customer already answered is history: the status stays, but
+    // it was still a response, so the first response is recorded.
+    const status = newer
+      ? { row, changed: false, queuedActions: 0 }
+      : await applyStatus(tx, row, { type: "agent_reply" }, now, null, {
+          data: { messageId: input.messageId },
+        });
     // Only a reply after a customer message responds to someone.
     const [asked] = await tx
       .select({ id: messages.id })
@@ -630,12 +853,40 @@ export async function applyInboundMessage(
           messageId: input.messageId,
         })
       : { row: status.row, changed: false };
+    // Our reply stops the response clock. A late Sent copy answers only what came before it: the
+    // customer has been waiting since their first counted message after it.
+    const clock = responded.row.responseClockAt;
+    let responseClockAt: Date | null = null;
+    if (newer && clock && clock >= message.sentAt) responseClockAt = clock;
+    else if (newer && mailbox) {
+      const [waiting] = await tx
+        .select({ sentAt: messages.sentAt })
+        .from(messages)
+        .where(
+          and(
+            eq(messages.threadId, row.id),
+            gt(messages.sentAt, message.sentAt),
+            gte(messages.sentAt, mailbox.createdAt),
+            eq(messages.automated, false),
+            ne(sql`lower(${messages.fromAddress})`, mailbox.address.toLowerCase()),
+          ),
+        )
+        .orderBy(asc(messages.sentAt))
+        .limit(1);
+      if (waiting) responseClockAt = waiting.sentAt > now ? now : waiting.sentAt;
+    }
+    const answered =
+      responseClockAt?.getTime() === clock?.getTime()
+        ? responded.row
+        : await setSlaClocks(tx, responded.row, { responseClockAt });
     return {
       applied: true,
       direction: "agent",
       changed: status.changed || responded.changed,
-      conversation: responded.row,
+      conversation: answered,
       queuedActions: status.queuedActions,
+      notified: [],
+      autoAssigned: null,
     };
   });
 }
@@ -648,6 +899,34 @@ export async function dueSnoozes(db: Executor, now: Date, limit = 500) {
     .where(and(eq(threads.status, "snoozed"), lte(threads.snoozedUntil, now)))
     .orderBy(asc(threads.snoozedUntil))
     .limit(limit);
+}
+
+/**
+ * Turns round-robin auto-assign on or off for a shared inbox of the org. False when there is no
+ * such inbox. Turning it on starts with whoever comes first; turning it off forgets the turn.
+ */
+export async function setAutoAssign(db: Executor, orgId: string, mailboxId: string, on: boolean) {
+  const rows = await db
+    .update(mailboxes)
+    .set({ autoAssign: on, autoAssignLastMemberId: null, updatedAt: new Date() })
+    .where(
+      and(
+        eq(mailboxes.id, mailboxId),
+        eq(mailboxes.orgId, orgId),
+        eq(mailboxes.kind, "shared"),
+        // Already in that state: keep the turn.
+        ne(mailboxes.autoAssign, on),
+      ),
+    )
+    .returning({ id: mailboxes.id });
+  if (rows.length) return true;
+  const [exists] = await db
+    .select({ id: mailboxes.id })
+    .from(mailboxes)
+    .where(
+      and(eq(mailboxes.id, mailboxId), eq(mailboxes.orgId, orgId), eq(mailboxes.kind, "shared")),
+    );
+  return exists !== undefined;
 }
 
 // Tags: an inbox's list, managed by anyone who can see the inbox.
@@ -669,16 +948,6 @@ async function memberSeesMailbox(db: Executor, memberId: string, mailboxId: stri
 }
 
 const tagColumns = { id: tags.id, name: tags.name, color: tags.color };
-
-/** The inbox's tags by name, or null when the member cannot see the inbox. */
-export async function listTags(db: Executor, memberId: string, mailboxId: string) {
-  if (!(await memberSeesMailbox(db, memberId, mailboxId))) return null;
-  return db
-    .select(tagColumns)
-    .from(tags)
-    .where(eq(tags.mailboxId, mailboxId))
-    .orderBy(sql`lower(${tags.name})`);
-}
 
 /**
  * Creates a tag, or returns the one with the same name ignoring case (so a retry or a teammate
@@ -748,21 +1017,184 @@ export async function deleteTag(db: Executor, memberId: string, mailboxId: strin
   return rows.length > 0;
 }
 
+// Internal notes (ADR 0021): in the timeline, never sent, never on IMAP. @mentions notify.
+
+export const NOTE_MAX_LENGTH = 20_000;
+
 /**
- * Who a conversation in this inbox can be assigned to: every member who can see it, by name.
- * Null when the member asking cannot see the inbox.
+ * Adds a note as `memberId`, who must see the conversation. Mentions of members who cannot see
+ * the inbox are dropped (they could not open it); each one left is notified once.
  */
-export async function mailboxAssignees(db: Executor, memberId: string, mailboxId: string) {
-  const mailbox = await memberSeesMailbox(db, memberId, mailboxId);
-  if (!mailbox) return null;
-  return db
-    .select({ memberId: members.id, name: users.name, email: users.email, image: users.image })
-    .from(mailboxAccess)
-    .innerJoin(
-      members,
-      and(eq(members.id, mailboxAccess.memberId), eq(members.organizationId, mailbox.orgId)),
+export async function createNote(
+  db: Executor,
+  input: { threadId: string; memberId: string; body: string; mentions: string[] },
+) {
+  return db.transaction(async (tx) => {
+    const locked = await lockConversation(tx, input.threadId, input.memberId);
+    if (!locked) return { ok: false as const, reason: "not_found" as const };
+    const { kind, ...row } = locked;
+    if (kind !== "shared") return { ok: false as const, reason: "personal_mailbox" as const };
+    const wanted = [...new Set(input.mentions)];
+    const allowed = wanted.length
+      ? (
+          await tx
+            .select({ id: mailboxAccess.memberId })
+            .from(mailboxAccess)
+            .innerJoin(members, eq(members.id, mailboxAccess.memberId))
+            .where(
+              and(
+                eq(mailboxAccess.mailboxId, row.mailboxId),
+                eq(members.organizationId, row.orgId),
+                inArray(mailboxAccess.memberId, wanted),
+              ),
+            )
+        ).map((m) => m.id)
+      : [];
+    const mentions = wanted.filter((m) => allowed.includes(m));
+    const [note] = await tx
+      .insert(notes)
+      .values({
+        id: uuidv7(),
+        orgId: row.orgId,
+        mailboxId: row.mailboxId,
+        threadId: row.id,
+        authorMemberId: input.memberId,
+        body: input.body,
+        mentions,
+      })
+      .returning();
+    await writeEvents(tx, row, input.memberId, [{ kind: "note", data: { noteId: note!.id } }]);
+    const notified = await notify(tx, row, {
+      memberIds: mentions,
+      kind: "mention",
+      actorMemberId: input.memberId,
+      dedupeKey: `mention:${note!.id}`,
+      noteId: note!.id,
+    });
+    return { ok: true as const, note: note!, conversation: row, notified };
+  });
+}
+
+/**
+ * Edits the body of the author's own note. New mentions in the edit are not notified again: an
+ * edit is a correction, not a new note. Null when it is not their note or they lost access.
+ */
+export async function updateNote(
+  db: Executor,
+  input: { threadId: string; noteId: string; memberId: string; body: string },
+) {
+  const [row] = await db
+    .update(notes)
+    .set({ body: input.body, updatedAt: new Date() })
+    .where(
+      and(
+        eq(notes.id, input.noteId),
+        eq(notes.threadId, input.threadId),
+        eq(notes.authorMemberId, input.memberId),
+        exists(
+          db
+            .select({ one: sql`1` })
+            .from(mailboxAccess)
+            .where(
+              and(
+                eq(mailboxAccess.mailboxId, notes.mailboxId),
+                eq(mailboxAccess.memberId, input.memberId),
+              ),
+            ),
+        ),
+      ),
     )
-    .innerJoin(users, eq(users.id, members.userId))
-    .where(eq(mailboxAccess.mailboxId, mailboxId))
-    .orderBy(asc(users.name), asc(members.id));
+    .returning();
+  return row ?? null;
+}
+
+/** Deletes the author's own note (its timeline event and notifications go with it). */
+export async function deleteNote(
+  db: Executor,
+  input: { threadId: string; noteId: string; memberId: string },
+) {
+  return db.transaction(async (tx) => {
+    const [row] = await tx
+      .delete(notes)
+      .where(
+        and(
+          eq(notes.id, input.noteId),
+          eq(notes.threadId, input.threadId),
+          eq(notes.authorMemberId, input.memberId),
+          exists(
+            tx
+              .select({ one: sql`1` })
+              .from(mailboxAccess)
+              .where(
+                and(
+                  eq(mailboxAccess.mailboxId, notes.mailboxId),
+                  eq(mailboxAccess.memberId, input.memberId),
+                ),
+              ),
+          ),
+        ),
+      )
+      .returning({
+        id: notes.id,
+        threadId: notes.threadId,
+        mailboxId: notes.mailboxId,
+        orgId: notes.orgId,
+        mentions: notes.mentions,
+      });
+    if (!row) return null;
+    await tx
+      .delete(conversationEvents)
+      .where(
+        and(
+          eq(conversationEvents.threadId, row.threadId),
+          eq(conversationEvents.kind, "note"),
+          sql`${conversationEvents.data}->>'noteId' = ${row.id}`,
+        ),
+      );
+    return row;
+  });
+}
+
+// Notifications: a member's own.
+
+/** Marks the member's notifications read: these ids, or all of them. Returns how many changed. */
+export async function markNotificationsRead(db: Executor, memberId: string, ids: string[] | "all") {
+  const rows = await db
+    .update(notifications)
+    .set({ readAt: new Date() })
+    .where(
+      and(
+        eq(notifications.memberId, memberId),
+        isNull(notifications.readAt),
+        ids === "all" ? undefined : inArray(notifications.id, ids),
+      ),
+    )
+    .returning({ id: notifications.id });
+  return rows.length;
+}
+
+// Realtime (B4): who hears about a conversation, and whose preferences let a notification out.
+
+/**
+ * Of these members, those whose preferences let `kind` through `channel`. No preferences row, or
+ * no entry for the kind, means every channel is on.
+ */
+export async function membersAccepting(
+  db: Executor,
+  memberIds: string[],
+  kind: NotificationKind,
+  channel: "realtime" | "desktop" | "push",
+) {
+  if (memberIds.length === 0) return [];
+  const rows = await db
+    .select({
+      memberId: memberPreferences.memberId,
+      notifications: memberPreferences.notifications,
+    })
+    .from(memberPreferences)
+    .where(inArray(memberPreferences.memberId, memberIds));
+  const off = new Set(
+    rows.filter((r) => r.notifications[kind]?.[channel] === false).map((r) => r.memberId),
+  );
+  return memberIds.filter((m) => !off.has(m));
 }
