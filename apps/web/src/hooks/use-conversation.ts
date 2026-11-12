@@ -1,14 +1,27 @@
 // Helpdesk conversations on shared inboxes: state, tags, assignees, and the changes to them.
 // Every change shows at once, rolls back if the request fails, and offers its inverse as undo
 // (`useUndo()` shows it; `z` runs it).
-import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from "@tanstack/react-query";
+import { useMemo } from "react";
 import {
   assigneesQuery,
+  BULK_MAX,
+  bulkChangeMutation,
+  cachedState,
   conversationChangeMutation,
+  conversationCountsQuery,
   conversationQuery,
+  conversationsQuery,
   createTagMutation,
   deleteTagMutation,
   inverseOf,
+  memberInInbox,
   tagsQuery,
   updateTagMutation,
   type ConversationChange,
@@ -16,8 +29,10 @@ import {
 import { idempotencyKey } from "../lib/api.ts";
 import { keys } from "../lib/query-keys.ts";
 import { offerUndo } from "../lib/undo.ts";
-import type { Assignee, Conversation, Priority, Tag } from "../lib/types.ts";
+import type { Assignee, Conversation, ConversationFilter, Priority, Tag } from "../lib/types.ts";
 import { useSession } from "./use-session.ts";
+
+type ConversationTag = Conversation["tags"][number];
 
 /**
  * Status, assignee, priority, SLA due times, tags and timeline events of a conversation, or
@@ -25,6 +40,27 @@ import { useSession } from "./use-session.ts";
  */
 export function useConversation(threadId: string, options: { enabled?: boolean } = {}) {
   return useQuery({ ...conversationQuery(threadId), enabled: options.enabled ?? true });
+}
+
+/**
+ * One helpdesk list: `{ mailbox, view, tag? }`. `conversations` is every loaded page flattened
+ * (rows carry status, assignee, priority, tags and `slaDueAt`); call `fetchNextPage` near the end.
+ */
+export function useConversations(filter: ConversationFilter) {
+  const query = useInfiniteQuery(conversationsQuery(filter));
+  const conversations = useMemo(
+    () => query.data?.pages.flatMap((page) => page.conversations) ?? [],
+    [query.data],
+  );
+  return { ...query, conversations };
+}
+
+/**
+ * Per shared inbox: `{ orgId, mailboxId, views: { unassigned, mine, open, … }, tags: { [tagId]: n } }`,
+ * for the navigation's counts. Refetches whenever a conversation changes.
+ */
+export function useConversationCounts() {
+  return useQuery(conversationCountsQuery());
 }
 
 /** The inbox's tags, by name. */
@@ -76,20 +112,22 @@ function describe(change: ConversationChange, client: QueryClient, mailboxId?: s
  */
 function useChange() {
   const client = useQueryClient();
+  const email = useSession().data?.user.email;
   const mutation = useMutation(conversationChangeMutation(client));
   const run = (
     threadId: string,
     change: ConversationChange,
-    options: { tag?: Tag; undo?: boolean } = {},
+    options: { tag?: Tag; undo?: boolean; mailboxId?: string } = {},
   ) => {
-    const before = client.getQueryData<Conversation>(keys.conversation(threadId));
-    mutation.mutate({ key: idempotencyKey(), threadId, change, tag: options.tag });
+    const before = cachedState(client, threadId);
+    const me = memberInInbox(client, options.mailboxId ?? before?.mailboxId, email);
+    mutation.mutate({ key: idempotencyKey(), threadId, change, tag: options.tag, me });
     const inverse = before && options.undo !== false ? inverseOf(before, change) : null;
     if (!inverse) return;
     const tag =
       inverse.type === "tag" ? before?.tags.find((t) => t.id === inverse.tagId) : undefined;
     offerUndo(describe(change, client, before?.mailboxId), () =>
-      mutation.mutate({ key: idempotencyKey(), threadId, change: inverse, tag }),
+      mutation.mutate({ key: idempotencyKey(), threadId, change: inverse, tag, me }),
     );
   };
   return { ...mutation, run };
@@ -130,13 +168,13 @@ export function useClaim() {
   const email = useSession().data?.user.email;
   return {
     ...rest,
-    mutate: ({ threadId, mailboxId }: { threadId: string; mailboxId: string }) => {
-      // Your member in the inbox's workspace, for the optimistic avatar; the server knows anyway.
-      const me = client
-        .getQueryData<{ assignees: Assignee[] }>(keys.assignees(mailboxId))
-        ?.assignees.find((a) => a.email === email)?.memberId;
-      run(threadId, { type: "claim", memberId: me });
-    },
+    mutate: ({ threadId, mailboxId }: { threadId: string; mailboxId: string }) =>
+      // Your member, for the optimistic avatar; the server assigns whoever asks anyway.
+      run(
+        threadId,
+        { type: "claim", memberId: memberInInbox(client, mailboxId, email) },
+        { mailboxId },
+      ),
   };
 }
 
@@ -183,4 +221,85 @@ export function useUpdateTag() {
 /** `mutate({ mailboxId, tagId })`: deletes it and takes it off every conversation. */
 export function useDeleteTag() {
   return useMutation(deleteTagMutation(useQueryClient()));
+}
+
+/**
+ * For lists acting on many rows at once: `run(threadId, change, { undo: false })` applies one
+ * change with no undo of its own (the caller offers one for the batch, from `inverseOf`), and
+ * `me` is your member in that inbox's workspace when its assignees are cached.
+ */
+export function useConversationChanges() {
+  const { run, ...rest } = useChange();
+  const client = useQueryClient();
+  const email = useSession().data?.user.email;
+  return { ...rest, run, me: (mailboxId: string) => memberInInbox(client, mailboxId, email) };
+}
+
+/**
+ * The list's bulk actions and shortcuts: `run(threadIds, change, { mailboxId, tag?, undo? })`
+ * applies one change to every conversation in one request per 100 (`POST /conversations/bulk`).
+ * Rows change at once; rows the server refuses roll back on their own. Unless `undo` is `false`,
+ * one undo puts every row back as it was (`undo` is its label; default describes the change).
+ * Pass the whole `tag` when adding one so it shows before the server answers.
+ */
+export function useBulkChange() {
+  const client = useQueryClient();
+  const email = useSession().data?.user.email;
+  const mutation = useMutation(bulkChangeMutation(client));
+  const send = (
+    threadIds: string[],
+    change: ConversationChange,
+    mailboxId: string,
+    tag?: ConversationTag,
+  ) => {
+    const me = memberInInbox(client, mailboxId, email);
+    for (let at = 0; at < threadIds.length; at += BULK_MAX) {
+      mutation.mutate({
+        key: idempotencyKey(),
+        threadIds: threadIds.slice(at, at + BULK_MAX),
+        change,
+        tag,
+        me,
+      });
+    }
+  };
+  const run = (
+    threadIds: string[],
+    requested: ConversationChange,
+    options: { mailboxId: string; tag?: ConversationTag | undefined; undo?: string | false },
+  ) => {
+    const ids = [...new Set(threadIds)];
+    if (!ids.length) return;
+    const { mailboxId, tag } = options;
+    const change: ConversationChange =
+      requested.type === "claim"
+        ? { type: "claim", memberId: memberInInbox(client, mailboxId, email) }
+        : requested;
+    const before = ids.map((id) => [id, cachedState(client, id)] as const);
+    send(ids, change, mailboxId, tag);
+    if (options.undo === false) return;
+    // Rows were in different states, so the undo is one bulk request per distinct inverse.
+    const inverses = new Map<
+      string,
+      { change: ConversationChange; tag?: ConversationTag | undefined; ids: string[] }
+    >();
+    for (const [id, state] of before) {
+      const inverse = state && inverseOf(state, change);
+      if (!inverse) continue;
+      const group = JSON.stringify(inverse);
+      const entry = inverses.get(group) ?? {
+        change: inverse,
+        tag: inverse.type === "tag" ? state.tags.find((t) => t.id === inverse.tagId) : undefined,
+        ids: [],
+      };
+      entry.ids.push(id);
+      inverses.set(group, entry);
+    }
+    if (!inverses.size) return;
+    offerUndo(options.undo ?? describe(change, client, mailboxId), () => {
+      for (const inverse of inverses.values())
+        send(inverse.ids, inverse.change, mailboxId, inverse.tag);
+    });
+  };
+  return { ...mutation, run, me: (mailboxId: string) => memberInInbox(client, mailboxId, email) };
 }

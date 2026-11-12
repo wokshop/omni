@@ -1,6 +1,6 @@
 {
-  "id": "cb94aa83-9308-4029-b75e-3b5d24c0b876",
-  "prevId": "405cbca9-9b83-4ade-9ed6-cf60e3805f04",
+  "id": "2aaaf6bd-d9a0-42df-83df-91c081614c9a",
+  "prevId": "43d304a6-01c6-4876-87b8-be3abfbf397f",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3215,6 +3215,19 @@
           "primaryKey": false,
           "notNull": false
         },
+        "auto_assign": {
+          "name": "auto_assign",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "auto_assign_last_member_id": {
+          "name": "auto_assign_last_member_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -3636,12 +3649,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": 0
-        },
-        "forwarded": {
-          "name": "forwarded",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
         },
         "notify_pending": {
           "name": "notify_pending",
@@ -5140,12 +5147,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "provider_thread_id": {
-          "name": "provider_thread_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "status": {
           "name": "status",
           "type": "conversation_status",
@@ -5194,6 +5195,18 @@
         },
         "resolution_due_at": {
           "name": "resolution_due_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "response_clock_at": {
+          "name": "response_clock_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "resolution_clock_at": {
+          "name": "resolution_clock_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
@@ -5581,28 +5594,6 @@
           ],
           "isUnique": false,
           "where": "\"threads\".\"assignee_member_id\" is not null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "threads_mailbox_provider_thread_unique": {
-          "name": "threads_mailbox_provider_thread_unique",
-          "columns": [
-            {
-              "expression": "mailbox_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "provider_thread_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"threads\".\"provider_thread_id\" is not null",
           "concurrently": false,
           "method": "btree",
           "with": {}
