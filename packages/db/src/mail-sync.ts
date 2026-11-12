@@ -807,7 +807,7 @@ export async function moveMessageToThread(
     await tx
       .update(threads)
       .set({
-        lastMessageAt: sql`greatest(${threads.lastMessageAt}, ${moved.sentAt})`,
+        lastMessageAt: sql`greatest(${threads.lastMessageAt}, ${moved.sentAt.toISOString()}::timestamptz)`,
         updatedAt: new Date(),
       })
       .where(eq(threads.id, input.threadId));

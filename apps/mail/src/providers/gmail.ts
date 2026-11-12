@@ -259,9 +259,9 @@ export async function connectGoogle(
     throw new ProvisionError(502, "Google could not be reached: try again");
   }
 
-  // One save per account at a time: two consent flows finishing together would otherwise both
-  // see no mailbox and race on (org, address), and the loser's code is already spent.
-  const key = `${input.orgId}\n${grant.email}`;
+  // One save per Google account at a time, across workspaces: two consent flows finishing together
+  // would otherwise both pass the "connected elsewhere" check, or race on (org, address).
+  const key = grant.email;
   const previous = saving.get(key) ?? Promise.resolve();
   const run = previous.catch(() => {}).then(() => save(deps, input, grant));
   saving.set(key, run);
@@ -272,7 +272,7 @@ export async function connectGoogle(
   }
 }
 
-/** Saves in flight per (org, address). This service runs as one machine (ADR 0004). */
+/** Saves in flight per Google account. This service runs as one machine (ADR 0004). */
 const saving = new Map<string, Promise<GoogleConnectResult>>();
 
 async function save(
@@ -337,7 +337,7 @@ export async function disconnectGoogle(
   deps: {
     db: Db;
     keyring: Keyring;
-    /** Stops the mailbox's connection, waiting for it to close. */
+    /** Stops the mailbox's connection and waits for outbox work already running on it. */
     stop(mailboxId: string): Promise<void>;
     logger: Logger;
   },

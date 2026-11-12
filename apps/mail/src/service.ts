@@ -235,7 +235,7 @@ export async function startService(config: ServiceConfig, log: Logger): Promise<
         {
           db,
           keyring: config.MAIL_CREDENTIALS_KEY,
-          stop: (mailboxId) => supervisor.remove(mailboxId),
+          stop: (mailboxId) => supervisor.retire(mailboxId),
           logger: log,
         },
         input,
