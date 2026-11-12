@@ -3,7 +3,7 @@
 // items (Figma node 1:3), so a view reads like Inbox or Queue does.
 import { useLocation, useSearch } from "@tanstack/react-router";
 import type { ReactNode } from "react";
-import { IconCircleCheck, IconUserCog } from "@/components/icons/lucide";
+import { IconCircleCheck, IconUserCog } from "@/components/icons/central";
 import {
   IconBubble,
   IconBubbleAnnotation,

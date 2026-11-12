@@ -1,7 +1,7 @@
 // What a helpdesk row shows after its subject: status (where the view mixes them), tags,
 // priority (only when it is raised), the SLA clock, a paperclip, the assignee and the time.
 import { useSyncExternalStore } from "react";
-import { IconPaperclip } from "@/components/icons/lucide";
+import { IconPaperclip } from "@/components/icons/central";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import type { ConversationStatus, Priority } from "@/lib/types.ts";

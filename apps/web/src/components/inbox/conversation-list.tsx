@@ -11,7 +11,7 @@ import {
   IconClock3,
   IconPlus,
   IconUserCog,
-} from "@/components/icons/lucide";
+} from "@/components/icons/central";
 import { IconClock } from "@/components/icons/sidebar";
 import { viewLabel } from "@/components/shell/helpdesk-nav";
 import { Button } from "@/components/ui/button";
