@@ -222,6 +222,24 @@ export async function threadReferencing(db: Db, mailboxId: string, messageIds: s
 }
 
 /**
+ * Threads holding a stored reply to `messageId` (it names it in In-Reply-To or References). More
+ * than one, or one besides the thread the message joins, means the conversation was split while
+ * this message was missing, and those threads merge (`mergeThreads`).
+ */
+export async function threadsReplyingTo(db: Db, mailboxId: string, messageId: string) {
+  const rows = await db
+    .selectDistinct({ threadId: messages.threadId })
+    .from(messages)
+    .where(
+      and(
+        eq(messages.mailboxId, mailboxId),
+        sql`(${messages.inReplyTo} = ${messageId} or ${messages.references} @> array[${messageId}]::text[])`,
+      ),
+    );
+  return rows.map((row) => row.threadId);
+}
+
+/**
  * Recent threads with this subject key and every address on their messages, for subject
  * threading. `since` bounds the scan; the threading rule applies its own window on top.
  */
@@ -467,14 +485,15 @@ export async function orphanedMessages(db: Db, mailboxId: string): Promise<strin
 /**
  * Deletes messages that were deleted on the server: of `messageIds`, those that still have no IMAP
  * copy. A thread left with no messages goes too (its per-member state and AI output cascade); a
- * thread that keeps some takes its last message time from what is left. The caller decides when a
+ * thread that keeps some takes its last message time from what is left. `threadIds` are every
+ * thread that lost a message, deleted or not. The caller decides when a
  * missing copy means deleted rather than mid-move (see `MailboxConnection.syncAll`).
  */
 export async function pruneMessages(
   db: Db,
   input: { mailboxId: string; messageIds: string[] },
-): Promise<{ messages: number; threads: number }> {
-  if (input.messageIds.length === 0) return { messages: 0, threads: 0 };
+): Promise<{ messages: number; threads: number; threadIds: string[] }> {
+  if (input.messageIds.length === 0) return { messages: 0, threads: 0, threadIds: [] };
   // One jsonb parameter, not one per id: a deleted folder can orphan more ids than Postgres binds.
   const anyOf = (ids: string[]) =>
     sql`any(array(select jsonb_array_elements_text(${JSON.stringify(ids)}::text::jsonb)))`;
@@ -490,7 +509,7 @@ export async function pruneMessages(
       )
       .returning({ threadId: messages.threadId });
     const threadIds = [...new Set(removed.map((row) => row.threadId))];
-    if (threadIds.length === 0) return { messages: 0, threads: 0 };
+    if (threadIds.length === 0) return { messages: 0, threads: 0, threadIds };
     const emptied = await tx
       .delete(threads)
       .where(
@@ -507,7 +526,7 @@ export async function pruneMessages(
         updatedAt: new Date(),
       })
       .where(sql`${threads.id} = ${anyOf(threadIds)}`);
-    return { messages: removed.length, threads: emptied.length };
+    return { messages: removed.length, threads: emptied.length, threadIds };
   });
 }
 
@@ -752,4 +771,82 @@ export async function mailboxOwnerIds(db: Db, mailboxId: string): Promise<string
     .from(mailboxAccess)
     .where(and(eq(mailboxAccess.mailboxId, mailboxId), eq(mailboxAccess.role, "owner")));
   return rows.map((row) => row.memberId);
+}
+
+/** Gmail mailboxes at `address` in any workspace: one Google account syncs into one place. */
+export function findGmailMailboxes(db: Db, address: string) {
+  return db
+    .select({ id: mailboxes.id, orgId: mailboxes.orgId })
+    .from(mailboxes)
+    .where(and(eq(mailboxes.provider, "gmail"), eq(mailboxes.address, address)));
+}
+
+/** A mailbox with what disconnecting it needs, scoped to its org; null when it is not there. */
+export async function findOrgMailboxById(db: Db, orgId: string, mailboxId: string) {
+  const [row] = await db
+    .select({
+      id: mailboxes.id,
+      kind: mailboxes.kind,
+      provider: mailboxes.provider,
+      credentialsEnc: mailboxes.credentialsEnc,
+    })
+    .from(mailboxes)
+    .where(and(eq(mailboxes.orgId, orgId), eq(mailboxes.id, mailboxId)));
+  return row ?? null;
+}
+
+/**
+ * Deletes a mailbox and, through cascades, everything indexed from it (threads, messages,
+ * folders, grants, notes). Postgres is only an index of the provider's mail, so nothing is lost
+ * that the provider does not still hold. Idempotent.
+ */
+export async function deleteMailbox(db: Db, mailboxId: string) {
+  await db.delete(mailboxes).where(eq(mailboxes.id, mailboxId));
+}
+
+/**
+ * Files a stored message under another thread (the provider grouped it elsewhere). The thread it
+ * leaves is deleted when that left it empty, else its `last_message_at` is recomputed; the one it
+ * joins moves forward to the message when it is newer.
+ */
+export async function moveMessageToThread(
+  db: Db,
+  input: { mailboxId: string; messageId: string; threadId: string },
+) {
+  await db.transaction(async (tx) => {
+    const [moved] = await tx
+      .select({ from: messages.threadId, sentAt: messages.sentAt })
+      .from(messages)
+      .where(and(eq(messages.mailboxId, input.mailboxId), eq(messages.id, input.messageId)));
+    if (!moved || moved.from === input.threadId) return;
+    await tx
+      .update(messages)
+      .set({ threadId: input.threadId, updatedAt: new Date() })
+      .where(eq(messages.id, input.messageId));
+    await tx
+      .update(threads)
+      .set({
+        lastMessageAt: sql`greatest(${threads.lastMessageAt}, ${moved.sentAt.toISOString()}::timestamptz)`,
+        updatedAt: new Date(),
+      })
+      .where(eq(threads.id, input.threadId));
+    const [emptied] = await tx
+      .delete(threads)
+      .where(
+        and(
+          eq(threads.id, moved.from),
+          sql`not exists (select 1 from ${messages} m where m.thread_id = ${threads.id})`,
+        ),
+      )
+      .returning({ id: threads.id });
+    if (!emptied) {
+      await tx
+        .update(threads)
+        .set({
+          lastMessageAt: sql`(select max(m.sent_at) from ${messages} m where m.thread_id = ${threads.id})`,
+          updatedAt: new Date(),
+        })
+        .where(eq(threads.id, moved.from));
+    }
+  });
 }
