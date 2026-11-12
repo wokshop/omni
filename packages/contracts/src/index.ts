@@ -327,42 +327,6 @@ export const dnsLookupResultSchema = z.object({
   ),
 });
 
-// Personal mail through Google (ADR 0023). The Worker runs the OAuth redirect and hands the
-// authorization code, signed, to the mail service, which exchanges it and keeps the tokens: the
-// Worker never holds a mail credential. Errors answer `{ error }` with the provisioning statuses.
-
-/**
- * Scopes the Worker asks Google for. `https://mail.google.com/` is the only scope Gmail's IMAP and
- * SMTP accept (a restricted scope: unverified apps are capped at 100 users). The authorization URL
- * must also carry `access_type=offline` and `prompt=consent`, or Google returns no refresh token.
- */
-export const GOOGLE_MAIL_SCOPES = ["openid", "email", "https://mail.google.com/"] as const;
-
-export const GOOGLE_CONNECT_PATH = "/google/connect";
-
-/**
- * Exchange `code` and connect the Google account as a personal mailbox owned by
- * `ownerMemberId`. Idempotent on (orgId, address): connecting the same account again replaces
- * its tokens (how a person repairs a mailbox whose access was revoked).
- */
-export const googleConnectBodySchema = z.object({
-  orgId: z.string().min(1),
-  ownerMemberId: z.string().min(1),
-  code: z.string().min(1),
-  /** Exactly the `redirect_uri` the authorization request used. */
-  redirectUri: z.url(),
-  /** The PKCE verifier, when the authorization request sent a challenge. */
-  codeVerifier: z.string().min(43).max(128).optional(),
-});
-
-export const googleConnectResultSchema = z.object({
-  mailboxId: z.string().min(1),
-  /** The Gmail address Google vouched for. */
-  address: z.string(),
-  /** False when the account was connected already and only its tokens changed. */
-  created: z.boolean(),
-});
-
 export type DnsRecordStatus = z.infer<typeof dnsRecordStatusSchema>;
 export type DnsQueryType = z.infer<typeof dnsQueryTypeSchema>;
 export type DnsAnswer = z.infer<typeof dnsAnswerSchema>;
@@ -372,5 +336,46 @@ export type ProvisionDomainBody = z.infer<typeof provisionDomainBodySchema>;
 export type ProvisionDomainResult = z.infer<typeof provisionDomainResultSchema>;
 export type ProvisionMailboxBody = z.infer<typeof provisionMailboxBodySchema>;
 export type ProvisionMailboxResult = z.infer<typeof provisionMailboxResultSchema>;
+
+// Personal Gmail (helpdesk plan G1-G3). Worker → mail service, signed with a nonce like
+// provisioning. The Worker receives Google's OAuth callback but never sees a token: it passes the
+// one-time code (and its PKCE verifier) to the mail service, which exchanges it, stores the
+// encrypted refresh token and creates or reconnects the member's personal `gmail` mailbox.
+// Errors answer `{ error: string }` with 400 (bad or expired code), 409 (that Google account is
+// connected elsewhere) or 502 (Google failed).
+
+export const GOOGLE_CONNECT_PATH = "/connect/google";
+export const GOOGLE_DISCONNECT_PATH = "/connect/google/disconnect";
+
+export const googleConnectBodySchema = z.object({
+  orgId: z.string().min(1),
+  /** Gets an owner grant on the mailbox. */
+  memberId: z.string().min(1),
+  /** Google's one-time authorization code. Never logged. */
+  code: z.string().min(1),
+  /** PKCE verifier for the code (RFC 7636). Never logged. */
+  codeVerifier: z.string().min(43).max(128),
+  /** The redirect URI the code was issued for; Google requires the same one on exchange. */
+  redirectUri: z.url(),
+});
+
+export const googleConnectResultSchema = z.object({
+  mailboxId: z.string().min(1),
+  /** The Google account's address. */
+  address: z.string(),
+  /** False when an existing mailbox was reconnected (new refresh token). */
+  created: z.boolean(),
+});
+
+/** Revoke the token at Google, forget it, and stop syncing. Idempotent. */
+export const googleDisconnectBodySchema = z.object({
+  orgId: z.string().min(1),
+  memberId: z.string().min(1),
+  mailboxId: z.string().min(1),
+});
+
+export const googleDisconnectResultSchema = z.object({ mailboxId: z.string().min(1) });
+
 export type GoogleConnectBody = z.infer<typeof googleConnectBodySchema>;
 export type GoogleConnectResult = z.infer<typeof googleConnectResultSchema>;
+export type GoogleDisconnectBody = z.infer<typeof googleDisconnectBodySchema>;
