@@ -4,7 +4,8 @@
 // pages only a company has.
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { createOrgWithOwner } from "@omni/db";
+import { createOrgWithOwner, schema } from "@omni/db";
+import { and, eq } from "drizzle-orm";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright-core";
 import { afterAll, afterEach, beforeAll, expect, test } from "vitest";
 import {
@@ -106,6 +107,67 @@ test("a Personal space's settings leave out the company pages; a company's keep 
     "Shared",
     "Helpdesk",
   ]);
+});
+
+// Catches: switching settings to the Personal space while on People still rendering People, with
+// an invite form the server refuses.
+test("switching settings from a company's People page to the Personal space falls back", async () => {
+  const email = `switch-${Date.now()}@company.test`;
+  await createOrgWithOwner(db, {
+    name: "Switch Co",
+    slug: `switch-${Date.now()}`,
+    ownerEmail: email,
+  });
+  const page = await signedIn(email, "/settings");
+  const dialog = page.getByRole("dialog");
+  await dialog.getByText("People", { exact: true }).first().click();
+  await dialog.getByRole("heading", { name: "People" }).waitFor();
+
+  await dialog.getByRole("button", { name: /^Workspace: Switch Co/ }).click();
+  await page.getByRole("menuitem", { name: "Personal" }).click();
+  await dialog.getByRole("button", { name: /^Workspace: Personal/ }).waitFor();
+  await dialog.getByRole("heading", { name: "General" }).waitFor();
+  expect(await dialog.getByRole("heading", { name: "People" }).count()).toBe(0);
+});
+
+// Catches: compose without `?mailbox=` sending a company's mail from a personal address that
+// happens to sort first among every address the person can open.
+test("compose defaults to the active workspace's address, and still offers the others", async () => {
+  const email = `sender-${Date.now()}@company.test`;
+  const org = await createOrgWithOwner(db, {
+    name: "Sender Co",
+    slug: `sender-${Date.now()}`,
+    ownerEmail: email,
+  });
+  const page = await signedIn(email, "/inbox");
+  const [user] = await db
+    .select({ id: schema.users.id })
+    .from(schema.users)
+    .where(eq(schema.users.email, email));
+  const [space] = await db
+    .select({ orgId: schema.personalSpaces.orgId })
+    .from(schema.personalSpaces)
+    .where(eq(schema.personalSpaces.userId, user!.id));
+  const grant = async (orgId: string, address: string) => {
+    const box = await createMailbox(db, orgId, address, "personal");
+    const [member] = await db
+      .select({ id: schema.members.id })
+      .from(schema.members)
+      .where(and(eq(schema.members.organizationId, orgId), eq(schema.members.userId, user!.id)));
+    await db
+      .insert(schema.mailboxAccess)
+      .values({ orgId, mailboxId: box.id, memberId: member!.id, role: "owner" });
+  };
+  // The Personal address sorts first.
+  await grant(space!.orgId, "aaa@gmail.test");
+  await grant(org.orgId, "zzz@company.test");
+
+  await page.goto(new URL("/compose", String(worker.url)).toString());
+  const from = page.getByRole("radiogroup", { name: "From" });
+  await from.getByText("aaa@gmail.test").waitFor();
+  await expect
+    .poll(() => from.getByRole("radio", { checked: true }).textContent())
+    .toBe("zzz@company.test");
 });
 
 async function freePort() {
