@@ -895,8 +895,9 @@ export async function applyInboundMessage(
  * The `discarded` test for the thread `t` (a `threads` alias in the enclosing query): an open,
  * pending or snoozed shared conversation whose mail was all deleted or junked in another mail app
  * (Apple Mail's delete moves to Trash). None of its messages has a copy in INBOX or the archive,
- * one has a copy in Trash or Junk, and that copy arrived after the conversation's last status
- * change, so a teammate who reopens it in Omni afterwards keeps it open. Our replies in Sent do
+ * one has a copy in Trash or Junk, and that copy arrived after a teammate last changed its
+ * status, so a teammate who reopens it in Omni afterwards keeps it open. Status changes Omni made
+ * itself (a customer reply that went straight to Junk reopening it) do not count. Our replies in Sent do
  * not count either way. A new message from the customer lands in INBOX and fails the test.
  */
 const discarded = sql`t.status <> 'resolved'
@@ -907,7 +908,8 @@ const discarded = sql`t.status <> 'resolved'
     where m.thread_id = t.id and f.role in ('trash', 'junk')
       and l.created_at > coalesce((
         select max(e.created_at) from ${conversationEvents} e
-        where e.thread_id = t.id and e.kind = 'status'), '-infinity'::timestamptz))
+        where e.thread_id = t.id and e.kind = 'status' and e.actor_member_id is not null),
+        '-infinity'::timestamptz))
   and not exists (
     select 1 from ${messages} m
     join ${messageLocations} l on l.message_id = m.id
