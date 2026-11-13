@@ -56,10 +56,14 @@ const COMMANDS: Command[] = [
 ];
 
 // The panel grows out of the field: it's anchored to the field's top-right corner, so the closed
-// state is the panel clipped to the field's 240×32 rectangle at that corner.
-const FIELD = { width: 240, height: 32, radius: 6 };
+// state is the panel clipped to the field's rectangle at that corner. The field is the trigger
+// (`h-7 w-60 rounded-lg`), the panel `w-100` with a 44px header and the list's fixed height.
+// Every inset is plain px, the same shape open and closed: Motion interpolates matching numbers
+// only, and a `calc(100% - …)` start made it jump to a garbled first frame instead of growing.
+const FIELD = { width: 240, height: 28, radius: 6 };
+const PANEL = { width: 400, height: 338 };
 const clip = {
-  closed: `inset(0px 0px calc(100% - ${FIELD.height}px) calc(100% - ${FIELD.width}px) round ${FIELD.radius}px)`,
+  closed: `inset(0px 0px ${PANEL.height - FIELD.height}px ${PANEL.width - FIELD.width}px round ${FIELD.radius}px)`,
   // Open, the clip reaches past the sides and bottom so the bottom drop shadow shows.
   open: "inset(0px -12px -16px -12px round 8px)",
 };
