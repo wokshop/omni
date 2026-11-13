@@ -68,8 +68,7 @@ export function createPurelymailHost(client: PurelymailClient, logger: Logger): 
 
   async function issueLogin(address: string, options: { createUser?: boolean } = {}) {
     const at = address.lastIndexOf("@");
-    const users = await call(() => client.listUsers());
-    if (!users.includes(address)) {
+    if (!(await call(() => client.hasUser(address)))) {
       if (options.createUser === false) {
         throw new MailHostError(`${address} is no longer on Purelymail`);
       }
