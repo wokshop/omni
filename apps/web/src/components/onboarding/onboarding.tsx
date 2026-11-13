@@ -187,7 +187,7 @@ function OnboardingPage(props: {
   const index = props.pages.indexOf(props.current);
   return (
     <div className="relative isolate flex min-h-dvh flex-col overflow-clip bg-background">
-      <div className="absolute top-4 right-4 md:top-6 md:right-6">
+      <div className="absolute top-4 left-4 md:top-6 md:left-6">
         <AccountSwitcher />
       </div>
       <BackContext.Provider value={props.onBack}>
@@ -248,7 +248,7 @@ function AccountSwitcher() {
         <span className="min-w-0 truncate">{name}</span>
         <IconChevronsUpDown className="size-3.5 shrink-0 text-subtle-foreground" />
       </Button>
-      <Menu placement="bottom end" popover={{ offset: 8 }}>
+      <Menu placement="bottom start" popover={{ offset: 8 }}>
         {exit.kind !== "sign-out" && (
           <MenuItem onAction={leave}>
             <IconArrowLeft data-slot="icon" />
@@ -479,8 +479,9 @@ function ConnectInboxForm(props: {
               disabled={connect.isPending}
               onClick={() => connect.mutate()}
             >
-              <Google aria-hidden className="size-4 shrink-0" />
-              <span className="min-w-0 flex-1 truncate">Google account</span>
+              {/* No provider's mark until one is connected: Google is the first of several. */}
+              <IconPlus aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+              <span className="min-w-0 flex-1 truncate">Add account</span>
               <span className="text-muted-foreground transition-colors group-hover/row:text-foreground">
                 {connect.isPending ? "Opening Google…" : "Connect"}
               </span>
