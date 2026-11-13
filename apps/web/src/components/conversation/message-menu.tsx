@@ -18,6 +18,11 @@ export function MessageMenu(props: {
   /** Set for mail: it can be forwarded. */
   messageId?: string;
   extra?: ReactNode;
+  /**
+   * On a right-aligned item (yours, notes): first in its header, so the time keeps the right
+   * edge in line with the bubble instead of leaving room for a button that only shows on hover.
+   */
+  start?: boolean;
 }) {
   const composer = useComposerState();
   const { messageId } = props;
@@ -29,7 +34,7 @@ export function MessageMenu(props: {
         intent="ghost"
         size="sq-xs"
         aria-label={props.label}
-        className="-my-1 opacity-0 group-focus-within/item:opacity-100 group-hover/item:opacity-100 aria-expanded:opacity-100 [@media(hover:none)]:opacity-100"
+        className={`-my-1 ${props.start ? "order-first" : ""} opacity-0 group-focus-within/item:opacity-100 group-hover/item:opacity-100 aria-expanded:opacity-100 [@media(hover:none)]:opacity-100`}
       >
         <IconEllipsis />
       </Button>

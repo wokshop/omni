@@ -37,7 +37,8 @@ export function AddedLine({ message }: { message: Message }) {
     ? "You"
     : personName({ name: message.fromName, address: message.fromAddress });
   return (
-    <p className="text-center text-xs text-subtle-foreground">
+    // 8px more above and below than the timeline's gap, so a quiet line breathes between bubbles.
+    <p className="py-2 text-center text-xs text-subtle-foreground">
       {who} added {list(message.addedParticipants.map(personName))}.
     </p>
   );
@@ -88,6 +89,7 @@ export function MessageItem({ threadId, message }: { threadId: string; message: 
           {messageTime(message.sentAt)}
         </time>
         <MessageMenu
+          start={mine}
           label="Message actions"
           from={sender}
           text={message.cleanText}

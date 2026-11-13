@@ -143,7 +143,8 @@ export function EventLine(props: { event: ConversationEvent; text: string }) {
   const danger = props.event.kind === "sla_breached";
   return (
     <p
-      className={`text-center text-xs ${danger ? "text-danger-subtle-foreground" : "text-subtle-foreground"}`}
+      // 8px more above and below than the timeline's gap, like "Ana added Bob".
+      className={`py-2 text-center text-xs ${danger ? "text-danger-subtle-foreground" : "text-subtle-foreground"}`}
     >
       {props.text}
       <span aria-hidden> · </span>
@@ -191,6 +192,7 @@ export function NoteItem(props: { threadId: string; mailboxId: string; note: Not
         </time>
         {!pending && !editing && (
           <MessageMenu
+            start
             label="Note actions"
             from={from}
             text={body}
