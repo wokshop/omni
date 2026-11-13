@@ -1,7 +1,6 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { IconCircleCheck, IconCircleX } from "@/components/icons/central";
 import { appToast } from "@/components/ui/toast";
-import { answerJoinRequestMutation, joinRequestsQuery } from "@/lib/join.ts";
+import { useAnswerJoinRequest, useJoinRequests } from "@/hooks/use-join.ts";
 import { PersonAvatar } from "./account-pages";
 import { SettingsGroup, SettingsSection } from "./kit/settings-layout";
 import { SettingsRow } from "./kit/settings-row";
@@ -12,9 +11,8 @@ import { SettingsRowMenu } from "./kit/settings-row-menu";
  * and admins to accept or decline. Shown only while someone is waiting.
  */
 export function JoinRequestsSection(props: { canManage: boolean }) {
-  const client = useQueryClient();
-  const requests = useQuery(joinRequestsQuery(props.canManage)).data?.requests;
-  const answer = useMutation(answerJoinRequestMutation(client));
+  const requests = useJoinRequests(props.canManage).data?.requests;
+  const answer = useAnswerJoinRequest();
   if (!props.canManage || !requests?.length) return null;
   const decide = (id: string, choice: "accept" | "decline", name: string) =>
     answer.mutate(

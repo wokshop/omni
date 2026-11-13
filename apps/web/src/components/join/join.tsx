@@ -1,11 +1,14 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
+import { useEffect } from "react";
 import { IconRedirectArrow } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Heading } from "@/components/ui/heading";
 import { appToast } from "@/components/ui/toast";
 import { useSignOut } from "@/hooks/use-session.ts";
-import { askToJoinMutation, joinQuery } from "@/lib/join.ts";
+import { useAskToJoin, useJoin } from "@/hooks/use-join.ts";
+import { keys } from "@/lib/query-keys.ts";
 
 /**
  * A sign-in with a company's address whose person is not its member (ADR 0024): ask to join it,
@@ -13,8 +16,16 @@ import { askToJoinMutation, joinQuery } from "@/lib/join.ts";
  */
 export function Join() {
   const client = useQueryClient();
-  const status = useQuery(joinQuery());
-  const ask = useMutation(askToJoinMutation(client));
+  const navigate = useNavigate();
+  const status = useJoin();
+  const ask = useAskToJoin();
+  // Nothing to join any more (accepted): the session has a member now, so read it again and open
+  // the inbox.
+  useEffect(() => {
+    if (!status.isError) return;
+    client.removeQueries({ queryKey: keys.session() });
+    void navigate({ to: "/inbox" });
+  }, [status.isError, client, navigate]);
   const signOut = useSignOut();
   const company = status.data?.company.name ?? "";
   const requested = status.data?.requested === true;
