@@ -86,9 +86,21 @@ inbox reads `orphaned` and stops syncing; give it to another member and they can
 the admin still cannot; disconnect an `imap` inbox. Purelymail parts run in the live suite when
 asked (`PURELYMAIL_E2E=1`).
 
+### 5. Every member sees at least one inbox
+
+Decided 2026-11-13. In a company, every member can open at least one inbox: their own, or a shared
+one. Personal is not required.
+
+- **Inviting** needs `inbox` (decision 2) or at least one shared inbox. Without either, 422.
+- **Taking away the last one** is refused with 409: removing someone from their only shared
+  inbox, or disconnecting their only personal inbox while they have no shared one. Removing the
+  member from the company is always allowed.
+- **Members who already have none** are not blocked: `GET /workspace/members` reports
+  `inboxCount: 0` so People can show them, and owners fix it with decision 1.
+- **Owners and admins** follow the same rule; a new company's first owner gets theirs in setup.
+
 ## Open questions
 
-- Should a company require at least one personal inbox per member (Google-style "every account
-  has mail"), or only make it one step? This proposal makes it one step, not a rule.
-- Orphaned inboxes: stop sync (proposed) or keep syncing so mail is current when reassigned?
 - Is `owner` transfer wanted at all, or is "remove and reissue the address" enough?
+
+Decided: an orphaned inbox stops syncing (decision 3).
