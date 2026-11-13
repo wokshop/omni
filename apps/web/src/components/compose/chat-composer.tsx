@@ -158,11 +158,8 @@ export function ChatComposer({ thread, active }: { thread: Thread; active: boole
 
   return (
     <div className="flex flex-col">
-      {/* 15px corners as in dorks. Dotted with no fill, like the hidden notes it adds. */}
-      <div
-        ref={box}
-        className="relative flex flex-col rounded-[15px] border border-dashed border-muted-foreground/40 focus-within:border-ring/70"
-      >
+      {/* No edge of its own: the docked composer's dashed top edge marks a hidden note. */}
+      <div ref={box} className="relative flex flex-col">
         {reply && (
           // The banner sits 8px inside the box (the buttons' inset), concentric with its corners.
           <div className="px-2 pt-2">

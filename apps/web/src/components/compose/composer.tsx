@@ -148,8 +148,16 @@ export function ReplyComposer({ thread }: { thread: Thread }) {
   const state = useComposerState();
   const hidden = state.mode === "hidden";
   return (
-    <div className="flex flex-col gap-2">
-      {state.chat && <Visibility />}
+    // The pane's bottom edge, full width: one composer whose mode switches in place. A hidden
+    // note's edge is dashed, like the notes it adds.
+    <div
+      className={`flex flex-col border-t ${hidden ? "border-dashed border-muted-foreground/40" : ""}`}
+    >
+      {state.chat && (
+        <div className="px-3 pt-2">
+          <Visibility />
+        </div>
+      )}
       {/* Kept mounted while Public shows, so a half-written note waits there. */}
       {state.chat && (
         <div hidden={!hidden}>
@@ -199,9 +207,8 @@ function Visibility() {
           intent="ghost"
           size="sm"
           aria-label={`Visibility: ${current.label}`}
-          // Its icon on the same line as the card's Reply icon below: 13px in (12px padding and
-          // the 1px border), 5px of margin plus the button's 8px inset.
-          className="ms-[5px] px-2 text-foreground"
+          // -8px: its icon starts 12px in, on the same line as the Reply icon below.
+          className="-ms-2 px-2 text-foreground"
         >
           <current.icon />
           {current.label}
@@ -443,7 +450,7 @@ function ModeComposer(props: {
   };
 
   return (
-    <ComposerFrame onFiles={files.add}>
+    <ComposerFrame flat onFiles={files.add}>
       {/* One row: what this is (reply or forward), whom to, and from where. */}
       <Recipients
         lead={
@@ -673,9 +680,8 @@ function FromRow(props: {
 }
 
 /**
- * The card around a composer. Dropping files anywhere on it attaches them. `flat`: part of the
- * pane rather than a card in it, so no card edge; `fill`: it takes the pane's spare height. New
- * mail is both: there the composer is the pane.
+ * What a composer sits in. Dropping files anywhere on it attaches them. `flat`: part of the
+ * pane, not a card in it (new mail, replies); `fill`: it takes the pane's spare height (new mail).
  */
 function ComposerFrame(props: {
   onFiles: (files: File[]) => void;

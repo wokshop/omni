@@ -73,7 +73,7 @@ export function Conversation({ threadId }: { threadId: string }) {
   // Whether the reader sat at the bottom before this render: new mail follows them only then.
   const atBottom = useRef(true);
 
-  // To the very end, so the newest message sits above the composer floating over it. A single
+  // To the very end, so the newest message sits just above the docked composer. A single
   // email is a page, read from its top.
   const toEnd = () =>
     scroller.current?.scrollTo({ top: single ? 0 : scroller.current.scrollHeight });
@@ -113,8 +113,7 @@ export function Conversation({ threadId }: { threadId: string }) {
           // Full screen, the sidebar's own edge is the only line: a second beside it doubles up.
           className={`${SCROLLER} overflow-y-auto overscroll-none ${fullScreen ? "" : "border-s"}`}
         >
-          {/* Grows to fill a short thread, so the composer still floats at the bottom. The bottom
-              padding clears the fade, so the newest message ends above it. */}
+          {/* Grows to fill a short thread, so the composer stays at the pane's bottom. */}
           <div className={single ? PAGE : COLUMN}>
             <div className="flex flex-col gap-2">
               <Heading level={2}>{subject || "(no subject)"}</Heading>
@@ -140,7 +139,10 @@ export function Conversation({ threadId }: { threadId: string }) {
               <PendingItem key={send.key} send={send} />
             ))}
           </div>
-          <Floating thread={thread} wide={single} />
+          {/* The pane's bottom edge, full width; the messages scroll above it. */}
+          <div className="sticky bottom-0 w-full shrink-0 bg-background">
+            <ReplyComposer thread={thread} />
+          </div>
         </div>
       </ComposerProvider>
     </section>
@@ -148,26 +150,8 @@ export function Conversation({ threadId }: { threadId: string }) {
 }
 
 /**
- * The reply under a conversation: floats 16px off the bottom, in the messages' column; they
- * scroll behind it and fade out as they reach it. `wide`: a single email's full-width column.
- */
-function Floating({ thread, wide }: { thread: Thread; wide: boolean }) {
-  return (
-    <div className={`sticky bottom-0 w-full shrink-0 px-5 pb-4 ${wide ? "" : "mx-auto max-w-3xl"}`}>
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 -top-10 bottom-0 bg-linear-to-b from-transparent to-background to-[2.5rem]"
-      />
-      <div className="relative">
-        <ReplyComposer thread={thread} />
-      </div>
-    </div>
-  );
-}
-
-/**
- * A single email reads as the page: full width, no card, read from its top; its reply still
- * floats. A reply or a note makes it a conversation again.
+ * A single email reads as the page: full width, no card, read from its top. A reply or a
+ * note makes it a conversation again.
  */
 function isSingleEmail(
   thread: Thread | undefined,
@@ -180,9 +164,9 @@ function isSingleEmail(
 // The reader's layout, shared by the conversation and its skeleton so the two line up.
 const SECTION = "flex min-w-0 flex-1 flex-col";
 const SCROLLER = "flex min-h-0 flex-1 flex-col";
-const COLUMN = "mx-auto flex w-full max-w-3xl grow flex-col gap-6 px-5 pt-6 pb-10";
+const COLUMN = "mx-auto flex w-full max-w-3xl grow flex-col gap-6 px-5 pt-6 pb-6";
 // A single email: the column without its width cap.
-const PAGE = "flex w-full grow flex-col gap-6 px-5 pt-6 pb-10";
+const PAGE = "flex w-full grow flex-col gap-6 px-5 pt-6 pb-6";
 
 /**
  * The thread while it loads: the toolbar, a subject and a few messages, drawn from skullet's
