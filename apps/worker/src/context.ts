@@ -220,3 +220,39 @@ function devLog(config: Config, link: { kind: string; email: string; url: string
   if (config.ENVIRONMENT !== "development") return;
   console.log(JSON.stringify({ event: "auth.dev_link", ...link }));
 }
+
+/** The mailbox a request names, in its query or JSON body. */
+async function requestedMailbox(c: {
+  req: {
+    query(name: string): string | undefined;
+    method: string;
+    header(name: string): string | undefined;
+    json(): Promise<unknown>;
+  };
+}) {
+  const fromQuery = c.req.query("mailboxId");
+  if (fromQuery) return fromQuery;
+  if (c.req.method === "GET" || !c.req.header("content-type")?.includes("application/json")) {
+    return undefined;
+  }
+  // Parsed once and cached by Hono, so the route's validator reads the same body.
+  const body = (await c.req.json().catch(() => null)) as { mailboxId?: unknown } | null;
+  return typeof body?.mailboxId === "string" ? body.mailboxId : undefined;
+}
+
+/**
+ * A request that names a mailbox runs as the user's member who can open it, in its own
+ * workspace (ADR 0024: write from any address you can open), as thread routes do (ADR 0014).
+ * Only mailboxes `forUser` shows count, so a scoped session stays in its company. One it cannot
+ * see leaves the active member in place, and the route answers as before.
+ */
+export const requireMailboxMember = createMiddleware<AppEnv>(async (c, next) => {
+  const mailboxId = await requestedMailbox(c);
+  if (mailboxId) {
+    const member = await forUser(c.var.db, c.var.user.id, c.var.user.scopeOrgId).memberForMailbox(
+      mailboxId,
+    );
+    if (member && member.id !== c.var.member.id) c.set("member", member);
+  }
+  await next();
+});

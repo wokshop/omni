@@ -741,4 +741,18 @@ test("google accounts: only personal Gmail the grantees can see, scoped sessions
   expect(ids(await forUser(db, dan.userId, company.id).googleAccounts())).toEqual([work.id]);
   expect(ids(await forMember(db, dan.id).googleAccounts())).toEqual([mine.id]);
   expect(ids(await forUser(db, eve.userId).googleAccounts())).toEqual([evesBox.id]);
+
+  // The same boundary for where a user may send from (ADR 0024 step 4).
+  expect(ids(await forUser(db, dan.userId).listMailboxes())).toEqual(
+    [mine.id, work.id, sharedBox.id].sort(),
+  );
+  expect(ids(await forUser(db, dan.userId, company.id).listMailboxes())).toEqual(
+    [work.id, sharedBox.id].sort(),
+  );
+  expect(await forUser(db, dan.userId).memberForMailbox(work.id)).toMatchObject({
+    id: danAtCompany!.id,
+    orgId: company.id,
+  });
+  expect(await forUser(db, dan.userId).memberForMailbox(evesBox.id)).toBeNull();
+  expect(await forUser(db, dan.userId, company.id).memberForMailbox(mine.id)).toBeNull();
 });
