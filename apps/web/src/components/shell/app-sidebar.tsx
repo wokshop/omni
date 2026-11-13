@@ -40,6 +40,7 @@ import { useConnectivity } from "@/hooks/use-connectivity.ts";
 import { useMember } from "@/hooks/use-session.ts";
 import { useWorkspaces } from "@/hooks/use-workspaces.ts";
 import { openSettings } from "@/hooks/use-settings-dialog.ts";
+import { keys } from "@/lib/query-keys.ts";
 import { ariaKeyShortcuts } from "@/lib/shortcuts.ts";
 
 /** A nav row. No `href`: the frame shows it, but the app has no view for it yet. */
@@ -158,7 +159,14 @@ function ReloadButton() {
       isPending={pending}
       onPress={() => {
         setPending(true);
-        void client.refetchQueries({ type: "active" }).finally(() => setPending(false));
+        // Server data only: client-only state (pending and failed sends) has nothing to fetch,
+        // and refetching it would clear it.
+        void client
+          .refetchQueries({
+            type: "active",
+            predicate: (query) => query.queryKey[1] !== keys.local()[1],
+          })
+          .finally(() => setPending(false));
       }}
     >
       <IconArrowRotateClockwise className="size-icon" />

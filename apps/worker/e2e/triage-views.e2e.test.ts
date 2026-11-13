@@ -102,6 +102,11 @@ test("Later takes a thread out of that member's Inbox with no time attached, unt
 
   const moved = await action(ana, "POST", `/threads/${threadId}/later`);
   expect(moved).toMatchObject({ status: 200, body: { state: { done: false, later: true } } });
+  // Tabs open from before Later read `deferredUntil` and must see the thread as deferred.
+  const row = (await (await api("/threads?view=later", ana)).json()) as {
+    threads: { deferredUntil: string | null }[];
+  };
+  expect(row.threads[0]?.deferredUntil).toBe("9999-12-31T00:00:00.000Z");
   expect(await view(ana, "inbox")).toEqual([]);
   expect(await view(ana, "later")).toEqual([threadId]);
   // A tab open from before the rename still asks for `queue`, and gets Later.

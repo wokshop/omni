@@ -212,10 +212,17 @@ function mailQueries(db: Db, isGrantee: (memberId: AnyColumn | SQL) => SQL) {
   const [threadGrant, threadOrg] = access(threads.mailboxId, threads.orgId);
   const [messageGrant, messageOrg] = access(messages.mailboxId, messages.orgId);
 
+  // Deprecated (ADR 0027): the old field, for tabs open from before Later. Later's `infinity`
+  // reads back as a far-future time, which those tabs show as deferred.
+  const legacyDeferredUntil =
+    sql<Date | null>`case when ${threadState.snoozedUntil} = 'infinity' then '9999-12-31T00:00:00Z'::timestamptz else ${threadState.snoozedUntil} end`.mapWith(
+      threadState.snoozedUntil,
+    );
   const threadFields = {
     ...getTableColumns(threads),
     read: sql<boolean>`coalesce(${threadState.read}, false)`.as("read"),
     later: sql<boolean>`coalesce(${threadState.snoozedUntil} > now(), false)`.as("later"),
+    deferredUntil: legacyDeferredUntil.as("deferred_until"),
     done: sql<boolean>`coalesce(${threads.lastMessageAt} <= ${threadState.doneThrough}, false)`.as(
       "done",
     ),
@@ -1165,6 +1172,7 @@ function mailQueries(db: Db, isGrantee: (memberId: AnyColumn | SQL) => SQL) {
         .returning({
           read: threadState.read,
           later: sql<boolean>`coalesce(${threadState.snoozedUntil} > now(), false)`,
+          deferredUntil: legacyDeferredUntil,
           doneThrough: threadState.doneThrough,
           done: sql<boolean>`coalesce((select ${threads.lastMessageAt} from ${threads} where ${threads.id} = ${threadState.threadId}) <= ${threadState.doneThrough}, false)`,
         });

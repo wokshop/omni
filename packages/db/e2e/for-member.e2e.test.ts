@@ -223,7 +223,12 @@ describe("forMember isolation", () => {
     await asBob.setThreadState(billing.threadId, { read: true });
     await asBob.setThreadState(billing.threadId, { later: true });
     const [thread] = await asBob.listThreads({ view: "later" });
-    expect(thread).toMatchObject({ read: true, later: true });
+    // Tabs open from before Later read `deferredUntil`: Later must show there as deferred.
+    expect(thread).toMatchObject({
+      read: true,
+      later: true,
+      deferredUntil: new Date("9999-12-31T00:00:00Z"),
+    });
 
     // Done through a time later than the thread's newest message is capped at that message, and
     // Alice cannot mark Bob's thread done.

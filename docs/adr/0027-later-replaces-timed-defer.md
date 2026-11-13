@@ -23,7 +23,7 @@ state with a real wake-up time and is not changed here.
 3. **Same column, no migration.** Later reuses `thread_state.snoozed_until`, set to Postgres
    `infinity`. The view rule is unchanged (`snoozed_until > now()`), so rows written by the old
    timed defer still read correctly and run out as they did. Thread rows and the state answer
-   expose `later: boolean` instead of `deferredUntil`. `/counts` reports `later`, not `queue`.
+   expose `later: boolean`. `/counts` reports `later`, not `queue`.
 4. **Done and Later still exclude each other**, as in ADR 0007: done clears Later, Later clears
    done.
 5. **The app's actions.** The conversation bar shows "Later" (or "Back to inbox"), `h` toggles
@@ -33,7 +33,8 @@ state with a real wake-up time and is not changed here.
 
 Tabs and the previous Worker run next to this one for a while. Until a later PR removes them,
 the Worker still accepts `view=queue` (answered as `later`) and the old
-`POST /threads/:id/defer { until }` and `DELETE /threads/:id/defer`. The old Worker reads
+`POST /threads/:id/defer { until }` and `DELETE /threads/:id/defer`, and rows still carry
+`deferredUntil` (Later's `infinity` reads as 9999-12-31, so old tabs show it as deferred). The old Worker reads
 `infinity` as "deferred", so it shows Later threads in its Queue. Remove the aliases once no
 client sends them.
 
