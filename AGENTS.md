@@ -137,6 +137,11 @@ Every change keeps that path working:
 - Read the relevant code and the spec section first; follow existing patterns.
 - Use maintained libraries for protocols, auth, and parsing (ImapFlow, Nodemailer, mailparser,
   Better Auth, DOMPurify). Write our own code only where the product differs.
+- Lint caps cyclomatic complexity at 20, nesting depth at 4, and a source file at 500 lines. Split
+  by concern, and model multi-step flows as an explicit state type plus a transition function
+  (like `mail-core/src/conversation-status.ts`) instead of growing flags and `if` chains. Files
+  that predate the caps are listed as debt in the `.oxlintrc.json` overrides: never add one, and
+  remove a file from its list when you bring it under the cap.
 - Make the simplest change that meets the ask. Pick the boring, standard path. No compatibility
   layers or fallbacks for code that has never shipped.
 - If the premise turns out wrong or the change keeps growing, stop and shrink the plan.
