@@ -67,7 +67,7 @@ export function Toaster({
   setup = false,
   ...props
 }: ToasterProps & {
-  /** Setup's toaster: top centre, brand-blue toasts with a close (see `setupToast`). */
+  /** Setup's toaster: bottom left, brand-blue toasts with a close (see `setupToast`). */
   setup?: boolean;
 }) {
   return (
@@ -76,7 +76,7 @@ export function Toaster({
       closeButton={setup}
       {...(setup && { icons: { error: <XCircleIcon className="size-4" /> } })}
       duration={NOTICE_DURATION_MS}
-      position={setup ? "top-center" : "bottom-right"}
+      position={setup ? "bottom-left" : "bottom-right"}
       theme="light"
       style={{ "--width": "min(356px, calc(100vw - 2rem))", ...style } as CSSProperties}
       toastOptions={{

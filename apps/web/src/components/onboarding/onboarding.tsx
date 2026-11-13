@@ -275,7 +275,7 @@ function PageForm(props: {
   title: string;
   description?: ReactNode;
   submit: string;
-  /** Another way through the step, a ghost button beside the primary one. Back then moves under them. */
+  /** A second action, an outline button beside the primary one. Back then moves under them. */
   secondary?: ReactNode;
   isPending?: boolean;
   /** Why the last submit failed. */
@@ -1053,13 +1053,17 @@ function InviteForm(props: {
       isPending={sending || props.finishing}
       problem={problem ?? props.finishProblem}
       onSubmit={() => void submit()}
+      secondary={
+        <Button intent="outline" onPress={() => setEmails([...emails, ""])}>
+          Add another
+        </Button>
+      }
     >
       <InputList
         label="Emails"
         optional
         values={emails}
         onChange={setEmails}
-        addLabel="Add another"
         render={(value, set, i) => (
           <TextField
             aria-label={`Email ${i + 1}`}
@@ -1076,13 +1080,12 @@ function InviteForm(props: {
   );
 }
 
-/** A labeled list of inputs that grows with "Add …". */
+/** A labeled list of inputs; the step's "Add another" button grows it. */
 function InputList(props: {
   label: string;
   optional?: boolean;
   values: string[];
   onChange: (values: string[]) => void;
-  addLabel: string;
   render: (value: string, set: (value: string) => void, index: number) => ReactNode;
 }) {
   const { values, onChange } = props;
@@ -1099,14 +1102,6 @@ function InputList(props: {
           </div>
         ))}
       </div>
-      <Button
-        intent="outline"
-        className="mt-1 self-start"
-        onPress={() => onChange([...values, ""])}
-      >
-        <IconPlus />
-        {props.addLabel}
-      </Button>
     </div>
   );
 }

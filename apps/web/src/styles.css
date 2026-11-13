@@ -252,8 +252,8 @@
    around a 16px icon and a 20px line, a small bare close at the right, no shadow. Only on the
    setup toaster (`setupToast`); the app's own toasts keep their card. */
 html .setup-toaster [data-sonner-toast][data-styled="true"] {
-  padding: 12px 44px 12px 14px;
-  gap: 10px;
+  padding: 8px 36px 8px 12px;
+  gap: 8px;
   align-items: flex-start;
   /* A solid edge in the page's own colour, so a toast stacked behind the front one stays its own card. */
   border: 1px solid var(--background);
@@ -274,8 +274,8 @@ html .setup-toaster [data-sonner-toast][data-styled="true"] [data-title] {
 }
 html .setup-toaster [data-sonner-toast][data-styled="true"] [data-close-button] {
   transition: background-color 150ms ease-out;
-  top: 10px;
-  right: 10px;
+  top: 6px;
+  right: 6px;
   left: auto;
   width: 24px;
   height: 24px;

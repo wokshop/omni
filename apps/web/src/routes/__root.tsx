@@ -25,7 +25,7 @@ export const Route = createRootRouteWithContext<RouterContext>()({
 
 function Root() {
   const router = useRouter();
-  // Setup's validation and failures toast at the top centre, over its one column (dorks).
+  // Setup's validation and failures toast at the bottom left, in dorks' blue.
   const setup = useLocation({ select: (l) => l.pathname.startsWith("/onboarding") });
   return (
     <RouterProvider navigate={(href, options) => router.navigate({ ...options, href })}>
