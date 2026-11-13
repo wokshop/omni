@@ -22,6 +22,7 @@ import { WorkerNotifier } from "./notify.ts";
 import { createS3Store } from "./objects.ts";
 import { PgActionSource, PgMailStore, PgSendFiles } from "./pg-store.ts";
 import { connectGoogle, createGoogleOAuth, disconnectGoogle } from "./providers/gmail.ts";
+import { createCreditWatch } from "./hosting/credit-watch.ts";
 import { createPurelymailHost } from "./hosting/purelymail-host.ts";
 import { createLoginRotation } from "./hosting/rotate-login.ts";
 import { createPurelymailClient } from "./providers/purelymail.ts";
@@ -50,6 +51,7 @@ export type ServiceConfig = Pick<
     Pick<
       Config,
       | "PURELYMAIL_API_TOKEN"
+      | "PURELYMAIL_CREDIT_WARN_USD"
       | "DNS_RESOLVERS"
       | "DNS_NAMESERVER_PORT"
       | "DNS_TIMEOUT_MS"
@@ -181,6 +183,13 @@ export async function startService(config: ServiceConfig, log: Logger): Promise<
     ? createPurelymailHost(createPurelymailClient(config.PURELYMAIL_API_TOKEN), log)
     : undefined;
   let rotateLogin: ReturnType<typeof createLoginRotation> | undefined;
+  const credit = host
+    ? createCreditWatch({
+        host,
+        warnBelowUsd: config.PURELYMAIL_CREDIT_WARN_USD ?? 5,
+        logger: log,
+      })
+    : undefined;
 
   // One reconcile at a time; a request during one runs once more after it.
   let reconciling: Promise<void> | null = null;
@@ -281,6 +290,10 @@ export async function startService(config: ServiceConfig, log: Logger): Promise<
     ),
   );
 
+  // Credit moves slowly; hourly is plenty and costs one API call.
+  void credit?.check();
+  const creditLoop = credit ? every(60 * 60_000, () => credit.check()) : undefined;
+
   const provisioner = createProvisioner({
     db,
     keyring: config.MAIL_CREDENTIALS_KEY,
@@ -349,6 +362,8 @@ export async function startService(config: ServiceConfig, log: Logger): Promise<
         mailboxes: supervisor.mailboxCount,
         connected: supervisor.connectedCount,
         ready: supervisor.readyCount,
+        // Only the state, never the amount: /health is public.
+        ...(credit ? { hostCredit: credit.state() } : {}),
       };
     },
   });
@@ -375,6 +390,7 @@ export async function startService(config: ServiceConfig, log: Logger): Promise<
       stopping = true;
       await Effect.runPromise(Fiber.interrupt(reconcileLoop));
       await Effect.runPromise(Fiber.interrupt(sweepLoop));
+      if (creditLoop) await Effect.runPromise(Fiber.interrupt(creditLoop));
       await reconciling?.catch(() => {});
       await supervisor.stop();
       await notifier.stop();

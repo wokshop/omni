@@ -47,6 +47,8 @@ export interface PurelymailClient {
   deleteAppPassword(userHandle: string, appPassword: string): Promise<void>;
   /** Deletes the user and all of its mail. Irreversible. */
   deleteUser(userHandle: string): Promise<void>;
+  /** The account's prepaid credit in US dollars. Purelymail stops mail when it runs out. */
+  accountCredit(): Promise<number>;
 }
 
 export function createPurelymailClient(token: string, fetchImpl = fetch): PurelymailClient {
@@ -120,6 +122,15 @@ export function createPurelymailClient(token: string, fetchImpl = fetch): Purely
     },
     async deleteUser(userHandle) {
       await call("deleteUser", { userName: userHandle });
+    },
+    async accountCredit() {
+      // A decimal string with many digits (seen live 2026-11-13), not a JSON number.
+      const { credit } = await call<{ credit?: unknown }>("checkAccountCredit", {});
+      const dollars = Number(credit);
+      if (typeof credit !== "string" || !Number.isFinite(dollars)) {
+        throw new PurelymailError("checkAccountCredit", 200, "shape", "no credit returned");
+      }
+      return dollars;
     },
   };
 }

@@ -181,6 +181,15 @@ describe.runIf(requested)("Purelymail itself", () => {
     expect(json.records.filter((r) => !r.verified)).toEqual([]);
   });
 
+  it("reports the account's credit state in /health", async () => {
+    // "unknown" means the credit call or its parsing failed; the real account is "ok" or "low".
+    const health = await waitFor(async () => {
+      const json = (await (await fetch(`${serviceUrl}/health`)).json()) as Record<string, unknown>;
+      return json.hostCredit === "unknown" ? undefined : json;
+    }, 30_000);
+    expect(["ok", "low"]).toContain(health.hostCredit);
+  });
+
   it("creates a hosted mailbox that syncs and sends, and never issues a second login", async () => {
     const owner = await claimTestDomain();
     const address = testAddress();

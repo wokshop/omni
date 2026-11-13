@@ -30,6 +30,8 @@ export interface MailHost {
   issueLogin(address: string, options?: { createUser?: boolean }): Promise<PasswordCredentials>;
   /** Revokes one login issued for `address`. Revoking one already gone is not an error. */
   revokeLogin(address: string, pass: string): Promise<void>;
+  /** The prepaid credit left on the host account, in US dollars. */
+  credit(): Promise<number>;
 }
 
 /**

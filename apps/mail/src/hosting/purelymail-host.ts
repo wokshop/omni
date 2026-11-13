@@ -106,5 +106,11 @@ export function createPurelymailHost(client: PurelymailClient, logger: Logger): 
     }
   }
 
-  return { provider: "purelymail", domain, issueLogin, revokeLogin };
+  return {
+    provider: "purelymail",
+    domain,
+    issueLogin,
+    revokeLogin,
+    credit: () => call(() => client.accountCredit()),
+  };
 }
