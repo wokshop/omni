@@ -172,8 +172,8 @@ export function NoteItem(props: { threadId: string; mailboxId: string; note: Not
   const from = people.written(note.authorMemberId) ?? name;
 
   return (
-    // On the right with the replies, since the team wrote it: yours blue, a teammate's grey. The
-    // lock and "Internal note" tell it from a reply the customer got.
+    // On the right with the replies, since the team wrote it. The dotted outline, the lock and
+    // "Hidden" tell it from a reply the customer got.
     <article
       aria-label={`Note from ${name}, ${messageTime(note.createdAt)}`}
       className="group/item flex flex-col items-end gap-3"
@@ -183,7 +183,7 @@ export function NoteItem(props: { threadId: string; mailboxId: string; note: Not
         <span className="text-sm">{name}</span>
         <span className="flex items-center gap-1 text-xs text-subtle-foreground">
           <IconLock className="size-3" />
-          Internal note
+          Hidden
         </span>
         <time dateTime={note.createdAt} className="text-xs text-subtle-foreground tabular-nums">
           {messageTime(note.createdAt)}
@@ -216,8 +216,9 @@ export function NoteItem(props: { threadId: string; mailboxId: string; note: Not
       )}
       <div
         {...{ [REPLY_SOURCE]: from }}
-        className={`rounded-xl px-3 py-2 text-foreground ${editing ? "w-full" : "max-w-[80%]"} ${
-          mine ? "bg-primary-subtle" : "bg-accent"
+        // Hidden from the customer: a dotted outline with no fill, never a mail bubble.
+        className={`rounded-xl border border-dashed border-muted-foreground/40 px-3 py-2 text-foreground ${
+          editing ? "w-full" : "max-w-[80%]"
         } ${pending ? "opacity-70" : ""}`}
       >
         {editing ? (
@@ -355,7 +356,8 @@ function Face({ person, name }: { person: Assignee | undefined; name: string }) 
       size="xs"
       src={pictureUrl(person?.image ?? null)}
       initials={name.slice(0, 1).toUpperCase()}
-      className="bg-accent text-foreground outline-0 [--avatar-radius:var(--radius-sm)]"
+      // 18px: a step under the xs avatar, so the face sits with the 14px name, not over it.
+      className="bg-accent text-foreground outline-0 [--avatar-radius:var(--radius-sm)] [--avatar-size:--spacing(4.5)]"
     />
   );
 }

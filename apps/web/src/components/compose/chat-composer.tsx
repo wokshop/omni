@@ -1,4 +1,4 @@
-// The composer's Chat mode (shared inboxes, ADR 0021): an internal note for the team, never
+// The composer's Hidden mode (shared inboxes, ADR 0021): an internal note for the team, never
 // sent, written like a chat message. The box is the AI composer from handlemotion/dorks
 // (`ChatComposer.tsx`, the AI Elements prompt input) on Omni's primitives: one row that grows
 // into a box once the text wraps, a button at each bottom corner, Enter to send, Shift+Enter
@@ -157,10 +157,10 @@ export function ChatComposer({ thread, active }: { thread: Thread; active: boole
 
   return (
     <div className="flex flex-col">
-      {/* White like every field, with a hairline; 15px corners as in dorks. */}
+      {/* 15px corners as in dorks. Dotted with no fill, like the hidden notes it adds. */}
       <div
         ref={box}
-        className="relative flex flex-col rounded-[15px] border border-input bg-background focus-within:border-ring/70"
+        className="relative flex flex-col rounded-[15px] border border-dashed border-muted-foreground/40 focus-within:border-ring/70"
       >
         {reply && (
           // The banner sits 8px inside the box (the buttons' inset), concentric with its corners.
@@ -177,8 +177,8 @@ export function ChatComposer({ thread, active }: { thread: Thread; active: boole
         <Textarea
           ref={textarea}
           plain
-          aria-label="Message your team"
-          placeholder="Message your team, @ to mention"
+          aria-label="Hidden note"
+          placeholder="Hidden note for your team, @ to mention"
           rows={1}
           value={text}
           aria-expanded={open}
@@ -245,15 +245,10 @@ export function ChatComposer({ thread, active }: { thread: Thread; active: boole
         </div>
         <div className="absolute right-2 bottom-2">
           <TooltipTrigger delay={400}>
-            <Button
-              size="sq-sm"
-              aria-label="Send to your team"
-              isDisabled={!canSend}
-              onPress={send}
-            >
+            <Button size="sq-sm" aria-label="Add hidden note" isDisabled={!canSend} onPress={send}>
               <IconArrowUp />
             </Button>
-            <Tooltip>Send to your team ↵</Tooltip>
+            <Tooltip>Add hidden note ↵</Tooltip>
           </TooltipTrigger>
         </div>
       </div>

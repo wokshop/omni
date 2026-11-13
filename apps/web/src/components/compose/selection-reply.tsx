@@ -1,5 +1,5 @@
 // Selecting text in a message or note opens a small box on the selection: the passage, quoted,
-// and a field for the answer. Enter (or the arrow) puts the passage in Chat as a reply, with
+// and a field for the answer. Enter (or the arrow) puts the passage in a hidden reply, with
 // anything typed as its text; Cmd/Ctrl+Enter sends it to the team right away. Copied from
 // handlemotion/dorks (`Reply.tsx`, `SelectionReply`) onto Omni's primitives. The passage stays
 // highlighted (CSS Custom Highlight) while the box is open, since focusing the field clears the
@@ -116,8 +116,8 @@ export function SelectionReply({ threadId }: { threadId: string }) {
           <InputGroup>
             <Input
               autoFocus
-              aria-label={`Reply to ${target.reply.from} in chat`}
-              placeholder={`Reply to ${target.reply.from}`}
+              aria-label={`Hidden reply to ${target.reply.from}`}
+              placeholder={`Hidden reply to ${target.reply.from}`}
               autoComplete="off"
               value={text}
               onChange={(event) => setText(event.target.value)}
@@ -133,13 +133,13 @@ export function SelectionReply({ threadId }: { threadId: string }) {
               <Button
                 intent="ghost"
                 size="inset"
-                aria-label="Reply in chat"
+                aria-label="Add to hidden reply"
                 className="text-muted-foreground hover:text-foreground"
                 onPress={attach}
               >
                 <IconArrowUp />
               </Button>
-              <Tooltip>{`Enter to reply in chat, ${isMac ? "⌘" : "Ctrl+"}Enter to send`}</Tooltip>
+              <Tooltip>{`Enter to add to a hidden reply, ${isMac ? "⌘" : "Ctrl+"}Enter to send`}</Tooltip>
             </TooltipTrigger>
           </InputGroup>
         </div>

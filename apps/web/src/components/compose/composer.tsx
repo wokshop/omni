@@ -5,12 +5,20 @@
 // primitives.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { DropZone } from "react-aria-components/DropZone";
-import { IconForward, IconReply, IconX } from "@/components/icons/central";
+import {
+  IconChevronDown,
+  IconForward,
+  IconGlobe,
+  IconLock,
+  IconReply,
+  IconX,
+} from "@/components/icons/central";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipTrigger } from "@/components/ui/tooltip";
 import { appToast } from "@/components/ui/toast";
+import { Menu, MenuDescription, MenuItem, MenuLabel, MenuTrigger } from "@/components/ui/menu";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   useCancelSend,
@@ -102,38 +110,53 @@ function originalFiles(message: Message | undefined): ComposerFile[] {
     }));
 }
 
-/** Who a plain reply goes to: the sender, or for our own last message, whoever we wrote to. */
+/** Who the server replies to by default: the sender, or for our own last message, whoever we wrote to. */
 function replyRecipients(message: Message | undefined): string[] {
   if (!message) return [];
   return message.fromMe ? message.to.map((a) => a.address) : [message.fromAddress];
 }
 
+/**
+ * Who a reply starts addressed to: everyone outside the team on the thread (each sender, and
+ * whoever was in To or Cc), the latest sender first. Teammates add more by hand.
+ */
+function customerRecipients(messages: Message[], inbox: string): string[] {
+  const ours = new Set([inbox.toLowerCase()]);
+  for (const m of messages) if (m.fromMe) ours.add(m.fromAddress.toLowerCase());
+  const seen = new Map<string, string>();
+  const add = (address: string) => {
+    const key = address.toLowerCase();
+    if (!ours.has(key) && !seen.has(key)) seen.set(key, address);
+  };
+  for (const m of messages.toReversed()) {
+    if (!m.fromMe) add(m.fromAddress);
+    for (const a of [...m.to, ...m.cc]) add(a.address);
+  }
+  return [...seen.values()];
+}
+
 type Mode = "reply" | "forward";
 
 /**
- * The composer under the open conversation. On a shared inbox a Chat/Email switch floats
- * centred above it: Chat writes an internal note to the team, Email replies to the customer
- * (or forwards a message, picked from that message's menu). A personal thread only has Email.
- * Replies go from the inbox's address with your name; they show in the thread at once and can
- * be undone while they wait in the outbox.
+ * The composer pinned under the open conversation. On a shared inbox a quiet line above it says
+ * who will see what you write, and switches it: Public is an email to the customer (or a
+ * forward, picked from a message's menu), Hidden is an internal note only the team sees. A
+ * personal thread is always Public. Replies go from the inbox's address with your name; they
+ * show in the thread at once and can be undone while they wait in the outbox.
  */
 export function ReplyComposer({ thread }: { thread: Thread }) {
   const state = useComposerState();
-  const email = state.mode === "email";
+  const hidden = state.mode === "hidden";
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-2">
+      {state.chat && <Visibility />}
+      {/* Kept mounted while Public shows, so a half-written note waits there. */}
       {state.chat && (
-        <div className="flex justify-center">
-          <ModeSwitch />
+        <div hidden={!hidden}>
+          <ChatComposer key={thread.id} thread={thread} active={hidden} />
         </div>
       )}
-      {/* Kept mounted while Email shows, so a half-written chat message waits there. */}
-      {state.chat && (
-        <div hidden={email}>
-          <ChatComposer key={thread.id} thread={thread} active={!email} />
-        </div>
-      )}
-      {email && (
+      {!hidden && (
         // A fresh composer per reply or forwarded message: its own recipients, body and draft.
         <ModeComposer
           key={`${thread.id}:${state.forwardId ?? "reply"}`}
@@ -147,23 +170,66 @@ export function ReplyComposer({ thread }: { thread: Thread }) {
   );
 }
 
-/** Chat (the team) or Email (the customer): which composer shows. */
-function ModeSwitch() {
+const VISIBILITY = {
+  public: {
+    icon: IconGlobe,
+    label: "Public",
+    says: "Everyone in To gets this by email",
+    short: "Email the customer",
+  },
+  hidden: {
+    icon: IconLock,
+    label: "Hidden",
+    says: "Only your team sees this",
+    short: "Only your team sees it",
+  },
+} as const;
+
+/**
+ * Who sees what you write, and the menu that changes it: one line above the composer, like a
+ * breadcrumb, instead of tabs. The words say the consequence, so a hidden note never reads as
+ * mail and a public reply never reads as a note.
+ */
+function Visibility() {
   const { mode, setMode } = useComposerState();
+  const current = VISIBILITY[mode];
   return (
-    <ToggleGroup
-      size="sm"
-      aria-label="Write to"
-      selectedKeys={[mode]}
-      disallowEmptySelection
-      onSelectionChange={(keys) => {
-        const next = [...keys][0] as ComposerMode | undefined;
-        if (next && next !== mode) setMode(next);
-      }}
-    >
-      <ToggleGroupItem id="chat">Chat</ToggleGroupItem>
-      <ToggleGroupItem id="email">Email</ToggleGroupItem>
-    </ToggleGroup>
+    <div className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground">
+      <MenuTrigger>
+        <Button
+          intent="ghost"
+          size="sm"
+          aria-label={`Visibility: ${current.label}`}
+          // Pulled left by its own 8px inset, so the icon starts at the composer's edge.
+          className="-ms-2 px-2 text-foreground"
+        >
+          <current.icon />
+          {current.label}
+          <IconChevronDown className="text-muted-foreground" />
+        </Button>
+        <Menu
+          placement="top start"
+          selectionMode="single"
+          selectedKeys={[mode]}
+          onSelectionChange={(keys) => {
+            const next = [...keys][0] as ComposerMode | undefined;
+            if (next) setMode(next);
+          }}
+        >
+          {(["public", "hidden"] as const).map((id) => {
+            const option = VISIBILITY[id];
+            return (
+              <MenuItem key={id} id={id} textValue={option.label}>
+                <option.icon data-slot="icon" />
+                <MenuLabel>{option.label}</MenuLabel>
+                <MenuDescription>{option.short}</MenuDescription>
+              </MenuItem>
+            );
+          })}
+        </Menu>
+      </MenuTrigger>
+      <span className="min-w-0 truncate">{current.says}</span>
+    </div>
   );
 }
 
@@ -183,7 +249,8 @@ function ModeComposer(props: {
   const cancelSend = useCancelSend();
   const render = useRenderCannedReply(thread.id);
 
-  const defaultTo = mode === "reply" ? replyRecipients(latest) : [];
+  const defaultTo =
+    mode === "reply" ? customerRecipients(thread.messages, thread.mailboxAddress) : [];
   const [to, setTo] = useState<string[]>(defaultTo);
   const [cc, setCc] = useState<string[]>([]);
   const [bcc, setBcc] = useState<string[]>([]);
@@ -271,8 +338,12 @@ function ModeComposer(props: {
     if (!canSend) return;
     const before = { text, to, cc, bcc, files: files.files };
     const attachments = files.attachments;
+    // Sent explicitly unless they are exactly whom the server would reply to on its own.
     const recipientsChanged =
-      mode === "forward" || to.join() !== defaultTo.join() || cc.length > 0 || bcc.length > 0;
+      mode === "forward" ||
+      to.join() !== replyRecipients(latest).join() ||
+      cc.length > 0 ||
+      bcc.length > 0;
     const restore = () => {
       // Something new was written since: keep it, and hand back the stopped one on the clipboard.
       if (hasWords(current.current, signature)) {
@@ -685,7 +756,7 @@ function Body(props: {
           props.onSend();
         }
       }}
-      className="-mt-1 max-h-96 min-h-24 resize-none pt-0 pb-1 sm:pt-0 sm:pb-1"
+      className="-mt-1 max-h-[min(24rem,30vh)] min-h-24 resize-none pt-0 pb-1 sm:pt-0 sm:pb-1"
     />
   );
 }

@@ -6,7 +6,7 @@ import { quoteText } from "@/lib/reply.ts";
 import { useComposerState } from "../compose/composer-state.tsx";
 
 /**
- * The ⋯ beside a message or note in the timeline: reply to it in Chat (shared inboxes), forward
+ * The ⋯ beside a message or note in the timeline: reply to it in a hidden note (shared inboxes), forward
  * it (mail only), and whatever the item adds (edit and delete on your own notes). It shows on
  * hover or focus, like a chat app's message actions; touch screens always show it.
  */
@@ -36,11 +36,11 @@ export function MessageMenu(props: {
       <Menu placement="bottom end">
         {canReply && (
           <MenuItem
-            textValue="Reply in chat"
+            textValue="Hidden reply"
             onAction={() => composer.replyInChat({ from: props.from, text: quoteText(props.text) })}
           >
             <IconReply data-slot="icon" />
-            <MenuLabel>Reply in chat</MenuLabel>
+            <MenuLabel>Hidden reply</MenuLabel>
           </MenuItem>
         )}
         {messageId && (

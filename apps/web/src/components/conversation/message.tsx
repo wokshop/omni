@@ -79,7 +79,8 @@ export function MessageItem({ threadId, message }: { threadId: string; message: 
             isSquare
             size="xs"
             initials={sender.slice(0, 1).toUpperCase()}
-            className="bg-accent text-foreground outline-0 [--avatar-radius:var(--radius-sm)]"
+            // 18px, as on notes: a step under xs, so the face sits with the 14px name.
+            className="bg-accent text-foreground outline-0 [--avatar-radius:var(--radius-sm)] [--avatar-size:--spacing(4.5)]"
           />
         )}
         <span className="text-sm">{message.fromMe ? "You" : sender}</span>

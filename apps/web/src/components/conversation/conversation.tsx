@@ -120,8 +120,13 @@ export function Conversation({ threadId }: { threadId: string }) {
             {pending.map((send) => (
               <PendingItem key={send.key} send={send} />
             ))}
-            <ReplyComposer thread={thread} />
             <div ref={end} />
+          </div>
+        </div>
+        {/* Pinned under the messages, in their column; they scroll behind it. */}
+        <div className="shrink-0 border-s">
+          <div className="mx-auto max-w-3xl px-5 pt-2 pb-4">
+            <ReplyComposer thread={thread} />
           </div>
         </div>
       </ComposerProvider>
