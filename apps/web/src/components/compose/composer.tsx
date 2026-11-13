@@ -8,8 +8,6 @@ import { DropZone } from "react-aria-components/DropZone";
 import {
   IconChevronDown,
   IconForward,
-  IconGlobe,
-  IconLock,
   IconMail,
   IconReply,
   IconX,
@@ -19,7 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipTrigger } from "@/components/ui/tooltip";
 import { appToast } from "@/components/ui/toast";
-import { Menu, MenuDescription, MenuItem, MenuLabel, MenuTrigger } from "@/components/ui/menu";
+import { Menu, MenuItem, MenuLabel, MenuTrigger } from "@/components/ui/menu";
 import {
   useCancelSend,
   useComposeReply,
@@ -37,9 +35,10 @@ import type { Message, Thread } from "@/lib/types.ts";
 import { CannedPicker } from "./canned-picker.tsx";
 import { AttachButton, ComposerFiles } from "./composer-files.tsx";
 import { ChatComposer } from "./chat-composer.tsx";
-import { useComposerState, type ComposerMode } from "./composer-state.tsx";
+import { useComposerState } from "./composer-state.tsx";
 import { RecipientField } from "./recipient-field.tsx";
 import { Toolbar } from "./toolbar.tsx";
+import { Visibility } from "./visibility.tsx";
 import { offerUndoSend } from "./undo-send.ts";
 
 /** The RFC 3676 signature separator, so mail clients can fold it. */
@@ -138,8 +137,8 @@ function customerRecipients(messages: Message[], inbox: string): string[] {
 type Mode = "reply" | "forward";
 
 /**
- * The composer pinned under the open conversation. On a shared inbox a switch above it picks
- * who will see what you write: Public is an email to the customer (or a
+ * The composer pinned under the open conversation. On a shared inbox a switch among its tools
+ * picks who will see what you write: Public is an email to the customer (or a
  * forward, picked from a message's menu), Hidden is an internal note only the team sees. A
  * personal thread is always Public. Replies go from the inbox's address with your name; they
  * show in the thread at once and can be undone while they wait in the outbox.
@@ -151,13 +150,8 @@ export function ReplyComposer({ thread }: { thread: Thread }) {
     // The pane's bottom edge, full width: one composer whose mode switches in place. A hidden
     // note's edge is dashed, like the notes it adds.
     <div
-      className={`flex flex-col border-t ${hidden ? "border-dashed border-muted-foreground/40" : ""}`}
+      className={`flex flex-col border-t ${hidden ? "border-dashed border-muted-foreground/60" : ""}`}
     >
-      {state.chat && (
-        <div className="px-3 pt-2">
-          <Visibility />
-        </div>
-      )}
       {/* Kept mounted while Public shows, so a half-written note waits there. */}
       {state.chat && (
         <div hidden={!hidden}>
@@ -178,67 +172,6 @@ export function ReplyComposer({ thread }: { thread: Thread }) {
   );
 }
 
-const VISIBILITY = {
-  public: {
-    icon: IconGlobe,
-    label: "Public",
-    short: "Email the customer",
-  },
-  hidden: {
-    icon: IconLock,
-    label: "Hidden",
-    short: "Only your team sees it",
-  },
-} as const;
-
-/**
- * Who sees what you write, and the menu that changes it: one switch above the composer, like a
- * breadcrumb, instead of tabs. Each mode's menu item says its consequence, so a hidden note
- * never reads as mail and a public reply never reads as a note.
- */
-function Visibility() {
-  const { mode, setMode } = useComposerState();
-  const current = VISIBILITY[mode];
-  return (
-    // The switch on the left; what each mode means is in its menu.
-    <div className="flex min-w-0 items-center justify-between gap-2 text-sm text-muted-foreground">
-      <MenuTrigger>
-        <Button
-          intent="ghost"
-          size="sm"
-          aria-label={`Visibility: ${current.label}`}
-          // -8px: its icon starts 12px in, on the same line as the Reply icon below.
-          className="-ms-2 px-2 text-foreground"
-        >
-          <current.icon />
-          {current.label}
-          <IconChevronDown className="text-muted-foreground" />
-        </Button>
-        <Menu
-          placement="top start"
-          selectionMode="single"
-          selectedKeys={[mode]}
-          onSelectionChange={(keys) => {
-            const next = [...keys][0] as ComposerMode | undefined;
-            if (next) setMode(next);
-          }}
-        >
-          {(["public", "hidden"] as const).map((id) => {
-            const option = VISIBILITY[id];
-            return (
-              <MenuItem key={id} id={id} textValue={option.label}>
-                <option.icon data-slot="icon" />
-                <MenuLabel>{option.label}</MenuLabel>
-                <MenuDescription>{option.short}</MenuDescription>
-              </MenuItem>
-            );
-          })}
-        </Menu>
-      </MenuTrigger>
-    </div>
-  );
-}
-
 function ModeComposer(props: {
   thread: Thread;
   mode: Mode;
@@ -247,6 +180,7 @@ function ModeComposer(props: {
   onStopForward: () => void;
 }) {
   const { thread, mode } = props;
+  const { chat } = useComposerState();
   const latest = thread.messages.at(-1);
   const { signature, isLoading: signatureLoading } = useSignature(thread.mailboxId);
   const files = useComposerFiles(thread.mailboxId);
@@ -490,6 +424,7 @@ function ModeComposer(props: {
         start={
           <>
             <AttachButton onFiles={files.add} />
+            {chat && <Visibility />}
             <CannedPicker mailboxId={thread.mailboxId} onPick={(r) => void insertCanned(r)} />
           </>
         }

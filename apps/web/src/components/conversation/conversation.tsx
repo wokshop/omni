@@ -165,8 +165,9 @@ function isSingleEmail(
 const SECTION = "flex min-w-0 flex-1 flex-col";
 const SCROLLER = "flex min-h-0 flex-1 flex-col";
 const COLUMN = "mx-auto flex w-full max-w-3xl grow flex-col gap-6 px-5 pt-6 pb-6";
-// A single email: the column without its width cap.
-const PAGE = "flex w-full grow flex-col gap-6 px-5 pt-6 pb-6";
+// A single email: the column without its width cap, and more room between its title (and
+// properties) and the sender.
+const PAGE = "flex w-full grow flex-col gap-8 px-5 pt-6 pb-6";
 
 /**
  * The thread while it loads: the toolbar, a subject and a few messages, drawn from skullet's
