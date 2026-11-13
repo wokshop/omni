@@ -45,7 +45,8 @@ export function AddedLine({ message }: { message: Message }) {
 }
 
 /**
- * One message in the conversation. Short ones are chat bubbles (yours on the right), long or
+ * One message in the conversation. Short ones are chat bubbles (the team's on the right: yours
+ * blue, a teammate's grey), long or
  * formal ones are cards (`display`, decided by the Worker). Either can open the full message: the
  * sender's HTML in a sandboxed frame, for when reply stripping got it wrong. A message with no
  * text of its own (an HTML-only mail the stripper emptied) opens that way.
@@ -55,14 +56,15 @@ export function MessageItem({ threadId, message }: { threadId: string; message: 
   const [full, setFull] = useState(empty && message.hasHtml);
   const sender = personName({ name: message.fromName, address: message.fromAddress });
   const card = message.display === "card" || full;
-  const mine = message.fromMe && !card;
+  // Right-hand side: anything this inbox sent. Blue only for the reader's own replies.
+  const ours = message.fromTeam && !card;
 
   const toggle = message.hasHtml && (
     <Button
       intent="plain"
       size="sm"
       // Its label lines up with the text of the bubble or card above it.
-      className={`text-muted-foreground ${mine ? "me-1" : card ? "-ms-2" : "ms-1"}`}
+      className={`text-muted-foreground ${ours ? "me-1" : card ? "-ms-2" : "ms-1"}`}
       onPress={() => setFull((open) => !open)}
     >
       {full ? "Show less" : "Show full message"}
@@ -72,7 +74,7 @@ export function MessageItem({ threadId, message }: { threadId: string; message: 
   return (
     <article
       aria-label={`${message.fromMe ? "You" : sender}, ${messageTime(message.sentAt)}`}
-      className={`group/item flex flex-col gap-3 ${mine ? "items-end" : "items-start"}`}
+      className={`group/item flex flex-col gap-3 ${ours ? "items-end" : "items-start"}`}
     >
       <header className="flex items-center gap-2">
         {!message.fromMe && (
@@ -89,7 +91,7 @@ export function MessageItem({ threadId, message }: { threadId: string; message: 
           {messageTime(message.sentAt)}
         </time>
         <MessageMenu
-          start={mine}
+          start={ours}
           label="Message actions"
           from={sender}
           text={message.cleanText}
@@ -111,7 +113,9 @@ export function MessageItem({ threadId, message }: { threadId: string; message: 
           <div
             {...{ [REPLY_SOURCE]: sender }}
             className={`max-w-[80%] rounded-xl px-3 py-2 ${
-              mine ? "bg-primary-subtle text-foreground" : "bg-accent text-foreground"
+              ours && message.fromMe
+                ? "bg-primary-subtle text-foreground"
+                : "bg-accent text-foreground"
             }`}
           >
             <Body text={message.cleanText} />
@@ -123,7 +127,7 @@ export function MessageItem({ threadId, message }: { threadId: string; message: 
       <AttachmentChips
         threadId={threadId}
         attachments={message.attachments}
-        align={mine ? "end" : "start"}
+        align={ours ? "end" : "start"}
       />
     </article>
   );

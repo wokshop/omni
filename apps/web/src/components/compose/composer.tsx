@@ -110,10 +110,10 @@ function originalFiles(message: Message | undefined): ComposerFile[] {
     }));
 }
 
-/** Who the server replies to by default: the sender, or for our own last message, whoever we wrote to. */
+/** Who the server replies to by default: the sender, or for our (or a teammate's) last message, whoever we wrote to. */
 function replyRecipients(message: Message | undefined): string[] {
   if (!message) return [];
-  return message.fromMe ? message.to.map((a) => a.address) : [message.fromAddress];
+  return message.fromTeam ? message.to.map((a) => a.address) : [message.fromAddress];
 }
 
 /**
@@ -122,14 +122,14 @@ function replyRecipients(message: Message | undefined): string[] {
  */
 function customerRecipients(messages: Message[], inbox: string): string[] {
   const ours = new Set([inbox.toLowerCase()]);
-  for (const m of messages) if (m.fromMe) ours.add(m.fromAddress.toLowerCase());
+  for (const m of messages) if (m.fromTeam) ours.add(m.fromAddress.toLowerCase());
   const seen = new Map<string, string>();
   const add = (address: string) => {
     const key = address.toLowerCase();
     if (!ours.has(key) && !seen.has(key)) seen.set(key, address);
   };
   for (const m of messages.toReversed()) {
-    if (!m.fromMe) add(m.fromAddress);
+    if (!m.fromTeam) add(m.fromAddress);
     for (const a of [...m.to, ...m.cc]) add(a.address);
   }
   return [...seen.values()];
