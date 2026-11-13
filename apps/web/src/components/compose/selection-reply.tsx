@@ -122,7 +122,8 @@ export function SelectionReply({ threadId }: { threadId: string }) {
               value={text}
               onChange={(event) => setText(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key !== "Enter") return;
+                // Enter that confirms an IME candidate is part of typing, not a reply.
+                if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
                 event.preventDefault();
                 if (event.metaKey || event.ctrlKey) send();
                 else attach();

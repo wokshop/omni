@@ -57,7 +57,7 @@ function useWraps(ref: RefObject<HTMLTextAreaElement | null>, text: string) {
 }
 
 export function ChatComposer({ thread, active }: { thread: Thread; active: boolean }) {
-  const { reply, seed, clearReply } = useComposerState();
+  const { reply, seed, clearReply, replyInChat } = useComposerState();
   const { data: assignees = [] } = useAssignees(thread.mailboxId);
   const addNote = useAddNote();
   const [text, setText] = useState("");
@@ -139,13 +139,14 @@ export function ChatComposer({ thread, active }: { thread: Thread; active: boole
     const body = withReply(replied, written);
     const mentions = picked.filter((p) => written.includes(`@${nameOf(p)}`)).map((p) => p.memberId);
     addNote.mutateAsync({ threadId: thread.id, body, mentions }).catch((error: Error) => {
-      // Back in the box; if a new message was started meanwhile, keep it and hand the failed
-      // one over on the clipboard, so neither is lost.
+      // Back in the box with its reply; if a new message was started meanwhile, keep it and
+      // hand the failed one (quote included) over on the clipboard, so neither is lost.
       if (textarea.current?.value.trim()) {
-        void navigator.clipboard?.writeText(written).catch(() => undefined);
+        void navigator.clipboard?.writeText(body).catch(() => undefined);
         appToast.error(error.message, { description: "The message is on your clipboard." });
       } else {
         setText(written);
+        if (replied) replyInChat(replied);
         appToast.error(error.message);
       }
     });
