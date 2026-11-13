@@ -49,8 +49,6 @@ export type LanesListed = NoneMissing<Exclude<Lane, (typeof LANES)[number]>>;
 export interface ThreadFilter {
   view: ThreadView;
   mailbox?: string | undefined;
-  /** One workspace in focus: only its threads (ADR 0024). */
-  workspace?: string | undefined;
   lane?: Lane | undefined;
 }
 

@@ -18,7 +18,7 @@ import { Heading } from "@/components/ui/heading";
 import { useFluidHoverList } from "@/hooks/use-fluid-hover-list";
 import { ResizeGrip, useStoredWidth } from "@/components/ui/resize-grip";
 import { useFullScreen } from "@/hooks/use-full-screen.ts";
-import { useAllMailboxes, useCounts, useThreads } from "@/hooks/use-mail.ts";
+import { useCounts, useThreads } from "@/hooks/use-mail.ts";
 import { useThreadListShortcuts } from "@/hooks/use-thread-list-shortcuts.ts";
 import { useWorkspaceNames } from "@/hooks/use-workspaces.ts";
 import { ariaKeyShortcuts } from "@/lib/shortcuts.ts";
@@ -217,8 +217,9 @@ export function List(
             </ListSweepSlot>
           )}
         </section>
-        {/* Always the same wrapper, so full screen doesn't remount the thread (or its scroll). */}
-        {props.children && (
+        {/* Only with a thread open: closed, the list takes the full width. The same wrapper in
+            and out of full screen, so toggling it doesn't remount the thread (or its scroll). */}
+        {props.children && threadId && (
           <div className="relative flex min-w-0 flex-1">
             {split && (
               <ResizeGrip
@@ -258,7 +259,9 @@ const Rows = memo(function Rows(props: {
         aria-label={props.label}
         // Transparent: the list is positioned, so its own fill would paint over the
         // highlight. The page behind it is already the background.
-        className="min-h-0 flex-1 overflow-y-auto bg-transparent"
+        // The virtualizer gives its sizer and row wrappers no width here (its measured width is
+        // NaN), so each row would shrink to its content; they take the list's width instead.
+        className="min-h-0 flex-1 overflow-y-auto bg-transparent *:w-full *:*:w-full"
         // Letters are shortcuts here (j, k, x, e, ...), not type-to-find.
         disallowTypeAhead
         selectionMode="multiple"
@@ -365,11 +368,8 @@ function ThreadRow({ thread, href }: { thread: ListRow; href: string }) {
 /** Unread threads in the inbox (or one lane of it), across the filtered mailbox(es). */
 function useUnreadCount(filter: ThreadFilter) {
   const { data } = useCounts();
-  const mailboxes = useAllMailboxes().data;
   if (filter.view !== "inbox" || filter.lane || !data) return 0;
-  const inFocus = (mailboxId: string) =>
-    !filter.workspace || mailboxes?.some((m) => m.id === mailboxId && m.orgId === filter.workspace);
   return data.counts
-    .filter((c) => (!filter.mailbox || c.mailboxId === filter.mailbox) && inFocus(c.mailboxId))
+    .filter((c) => !filter.mailbox || c.mailboxId === filter.mailbox)
     .reduce((sum, c) => sum + c.unread, 0);
 }

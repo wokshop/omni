@@ -13,15 +13,7 @@ export function NoInboxes() {
   const connect = useConnectGoogle("settings");
   const canConnect = google.data?.available === true;
   return (
-    <EmptyState
-      figure="plug"
-      title="No accounts yet"
-      description={
-        canConnect
-          ? "Connect your Gmail and its mail opens here."
-          : "Set up a company to bring in your team's mail."
-      }
-    >
+    <EmptyState figure="plug" title="No accounts yet">
       {canConnect && (
         <Button size="sm" isPending={connect.isPending} onPress={() => connect.mutate()}>
           Connect Google

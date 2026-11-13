@@ -10,20 +10,12 @@ import { useAllMailboxes } from "../../../hooks/use-mail.ts";
 
 export const Route = createFileRoute("/_authed/_member/inbox")({
   validateSearch: inboxSearch,
-  loaderDeps: ({ search: { mailbox, workspace, lane, view, tag } }) => ({
-    mailbox,
-    workspace,
-    lane,
-    view,
-    tag,
-  }),
+  loaderDeps: ({ search: { mailbox, lane, view, tag } }) => ({ mailbox, lane, view, tag }),
   // A shared inbox's helpdesk view (`?mailbox=…&view=…`) lists conversations; the rest, threads.
-  loader: ({ context, deps: { mailbox, workspace, lane, view, tag } }) =>
+  loader: ({ context, deps: { mailbox, lane, view, tag } }) =>
     mailbox && view
       ? context.queryClient.ensureInfiniteQueryData(conversationsQuery({ mailbox, view, tag }))
-      : context.queryClient.ensureInfiniteQueryData(
-          threadsQuery({ view: "inbox", mailbox, workspace, lane }),
-        ),
+      : context.queryClient.ensureInfiniteQueryData(threadsQuery({ view: "inbox", mailbox, lane })),
   component: Inbox,
 });
 
@@ -57,14 +49,8 @@ function Inbox() {
   return (
     <ThreadList
       title={(search.lane && LANE_TITLES[search.lane]) || "Inbox"}
-      filter={{
-        view: "inbox",
-        mailbox: search.mailbox,
-        workspace: search.workspace,
-        lane: search.lane,
-      }}
+      filter={{ view: "inbox", mailbox: search.mailbox, lane: search.lane }}
       href={href}
-      // No account anywhere yet (a new Personal space): what to connect, not an empty list.
       empty={mailboxes?.length === 0 ? <NoInboxes /> : undefined}
     >
       <Outlet />

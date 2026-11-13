@@ -28,7 +28,6 @@ function normalize(filter: ThreadFilter): ThreadFilter {
   return {
     view: filter.view,
     ...(filter.mailbox ? { mailbox: filter.mailbox } : {}),
-    ...(filter.workspace ? { workspace: filter.workspace } : {}),
     ...(filter.lane ? { lane: filter.lane } : {}),
   };
 }
