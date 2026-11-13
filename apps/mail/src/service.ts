@@ -239,11 +239,7 @@ export async function startService(config: ServiceConfig, log: Logger): Promise<
       connection.on("auth_failed", () => {
         void setStatus("error");
         // A hosted login Omni can replace itself (plan H-4); others wait for their owner.
-        if (row.provider === "purelymail" && rotateLogin) {
-          rotateLogin(row).catch((error: unknown) =>
-            log.warn("hosting.rotate_failed", { mailboxId: row.id, error }),
-          );
-        }
+        if (row.provider === "purelymail") void rotateLogin?.rotate(row);
       });
     }
   }
@@ -388,6 +384,7 @@ export async function startService(config: ServiceConfig, log: Logger): Promise<
     reconcileMailboxes,
     stop: async () => {
       stopping = true;
+      rotateLogin?.stop();
       await Effect.runPromise(Fiber.interrupt(reconcileLoop));
       await Effect.runPromise(Fiber.interrupt(sweepLoop));
       if (creditLoop) await Effect.runPromise(Fiber.interrupt(creditLoop));
