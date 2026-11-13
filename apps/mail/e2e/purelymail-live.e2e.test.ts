@@ -224,6 +224,23 @@ describe.runIf(requested)("Purelymail itself", () => {
     expect(arrived.cleanText).toContain("to myself, on hosted mail");
   }, 240_000);
 
+  // The test domain keeps Purelymail's default (symbolic subaddressing on), like any domain that
+  // was on the account before Omni turned it off for domains it adds.
+  it("refuses a name with a symbol on such a domain, with a reason and no user created", async () => {
+    const owner = await claimTestDomain();
+    const address = `omnie2e.${randomBytes(4).toString("hex")}@${domain}`;
+    const refused = await call<{ error: string }>(PROVISION_MAILBOX_PATH, {
+      orgId: owner.orgId,
+      address,
+      kind: "shared",
+      ownerMemberId: owner.memberId,
+      login: { provider: "purelymail" },
+    });
+    expect(refused.status).toBe(422);
+    expect(refused.json.error).toMatch(/Use only letters and digits/);
+    expect(await purelymail.listUsers()).not.toContain(address);
+  });
+
   it("puts a hosted mailbox in error once its app password is revoked", async () => {
     const owner = await claimTestDomain();
     const address = testAddress();
