@@ -1,0 +1,94 @@
+# 0026: Member inboxes are a first-class resource: issue, list, remove, and survive offboarding
+
+Date: 2026-11-13 · Status: proposed · Amends: ADR 0017 (admin view), ADR 0008 (shared members API)
+
+## Context
+
+The product already has the shape: every company member can own personal inboxes, shared inboxes
+are teams, and owners and admins see who has what without reading it (ADRs 0008, 0017, 0024). The
+API that carries it grew one step at a time and is hard to read and to build on:
+
+| Today                                               | Problem                                                                                                      |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `POST /api/onboarding/mailboxes` with `forMemberId` | Issuing a teammate's inbox lives under onboarding, and `kind` is guessed from whether the address matches.   |
+| `GET /api/workspace/mailboxes`                      | People joins it to the member list in the browser (`workspace-pages.tsx` `InboxDescription`).                |
+| `DELETE /api/workspace/mailboxes/:id/hosted`        | Only Purelymail inboxes can be removed; an `imap` or `gmail` inbox cannot.                                   |
+| `PUT/DELETE /api/mailboxes/:id/members/:memberId`   | Shared-inbox people sit next to the personal ones under `/mailboxes`, with no "create a shared inbox" route. |
+| Member removed from the org                         | The grant cascades, the inbox keeps syncing with `owner: null`, and nothing offers to deal with it.          |
+| "Create inbox" in the People row menu               | Shown only when a person has none, so a second inbox cannot be issued from settings (the API allows it).     |
+| Invitation                                          | Cannot carry an inbox, so every new hire needs a second step by an admin after they accept.                  |
+
+## Decision
+
+### 1. One admin surface: `/api/workspace/...`
+
+Owners and admins of a **company** workspace only; members get 403, a Personal space 404. Nothing
+here returns mail or adds a grant on someone else's personal inbox: the privacy line of ADR 0017
+stays in the API.
+
+| Route                                                  | Does                                                                                                   |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| `GET /workspace/members`                               | Members with role and `inboxes: [{ id, address, provider, status, syncedAt }]`. One call for People.   |
+| `GET /workspace/members/:memberId/inboxes`             | The same list for one person.                                                                          |
+| `POST /workspace/members/:memberId/inboxes`            | Issue a personal inbox: `{ address, password? }` (password only on `imap` domains). Always `personal`. |
+| `GET /workspace/inboxes`                               | Every mailbox (today's `/workspace/mailboxes`, renamed), plus `orphaned: true` when owner left.        |
+| `DELETE /workspace/inboxes/:id`                        | Disconnect any provider. Purelymail: revoke the app password, keep the user and mail (as today).       |
+| `POST /workspace/inboxes/:id/owner`                    | Give an orphaned inbox to a member: `{ memberId }`. See decision 3.                                    |
+| `POST /workspace/shared-inboxes`                       | Create a shared inbox: `{ address, password?, memberIds[] }`. Always `shared`, team seeded.            |
+| `GET /workspace/shared-inboxes/:id/people`             | Who sees it (today's `GET /mailboxes/:id/members`).                                                    |
+| `PUT/DELETE /workspace/shared-inboxes/:id/people/:mid` | Add or remove someone (today's routes, same semantics: absolute state, no idempotency key).            |
+
+Every write is idempotent on its natural key (org, address) or sets an absolute state, as now.
+The handlers reuse what exists: `orgMember`, `mailboxAtAddress`, `addMailboxMember`,
+`removeMailboxMember`, `listWorkspaceMailboxes`, and the mail service's `provision/mailbox` and
+hosted-disconnect paths. A new mail-service route disconnects non-Purelymail inboxes (stop sync,
+drop the sealed credential, delete the index), since the Worker never holds credentials.
+
+### 2. An invitation can carry an inbox
+
+`POST /workspace/invitations` (wrapping Better Auth's `createInvitation`) takes an optional
+`inbox: { address }` on a Purelymail domain, plus optional shared inbox ids (Better Auth teams,
+which invitations already support). The address is reserved in `invitation_inboxes
+(org_id, invitation_id, address)`, refused if taken. `afterAcceptInvitation` issues it through the
+same path as decision 1; it is safe to run twice. A cancelled or expired invitation frees it.
+`imap` and `gmail` domains cannot be pre-issued (Omni has no password or the person must connect
+their own account), so those still need decision 1 after joining.
+
+### 3. Offboarding keeps the inbox with the company, unread
+
+When a member is removed, their personal inboxes stay in the company (the domain is the
+company's, ADR 0024) with no grant: `orphaned`. Sync stops (no reader, no reason to spend IMAP)
+until an admin acts on it with `DELETE` or `owner`. Handing it to someone gives them the whole
+mailbox, old mail included, as with a Google Workspace data transfer; it is an explicit admin act
+and is recorded (decision 4). Converting a personal inbox to shared stays refused: use `owner`.
+
+### 4. Admin actions are recorded
+
+`workspace_events (org_id, actor_member_id, kind, mailbox_id, member_id, at)` for: inbox issued,
+removed, owner given, shared inbox created, person added or removed. `GET /workspace/events` for
+owners and admins. No mail content. This is what makes "admins can't read it" checkable.
+
+## Rollout (expand, then contract)
+
+1. Add the new routes beside the old ones; old routes call the same functions.
+2. Add `invitation_inboxes` and `workspace_events` (additive schema).
+3. Web moves to the new routes (Rodrigo): People uses `GET /workspace/members`; "Add inbox" is
+   always in the row menu; orphaned inboxes show on Inboxes with remove / give to.
+4. Contract once no client calls them: `forMemberId` on onboarding, `/workspace/mailboxes`,
+   `/workspace/mailboxes/:id/hosted`, `/mailboxes/:id/members*`.
+
+## Proof
+
+E2E on the real Worker, mail service, GreenMail and Postgres: issue two inboxes to one member and
+see both on `GET /workspace/members`; a member (not admin) gets 403 on every route and no admin
+route returns a thread; invite with an inbox, accept twice, one mailbox; remove a member, the
+inbox reads `orphaned` and stops syncing; give it to another member and they can open it while
+the admin still cannot; disconnect an `imap` inbox. Purelymail parts run in the live suite when
+asked (`PURELYMAIL_E2E=1`).
+
+## Open questions
+
+- Should a company require at least one personal inbox per member (Google-style "every account
+  has mail"), or only make it one step? This proposal makes it one step, not a rule.
+- Orphaned inboxes: stop sync (proposed) or keep syncing so mail is current when reassigned?
+- Is `owner` transfer wanted at all, or is "remove and reissue the address" enough?
