@@ -82,7 +82,8 @@ so a quick load never shows it). Every screen's code loads once the app is idle
 
 **Startup.** `index.html` preloads what every signed-in screen asks for first (session, shell
 data, the Inbox's first page) so it loads beside the scripts; `lib/startup-fetch.ts` hands each
-answer to the first request for it in the first 10 s, then drops the rest.
+answer to the first request for it, and drops what is left once the first screen has loaded or
+the session changes.
 
 **Freshness.** Mail is kept current by realtime, not polling. `staleTime` is 30 s, which only
 bounds how long a missed event can leave something old. Window focus refetches stale queries.
