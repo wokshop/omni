@@ -573,7 +573,7 @@ function NewMessage(props: {
   };
 
   return (
-    <ComposerFrame onFiles={files.add}>
+    <ComposerFrame fill onFiles={files.add}>
       <FromRow
         mailboxes={props.mailboxes}
         value={mailboxId}
@@ -618,7 +618,7 @@ function NewMessage(props: {
         value={text}
         onChange={setText}
         onSend={send}
-        rows={10}
+        fill
       />
       <ComposerFiles files={files.files} onRemove={files.remove} />
       <Toolbar
@@ -672,8 +672,15 @@ function FromRow(props: {
   );
 }
 
-/** The card around a composer. Dropping files anywhere on it attaches them. */
-function ComposerFrame(props: { onFiles: (files: File[]) => void; children: ReactNode }) {
+/**
+ * The card around a composer. Dropping files anywhere on it attaches them. `fill`: new mail, where
+ * the composer is the whole pane rather than a card in it, so no card edge and it takes the height.
+ */
+function ComposerFrame(props: {
+  onFiles: (files: File[]) => void;
+  fill?: boolean;
+  children: ReactNode;
+}) {
   return (
     <DropZone
       aria-label="Drop files to attach"
@@ -687,8 +694,10 @@ function ComposerFrame(props: { onFiles: (files: File[]) => void; children: Reac
       className={({ isDropTarget }) =>
         [
           // White, unpadded: each row keeps its own 12px sides, so dividers run the full width.
-          "flex flex-col rounded-xl border bg-background shadow-raised outline-hidden",
-          isDropTarget ? "border-ring" : "",
+          "flex flex-col bg-background outline-hidden",
+          props.fill ? "min-h-0 flex-1" : "rounded-xl border shadow-raised",
+          // Filling the pane there is no border to light up, so a drop rings its inside edge.
+          isDropTarget ? (props.fill ? "ring-1 ring-ring ring-inset" : "border-ring") : "",
         ].join(" ")
       }
     >
@@ -779,6 +788,8 @@ function Body(props: {
   onSend: () => void;
   rows?: number;
   readOnly?: boolean;
+  /** Take the frame's spare height, so the tools sit at its bottom and writing room stays long. */
+  fill?: boolean;
 }) {
   return (
     <Textarea
@@ -798,7 +809,7 @@ function Body(props: {
       }}
       data-composer-body
       // 12px under the divider, the same as its 12px sides, so Write doesn't crowd the line.
-      className="max-h-[min(24rem,30vh)] min-h-24 resize-none px-3 pt-3 pb-1 sm:px-3 sm:pt-3 sm:pb-1"
+      className={`${props.fill ? "min-h-24 flex-1" : "max-h-[min(24rem,30vh)] min-h-24"} resize-none px-3 pt-3 pb-1 sm:px-3 sm:pt-3 sm:pb-1`}
     />
   );
 }
