@@ -7,7 +7,7 @@ export const Route = createFileRoute("/_authed/_member/queue")({
   validateSearch: listSearch,
   loaderDeps: ({ search }) => search,
   loader: ({ context, deps }) =>
-    context.queryClient.ensureInfiniteQueryData(threadsQuery({ view: "queue", ...deps })),
+    void context.queryClient.prefetchInfiniteQuery(threadsQuery({ view: "queue", ...deps })),
   component: Queue,
 });
 

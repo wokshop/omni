@@ -10,8 +10,8 @@ import { searchSearch } from "../../../lib/search-params.ts";
 export const Route = createFileRoute("/_authed/_member/search")({
   validateSearch: searchSearch,
   loaderDeps: ({ search }) => search,
-  loader: async ({ context, deps }) => {
-    if (deps.q.trim()) await context.queryClient.ensureQueryData(searchQuery(deps.q, deps.mailbox));
+  loader: ({ context, deps }) => {
+    if (deps.q.trim()) void context.queryClient.prefetchQuery(searchQuery(deps.q, deps.mailbox));
   },
   component: Search,
 });
@@ -19,7 +19,7 @@ export const Route = createFileRoute("/_authed/_member/search")({
 function Search() {
   const search = Route.useSearch();
   const router = useRouter();
-  const { data: hits } = useSearch(search.q, search.mailbox);
+  const { data: hits, isPending } = useSearch(search.q, search.mailbox);
   const names = useWorkspaceNames(search.mailbox);
 
   // One row per thread, best match first, with the passage that matched.
@@ -41,6 +41,8 @@ function Search() {
       title="Search results"
       caption={`Matching “${search.q}”`}
       rows={rows}
+      // An empty `q` is never fetched (the query is disabled), so it never loads.
+      loading={isPending && !!search.q.trim()}
       href={(threadId) =>
         router.buildLocation({ to: "/search/$threadId", params: { threadId }, search }).href
       }

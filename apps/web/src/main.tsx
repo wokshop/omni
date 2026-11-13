@@ -21,6 +21,13 @@ const queryClient = createQueryClient(() => {
 });
 const router = createAppRouter(queryClient);
 
+// The landing screen's code starts loading now, beside the session check its guards wait on,
+// rather than once they pass. `/` redirects to the inbox.
+const landing = window.location.pathname === "/" ? "/inbox" : window.location.pathname;
+for (const route of router.getMatchedRoutes(landing)[0]) {
+  router.loadRouteChunk(route)?.catch(() => {}); // The navigation retries and reports it.
+}
+
 const root = document.getElementById("root");
 if (!root) throw new Error("index.html has no #root");
 
