@@ -91,7 +91,7 @@ export function MessageItem(props: {
     <article
       aria-label={`${message.fromMe ? "You" : sender}, ${messageTime(message.sentAt)}`}
       // An email's body sits further under its larger header than a bubble under its name.
-      className={`group/item flex flex-col ${props.flat ? "gap-5" : "gap-3"} ${ours ? "items-end" : "items-start"}`}
+      className={`group/item flex flex-col ${props.flat ? "gap-7" : "gap-3"} ${ours ? "items-end" : "items-start"}`}
     >
       {props.flat ? (
         <EmailHeader message={message} sender={sender} menu={menu} />
