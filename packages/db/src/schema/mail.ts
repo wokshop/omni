@@ -20,7 +20,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { uuidv7 } from "uuidv7";
-import { members, organizations, teams } from "./auth.ts";
+import { invitations, members, organizations, teams } from "./auth.ts";
 
 /**
  * A forwarded message as `@omni/mail-core/clean` `cleanMessage` extracts it. Declared here, not
@@ -332,6 +332,31 @@ export const auditEvents = pgTable(
     createdAt: createdAt(),
   },
   (t) => [index("audit_events_org_subject_idx").on(t.orgId, t.subject, t.createdAt)],
+);
+
+/**
+ * A personal inbox made with an invitation, waiting for the person to accept (ADR 0026). It sits
+ * orphaned (no grant, not synced) until then; accepting gives it to the new member. Gone with the
+ * invitation or the mailbox.
+ */
+export const invitationInboxes = pgTable(
+  "invitation_inboxes",
+  {
+    orgId: orgId(),
+    invitationId: text("invitation_id")
+      .notNull()
+      .references(() => invitations.id, { onDelete: "cascade" }),
+    mailboxId: text("mailbox_id").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.invitationId, t.mailboxId] }),
+    foreignKey({
+      name: "invitation_inboxes_mailbox_org_fk",
+      columns: [t.mailboxId, t.orgId],
+      foreignColumns: [mailboxes.id, mailboxes.orgId],
+    }).onDelete("cascade"),
+  ],
 );
 
 export const mailboxFolders = pgTable(
@@ -694,7 +719,10 @@ export const threadState = pgTable(
       .references(() => threads.id, { onDelete: "cascade" }),
     memberId: memberId(),
     read: boolean("read").notNull().default(false),
-    /** Deferred (the Queue) until this time; back in the Inbox once it passes. */
+    /**
+     * Set while the thread is in the member's Later: `infinity` (ADR 0027). Rows from when Later
+     * was a timed deferral hold a time and leave Later once it passes.
+     */
     snoozedUntil: timestamptz("snoozed_until"),
     /**
      * Done, up to the thread's `last_message_at` as the member saw it. The thread is done while
@@ -706,7 +734,7 @@ export const threadState = pgTable(
   },
   (t) => [
     primaryKey({ columns: [t.threadId, t.memberId] }),
-    // The Queue checks each candidate thread against the member's deferred rows. Those are a
+    // Later checks each candidate thread against the member's Later rows. Those are a
     // sliver of `thread_state`, so probing this instead of the primary key reads a few pages and
     // answers from the index alone (perf:explain: 41k buffers down to 8k). The two trailing
     // columns are only there for that; Drizzle has no `include`.

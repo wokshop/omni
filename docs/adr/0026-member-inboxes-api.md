@@ -26,18 +26,18 @@ Owners and admins of a **company** workspace only; members get 403, a Personal s
 here returns mail or adds a grant on someone else's personal inbox: the privacy line of ADR 0017
 stays in the API.
 
-| Route                                                  | Does                                                                                                   |
-| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
-| `GET /workspace/members`                               | Members with role and `inboxes: [{ id, address, provider, status, syncedAt }]`. One call for People.   |
-| `GET /workspace/members/:memberId/inboxes`             | The same list for one person.                                                                          |
-| `POST /workspace/members/:memberId/inboxes`            | Issue a personal inbox: `{ address, password? }` (password only on `imap` domains). Always `personal`. |
-| `GET /workspace/inboxes`                               | Every mailbox (today's `/workspace/mailboxes`, renamed), plus `orphaned: true` when owner left.        |
-| `DELETE /workspace/inboxes/:id`                        | Disconnect any provider. Purelymail: revoke the app password, keep the user and mail (as today).       |
-| `POST /workspace/inboxes/:id/owner`                    | Give an orphaned inbox to a member: `{ memberId }`. See decision 3.                                    |
-| `POST /workspace/inboxes/:id/shared`                   | Turn an orphaned inbox into a shared one: `{ memberIds[] }`. See decision 3.                           |
-| `POST /workspace/shared-inboxes`                       | Create a shared inbox: `{ address, password?, memberIds[] }`. Always `shared`, team seeded.            |
-| `GET /workspace/shared-inboxes/:id/people`             | Who sees it (today's `GET /mailboxes/:id/members`).                                                    |
-| `PUT/DELETE /workspace/shared-inboxes/:id/people/:mid` | Add or remove someone (today's routes, same semantics: absolute state, no idempotency key).            |
+| Route                                                  | Does                                                                                                         |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| `GET /workspace/members`                               | Members with role and `inboxes: [{ id, address, provider, status, syncedAt }]`. One call for People.         |
+| `GET /workspace/members/:memberId/inboxes`             | The same list for one person.                                                                                |
+| `POST /workspace/members/:memberId/inboxes`            | Issue a personal inbox: `{ domainId, localPart, login? }` (login only on `imap` domains). Always `personal`. |
+| `GET /workspace/inboxes`                               | Every mailbox (today's `/workspace/mailboxes`, renamed), plus `orphaned: true` when owner left.              |
+| `DELETE /workspace/inboxes/:id`                        | Disconnect any provider. Purelymail: revoke the app password, keep the user and mail (as today).             |
+| `POST /workspace/inboxes/:id/owner`                    | Give an orphaned inbox to a member: `{ memberId }`. See decision 3.                                          |
+| `POST /workspace/inboxes/:id/shared`                   | Turn an orphaned inbox into a shared one: `{ memberIds[] }`. See decision 3.                                 |
+| `POST /workspace/shared-inboxes`                       | Create a shared inbox: `{ domainId, localPart, login?, memberIds[] }`. Always `shared`, team seeded.         |
+| `GET /workspace/shared-inboxes/:id/people`             | Who sees it (today's `GET /mailboxes/:id/members`).                                                          |
+| `PUT/DELETE /workspace/shared-inboxes/:id/people/:mid` | Add or remove someone (today's routes, same semantics: absolute state, no idempotency key).                  |
 
 Every write is idempotent on its natural key (org, address) or sets an absolute state, as now.
 The handlers reuse what exists: `orgMember`, `mailboxAtAddress`, `addMailboxMember`,
@@ -47,13 +47,18 @@ drop the sealed credential, delete the index), since the Worker never holds cred
 
 ### 2. An invitation can carry an inbox
 
-`POST /workspace/invitations` (wrapping Better Auth's `createInvitation`) takes an optional
-`inbox: { address }` on a Purelymail domain, plus optional shared inbox ids (Better Auth teams,
-which invitations already support). The address is reserved in `invitation_inboxes
-(org_id, invitation_id, address)`, refused if taken. `afterAcceptInvitation` issues it through the
-same path as decision 1; it is safe to run twice. A cancelled or expired invitation frees it.
-`imap` and `gmail` domains cannot be pre-issued (Omni has no password or the person must connect
-their own account), so those still need decision 1 after joining.
+`POST /workspace/invitations` (wrapping Better Auth's `createInvitation`) takes `email`, `role`,
+an optional `inbox: { domainId, localPart, login? }` and optional `sharedInboxIds` (their Better
+Auth teams, which invitations already support).
+
+The inbox is made at invite time, through the same path as decision 1, but with no owner: the
+mail service saves it without a grant (`ownerMemberId: null`, personal only). It is orphaned, so
+nobody can open it and it does not sync, and it is linked in `invitation_inboxes (org_id,
+invitation_id, mailbox_id)`. That also reserves the address: issuing it to anyone else is a 409.
+`afterAcceptInvitation` gives it to the new member (decision 3's give, safe to run twice). An
+invitation that is cancelled or expires leaves the inbox orphaned, for an owner or admin to give,
+share or remove like any other. On an `imap` domain the inviter types its login, as when issuing;
+a `gmail` domain cannot be pre-issued (the person connects their own account after joining).
 
 ### 3. Offboarding keeps the inbox with the company, unread
 

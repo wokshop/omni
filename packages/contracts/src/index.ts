@@ -319,8 +319,11 @@ export const provisionMailboxBodySchema = z.object({
   /** Already normalized, on a domain the org has claimed. */
   address: z.string().min(3),
   kind: z.enum(["personal", "shared"]),
-  /** Gets an owner grant in `mailbox_access`. */
-  ownerMemberId: z.string().min(1),
+  /**
+   * Gets an owner grant in `mailbox_access`. Null only for a personal inbox made with an
+   * invitation (ADR 0026): it waits with no owner until the person accepts.
+   */
+  ownerMemberId: z.string().min(1).nullable(),
   login: z.discriminatedUnion("provider", [
     /** The mail service creates the user and an app password. */
     z.object({ provider: z.literal("purelymail") }),
@@ -469,6 +472,12 @@ export const hostedDisconnectBodySchema = z.object({
 export const hostedDisconnectResultSchema = z.object({ mailboxId: z.string().min(1) });
 
 export type HostedDisconnectBody = z.infer<typeof hostedDisconnectBodySchema>;
+
+/**
+ * Removing any mailbox of an org from Omni, whatever its provider (ADR 0026). Same body and
+ * answer as the hosted path; the Worker checks the member is an owner or admin.
+ */
+export const MAILBOX_DISCONNECT_PATH = "/mailbox/disconnect";
 
 export type GoogleConnectBody = z.infer<typeof googleConnectBodySchema>;
 export type GoogleConnectResult = z.infer<typeof googleConnectResultSchema>;

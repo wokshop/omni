@@ -8,19 +8,14 @@ import {
   listWorkspaceMailboxes,
   removeMailboxMember,
   type MailboxMembersActor,
-  type MailboxMembershipResult,
 } from "@omni/db";
-import { HOSTED_DISCONNECT_PATH, hostedDisconnectResultSchema } from "@omni/contracts";
 import { Hono, type Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import type { AppEnv } from "../context.ts";
-import { callMailService, MailServiceError } from "../mail-service.ts";
 import { limitPerMember } from "../rate-limiter.ts";
-
-/** Better Auth stores several roles as a comma list. */
-function canManage(role: string) {
-  return role.split(",").some((r) => r.trim() === "owner" || r.trim() === "admin");
-}
+import { canManage } from "../inbox-admin.ts";
+import { answerMembership, keepLastInbox } from "./workspace-admin.ts";
+import { removeInbox } from "./workspace-inboxes.ts";
 
 function actor(c: Context<AppEnv>): MailboxMembersActor {
   const { id, orgId, role } = c.var.member;
@@ -33,14 +28,6 @@ function requireManager(c: Context<AppEnv>) {
     throw new HTTPException(403, { message: "only owners and admins manage mailbox members" });
   }
   return who;
-}
-
-function answer(c: Context<AppEnv>, result: MailboxMembershipResult) {
-  if (result === "mailbox_not_found") throw new HTTPException(404, { message: "not found" });
-  if (result === "member_not_found") {
-    throw new HTTPException(404, { message: "no such member in this organization" });
-  }
-  return c.json({ ok: true as const });
 }
 
 export const mailboxMembers = new Hono<AppEnv>()
@@ -64,16 +51,20 @@ export const mailboxMembers = new Hono<AppEnv>()
   /** Grants access. Idempotent: adding a member already on the list changes nothing. */
   .put("/mailboxes/:id/members/:memberId", async (c) => {
     const who = requireManager(c);
-    return answer(
+    return answerMembership(
       c,
       await addMailboxMember(c.var.db, who, c.req.param("id"), c.req.param("memberId")),
     );
   })
 
-  /** Revokes access. Idempotent: removing a member not on the list changes nothing. */
+  /**
+   * Revokes access, unless it is the only inbox they can open (ADR 0026). Idempotent: removing
+   * a member not on the list changes nothing.
+   */
   .delete("/mailboxes/:id/members/:memberId", async (c) => {
     const who = requireManager(c);
-    return answer(
+    await keepLastInbox(c, c.req.param("id"), c.req.param("memberId"));
+    return answerMembership(
       c,
       await removeMailboxMember(c.var.db, who, c.req.param("id"), c.req.param("memberId")),
     );
@@ -86,22 +77,5 @@ export const mailboxMembers = new Hono<AppEnv>()
    */
   .delete("/workspace/mailboxes/:id/hosted", limitPerMember("provision"), async (c) => {
     requireManager(c);
-    const mailboxId = c.req.param("id");
-    const mailboxes = await listWorkspaceMailboxes(c.var.db, c.var.member.orgId);
-    const mailbox = mailboxes.find((m) => m.id === mailboxId);
-    // Gone already: the disconnect it was asked for has happened.
-    if (!mailbox) return c.body(null, 204);
-    if (mailbox.provider !== "purelymail") throw new HTTPException(404, { message: "not found" });
-    try {
-      await callMailService(
-        c.var,
-        HOSTED_DISCONNECT_PATH,
-        { orgId: c.var.member.orgId, mailboxId },
-        hostedDisconnectResultSchema,
-      );
-    } catch (failure) {
-      if (!(failure instanceof MailServiceError)) throw failure;
-      return c.json({ error: failure.message, requestId: c.var.requestId }, failure.status);
-    }
-    return c.body(null, 204);
+    return removeInbox(c, c.req.param("id"), true);
   });

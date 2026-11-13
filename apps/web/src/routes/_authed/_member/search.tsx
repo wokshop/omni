@@ -1,5 +1,6 @@
 import { createFileRoute, Outlet, useRouter } from "@tanstack/react-router";
 import { useMemo } from "react";
+import { EmptyState } from "../../../components/empty/empty-state.tsx";
 import { List, type ListRow } from "../../../components/inbox/thread-list.tsx";
 import { useSearch } from "../../../hooks/use-mail.ts";
 import { useWorkspaceNames } from "../../../hooks/use-workspaces.ts";
@@ -19,7 +20,7 @@ export const Route = createFileRoute("/_authed/_member/search")({
 function Search() {
   const search = Route.useSearch();
   const router = useRouter();
-  const { data: hits, isPending } = useSearch(search.q, search.mailbox);
+  const { data: hits, isPending, isSuccess } = useSearch(search.q, search.mailbox);
   const names = useWorkspaceNames(search.mailbox);
 
   // One row per thread, best match first, with the passage that matched.
@@ -43,6 +44,7 @@ function Search() {
       rows={rows}
       // An empty `q` is never fetched (the query is disabled), so it never loads.
       loading={isPending && !!search.q.trim()}
+      empty={isSuccess ? <EmptyState figure="loupe" title="No matches" /> : undefined}
       href={(threadId) =>
         router.buildLocation({ to: "/search/$threadId", params: { threadId }, search }).href
       }
