@@ -28,9 +28,8 @@ import {
 import type { Assignee, ConversationStatus, Priority, Thread } from "@/lib/types.ts";
 import { pictureUrl } from "@/lib/urls.ts";
 
-/** Under 34rem of toolbar the labels hide and each control is a 28px square, like the actions. */
 /** 8px inset instead of the button's 10px, so the properties sit a little closer together. */
-const ICON_ONLY = "px-2 @max-[34rem]:w-7 @max-[34rem]:px-0";
+const INSET = "px-2";
 
 type Glyph = ComponentType<{ className?: string; "data-slot"?: string }>;
 
@@ -88,20 +87,13 @@ export function Properties({ thread }: { thread: Thread }) {
   const applied = new Set(conversation.tags.map((t) => t.id));
 
   return (
-    // Pulled left by the buttons' own inset (8px, or 6.5px once they are icon squares), so the
-    // first icon starts at the column's edge. The cap keeps its right edge 8px clear of the
-    // toolbar's actions (130px, out of the flow): the column is centred, so its left edge sits
-    // at (toolbar - column) / 2 + 8px. Long names and tags truncate instead of sliding under.
-    <div className="-ms-2 flex max-w-[calc(50cqw+min(50cqw,24rem)-9.125rem)] min-w-0 items-center gap-1 @max-[34rem]:-ms-[6.5px]">
+    // Under the title, pulled left by the buttons' own 8px inset so the first icon starts where
+    // the title does. A narrow column wraps them onto a second row.
+    <div className="-ms-2 flex min-w-0 flex-wrap items-center gap-1">
       <MenuTrigger>
-        <Button
-          intent="ghost"
-          size="sm"
-          className={ICON_ONLY}
-          aria-label={`Status: ${status.label}`}
-        >
+        <Button intent="ghost" size="sm" className={INSET} aria-label={`Status: ${status.label}`}>
           <status.icon />
-          <span className="hidden @[34rem]:inline">{status.label}</span>
+          <span>{status.label}</span>
         </Button>
         <Menu placement="bottom start">
           {/* Snoozed and pending conversations can go straight back to Open. */}
@@ -132,10 +124,10 @@ export function Properties({ thread }: { thread: Thread }) {
           intent="ghost"
           size="sm"
           aria-label={`Assignee: ${assignee?.name ?? "Unassigned"}`}
-          className={`min-w-0 ${ICON_ONLY}`}
+          className={`min-w-0 ${INSET}`}
         >
           {assignee ? <Face assignee={assignee} /> : <IconUserRound />}
-          <span className="hidden truncate @[34rem]:inline">{assignee?.name ?? "Unassigned"}</span>
+          <span className="truncate">{assignee?.name ?? "Unassigned"}</span>
         </Button>
         <Menu
           placement="bottom start"
@@ -168,11 +160,11 @@ export function Properties({ thread }: { thread: Thread }) {
         <Button
           intent="ghost"
           size="sm"
-          className={ICON_ONLY}
+          className={INSET}
           aria-label={`Priority: ${priority.label}`}
         >
           <priority.icon />
-          <span className="hidden @[34rem]:inline">{priority.label}</span>
+          <span>{priority.label}</span>
         </Button>
         <Menu
           placement="bottom start"
@@ -205,10 +197,10 @@ export function Properties({ thread }: { thread: Thread }) {
               ? `Tags: ${conversation.tags.map((t) => t.name).join(", ")}`
               : "Add tags"
           }
-          className={`min-w-0 ${ICON_ONLY}`}
+          className={`min-w-0 ${INSET}`}
         >
           <IconTag />
-          <span className="hidden truncate @[34rem]:inline">
+          <span className="truncate">
             {conversation.tags.length ? conversation.tags.map((t) => t.name).join(", ") : "Tags"}
           </span>
         </Button>
