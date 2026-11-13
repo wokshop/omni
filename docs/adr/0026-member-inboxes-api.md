@@ -1,6 +1,6 @@
 # 0026: Member inboxes are a first-class resource: issue, list, remove, and survive offboarding
 
-Date: 2026-11-13 · Status: proposed · Amends: ADR 0017 (admin view), ADR 0008 (shared members API)
+Date: 2026-11-13 · Status: accepted · Amends: ADR 0017 (admin view), ADR 0008 (shared members API)
 
 ## Context
 
@@ -34,6 +34,7 @@ stays in the API.
 | `GET /workspace/inboxes`                               | Every mailbox (today's `/workspace/mailboxes`, renamed), plus `orphaned: true` when owner left.        |
 | `DELETE /workspace/inboxes/:id`                        | Disconnect any provider. Purelymail: revoke the app password, keep the user and mail (as today).       |
 | `POST /workspace/inboxes/:id/owner`                    | Give an orphaned inbox to a member: `{ memberId }`. See decision 3.                                    |
+| `POST /workspace/inboxes/:id/shared`                   | Turn an orphaned inbox into a shared one: `{ memberIds[] }`. See decision 3.                           |
 | `POST /workspace/shared-inboxes`                       | Create a shared inbox: `{ address, password?, memberIds[] }`. Always `shared`, team seeded.            |
 | `GET /workspace/shared-inboxes/:id/people`             | Who sees it (today's `GET /mailboxes/:id/members`).                                                    |
 | `PUT/DELETE /workspace/shared-inboxes/:id/people/:mid` | Add or remove someone (today's routes, same semantics: absolute state, no idempotency key).            |
@@ -57,34 +58,28 @@ their own account), so those still need decision 1 after joining.
 ### 3. Offboarding keeps the inbox with the company, unread
 
 When a member is removed, their personal inboxes stay in the company (the domain is the
-company's, ADR 0024) with no grant: `orphaned`. Sync stops (no reader, no reason to spend IMAP)
-until an admin acts on it with `DELETE` or `owner`. Handing it to someone gives them the whole
-mailbox, old mail included, as with a Google Workspace data transfer; it is an explicit admin act
-and is recorded (decision 4). Converting a personal inbox to shared stays refused: use `owner`.
+company's, ADR 0024) with no grant: `orphaned`. Nobody can open it and it stops syncing: the mail
+service keeps connected only mailboxes that are not disabled and, when personal, have an owner in
+the org (`listServiceMailboxes`). That is derived, not a flag a job sets, so it converges and needs
+no hook on member removal. The mail keeps arriving at the host.
+
+An owner or admin then does one of three things, each recorded (decision 4):
+
+- **Give to a member** (`owner`): it becomes their personal inbox, old mail included, as with a
+  Google Workspace data transfer. Read, done and defer stay per person, so the new owner starts
+  with their own.
+- **Turn into a shared inbox** (`shared`): its team is created with the people named, so a support
+  team picks up the departed person's clients.
+- **Remove** (`DELETE`): disconnect, keep the mail at the host.
+
+Only an orphaned inbox can be given away or turned into a shared one. A member's own inbox never
+changes hands while they are in the company.
 
 ### 4. Admin actions are recorded
 
 `workspace_events (org_id, actor_member_id, kind, mailbox_id, member_id, at)` for: inbox issued,
 removed, owner given, shared inbox created, person added or removed. `GET /workspace/events` for
 owners and admins. No mail content. This is what makes "admins can't read it" checkable.
-
-## Rollout (expand, then contract)
-
-1. Add the new routes beside the old ones; old routes call the same functions.
-2. Add `invitation_inboxes` and `workspace_events` (additive schema).
-3. Web moves to the new routes (Rodrigo): People uses `GET /workspace/members`; "Add inbox" is
-   always in the row menu; orphaned inboxes show on Inboxes with remove / give to.
-4. Contract once no client calls them: `forMemberId` on onboarding, `/workspace/mailboxes`,
-   `/workspace/mailboxes/:id/hosted`, `/mailboxes/:id/members*`.
-
-## Proof
-
-E2E on the real Worker, mail service, GreenMail and Postgres: issue two inboxes to one member and
-see both on `GET /workspace/members`; a member (not admin) gets 403 on every route and no admin
-route returns a thread; invite with an inbox, accept twice, one mailbox; remove a member, the
-inbox reads `orphaned` and stops syncing; give it to another member and they can open it while
-the admin still cannot; disconnect an `imap` inbox. Purelymail parts run in the live suite when
-asked (`PURELYMAIL_E2E=1`).
 
 ### 5. Every member sees at least one inbox
 
@@ -99,8 +94,20 @@ one. Personal is not required.
   `inboxCount: 0` so People can show them, and owners fix it with decision 1.
 - **Owners and admins** follow the same rule; a new company's first owner gets theirs in setup.
 
-## Open questions
+## Rollout (expand, then contract)
 
-- Is `owner` transfer wanted at all, or is "remove and reissue the address" enough?
+1. Add the new routes beside the old ones; old routes call the same functions.
+2. Add `invitation_inboxes` and `workspace_events` (additive schema).
+3. Web moves to the new routes (Rodrigo): People uses `GET /workspace/members`; "Add inbox" is
+   always in the row menu; orphaned inboxes show on Inboxes with give to, make shared and remove.
+4. Contract once no client calls them: `forMemberId` on onboarding, `/workspace/mailboxes`,
+   `/workspace/mailboxes/:id/hosted`, `/mailboxes/:id/members*`.
 
-Decided: an orphaned inbox stops syncing (decision 3).
+## Proof
+
+E2E on the real Worker, mail service, GreenMail and Postgres: issue two inboxes to one member and
+see both on `GET /workspace/members`; a member (not admin) gets 403 on every route and no admin
+route returns a thread; invite with an inbox, accept twice, one mailbox; remove a member, the
+inbox reads `orphaned` and stops syncing; give it to another member and they can open it while
+the admin still cannot; disconnect an `imap` inbox. Purelymail parts run in the live suite when
+asked (`PURELYMAIL_E2E=1`).
