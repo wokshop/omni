@@ -17,11 +17,13 @@ export {
 export * from "./writers.ts";
 export * from "./mail-sync.ts";
 export * from "./thread-merge.ts";
+export * from "./pending-mail-events.ts";
 export * as schema from "./schema/index.ts";
 export * from "./system.ts";
 export * from "./member-mail.ts";
 export * from "./ai-jobs.ts";
 export * from "./orgs.ts";
+export * from "./personal-space.ts";
 export * from "./domains.ts";
 export * from "./mailbox-teams.ts";
 export * from "./workspace-mailboxes.ts";
