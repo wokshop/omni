@@ -209,7 +209,7 @@ export function NoteItem(props: { threadId: string; mailboxId: string; note: Not
       {reply && !editing && (
         <div
           title={reply.text}
-          className="-mb-1 flex max-w-[80%] justify-end text-xs text-muted-foreground"
+          className="flex max-w-[80%] justify-end text-xs text-muted-foreground"
         >
           <ReplyLine reply={reply} />
         </div>

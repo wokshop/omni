@@ -194,14 +194,16 @@ function Visibility() {
   const { mode, setMode } = useComposerState();
   const current = VISIBILITY[mode];
   return (
-    <div className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground">
+    // The switch on the left, what it means at the far right, like the card's Reply and From row.
+    <div className="flex min-w-0 items-center justify-between gap-2 text-sm text-muted-foreground">
       <MenuTrigger>
         <Button
           intent="ghost"
           size="sm"
           aria-label={`Visibility: ${current.label}`}
-          // Pulled left by its own 8px inset, so the icon starts at the composer's edge.
-          className="-ms-2 px-2 text-foreground"
+          // Its icon on the same line as the card's Reply icon below: 13px in (12px padding and
+          // the 1px border), 5px of margin plus the button's 8px inset.
+          className="ms-[5px] px-2 text-foreground"
         >
           <current.icon />
           {current.label}
@@ -228,7 +230,8 @@ function Visibility() {
           })}
         </Menu>
       </MenuTrigger>
-      <span className="min-w-0 truncate">{current.says}</span>
+      {/* 13px in from the right, ending where From does in the card below. */}
+      <span className="min-w-0 truncate pe-[13px]">{current.says}</span>
     </div>
   );
 }
