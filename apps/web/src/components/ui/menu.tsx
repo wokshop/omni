@@ -181,7 +181,10 @@ export function Menu<T extends { id?: Key }>({
               <MenuRadioGroup
                 className={ON_GRID}
                 value={[...selected][0] ?? null}
-                onValueChange={(key) => actions.get(key)?.()}
+                onValueChange={(key) => {
+                  onSelectionChange?.(new Set([key]));
+                  actions.get(key)?.();
+                }}
               >
                 {rows}
               </MenuRadioGroup>
@@ -264,7 +267,7 @@ export function MenuItem({
     if (onAction) menu.actions.set(key, onAction);
     else menu.actions.set(key, () => menu.onAction?.(key));
     return (
-      <MenuRadioItem value={key} {...shared}>
+      <MenuRadioItem value={key} closeOnSelect {...shared}>
         {content}
       </MenuRadioItem>
     );
