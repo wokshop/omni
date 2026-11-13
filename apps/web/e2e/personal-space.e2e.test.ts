@@ -204,6 +204,26 @@ test("the empty state offers company setup only to someone who can create a comp
   expect(await page.getByRole("button", { name: "Set up a company" }).count()).toBe(0);
 });
 
+// Catches: a work-address sign-in by someone outside the company bouncing back to sign-in.
+test("signing in with a company's address as an outsider opens a join screen to ask", async () => {
+  const tag = Date.now();
+  const company = await createOrgWithOwner(db, {
+    name: "Join Co",
+    slug: `join-co-${tag}`,
+    ownerEmail: `owner-${tag}@owners.test`,
+  });
+  await db
+    .insert(schema.mailDomains)
+    .values({ orgId: company.orgId, domain: `join-${tag}.test`, provider: "imap" });
+  const page = await signedIn(`ana@join-${tag}.test`, "/inbox");
+  await page.getByRole("heading", { name: "Join Join Co" }).waitFor({ timeout: 15_000 });
+  expect(new URL(page.url()).pathname).toBe("/join");
+  await page.getByRole("button", { name: "Ask to join" }).click();
+  const requested = page.getByRole("button", { name: "Requested" });
+  await requested.waitFor();
+  expect(await requested.isDisabled()).toBe(true);
+});
+
 async function freePort() {
   const server = createServer();
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
