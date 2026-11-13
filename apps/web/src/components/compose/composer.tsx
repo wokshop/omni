@@ -5,9 +5,11 @@
 // primitives.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { DropZone } from "react-aria-components/DropZone";
+import { IconForward, IconReply, IconX } from "@/components/icons/central";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Tooltip, TooltipTrigger } from "@/components/ui/tooltip";
 import { appToast } from "@/components/ui/toast";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
@@ -26,7 +28,8 @@ import {
 import type { Message, Thread } from "@/lib/types.ts";
 import { CannedPicker } from "./canned-picker.tsx";
 import { AttachButton, ComposerFiles } from "./composer-files.tsx";
-import { NoteComposer } from "./note-composer.tsx";
+import { ChatComposer } from "./chat-composer.tsx";
+import { useComposerState, type ComposerMode } from "./composer-state.tsx";
 import { RecipientField } from "./recipient-field.tsx";
 import { Toolbar } from "./toolbar.tsx";
 import { offerUndoSend } from "./undo-send.ts";
@@ -105,44 +108,72 @@ function replyRecipients(message: Message | undefined): string[] {
   return message.fromMe ? message.to.map((a) => a.address) : [message.fromAddress];
 }
 
-type Mode = "reply" | "forward" | "note";
+type Mode = "reply" | "forward";
 
 /**
- * Reply or forward under the open conversation, or on a shared inbox an internal note. Replies go
- * from the inbox's address with your name; they show in the thread at once and can be undone
- * while they wait in the outbox.
+ * The composer under the open conversation. On a shared inbox a Chat/Email switch floats
+ * centred above it: Chat writes an internal note to the team, Email replies to the customer
+ * (or forwards a message, picked from that message's menu). A personal thread only has Email.
+ * Replies go from the inbox's address with your name; they show in the thread at once and can
+ * be undone while they wait in the outbox.
  */
-export function ReplyComposer({ thread, shared = false }: { thread: Thread; shared?: boolean }) {
-  const [picked, setMode] = useState<Mode>("reply");
-  // Note is for shared inboxes only: a personal thread opened next in the same list replies.
-  const mode = picked === "note" && !shared ? "reply" : picked;
-  const toggle = <ModeToggle mode={mode} setMode={setMode} note={shared} />;
-  // A fresh composer per mode: its own recipients, body and draft.
-  if (mode === "note") return <NoteComposer key={thread.id} thread={thread} toggle={toggle} />;
-  return <ModeComposer key={`${thread.id}:${mode}`} thread={thread} mode={mode} toggle={toggle} />;
+export function ReplyComposer({ thread }: { thread: Thread }) {
+  const state = useComposerState();
+  const email = state.mode === "email";
+  return (
+    <div className="flex flex-col gap-3">
+      {state.chat && (
+        <div className="flex justify-center">
+          <ModeSwitch />
+        </div>
+      )}
+      {/* Kept mounted while Email shows, so a half-written chat message waits there. */}
+      {state.chat && (
+        <div hidden={email}>
+          <ChatComposer key={thread.id} thread={thread} active={!email} />
+        </div>
+      )}
+      {email && (
+        // A fresh composer per reply or forwarded message: its own recipients, body and draft.
+        <ModeComposer
+          key={`${thread.id}:${state.forwardId ?? "reply"}`}
+          thread={thread}
+          mode={state.forwardId ? "forward" : "reply"}
+          sourceId={state.forwardId}
+          onStopForward={state.stopForward}
+        />
+      )}
+    </div>
+  );
 }
 
-/** Reply, Forward and (shared inboxes) Note: which composer shows. */
-function ModeToggle(props: { mode: Mode; setMode: (mode: Mode) => void; note: boolean }) {
+/** Chat (the team) or Email (the customer): which composer shows. */
+function ModeSwitch() {
+  const { mode, setMode } = useComposerState();
   return (
     <ToggleGroup
       size="sm"
-      aria-label="Reply, forward or note"
-      selectedKeys={[props.mode]}
+      aria-label="Write to"
+      selectedKeys={[mode]}
       disallowEmptySelection
       onSelectionChange={(keys) => {
-        const next = [...keys][0] as Mode | undefined;
-        if (next && next !== props.mode) props.setMode(next);
+        const next = [...keys][0] as ComposerMode | undefined;
+        if (next && next !== mode) setMode(next);
       }}
     >
-      <ToggleGroupItem id="reply">Reply</ToggleGroupItem>
-      <ToggleGroupItem id="forward">Forward</ToggleGroupItem>
-      {props.note && <ToggleGroupItem id="note">Note</ToggleGroupItem>}
+      <ToggleGroupItem id="chat">Chat</ToggleGroupItem>
+      <ToggleGroupItem id="email">Email</ToggleGroupItem>
     </ToggleGroup>
   );
 }
 
-function ModeComposer(props: { thread: Thread; mode: Exclude<Mode, "note">; toggle: ReactNode }) {
+function ModeComposer(props: {
+  thread: Thread;
+  mode: Mode;
+  /** The message to forward; a reply answers the latest. */
+  sourceId: string | undefined;
+  onStopForward: () => void;
+}) {
   const { thread, mode } = props;
   const latest = thread.messages.at(-1);
   const { signature, isLoading: signatureLoading } = useSignature(thread.mailboxId);
@@ -159,7 +190,7 @@ function ModeComposer(props: { thread: Thread; mode: Exclude<Mode, "note">; togg
   const [text, setText] = useState("");
   const [showCopies, setShowCopies] = useState(false);
   // The message replied to or forwarded: the latest, or the one a resumed draft was written for.
-  const [sourceId, setSourceId] = useState(latest?.id);
+  const [sourceId, setSourceId] = useState(props.sourceId ?? latest?.id);
   const source = thread.messages.find((m) => m.id === sourceId) ?? latest;
   // Read only until the draft and signature are in, so they can't replace what was typed.
   const [ready, setReady] = useState(false);
@@ -343,8 +374,15 @@ function ModeComposer(props: { thread: Thread; mode: Exclude<Mode, "note">; togg
 
   return (
     <ComposerFrame onFiles={files.add}>
-      <div className="flex items-center justify-between gap-2">
-        {props.toggle}
+      <div className="flex min-h-7 items-center justify-between gap-2">
+        {mode === "forward" ? (
+          <ForwardLabel message={source} onStop={props.onStopForward} />
+        ) : (
+          <span className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
+            <IconReply aria-hidden className="size-3.5 shrink-0" />
+            <span className="truncate">Reply</span>
+          </span>
+        )}
         <span className="min-w-0 truncate text-sm text-muted-foreground">
           From {thread.mailboxAddress}
         </span>
@@ -649,5 +687,32 @@ function Body(props: {
       }}
       className="-mt-1 max-h-96 min-h-24 resize-none pt-0 pb-1 sm:pt-0 sm:pb-1"
     />
+  );
+}
+
+/** "Forward Carla's message" with an X back to replying. */
+function ForwardLabel({ message, onStop }: { message: Message | undefined; onStop: () => void }) {
+  const from = !message
+    ? "a"
+    : message.fromMe
+      ? "your"
+      : `${message.fromName || message.fromAddress}'s`;
+  return (
+    <span className="-me-1 flex min-w-0 items-center gap-1 text-sm text-muted-foreground">
+      <IconForward aria-hidden className="size-3.5 shrink-0" />
+      <span className="ms-1 truncate">Forward {from} message</span>
+      <TooltipTrigger delay={400}>
+        <Button
+          intent="ghost"
+          size="sq-xs"
+          aria-label="Reply instead"
+          className="shrink-0 text-muted-foreground hover:text-foreground"
+          onPress={onStop}
+        >
+          <IconX />
+        </Button>
+        <Tooltip>Reply instead</Tooltip>
+      </TooltipTrigger>
+    </span>
   );
 }

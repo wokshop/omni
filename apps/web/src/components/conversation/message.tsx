@@ -4,7 +4,9 @@ import { Button } from "@/components/ui/button";
 import type { PendingSend } from "@/lib/pending.ts";
 import type { Message } from "@/lib/types.ts";
 import { AttachmentChips } from "./attachments.tsx";
+import { REPLY_SOURCE } from "../compose/selection-reply.tsx";
 import { FullMessage } from "./full-message.tsx";
+import { MessageMenu } from "./message-menu.tsx";
 
 const TIME = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
 const DAY_TIME = new Intl.DateTimeFormat(undefined, {
@@ -69,7 +71,7 @@ export function MessageItem({ threadId, message }: { threadId: string; message: 
   return (
     <article
       aria-label={`${message.fromMe ? "You" : sender}, ${messageTime(message.sentAt)}`}
-      className={`flex flex-col gap-3 ${mine ? "items-end" : "items-start"}`}
+      className={`group/item flex flex-col gap-3 ${mine ? "items-end" : "items-start"}`}
     >
       <header className="flex items-center gap-2">
         {!message.fromMe && (
@@ -84,10 +86,19 @@ export function MessageItem({ threadId, message }: { threadId: string; message: 
         <time dateTime={message.sentAt} className="text-xs text-subtle-foreground tabular-nums">
           {messageTime(message.sentAt)}
         </time>
+        <MessageMenu
+          label="Message actions"
+          from={sender}
+          text={message.cleanText}
+          messageId={message.id}
+        />
       </header>
 
       {card ? (
-        <div className="flex w-full flex-col gap-3 rounded-xl border bg-background p-4 shadow-(--shadow-raised)">
+        <div
+          {...{ [REPLY_SOURCE]: sender }}
+          className="flex w-full flex-col gap-3 rounded-xl border bg-background p-4 shadow-(--shadow-raised)"
+        >
           {!full && <Body loose text={message.cleanText} />}
           {full && <FullMessage threadId={threadId} messageId={message.id} />}
           {toggle && <div className="-mb-2">{toggle}</div>}
@@ -95,6 +106,7 @@ export function MessageItem({ threadId, message }: { threadId: string; message: 
       ) : (
         <>
           <div
+            {...{ [REPLY_SOURCE]: sender }}
             className={`max-w-[80%] rounded-xl px-3 py-2 ${
               mine ? "bg-primary-subtle text-foreground" : "bg-accent text-foreground"
             }`}

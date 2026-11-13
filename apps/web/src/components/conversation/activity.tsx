@@ -2,18 +2,22 @@
 // per change ("Ana assigned this to Luis", "Reopened by the customer's reply"). Names come from
 // the inbox's assignees; someone who has since lost access reads as "A teammate".
 import { useState } from "react";
-import { IconEllipsis, IconLock, IconPencil, IconTrash } from "@/components/icons/central";
+import { IconLock, IconPencil, IconTrash } from "@/components/icons/central";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Menu, MenuItem, MenuLabel, MenuTrigger } from "@/components/ui/menu";
+import { MenuItem, MenuLabel } from "@/components/ui/menu";
 import { Textarea } from "@/components/ui/textarea";
 import { appToast } from "@/components/ui/toast";
 import { useAssignees, useTags } from "@/hooks/use-conversation.ts";
 import { isPendingNote, useDeleteNote, useEditNote } from "@/hooks/use-notes.ts";
 import { useSession } from "@/hooks/use-session.ts";
+import { parseReply, withReply, type Reply } from "@/lib/reply.ts";
 import type { Assignee, ConversationEvent, Note, Priority } from "@/lib/types.ts";
 import { pictureUrl } from "@/lib/urls.ts";
+import { ReplyLine } from "../compose/chat-composer.tsx";
+import { REPLY_SOURCE } from "../compose/selection-reply.tsx";
 import { messageTime } from "./message.tsx";
+import { MessageMenu } from "./message-menu.tsx";
 
 const PRIORITY: Record<Priority, string> = {
   urgent: "Urgent",
@@ -163,13 +167,16 @@ export function NoteItem(props: { threadId: string; mailboxId: string; note: Not
   const [editing, setEditing] = useState(false);
   const pending = isPendingNote(note);
   const edited = note.updatedAt !== note.createdAt;
+  // A chat reply carries its quote in the body; it shows above the bubble instead.
+  const { reply, body } = parseReply(note.body);
+  const from = people.written(note.authorMemberId) ?? name;
 
   return (
     // On the right with the replies, since the team wrote it: yours blue, a teammate's grey. The
     // lock and "Internal note" tell it from a reply the customer got.
     <article
       aria-label={`Note from ${name}, ${messageTime(note.createdAt)}`}
-      className="flex flex-col items-end gap-3"
+      className="group/item flex flex-col items-end gap-3"
     >
       <header className="flex items-center gap-2">
         {!mine && <Face person={author} name={name} />}
@@ -182,22 +189,47 @@ export function NoteItem(props: { threadId: string; mailboxId: string; note: Not
           {messageTime(note.createdAt)}
           {edited && " · edited"}
         </time>
-        {mine && !pending && !editing && (
-          <NoteMenu threadId={props.threadId} noteId={note.id} onEdit={() => setEditing(true)} />
+        {!pending && !editing && (
+          <MessageMenu
+            label="Note actions"
+            from={from}
+            text={body}
+            extra={
+              mine && (
+                <NoteActions
+                  threadId={props.threadId}
+                  noteId={note.id}
+                  onEdit={() => setEditing(true)}
+                />
+              )
+            }
+          />
         )}
       </header>
+      {reply && !editing && (
+        <div
+          title={reply.text}
+          className="-mb-1 flex max-w-[80%] justify-end text-xs text-muted-foreground"
+        >
+          <ReplyLine reply={reply} />
+        </div>
+      )}
       <div
+        {...{ [REPLY_SOURCE]: from }}
         className={`rounded-xl px-3 py-2 text-foreground ${editing ? "w-full" : "max-w-[80%]"} ${
           mine ? "bg-primary-subtle" : "bg-accent"
         } ${pending ? "opacity-70" : ""}`}
       >
         {editing ? (
-          <EditNote threadId={props.threadId} note={note} onDone={() => setEditing(false)} />
-        ) : (
-          <NoteBody
-            body={note.body}
-            names={note.mentions.flatMap((id) => people.written(id) ?? [])}
+          <EditNote
+            threadId={props.threadId}
+            note={note}
+            reply={reply}
+            body={body}
+            onDone={() => setEditing(false)}
           />
+        ) : (
+          <NoteBody body={body} names={note.mentions.flatMap((id) => people.written(id) ?? [])} />
         )}
       </div>
     </article>
@@ -241,44 +273,47 @@ function NoteBody({ body, names }: { body: string; names: string[] }) {
   );
 }
 
-function NoteMenu(props: { threadId: string; noteId: string; onEdit: () => void }) {
+/** Your own note's items in its menu: edit and delete. */
+function NoteActions(props: { threadId: string; noteId: string; onEdit: () => void }) {
   const remove = useDeleteNote();
   return (
-    <MenuTrigger>
-      <Button intent="ghost" size="sq-xs" aria-label="Note actions" className="-my-1 ms-auto">
-        <IconEllipsis />
-      </Button>
-      <Menu placement="bottom end">
-        <MenuItem textValue="Edit" onAction={props.onEdit}>
-          <IconPencil data-slot="icon" />
-          <MenuLabel>Edit</MenuLabel>
-        </MenuItem>
-        <MenuItem
-          intent="danger"
-          textValue="Delete"
-          onAction={() =>
-            remove.mutate(
-              { threadId: props.threadId, noteId: props.noteId },
-              { onError: (error) => appToast.error(error.message) },
-            )
-          }
-        >
-          <IconTrash data-slot="icon" />
-          <MenuLabel>Delete</MenuLabel>
-        </MenuItem>
-      </Menu>
-    </MenuTrigger>
+    <>
+      <MenuItem textValue="Edit" onAction={props.onEdit}>
+        <IconPencil data-slot="icon" />
+        <MenuLabel>Edit</MenuLabel>
+      </MenuItem>
+      <MenuItem
+        intent="danger"
+        textValue="Delete"
+        onAction={() =>
+          remove.mutate(
+            { threadId: props.threadId, noteId: props.noteId },
+            { onError: (error) => appToast.error(error.message) },
+          )
+        }
+      >
+        <IconTrash data-slot="icon" />
+        <MenuLabel>Delete</MenuLabel>
+      </MenuItem>
+    </>
   );
 }
 
-function EditNote(props: { threadId: string; note: Note; onDone: () => void }) {
+/** Edits the words only: a reply's quote stays as it was. */
+function EditNote(props: {
+  threadId: string;
+  note: Note;
+  reply: Reply | undefined;
+  body: string;
+  onDone: () => void;
+}) {
   const edit = useEditNote();
-  const [body, setBody] = useState(props.note.body);
+  const [body, setBody] = useState(props.body);
   const save = () => {
     const next = body.trim();
-    if (!next || next === props.note.body) return props.onDone();
+    if (!next || next === props.body) return props.onDone();
     edit.mutate(
-      { threadId: props.threadId, noteId: props.note.id, body: next },
+      { threadId: props.threadId, noteId: props.note.id, body: withReply(props.reply, next) },
       { onError: (error) => appToast.error(error.message) },
     );
     props.onDone();
