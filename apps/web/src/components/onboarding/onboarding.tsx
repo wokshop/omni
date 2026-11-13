@@ -376,10 +376,10 @@ function InboxStep(props: {
   googleReturn: GoogleOutcome | null;
   onDone: () => void;
 }) {
-  const domain = props.data?.domains[0];
   const mailboxes = props.data?.mailboxes ?? [];
-  const views = useInboxViews(domain, mailboxes, props.googleReturn);
-  useGoogleElsewhere(props.googleReturn, mailboxes, domain?.domain);
+  const views = useInboxViews(props.data?.domains ?? [], mailboxes, props.googleReturn);
+  const { google } = views;
+  useGoogleElsewhere(props.googleReturn, mailboxes, google?.domain);
 
   if (views.shown === "connect") {
     return (
@@ -387,7 +387,7 @@ function InboxStep(props: {
         mailboxes={mailboxes}
         // Accounts connect once the company's Google domain is its own; until then a row asks
         // for it (or, half done, shows its DNS).
-        needsDomain={!(domain?.provider === "gmail" && domainReady(domain))}
+        needsDomain={!(google && domainReady(google))}
         problem={googleProblem(props.googleReturn)}
         onDomain={() => views.openDomain("google")}
         onOwnDomain={() => views.openDomain("omni")}
@@ -399,7 +399,7 @@ function InboxStep(props: {
     <DomainPath
       view={views.shown}
       host={views.host}
-      domain={domain}
+      domain={views.domain}
       organizationId={props.data?.organization?.id ?? ""}
       mailboxes={mailboxes}
       setView={views.setView}
@@ -412,10 +412,7 @@ function InboxStep(props: {
 const googleProblem = (outcome: GoogleOutcome | null) =>
   outcome?.kind === "error" ? googleErrorText(outcome.reason) : null;
 
-/**
- * The inbox step's domain views: the domain, its DNS, then (moving to Omni) a mailbox. A domain
- * of the other path (at Google, or moving to Omni) is not this path's: its entry opens instead.
- */
+/** The inbox step's domain views: the path's domain, its DNS, then (moving to Omni) a mailbox. */
 function DomainPath(props: {
   view: InboxView;
   host: "gmail" | undefined;
@@ -428,7 +425,7 @@ function DomainPath(props: {
 }) {
   const { domain, setView } = props;
   const atGoogle = domain?.provider === "gmail";
-  if (props.view === "domain" || !domain || (props.host === "gmail") !== atGoogle) {
+  if (props.view === "domain" || !domain) {
     return (
       <WithBack onBack={props.toConnect}>
         <DomainEntryForm host={props.host} onDone={() => setView("dns")} />
@@ -464,31 +461,33 @@ function DomainPath(props: {
  * moving to Omni. Opening a path shows its DNS when its domain is already claimed.
  */
 function useInboxViews(
-  domain: OnboardingDomain | undefined,
+  domains: OnboardingDomain[],
   mailboxes: OnboardingStatus["mailboxes"],
   googleReturn: GoogleOutcome | null,
 ) {
-  const google = useGoogleAccounts();
+  const accounts = useGoogleAccounts();
   const stepBack = useContext(BackContext);
-  const atGoogle = domain?.provider === "gmail";
-  const [path, setPath] = useState<"google" | "omni">(() =>
-    domain && !atGoogle ? "omni" : "google",
-  );
+  // Each path keeps its own domain: one claimed at Google, one whose mail moves to Omni.
+  const google = domains.find((d) => d.provider === "gmail");
+  const omni = domains.find((d) => d.provider !== "gmail");
+  const [path, setPath] = useState<"google" | "omni">(() => (omni && !google ? "omni" : "google"));
   const [view, setView] = useState<InboxView>(() =>
-    firstInboxView(domain, mailboxes.length > 0 || googleReturn !== null),
+    firstInboxView(google ?? omni, mailboxes.length > 0 || googleReturn !== null),
   );
+  // No Google here: the Omni path is all there is, and its first view goes back a step.
+  const googleOff = accounts.data?.available === false && mailboxes.length === 0;
+  const domain = path === "google" && !googleOff ? google : omni;
   const openDomain = (next: "google" | "omni") => {
     setPath(next);
-    const claimed = domain !== undefined && (next === "google") === atGoogle;
-    setView(claimed ? "dns" : "domain");
+    setView((next === "google" ? google : omni) ? "dns" : "domain");
   };
-  // No Google here: the domain path is all there is, and its first view goes back a step.
-  const googleOff = google.data?.available === false && mailboxes.length === 0;
   const shown: InboxView = view === "connect" && googleOff ? (domain ? "dns" : "domain") : view;
   return {
     shown,
     setView,
     openDomain,
+    google,
+    domain,
     host: path === "google" && !googleOff ? ("gmail" as const) : undefined,
     toConnect: googleOff ? stepBack : () => setView("connect"),
   };

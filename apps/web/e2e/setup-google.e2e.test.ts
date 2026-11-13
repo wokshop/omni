@@ -3,7 +3,7 @@
 // by their address, so setup asks for the company's domain before it leaves for Google.
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { schema } from "@omni/db";
+import { openClaim, schema } from "@omni/db";
 import { eq } from "drizzle-orm";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright-core";
 import { afterAll, afterEach, beforeAll, expect, test } from "vitest";
@@ -102,6 +102,54 @@ test("adding a Google account in setup first claims the company's domain, mail s
     .first()
     .click();
   await page.getByRole("heading", { name: `Verify you own ${domain}` }).waitFor();
+});
+
+// Catches: a domain already claimed on the other path (mail moving to Omni) standing in for the
+// Google one, so the Google domain entered never opens its DNS.
+test("the Google path keeps its own domain beside one claimed for Omni", async () => {
+  const name = `Duo ${Date.now()}`;
+  const page = await signedIn(`duo-${Date.now()}@gmail.test`, "/onboarding");
+  await page.getByLabel("Workspace name").fill(name);
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("heading", { name: "Connect your inbox" }).waitFor();
+  const [org] = await db
+    .select({ id: schema.organizations.id })
+    .from(schema.organizations)
+    .where(eq(schema.organizations.name, name));
+  const [owner] = await db
+    .select({ id: schema.members.id })
+    .from(schema.members)
+    .where(eq(schema.members.organizationId, org!.id));
+  const omni = `omni-${Date.now()}.test`;
+  await openClaim(db, {
+    orgId: org!.id,
+    domain: omni,
+    memberId: owner!.id,
+    challengeHash: "0".repeat(64),
+    provider: "imap",
+    dnsRecords: [],
+  });
+  // Setup resumes where that path stopped: the Omni domain's DNS.
+  await page.reload();
+  await page.getByRole("heading", { name: `Verify you own ${omni}` }).waitFor();
+  await page.getByRole("button", { name: "Back" }).click();
+
+  await page
+    .getByRole("button", { name: /Add account/ })
+    .first()
+    .click();
+  await page.getByRole("heading", { name: "Your company's domain" }).waitFor();
+  const google = `gws-${Date.now()}.test`;
+  await page.getByLabel("Domain").fill(google);
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("heading", { name: `Verify you own ${google}` }).waitFor();
+
+  // And the Omni path still opens its own.
+  await page.getByRole("button", { name: "Back" }).click();
+  await page.getByRole("button", { name: "Use Omni instead" }).click();
+  const heading = page.getByRole("heading", { name: `Verify you own ${omni}` });
+  await heading.waitFor();
+  expect(await heading.isVisible()).toBe(true);
 });
 
 async function freePort() {
