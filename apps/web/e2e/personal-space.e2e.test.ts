@@ -91,6 +91,16 @@ test("someone in no company lands in their Personal space's inbox, not in compan
   expect(new URL(page.url()).pathname).toBe("/inbox");
 });
 
+// Catches: a new Personal space showing an empty list with no way to bring mail in.
+test("an empty Personal space offers to connect Google or set up a company", async () => {
+  const page = await signedIn(`empty-${Date.now()}@gmail.test`, "/inbox");
+  await page.getByText("No accounts yet").waitFor({ timeout: 15_000 });
+  // Google is not set up on this install: setting up a company is the one way on.
+  expect(await page.getByRole("button", { name: "Connect Google" }).count()).toBe(0);
+  await page.getByRole("button", { name: "Set up a company" }).click();
+  await page.waitForURL((url) => url.pathname === "/onboarding");
+});
+
 // Catches: a Personal space offering team, shared-inbox and helpdesk settings it can never use.
 test("a Personal space's settings leave out the company pages; a company's keep them", async () => {
   const personal = await signedIn(`me-${Date.now()}@gmail.test`, "/settings");

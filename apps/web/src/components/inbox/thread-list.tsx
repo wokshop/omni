@@ -18,7 +18,7 @@ import { Heading } from "@/components/ui/heading";
 import { useFluidHoverList } from "@/hooks/use-fluid-hover-list";
 import { ResizeGrip, useStoredWidth } from "@/components/ui/resize-grip";
 import { useFullScreen } from "@/hooks/use-full-screen.ts";
-import { useCounts, useThreads } from "@/hooks/use-mail.ts";
+import { useAllMailboxes, useCounts, useThreads } from "@/hooks/use-mail.ts";
 import { useThreadListShortcuts } from "@/hooks/use-thread-list-shortcuts.ts";
 import { useWorkspaceNames } from "@/hooks/use-workspaces.ts";
 import { ariaKeyShortcuts } from "@/lib/shortcuts.ts";
@@ -55,6 +55,8 @@ interface ListProps {
   href: (threadId: string) => string;
   /** The open thread, beside the list. */
   children?: ReactNode;
+  /** Shown in place of the rows when there are none. */
+  empty?: ReactNode;
 }
 
 /** One view's threads (inbox, queue, all mail...), loading more as it scrolls. */
@@ -363,8 +365,11 @@ function ThreadRow({ thread, href }: { thread: ListRow; href: string }) {
 /** Unread threads in the inbox (or one lane of it), across the filtered mailbox(es). */
 function useUnreadCount(filter: ThreadFilter) {
   const { data } = useCounts();
+  const mailboxes = useAllMailboxes().data;
   if (filter.view !== "inbox" || filter.lane || !data) return 0;
+  const inFocus = (mailboxId: string) =>
+    !filter.workspace || mailboxes?.some((m) => m.id === mailboxId && m.orgId === filter.workspace);
   return data.counts
-    .filter((c) => !filter.mailbox || c.mailboxId === filter.mailbox)
+    .filter((c) => (!filter.mailbox || c.mailboxId === filter.mailbox) && inFocus(c.mailboxId))
     .reduce((sum, c) => sum + c.unread, 0);
 }

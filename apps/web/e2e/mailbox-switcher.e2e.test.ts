@@ -127,10 +127,17 @@ async function openSwitcher(email: string): Promise<Page> {
   return page;
 }
 
-test("your photo from another site shows on your personal mailboxes", async () => {
+// Catches: two of your own accounts both reading as your name, so you can't tell which is which.
+test("your photo from another site shows on your personal mailboxes, each named by its address", async () => {
   const { email } = await ana("photo");
   const page = await openSwitcher(email);
-  const photos = page.getByRole("menuitem", { name: /Ana Lima/ }).locator("img");
+  expect(await page.getByRole("menuitem", { name: /Ana Lima/ }).count()).toBe(0);
+  const yours = page.getByRole("menuitem", { name: /^ana@/ });
+  expect(await yours.allInnerTexts()).toEqual([
+    expect.stringContaining("ana@photo.test"),
+    expect.stringContaining("ana@beta-photo.test"),
+  ]);
+  const photos = yours.locator("img");
   await expect.poll(() => photos.count()).toBe(2);
   // Loaded, not refused by the page's CSP: the app's img-src allows only its own origin.
   for (const photo of await photos.all()) {
@@ -177,6 +184,47 @@ test("a mailbox in the other workspace opens; a switch the server refuses says s
     .poll(() => page.locator("[data-slot=toast][data-tone=error]").innerText())
     .toBe("The mailbox could not be opened. Try again.");
   expect(new URL(page.url()).searchParams.get("mailbox")).toBe(boxes.hello.id);
+});
+
+// Catches: no way to see one workspace's mail without picking one mailbox at a time.
+test("choosing a workspace shows only its mailboxes' threads", async () => {
+  const { email, beta, boxes } = await ana("focus");
+  await seedMessage(db, boxes.support, {
+    subject: "Hello from Acme",
+    fromAddress: "x@y.test",
+    uid: 1,
+  });
+  const page = await openSwitcher(email);
+  await page.getByRole("menuitem", { name: /^Beta/ }).click();
+  await page.waitForURL((url) => url.searchParams.get("workspace") === beta.orgId);
+  await page.getByRole("row").filter({ hasText: "Hello from Beta" }).waitFor();
+  await expect
+    .poll(() => page.getByRole("row").filter({ hasText: "Hello from Acme" }).count())
+    .toBe(0);
+  await expect
+    .poll(() => page.getByRole("button", { name: /^Switch mailbox/ }).getAttribute("aria-label"))
+    .toBe("Switch mailbox, currently Beta");
+});
+
+// Catches: a work-address sign-in hiding the Personal space with nothing saying why.
+test("a sign-in with a company's address says it opens only that company", async () => {
+  const email = "ana@scoped-co.test";
+  const acme = await createOrgWithOwner(db, {
+    name: "Scoped Co",
+    slug: "scoped-co",
+    ownerEmail: email,
+  });
+  await db
+    .insert(schema.mailDomains)
+    .values({ orgId: acme.orgId, domain: "scoped-co.test", provider: "imap" });
+  const box = await createMailbox(db, acme.orgId, email, "personal");
+  await grant(db, acme.orgId, box.id, acme.memberId);
+  const page = await openSwitcher(email);
+  const notice = page.getByText(
+    "Signed in with your Scoped Co address: only Scoped Co opens here.",
+  );
+  await notice.waitFor();
+  expect(await notice.isVisible()).toBe(true);
 });
 
 async function freePort() {

@@ -21,6 +21,8 @@ export const loginSearch = z.object({
 
 export const inboxSearch = z.object({
   mailbox: optionalId,
+  /** One workspace in focus: its mailboxes only (ADR 0024). */
+  workspace: optionalId,
   lane: optional(z.enum(LANES)),
   /** A shared inbox's helpdesk view (with `mailbox`): Unassigned, Mine, Open, … (ADR 0021). */
   view: optional(z.enum(HELPDESK_VIEWS)),
@@ -28,7 +30,7 @@ export const inboxSearch = z.object({
   tag: optionalId,
 });
 
-export const listSearch = z.object({ mailbox: optionalId });
+export const listSearch = z.object({ mailbox: optionalId, workspace: optionalId });
 
 export const searchSearch = z.object({
   q: fallback(z._default(z.string(), ""), ""),

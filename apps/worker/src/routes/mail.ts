@@ -63,6 +63,8 @@ function reader(c: Context<AppEnv>, scope: z.infer<typeof scopeParam>) {
 const listQuery = z.object({
   scope: scopeParam,
   mailboxId: z.string().min(1).optional(),
+  /** With `scope=all`: only this workspace's threads (one workspace in focus, ADR 0024). */
+  orgId: z.string().min(1).optional(),
   lane: z.enum(LANES).optional(),
   /** `inbox`, `queue` (deferred), `done`, `archive` or `all`; see `ThreadView` in `@omni/db`. */
   view: z.enum(THREAD_VIEWS).default("inbox"),

@@ -2,7 +2,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "@tanstack/react-router";
 import { useMemo } from "react";
-import { openMailbox, openWorkspace, workspacesQuery } from "../lib/workspaces.ts";
+import { focusWorkspace, openMailbox, openWorkspace, workspacesQuery } from "../lib/workspaces.ts";
 import type { Workspace } from "../lib/types.ts";
 
 /**
@@ -39,6 +39,16 @@ export function useOpenWorkspace() {
   return useMutation({
     mutationFn: (workspace: Pick<Workspace, "id" | "role" | "setup">) =>
       openWorkspace(client, router, workspace),
+  });
+}
+
+/** `mutate(workspace)` switches to it and shows only its mailboxes (ADR 0024). */
+export function useFocusWorkspace() {
+  const client = useQueryClient();
+  const router = useRouter();
+  return useMutation({
+    mutationFn: (workspace: Pick<Workspace, "id" | "role" | "setup">) =>
+      focusWorkspace(client, router, workspace),
   });
 }
 

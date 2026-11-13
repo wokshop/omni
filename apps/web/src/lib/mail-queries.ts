@@ -58,6 +58,7 @@ export const threadsQuery = (filter: ThreadFilter) =>
               scope: "all",
               view: filter.view,
               ...(filter.mailbox ? { mailboxId: filter.mailbox } : {}),
+              ...(filter.workspace ? { orgId: filter.workspace } : {}),
               ...(filter.lane ? { lane: filter.lane } : {}),
               ...(pageParam ? { cursor: pageParam } : {}),
               limit: String(THREAD_PAGE_SIZE),

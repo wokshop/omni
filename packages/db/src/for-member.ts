@@ -281,13 +281,15 @@ function mailQueries(db: Db, isGrantee: (memberId: AnyColumn | SQL) => SQL) {
     async listThreads(
       options: {
         mailboxId?: string;
+        /** Only this workspace's threads: one workspace in focus (ADR 0024). */
+        orgId?: string;
         lane?: Lane;
         view?: ThreadView;
         before?: ThreadCursor;
         limit?: number;
       } = {},
     ) {
-      const { mailboxId, lane, view = "inbox", before, limit = 50 } = options;
+      const { mailboxId, orgId, lane, view = "inbox", before, limit = 50 } = options;
       const filters: (SQL | undefined)[] = [
         eq(threads.mailboxId, mailboxAccess.mailboxId),
         eq(threads.orgId, members.organizationId),
@@ -319,6 +321,7 @@ function mailQueries(db: Db, isGrantee: (memberId: AnyColumn | SQL) => SQL) {
           and(
             isGrantee(mailboxAccess.memberId),
             mailboxId ? eq(mailboxAccess.mailboxId, mailboxId) : undefined,
+            orgId ? eq(members.organizationId, orgId) : undefined,
           ),
         )
         .orderBy(desc(threads.lastMessageAt), desc(threads.id))

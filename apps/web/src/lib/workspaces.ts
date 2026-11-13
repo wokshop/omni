@@ -23,7 +23,9 @@ export const workspacesQuery = () =>
 interface Navigator {
   invalidate(): Promise<void>;
   navigate(
-    options: { to: "/onboarding" } | { to: "/inbox"; search?: { mailbox: string } },
+    options:
+      | { to: "/onboarding" }
+      | { to: "/inbox"; search?: { mailbox: string } | { workspace: string } },
   ): Promise<void>;
 }
 
@@ -41,6 +43,20 @@ export async function openWorkspace(
 ) {
   await activate(client, router, workspace.id);
   await router.navigate(needsSetup(workspace) ? { to: "/onboarding" } : { to: "/inbox" });
+}
+
+/** Switches to the workspace and shows only its mailboxes: one workspace in focus (ADR 0024). */
+export async function focusWorkspace(
+  client: QueryClient,
+  router: Navigator,
+  workspace: Pick<Workspace, "id" | "role" | "setup">,
+) {
+  await activate(client, router, workspace.id);
+  await router.navigate(
+    needsSetup(workspace)
+      ? { to: "/onboarding" }
+      : { to: "/inbox", search: { workspace: workspace.id } },
+  );
 }
 
 /** Switches to the mailbox's workspace if needed, then opens `/inbox?mailbox=<id>`. */
