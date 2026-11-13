@@ -28,8 +28,11 @@ import {
 import type { Assignee, ConversationStatus, Priority, Thread } from "@/lib/types.ts";
 import { pictureUrl } from "@/lib/urls.ts";
 
-/** 8px inset instead of the button's 10px, so the properties sit a little closer together. */
-const INSET = "px-2";
+/**
+ * 24px inside the rail, like the Reply/Forward/Note segments, with the rail's inner radius and
+ * an 8px inset instead of the button's 10px.
+ */
+const INSET = "h-6 rounded-[calc(var(--radius-lg)-2px)] px-2";
 
 type Glyph = ComponentType<{ className?: string; "data-slot"?: string }>;
 
@@ -87,9 +90,9 @@ export function Properties({ thread }: { thread: Thread }) {
   const applied = new Set(conversation.tags.map((t) => t.id));
 
   return (
-    // Under the title, pulled left by the buttons' own 8px inset so the first icon starts where
-    // the title does. A narrow column wraps them onto a second row.
-    <div className="-ms-2 flex min-w-0 flex-wrap items-center gap-1">
+    // A rail of metadata under the title: the composer's segmented control in outline (border,
+    // no fill), 28px plus its border. A narrow column wraps it onto a second row.
+    <div className="flex w-fit max-w-full min-w-0 flex-wrap items-center gap-0.5 rounded-lg border p-0.5">
       <MenuTrigger>
         <Button intent="ghost" size="sm" className={INSET} aria-label={`Status: ${status.label}`}>
           <status.icon />

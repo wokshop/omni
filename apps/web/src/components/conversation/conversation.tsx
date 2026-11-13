@@ -96,7 +96,11 @@ export function Conversation({ threadId }: { threadId: string }) {
           <div className="flex flex-col gap-2">
             <Heading level={2}>{subject || "(no subject)"}</Heading>
             {/* What the conversation is (status, owner, priority, tags) sits with its title. */}
-            {shared && <Properties thread={thread} />}
+            {shared && (
+              <div className="mt-2">
+                <Properties thread={thread} />
+              </div>
+            )}
             {thread.summary && <p className="text-sm/6 text-muted-foreground">{thread.summary}</p>}
           </div>
           <Timeline
