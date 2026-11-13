@@ -180,6 +180,27 @@ test("compose defaults to the active workspace's address, and still offers the o
     .toBe("zzz@company.test");
 });
 
+// Catches: offering company setup to someone who cannot create one (a sign-in scoped to a
+// company), whose button would only bounce them back.
+test("the empty state offers company setup only to someone who can create a company", async () => {
+  const email = `scoped-${Date.now()}@empty-co.test`;
+  const company = await createOrgWithOwner(db, {
+    name: "Empty Co",
+    slug: `empty-co-${Date.now()}`,
+    ownerEmail: email,
+  });
+  await db
+    .insert(schema.mailDomains)
+    .values({ orgId: company.orgId, domain: "empty-co.test", provider: "imap" });
+  await db
+    .insert(schema.orgSetup)
+    .values({ orgId: company.orgId, step: "complete" })
+    .onConflictDoUpdate({ target: schema.orgSetup.orgId, set: { step: "complete" } });
+  const page = await signedIn(email, "/inbox");
+  await page.getByText("No accounts yet").waitFor({ timeout: 15_000 });
+  expect(await page.getByRole("button", { name: "Set up a company" }).count()).toBe(0);
+});
+
 async function freePort() {
   const server = createServer();
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
