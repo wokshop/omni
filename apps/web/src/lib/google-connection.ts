@@ -21,6 +21,9 @@ export function startGoogleConnect(from: GoogleReturn) {
   // The account goes where its address belongs (ADR 0024): the company that claimed its domain,
   // or the Personal space. Setup claims the company's domain before it connects anyone.
   if (from === "onboarding") url.searchParams.set("return", "onboarding");
+  // Today's Worker places every account by address; a Worker from before that does so only with
+  // this flag. Kept until no such Worker can serve this page.
+  url.searchParams.set("place", "address");
   window.location.assign(url.toString());
 }
 
