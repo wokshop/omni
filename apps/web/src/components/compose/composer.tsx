@@ -144,21 +144,15 @@ type Mode = "reply" | "forward";
  * personal thread is always Public. Replies go from the inbox's address with your name; they
  * show in the thread at once and can be undone while they wait in the outbox.
  */
-export function ReplyComposer({ thread, docked }: { thread: Thread; docked?: boolean }) {
+export function ReplyComposer({ thread }: { thread: Thread }) {
   const state = useComposerState();
   const hidden = state.mode === "hidden";
   return (
-    // Docked: the pane's bottom edge rather than a card floating over it, so the switch and the
-    // note card take the reply rows' 12px sides.
-    <div className={`flex flex-col gap-2 ${docked ? "border-t pt-2" : ""}`}>
-      {state.chat && (
-        <div className={docked ? "px-3" : ""}>
-          <Visibility />
-        </div>
-      )}
+    <div className="flex flex-col gap-2">
+      {state.chat && <Visibility />}
       {/* Kept mounted while Public shows, so a half-written note waits there. */}
       {state.chat && (
-        <div hidden={!hidden} className={docked ? "px-3 pb-3" : ""}>
+        <div hidden={!hidden}>
           <ChatComposer key={thread.id} thread={thread} active={hidden} />
         </div>
       )}
@@ -170,7 +164,6 @@ export function ReplyComposer({ thread, docked }: { thread: Thread; docked?: boo
           mode={state.forwardId ? "forward" : "reply"}
           sourceId={state.forwardId}
           onStopForward={state.stopForward}
-          flat={docked}
         />
       )}
     </div>
@@ -245,7 +238,6 @@ function ModeComposer(props: {
   /** The message to forward; a reply answers the latest. */
   sourceId: string | undefined;
   onStopForward: () => void;
-  flat?: boolean | undefined;
 }) {
   const { thread, mode } = props;
   const latest = thread.messages.at(-1);
@@ -451,7 +443,7 @@ function ModeComposer(props: {
   };
 
   return (
-    <ComposerFrame flat={props.flat} onFiles={files.add}>
+    <ComposerFrame onFiles={files.add}>
       {/* One row: what this is (reply or forward), whom to, and from where. */}
       <Recipients
         lead={
@@ -682,8 +674,8 @@ function FromRow(props: {
 
 /**
  * The card around a composer. Dropping files anywhere on it attaches them. `flat`: part of the
- * pane rather than a card in it (new mail, a single email's reply), so no card edge. `fill`: it
- * takes the pane's spare height (new mail).
+ * pane rather than a card in it, so no card edge; `fill`: it takes the pane's spare height. New
+ * mail is both: there the composer is the pane.
  */
 function ComposerFrame(props: {
   onFiles: (files: File[]) => void;
