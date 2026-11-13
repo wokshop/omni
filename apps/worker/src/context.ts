@@ -247,12 +247,16 @@ async function requestedMailbox(c: {
  * see leaves the active member in place, and the route answers as before.
  */
 export const requireMailboxMember = createMiddleware<AppEnv>(async (c, next) => {
-  const mailboxId = await requestedMailbox(c);
-  if (mailboxId) {
-    const member = await forUser(c.var.db, c.var.user.id, c.var.user.scopeOrgId).memberForMailbox(
-      mailboxId,
-    );
-    if (member && member.id !== c.var.member.id) c.set("member", member);
-  }
+  const reader = forUser(c.var.db, c.var.user.id, c.var.user.scopeOrgId);
+  // A draft or an outbox action names its mailbox through its own row: autosaving or sending a
+  // draft, and undoing a send, follow it to its workspace too.
+  const resource = /^\/api\/(drafts|actions)\/([^/]+)/.exec(c.req.path);
+  const mailboxId = resource ? undefined : await requestedMailbox(c);
+  const member = resource
+    ? await reader.memberForResource(resource[1] === "drafts" ? "draft" : "action", resource[2]!)
+    : mailboxId
+      ? await reader.memberForMailbox(mailboxId)
+      : null;
+  if (member && member.id !== c.var.member.id) c.set("member", member);
   await next();
 });

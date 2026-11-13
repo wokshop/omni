@@ -361,3 +361,52 @@ test("a full session lists and sends from every workspace's mailboxes; a scoped 
   ).toHaveLength(1);
   expect((await send(scoped, acmeBox, `acme-${randomUUID()}`)).status).toBe(202);
 });
+
+test("a draft and a send in another workspace can be saved, sent and undone from the active one", async () => {
+  const a = await ana();
+  const [betaBox] = await database.db
+    .select({ id: schema.mailboxes.id })
+    .from(schema.mailboxes)
+    .where(eq(schema.mailboxes.orgId, a.beta.orgId));
+  const full = await signedIn(a.personal);
+  expect((await api(full, "/me")).body).toMatchObject({ orgId: a.acme.orgId });
+
+  const draft = async () => {
+    const created = await api(full, "/drafts", {
+      method: "POST",
+      body: JSON.stringify({ mailboxId: betaBox!.id, kind: "new" }),
+    });
+    expect(created.status).toBe(201);
+    return created.body as unknown as { id: string; version: number };
+  };
+  // Started in Beta while Acme is active, then autosaved and sent by its id alone.
+  const first = await draft();
+  const saved = await api(full, `/drafts/${first.id}`, {
+    method: "PUT",
+    body: JSON.stringify({
+      version: first.version,
+      to: [{ name: null, address: "client@example.test" }],
+      subject: "Hi",
+      bodyText: "Hello",
+    }),
+  });
+  expect(saved.status).toBe(200);
+  const sent = await api(full, `/drafts/${first.id}/send`, {
+    method: "POST",
+    headers: { "idempotency-key": `draft-${randomUUID()}` },
+  });
+  expect(sent.status).toBe(202);
+  // Undone inside its window, also by its id alone.
+  const actionId = (sent.body as unknown as { actionId: string }).actionId;
+  const undone = await api(full, `/actions/${actionId}/cancel`, { method: "POST" });
+  expect(undone).toMatchObject({ status: 200, body: { cancelled: true } });
+
+  // A session scoped to Acme cannot reach a Beta draft by its id.
+  const second = await draft();
+  const scoped = await signedIn(a.work);
+  const refused = await api(scoped, `/drafts/${second.id}`, {
+    method: "PUT",
+    body: JSON.stringify({ version: second.version, subject: "taken over" }),
+  });
+  expect(refused.status).toBe(404);
+});

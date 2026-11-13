@@ -4,6 +4,7 @@ import {
   attachments,
   businessHours,
   conversationEvents,
+  drafts,
   mailActions,
   mailboxAccess,
   mailboxFolders,
@@ -520,6 +521,20 @@ function mailQueries(db: Db, isGrantee: (memberId: AnyColumn | SQL) => SQL) {
         .where(eq(mailboxes.id, mailboxId))
         .limit(1);
       return row ?? null;
+    },
+
+    /**
+     * The grantee whose grant shows the mailbox a draft or an outbox action belongs to, so a
+     * draft started or a send queued in another workspace can be saved, sent or undone from any
+     * workspace (ADR 0024). Null when no grantee can open it.
+     */
+    async memberForResource(kind: "draft" | "action", id: string) {
+      const table = kind === "draft" ? drafts : mailActions;
+      const [row] = await db
+        .select({ mailboxId: table.mailboxId })
+        .from(table)
+        .where(eq(table.id, id));
+      return row ? this.memberForMailbox(row.mailboxId) : null;
     },
 
     /** Every mailbox the grantees can open, with its workspace: where they can send from. */
