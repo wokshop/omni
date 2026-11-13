@@ -231,7 +231,7 @@ function Visibility() {
         </Menu>
       </MenuTrigger>
       {/* 13px in from the right, ending where From does in the card below. */}
-      <span className="min-w-0 truncate pe-[13px]">{current.says}</span>
+      <span className="min-w-0 truncate pe-[13px] text-[12px]">{current.says}</span>
     </div>
   );
 }

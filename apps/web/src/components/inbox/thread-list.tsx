@@ -15,6 +15,8 @@ import { Checkbox, CheckboxField } from "@/components/ui/checkbox";
 import { FluidHoverHighlight } from "@/components/ui/fluid-hover-highlight";
 import { GridList, GridListItem } from "@/components/ui/grid-list";
 import { Heading } from "@/components/ui/heading";
+import { SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
+import { IconSidebar } from "@/components/icons/sidebar";
 import { useFluidHoverList } from "@/hooks/use-fluid-hover-list";
 import { ResizeGrip, useStoredWidth } from "@/components/ui/resize-grip";
 import { useFullScreen } from "@/hooks/use-full-screen.ts";
@@ -128,6 +130,9 @@ export function List(
   const split = !!threadId && !hideList;
   const listWidth = useStoredWidth("omni:list-width", LIST_WIDTH, LIST_MIN, LIST_MAX);
   const [resizing, setResizing] = useState(false);
+  // Collapsed, the sidebar's own toggle is gone with it: the list's header offers it instead.
+  const sidebar = useSidebar();
+  const sidebarHidden = sidebar.isMobile || !sidebar.open;
 
   return (
     // Viewport height, so the virtualized list is its own scroll container however tall the
@@ -145,7 +150,14 @@ export function List(
         />
       )}
       {/* 10px on the right, the same as the 28px controls' inset from the top. */}
-      <header className="flex h-12 shrink-0 items-center gap-2 ps-5 pe-2.5">
+      <header
+        className={`flex h-12 shrink-0 items-center gap-2 pe-2.5 ${sidebarHidden ? "ps-2.5" : "ps-5"}`}
+      >
+        {sidebarHidden && (
+          <SidebarTrigger size="sq-xs" aria-label="Open sidebar">
+            <IconSidebar />
+          </SidebarTrigger>
+        )}
         {/* 1px down: centers the title's capitals on the sidebar header's icons. */}
         <Heading className="translate-y-px">
           {props.title}
@@ -208,6 +220,7 @@ export function List(
                   label={props.title}
                   rows={threads}
                   href={props.href}
+                  current={threadId}
                   selected={selected}
                   onSelectionChange={setSelected}
                   loadMore={props.loadMore}
@@ -248,6 +261,8 @@ const Rows = memo(function Rows(props: {
   label: string;
   rows: ListRow[];
   href: (threadId: string) => string;
+  /** The open thread, whose row is filled. */
+  current: string | undefined;
   selected: Selection;
   onSelectionChange: (keys: Selection) => void;
   loadMore?: (() => void) | undefined;
@@ -270,8 +285,14 @@ const Rows = memo(function Rows(props: {
         onSelectionChange={props.onSelectionChange}
       >
         {/* `items` lets React Aria cache rows by thread, so a scroll renders only new rows. */}
-        <Collection items={props.rows} dependencies={[props.href]}>
-          {(thread) => <ThreadRow thread={thread} href={props.href(thread.id)} />}
+        <Collection items={props.rows} dependencies={[props.href, props.current]}>
+          {(thread) => (
+            <ThreadRow
+              thread={thread}
+              href={props.href(thread.id)}
+              isCurrent={thread.id === props.current}
+            />
+          )}
         </Collection>
         {/* Asks for the next page as the end of the list nears. */}
         <GridListLoadMoreItem onLoadMore={props.loadMore} isLoading={props.isLoadingMore} />
@@ -317,14 +338,23 @@ function ListShortcuts(props: Parameters<typeof useThreadListShortcuts>[0]) {
   return null;
 }
 
-function ThreadRow({ thread, href }: { thread: ListRow; href: string }) {
+function ThreadRow({
+  thread,
+  href,
+  isCurrent,
+}: {
+  thread: ListRow;
+  href: string;
+  isCurrent: boolean;
+}) {
   const sender = thread.sender;
   return (
     <GridListItem
       id={thread.id}
       href={href}
       textValue={`${sender} ${thread.subject}`}
-      className="gap-4 border-b px-5 py-3"
+      // The open thread's row keeps the accent fill, the same grey as the sidebar's current item.
+      className={`gap-4 border-b px-5 py-3 ${isCurrent ? "bg-accent" : ""}`}
     >
       <Avatar
         isSquare

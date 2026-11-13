@@ -252,7 +252,8 @@ export function Sidebar({
         className={cn([
           "w-(--sidebar-width) group-data-[collapsible=hidden]:w-0",
           "group-data-[side=right]:-rotate-180",
-          "relative h-svh bg-transparent transition-[width] duration-200 ease-linear",
+          // Opens and closes at once: no width or slide animation.
+          "relative h-svh bg-transparent",
           intent === "default" && "group-data-[collapsible=dock]:w-(--sidebar-width-dock)",
           intent === "float" &&
             "group-data-[collapsible=dock]:w-[calc(var(--sidebar-width-dock)+(--spacing(4)))]",
@@ -264,7 +265,6 @@ export function Sidebar({
         data-slot="sidebar-container"
         className={cn(
           "fixed inset-y-0 z-10 hidden w-(--sidebar-width) bg-sidebar not-has-data-[slot=sidebar-footer]:pb-2 md:flex",
-          "transition-[left,right,width] duration-200 ease-linear",
           side === "left" && "left-0 group-data-[collapsible=hidden]:-left-(--sidebar-width)",
           side === "right" && "right-0 group-data-[collapsible=hidden]:-right-(--sidebar-width)",
           intent === "float" &&

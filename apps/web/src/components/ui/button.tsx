@@ -114,7 +114,10 @@ export function Button({
   isDisabled,
   isPending = false,
   ...props
-}: ButtonProps) {
+}: ButtonProps & { onClick?: ButtonPrimitiveProps["onClick"] }) {
+  // A wrapping trigger (a tooltip's, a menu's) hands its own `onClick` in through `props`: run
+  // both, so wrapping a button never swallows its `onPress`.
+  const { onClick: forwardedClick, ...rest } = props;
   return (
     <ButtonPrimitive
       ref={ref}
@@ -123,8 +126,15 @@ export function Button({
       aria-busy={isPending || undefined}
       disabled={isDisabled || isPending}
       focusableWhenDisabled={isPending || props.focusableWhenDisabled}
-      onClick={onPress ? () => onPress() : undefined}
-      {...props}
+      {...rest}
+      onClick={
+        forwardedClick || onPress
+          ? (...args: Parameters<NonNullable<ButtonPrimitiveProps["onClick"]>>) => {
+              forwardedClick?.(...args);
+              onPress?.();
+            }
+          : undefined
+      }
       className={cx(buttonStyles({ intent, size, isCircle }), className)}
     >
       {isPending ? <Pending>{children}</Pending> : children}
