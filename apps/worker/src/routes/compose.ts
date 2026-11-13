@@ -30,8 +30,9 @@ import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import type { AppEnv } from "../context.ts";
 import { limitPerMember } from "../rate-limiter.ts";
-import { zValidator } from "../validator.ts";
+import { optionalJsonBody, zValidator } from "../validator.ts";
 import { fanOut } from "../realtime.ts";
+import { assertLatest, basedOnMessageId, StaleThread } from "./reply-precondition.ts";
 import { attachmentResponse } from "./assets.ts";
 import { idempotencyHeader, notFound, outboxKey, pingLater, type ActionMailbox } from "./mail.ts";
 
@@ -59,6 +60,7 @@ const replyBody = z.object({
   replyAll: z.boolean().default(false),
   /** The message replied to (`messages.id`); the thread's latest when absent. */
   messageId: z.string().min(1).optional(),
+  basedOnMessageId,
   /** Recipients the composer edited; absent means the reply (or reply-all) defaults. */
   to: recipients.min(1).optional(),
   cc: recipients.optional(),
@@ -69,6 +71,7 @@ const replyBody = z.object({
 const forwardBodySchema = z.object({
   /** The message forwarded (`messages.id`); the thread's latest when absent. */
   messageId: z.string().min(1).optional(),
+  basedOnMessageId,
   to: recipients.min(1),
   cc: recipients.optional(),
   bcc: recipients.optional(),
@@ -187,17 +190,47 @@ function optionalList(name: "cc" | "bcc", list: string[] | undefined) {
   return list?.length ? { [name]: list } : {};
 }
 
-/** The thread with the chosen message (or its latest), and where its actions run. */
-async function threadMessage(c: Context<AppEnv>, threadId: string, messageId?: string) {
+/**
+ * The thread with the chosen message (or its latest), and where its actions run. Throws
+ * `StaleThread` when the composer's `basedOnMessageId` is no longer the latest.
+ */
+async function threadMessage(
+  c: Context<AppEnv>,
+  threadId: string,
+  body: { messageId?: string; basedOnMessageId?: string },
+) {
   const [thread, found] = await Promise.all([
     forMember(c.var.db, c.var.member.id).getThread(threadId),
     threadActionTargets(c.var.db, c.var.member.id, threadId),
   ]);
-  const message = messageId
-    ? thread?.messages.find((m) => m.id === messageId)
+  const message = body.messageId
+    ? thread?.messages.find((m) => m.id === body.messageId)
     : thread?.messages.at(-1);
   if (!thread || !found || !message) notFound();
+  assertLatest(thread.messages, body.basedOnMessageId);
   return { found, message };
+}
+
+/**
+ * Runs a reply or forward. A newer message answers 409 with it, unless this is a retry of a send
+ * already queued under the same Idempotency-Key: that one answers its send, as any retry does.
+ */
+async function sendUnlessStale(
+  c: Context<AppEnv>,
+  key: string,
+  send: () => Promise<Parameters<typeof sendResponse>[0]>,
+) {
+  try {
+    return c.json(sendResponse(await send()), 202);
+  } catch (error) {
+    if (!(error instanceof StaleThread)) throw error;
+    const earlier = await memberSendByKey(c.var.db, c.var.member.id, outboxKey(c, key, "send"));
+    if (earlier) return c.json(sendResponse(earlier), 202);
+    return c.json(
+      { error: error.message, messages: error.messages, requestId: c.var.requestId },
+      409,
+    );
+  }
 }
 
 type SendBody = z.output<typeof sendBody>;
@@ -225,7 +258,7 @@ async function sendReply(
   key: string,
   draftId?: string,
 ) {
-  const { found, message } = await threadMessage(c, threadId, body.messageId);
+  const { found, message } = await threadMessage(c, threadId, body);
   const self = found.mailboxAddress.toLowerCase();
   const isSelf = (a: string) => a.toLowerCase() === self;
   // Replying to our own message continues to the same people.
@@ -269,7 +302,7 @@ async function sendForward(
   key: string,
   draftId?: string,
 ) {
-  const { found, message } = await threadMessage(c, threadId, body.messageId);
+  const { found, message } = await threadMessage(c, threadId, body);
   const kept: SendAttachment[] = body.includeAttachments
     ? message.attachments
         .filter((a) => !a.inline)
@@ -346,6 +379,82 @@ function toSendAttachments(list: { uploadId?: string; attachmentId?: string }[])
 }
 
 const addresses = (list: { address: string }[]) => list.map((a) => a.address);
+
+/** A draft send's optional body; absent sends as before. */
+const draftSendBody = z.object({ basedOnMessageId });
+
+/** A draft sent the way its kind sends (new mail, reply or forward); the send deletes it. */
+async function sendDraft(
+  c: Context<AppEnv>,
+  draft: NonNullable<Awaited<ReturnType<typeof getDraft>>>,
+  key: string,
+  basedOnMessageId: string | undefined,
+) {
+  const content = {
+    cc: addresses(draft.cc),
+    bcc: addresses(draft.bcc),
+    attachments: toSendAttachments(draft.attachments),
+  };
+  if (draft.kind !== "new" && !draft.threadId) notFound();
+  if (draft.kind !== "reply" && draft.to.length === 0) {
+    throw new HTTPException(400, { message: "add a recipient" });
+  }
+  if (draft.kind === "reply" && !draft.bodyText.trim()) {
+    throw new HTTPException(400, { message: "the reply is empty" });
+  }
+  const html = draft.bodyHtml ?? undefined;
+  return draft.kind === "new"
+    ? await sendNew(
+        c,
+        {
+          mailboxId: draft.mailboxId,
+          to: addresses(draft.to),
+          subject: draft.subject,
+          text: draft.bodyText,
+          ...(html ? { html } : {}),
+          ...content,
+        },
+        key,
+        draft.id,
+      )
+    : draft.kind === "reply"
+      ? await sendReply(
+          c,
+          draft.threadId!,
+          {
+            text: draft.bodyText,
+            ...(html ? { html } : {}),
+            replyAll: false,
+            ...(draft.sourceMessageId ? { messageId: draft.sourceMessageId } : {}),
+            basedOnMessageId,
+            // An untouched reply draft keeps the default recipient; CC added to it stays.
+            ...(draft.to.length ? { to: addresses(draft.to), cc: content.cc } : {}),
+            ...(!draft.to.length && content.cc.length ? { cc: content.cc } : {}),
+            bcc: content.bcc,
+            attachments: content.attachments,
+          },
+          key,
+          draft.id,
+        )
+      : await sendForward(
+          c,
+          draft.threadId!,
+          {
+            ...(draft.sourceMessageId ? { messageId: draft.sourceMessageId } : {}),
+            basedOnMessageId,
+            to: addresses(draft.to),
+            cc: content.cc,
+            bcc: content.bcc,
+            text: draft.bodyText,
+            ...(html ? { html } : {}),
+            // The draft already lists the original's files the agent kept.
+            includeAttachments: false,
+            attachments: content.attachments,
+          },
+          key,
+          draft.id,
+        );
+}
 
 export const compose = new Hono<AppEnv>()
   /**
@@ -443,21 +552,19 @@ export const compose = new Hono<AppEnv>()
   /**
    * Replies to `messageId` (default: the latest message) with In-Reply-To and References so it
    * threads everywhere. Recipients default to the sender (reply) or everyone on it (reply all);
-   * `to`, `cc` and `bcc` replace them when the composer changed them.
+   * `to`, `cc` and `bcc` replace them when the composer changed them. 409 with `messages` when
+   * the thread has messages newer than `basedOnMessageId`.
    */
   .post(
     "/threads/:id/reply",
     limitPerMember("send"),
     zValidator("header", idempotencyHeader),
     zValidator("json", replyBody),
-    async (c) => {
-      const action = await sendReply(
-        c,
-        c.req.param("id"),
-        c.req.valid("json"),
-        c.req.valid("header")["idempotency-key"],
+    (c) => {
+      const key = c.req.valid("header")["idempotency-key"];
+      return sendUnlessStale(c, key, () =>
+        sendReply(c, c.req.param("id"), c.req.valid("json"), key),
       );
-      return c.json(sendResponse(action), 202);
     },
   )
 
@@ -465,20 +572,18 @@ export const compose = new Hono<AppEnv>()
    * Forwards `messageId` (default: the latest message) with what the agent wrote above it and,
    * unless `includeAttachments` is false, its files by reference: the mail service copies them
    * from R2, nothing is uploaded again. Threads with the original in Omni, not for the recipient.
+   * 409 with `messages` when the thread has messages newer than `basedOnMessageId`.
    */
   .post(
     "/threads/:id/forward",
     limitPerMember("send"),
     zValidator("header", idempotencyHeader),
     zValidator("json", forwardBodySchema),
-    async (c) => {
-      const action = await sendForward(
-        c,
-        c.req.param("id"),
-        c.req.valid("json"),
-        c.req.valid("header")["idempotency-key"],
+    (c) => {
+      const key = c.req.valid("header")["idempotency-key"];
+      return sendUnlessStale(c, key, () =>
+        sendForward(c, c.req.param("id"), c.req.valid("json"), key),
       );
-      return c.json(sendResponse(action), 202);
     },
   )
 
@@ -564,7 +669,8 @@ export const compose = new Hono<AppEnv>()
 
   /**
    * Sends a draft the way its kind sends (new mail, reply or forward), then deletes it. A retry
-   * under the same idempotency key answers the send it already made.
+   * under the same idempotency key answers the send it already made. A reply or forward draft
+   * with `basedOnMessageId` answers 409 with `messages` like `/threads/:id/reply`; the draft stays.
    */
   .post(
     "/drafts/:id/send",
@@ -578,70 +684,8 @@ export const compose = new Hono<AppEnv>()
         if (!earlier) notFound();
         return c.json(sendResponse(earlier), 202);
       }
-      const content = {
-        cc: addresses(draft.cc),
-        bcc: addresses(draft.bcc),
-        attachments: toSendAttachments(draft.attachments),
-      };
-      if (draft.kind !== "new" && !draft.threadId) notFound();
-      if (draft.kind !== "reply" && draft.to.length === 0) {
-        throw new HTTPException(400, { message: "add a recipient" });
-      }
-      if (draft.kind === "reply" && !draft.bodyText.trim()) {
-        throw new HTTPException(400, { message: "the reply is empty" });
-      }
-      const html = draft.bodyHtml ?? undefined;
-      const action =
-        draft.kind === "new"
-          ? await sendNew(
-              c,
-              {
-                mailboxId: draft.mailboxId,
-                to: addresses(draft.to),
-                subject: draft.subject,
-                text: draft.bodyText,
-                ...(html ? { html } : {}),
-                ...content,
-              },
-              key,
-              draft.id,
-            )
-          : draft.kind === "reply"
-            ? await sendReply(
-                c,
-                draft.threadId!,
-                {
-                  text: draft.bodyText,
-                  ...(html ? { html } : {}),
-                  replyAll: false,
-                  ...(draft.sourceMessageId ? { messageId: draft.sourceMessageId } : {}),
-                  // An untouched reply draft keeps the default recipient; CC added to it stays.
-                  ...(draft.to.length ? { to: addresses(draft.to), cc: content.cc } : {}),
-                  ...(!draft.to.length && content.cc.length ? { cc: content.cc } : {}),
-                  bcc: content.bcc,
-                  attachments: content.attachments,
-                },
-                key,
-                draft.id,
-              )
-            : await sendForward(
-                c,
-                draft.threadId!,
-                {
-                  ...(draft.sourceMessageId ? { messageId: draft.sourceMessageId } : {}),
-                  to: addresses(draft.to),
-                  cc: content.cc,
-                  bcc: content.bcc,
-                  text: draft.bodyText,
-                  ...(html ? { html } : {}),
-                  // The draft already lists the original's files the agent kept.
-                  includeAttachments: false,
-                  attachments: content.attachments,
-                },
-                key,
-                draft.id,
-              );
-      // The draft went with the send, in its transaction.
-      return c.json(sendResponse(action), 202);
+      const { basedOnMessageId } = await optionalJsonBody(c, draftSendBody);
+      // The draft goes with the send, in its transaction.
+      return sendUnlessStale(c, key, () => sendDraft(c, draft, key, basedOnMessageId));
     },
   );

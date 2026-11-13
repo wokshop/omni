@@ -26,7 +26,12 @@ let worker: Awaited<ReturnType<typeof startWorker>>;
 beforeAll(async () => {
   database = await createTestDatabase();
   mailService = await startMailServiceEndpoint();
-  worker = await startWorker({ databaseUrl: database.url, mailServiceUrl: mailService.url });
+  worker = await startWorker({
+    databaseUrl: database.url,
+    mailServiceUrl: mailService.url,
+    // Every desk signs its teammates in from one IP; security.e2e covers the sign-in limit.
+    vars: { RATE_LIMIT_AUTH: "off" },
+  });
 });
 
 afterAll(async () => {
@@ -185,6 +190,45 @@ describe("explicit actions", () => {
       ["status", "open", "resolved", desk.ana.id],
       ["status", "resolved", "open", desk.ana.id],
     ]);
+  });
+
+  test("two teammates claiming an unassigned conversation at once: one gets it, the other is told who", async () => {
+    const { db } = database;
+    const desk = await supportDesk("claim-race");
+    const beaCookie = await signIn(worker, db, "bea@claim-race.test");
+    const { threadId } = await seedMessage(db, desk.inbox, {
+      subject: "Invoice missing",
+      fromAddress: "maria@client.test",
+      uid: 1,
+    });
+
+    // Both saw it unassigned and pressed Claim together.
+    const responses = await Promise.all(
+      [desk.anaCookie, beaCookie].map((cookie) =>
+        post(`/threads/${threadId}/claim`, cookie, { expectedAssignee: null }),
+      ),
+    );
+    const statuses = responses.map((r) => r.status).sort();
+    expect(statuses).toEqual([200, 409]);
+    const owner = (await conversation(threadId, desk.anaCookie)).assigneeMemberId;
+    expect([desk.ana.id, desk.bea.id]).toContain(owner);
+    const refused = responses.find((r) => r.status === 409)!;
+    expect(await refused.json()).toMatchObject({ conversation: { assigneeMemberId: owner } });
+
+    // The winner pressing it again (a double click) is no conflict.
+    const ownerCookie = owner === desk.ana.id ? desk.anaCookie : beaCookie;
+    const again = await post(`/threads/${threadId}/claim`, ownerCookie, { expectedAssignee: null });
+    expect(again.status).toBe(200);
+    expect(await again.json()).toMatchObject({ changed: false });
+
+    // Exactly one assignment on the timeline.
+    const events = (await conversation(threadId, desk.anaCookie)).events;
+    expect(events.filter((e) => e.kind === "assigned").map((e) => e.data.to)).toEqual([owner]);
+
+    // A claim with no body (today's web app) still takes it over, as it always did.
+    const otherCookie = owner === desk.ana.id ? beaCookie : desk.anaCookie;
+    expect((await post(`/threads/${threadId}/claim`, otherCookie)).status).toBe(200);
+    expect((await conversation(threadId, desk.anaCookie)).assigneeMemberId).not.toBe(owner);
   });
 
   test("assign, claim, priority and tags each write one event and refuse what the inbox does not allow", async () => {
@@ -1139,6 +1183,37 @@ describe("bulk actions and auto-assign", () => {
       expect((await conversation(id, desk.anaCookie)).assigneeMemberId).toBe(desk.ana.id);
     }
     expect((await bulk({ threadIds: [], change: { type: "resolve" } })).status).toBe(400);
+  });
+
+  test("two teammates bulk-claiming overlapping unassigned conversations never take one from the other", async () => {
+    const { db } = database;
+    const [a, b, c] = await Promise.all(
+      [11, 12, 13].map((uid) =>
+        seedMessage(db, desk.inbox, { subject: `Race ${uid}`, fromAddress: "c@client.test", uid }),
+      ),
+    );
+    const claim = (cookie: string, threadIds: string[]) =>
+      api("/conversations/bulk", cookie, {
+        method: "POST",
+        body: JSON.stringify({ threadIds, change: { type: "claim", expectedAssignee: null } }),
+      });
+    // Both selected everything unassigned; their selections overlap on b.
+    const [ana, bea] = await Promise.all([
+      claim(desk.anaCookie, [a!.threadId, b!.threadId]),
+      claim(beaCookie, [b!.threadId, c!.threadId]),
+    ]);
+    type Results = { results: { threadId: string; ok: boolean; error?: string }[] };
+    const results = [
+      ...((await ana.json()) as Results).results,
+      ...((await bea.json()) as Results).results,
+    ];
+    const forB = results.filter((r) => r.threadId === b!.threadId);
+    expect(forB.map((r) => r.ok).toSorted()).toEqual([false, true]);
+    expect(forB.find((r) => !r.ok)?.error).toBe("a teammate assigned this conversation first");
+    expect((await conversation(a!.threadId, desk.anaCookie)).assigneeMemberId).toBe(desk.ana.id);
+    expect((await conversation(c!.threadId, desk.anaCookie)).assigneeMemberId).toBe(desk.bea.id);
+    const events = (await conversation(b!.threadId, desk.anaCookie)).events;
+    expect(events.filter((e) => e.kind === "assigned")).toHaveLength(1);
   });
 
   test("auto-assign hands new conversations out in turn, never history or auto-replies", async () => {
