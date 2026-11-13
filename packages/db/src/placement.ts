@@ -121,12 +121,18 @@ export async function hasUnsyncedWork(db: Db, mailboxId: string): Promise<boolea
   return row?.busy ?? false;
 }
 
-/** Whether every folder of `mailboxId` has finished a sync, and it has at least one. */
+/**
+ * Whether every folder of `mailboxId` has finished importing at least once, and it has at least
+ * one. `synced_at` is not enough: a folder's first position (UIDNEXT 0) is saved before anything
+ * is imported, and a failed import keeps it. Only a completed import stores the server's UIDNEXT,
+ * which is at least 1 even for an empty folder.
+ */
 export async function firstSyncDone(db: Db, mailboxId: string): Promise<boolean> {
   const [row] = (await db.execute(sql`
     select exists (select 1 from ${mailboxFolders} f where f.mailbox_id = ${mailboxId})
       and not exists (
-        select 1 from ${mailboxFolders} f where f.mailbox_id = ${mailboxId} and f.synced_at is null
+        select 1 from ${mailboxFolders} f
+        where f.mailbox_id = ${mailboxId} and coalesce(f.uidnext, 0) = 0
       ) as done`)) as unknown as { done: boolean }[];
   return row?.done ?? false;
 }
