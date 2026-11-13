@@ -144,15 +144,21 @@ type Mode = "reply" | "forward";
  * personal thread is always Public. Replies go from the inbox's address with your name; they
  * show in the thread at once and can be undone while they wait in the outbox.
  */
-export function ReplyComposer({ thread }: { thread: Thread }) {
+export function ReplyComposer({ thread, docked }: { thread: Thread; docked?: boolean }) {
   const state = useComposerState();
   const hidden = state.mode === "hidden";
   return (
-    <div className="flex flex-col gap-2">
-      {state.chat && <Visibility />}
+    // Docked: the pane's bottom edge rather than a card floating over it, so the switch and the
+    // note card take the reply rows' 12px sides.
+    <div className={`flex flex-col gap-2 ${docked ? "border-t pt-2" : ""}`}>
+      {state.chat && (
+        <div className={docked ? "px-3" : ""}>
+          <Visibility />
+        </div>
+      )}
       {/* Kept mounted while Public shows, so a half-written note waits there. */}
       {state.chat && (
-        <div hidden={!hidden}>
+        <div hidden={!hidden} className={docked ? "px-3 pb-3" : ""}>
           <ChatComposer key={thread.id} thread={thread} active={hidden} />
         </div>
       )}
@@ -164,6 +170,7 @@ export function ReplyComposer({ thread }: { thread: Thread }) {
           mode={state.forwardId ? "forward" : "reply"}
           sourceId={state.forwardId}
           onStopForward={state.stopForward}
+          flat={docked}
         />
       )}
     </div>
@@ -238,6 +245,7 @@ function ModeComposer(props: {
   /** The message to forward; a reply answers the latest. */
   sourceId: string | undefined;
   onStopForward: () => void;
+  flat?: boolean | undefined;
 }) {
   const { thread, mode } = props;
   const latest = thread.messages.at(-1);
@@ -443,7 +451,7 @@ function ModeComposer(props: {
   };
 
   return (
-    <ComposerFrame onFiles={files.add}>
+    <ComposerFrame flat={props.flat} onFiles={files.add}>
       {/* One row: what this is (reply or forward), whom to, and from where. */}
       <Recipients
         lead={
@@ -573,7 +581,7 @@ function NewMessage(props: {
   };
 
   return (
-    <ComposerFrame fill onFiles={files.add}>
+    <ComposerFrame flat fill onFiles={files.add}>
       <FromRow
         mailboxes={props.mailboxes}
         value={mailboxId}
@@ -673,11 +681,13 @@ function FromRow(props: {
 }
 
 /**
- * The card around a composer. Dropping files anywhere on it attaches them. `fill`: new mail, where
- * the composer is the whole pane rather than a card in it, so no card edge and it takes the height.
+ * The card around a composer. Dropping files anywhere on it attaches them. `flat`: part of the
+ * pane rather than a card in it (new mail, a single email's reply), so no card edge. `fill`: it
+ * takes the pane's spare height (new mail).
  */
 function ComposerFrame(props: {
   onFiles: (files: File[]) => void;
+  flat?: boolean | undefined;
   fill?: boolean;
   children: ReactNode;
 }) {
@@ -695,9 +705,10 @@ function ComposerFrame(props: {
         [
           // White, unpadded: each row keeps its own 12px sides, so dividers run the full width.
           "flex flex-col bg-background outline-hidden",
-          props.fill ? "min-h-0 flex-1" : "rounded-xl border shadow-raised",
-          // Filling the pane there is no border to light up, so a drop rings its inside edge.
-          isDropTarget ? (props.fill ? "ring-1 ring-ring ring-inset" : "border-ring") : "",
+          props.flat ? "" : "rounded-xl border shadow-raised",
+          props.fill ? "min-h-0 flex-1" : "",
+          // Flat there is no border to light up, so a drop rings its inside edge.
+          isDropTarget ? (props.flat ? "ring-1 ring-ring ring-inset" : "border-ring") : "",
         ].join(" ")
       }
     >

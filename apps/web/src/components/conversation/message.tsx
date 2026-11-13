@@ -52,10 +52,16 @@ export function AddedLine({ message }: { message: Message }) {
  * sender's HTML in a sandboxed frame, for when reply stripping got it wrong. A message with no
  * text of its own (an HTML-only mail the stripper emptied) opens that way.
  */
-export function MessageItem({ threadId, message }: { threadId: string; message: Message }) {
+export function MessageItem(props: {
+  threadId: string;
+  message: Message;
+  /** The thread's only message, shown as the page: a card without its edge. */
+  flat?: boolean | undefined;
+}) {
+  const { threadId, message } = props;
   const [full, setFull] = useState(opensFull(message));
   const sender = personName({ name: message.fromName, address: message.fromAddress });
-  const card = message.display === "card" || full;
+  const card = message.display === "card" || full || !!props.flat;
   // Right-hand side: anything this inbox sent. Blue only for the reader's own replies.
   const ours = message.fromTeam && !card;
 
@@ -102,7 +108,7 @@ export function MessageItem({ threadId, message }: { threadId: string; message: 
       {card ? (
         <div
           {...{ [REPLY_SOURCE]: sender }}
-          className="flex w-full flex-col gap-3 rounded-xl border bg-background p-4 shadow-(--shadow-raised)"
+          className={`flex w-full flex-col gap-3 bg-background ${props.flat ? "" : "rounded-xl border p-4 shadow-(--shadow-raised)"}`}
         >
           {!full && <Body loose text={message.cleanText} />}
           {full && <FullMessage threadId={threadId} messageId={message.id} />}
