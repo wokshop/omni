@@ -129,6 +129,9 @@ export function List(
   // Beside an open thread the list keeps a width the person can drag; alone it fills the page.
   const split = !!threadId && !hideList;
   const listWidth = useStoredWidth("omni:list-width", LIST_WIDTH, LIST_MIN, LIST_MAX);
+  // Until dragged, the thread takes its reading column's width (the messages' `max-w-3xl`, so its
+  // toolbar ends where the messages do) and the list the rest, down to its minimum.
+  const hug = split && !listWidth.isSet;
   const [resizing, setResizing] = useState(false);
   // Collapsed, the sidebar's own toggle is gone with it: the list's header offers it instead.
   const sidebar = useSidebar();
@@ -180,8 +183,8 @@ export function List(
       <div className={`flex min-h-0 flex-1 ${resizing ? "cursor-ew-resize select-none" : ""}`}>
         <section
           ref={listRef}
-          style={split ? { width: listWidth.width } : undefined}
-          className={`flex min-w-0 flex-col ${split ? "flex-none" : "flex-1"} ${hideList ? "hidden" : ""}`}
+          style={split && !hug ? { width: listWidth.width } : undefined}
+          className={`flex flex-col ${hug ? "min-w-80" : "min-w-0"} ${split && !hug ? "flex-none" : "flex-1"} ${hideList ? "hidden" : ""}`}
         >
           {/* pb-0.5 lifts the row 1px: under the borderless header the true middle reads low.
               The reader's toolbar beside it does the same, so the two stay on one line. */}
@@ -233,11 +236,11 @@ export function List(
         {/* Only with a thread open: closed, the list takes the full width. The same wrapper in
             and out of full screen, so toggling it doesn't remount the thread (or its scroll). */}
         {props.children && threadId && (
-          <div className="relative flex min-w-0 flex-1">
+          <div className={`relative flex min-w-0 ${hug ? "w-3xl shrink" : "flex-1"}`}>
             {split && (
               <ResizeGrip
                 label="Resize list"
-                width={() => listWidth.width}
+                width={() => listRef.current?.offsetWidth ?? listWidth.width}
                 onResize={listWidth.set}
                 onReset={listWidth.reset}
                 onResizingChange={setResizing}

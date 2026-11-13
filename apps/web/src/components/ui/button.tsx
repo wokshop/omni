@@ -62,6 +62,12 @@ export const buttonStyles = tv({
         "*:[svg]:size-icon",
         "*:data-[slot=loader]:size-icon",
       ],
+      // A 28px square with a 17px glyph: the conversation toolbar.
+      "sq-sm-lg": [
+        "touch-target size-7 shrink-0",
+        "*:[svg]:size-icon-lg",
+        "*:data-[slot=loader]:size-icon-lg",
+      ],
       "sq-md": ["touch-target size-8 shrink-0", "*:[svg]:size-4", "*:data-[slot=loader]:size-4"],
       "sq-lg": [
         "touch-target size-10 shrink-0",
