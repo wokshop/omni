@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { NewMessageComposer } from "../../../components/compose/composer.tsx";
-import { useMailboxes } from "../../../hooks/use-mail.ts";
+import { useAllMailboxes } from "../../../hooks/use-mail.ts";
 import { composeSearch } from "../../../lib/search-params.ts";
 
 /** New mail. `?mailbox=&to=&subject=` prefill it (deep links). */
@@ -11,7 +11,7 @@ export const Route = createFileRoute("/_authed/_member/compose")({
 
 function Compose() {
   const search = Route.useSearch();
-  const mailboxes = useMailboxes().data ?? [];
+  const mailboxes = useAllMailboxes().data ?? [];
   return (
     <section aria-label="New message" className="min-w-0 flex-1 overflow-y-auto">
       <div className="mx-auto max-w-3xl px-5 py-6">

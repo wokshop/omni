@@ -47,6 +47,7 @@ import {
   useSettingsDialog,
   type SettingsPageId,
 } from "@/hooks/use-settings-dialog.ts";
+import { useWorkspaces } from "@/hooks/use-workspaces.ts";
 import { useBilling } from "@/hooks/use-billing.ts";
 import { useShortcut } from "@/hooks/use-shortcuts.ts";
 import { SHORTCUT_IDS, SHORTCUTS } from "@/lib/shortcuts.ts";
@@ -195,12 +196,25 @@ const WORKSPACE_PAGES: PageDefinition[] = [
   },
 ];
 
-/** The workspace's pages; Billing only where the install bills (ADR 0015: it is optional). */
+/** Pages only a company has: a Personal space has no team, shared inboxes or plan (ADR 0024). */
+const COMPANY_PAGES = new Set(["people", "shared", "helpdesk", "billing"]);
+
+/**
+ * The workspace's pages; Billing only where the install bills (ADR 0015: it is optional), and
+ * none of the company pages in a Personal space.
+ */
 function useWorkspacePages() {
   const billed = useBilling().data?.enabled !== false;
+  const workspaces = useWorkspaces().data;
+  const personal =
+    workspaces?.workspaces.find((w) => w.id === workspaces.activeOrganizationId)?.kind ===
+    "personal";
   return useMemo(
-    () => (billed ? WORKSPACE_PAGES : WORKSPACE_PAGES.filter((p) => p.id !== "billing")),
-    [billed],
+    () =>
+      WORKSPACE_PAGES.filter(
+        (p) => (billed || p.id !== "billing") && !(personal && COMPANY_PAGES.has(p.id)),
+      ),
+    [billed, personal],
   );
 }
 
