@@ -18,10 +18,9 @@ export type GoogleReturn = "onboarding" | "settings";
 /** Leaves for Google's consent screen. Nothing after this runs: the page is gone. */
 export function startGoogleConnect(from: GoogleReturn) {
   const url = new URL("/api/connect/google/start", window.location.origin);
-  if (from === "onboarding") url.searchParams.set("return", "onboarding");
   // The account goes where its address belongs (ADR 0024): the company that claimed its domain,
   // or the Personal space. Setup claims the company's domain before it connects anyone.
-  url.searchParams.set("place", "address");
+  if (from === "onboarding") url.searchParams.set("return", "onboarding");
   window.location.assign(url.toString());
 }
 
