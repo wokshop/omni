@@ -37,6 +37,7 @@ import { SelectionReply } from "../compose/selection-reply.tsx";
 import { EventLine, NoteItem, useEventLines } from "./activity.tsx";
 import { AddedLine, MessageItem, PendingItem } from "./message.tsx";
 import { Properties, SNOOZES } from "./properties.tsx";
+import { ThreadSwitcher } from "./thread-switcher.tsx";
 
 /** Past this many messages, the middle of a thread folds behind one button. */
 const FOLD_OVER = 12;
@@ -238,6 +239,13 @@ function Actions({ thread, shared }: { thread: Thread; shared: boolean }) {
     // pb-0.5 lifts the icons 1px, in line with the list's header row beside it; end-1.5
     // matches the 28px buttons' inset from the top.
     <div className="relative flex h-10.5 shrink-0 items-center border-s border-b border-s-transparent pb-0.5">
+      {/* Full screen hides the list: switch threads from here. 12px in, the label at 20px like
+          the list's rows. */}
+      {fullScreen && (
+        <div className="absolute inset-y-0 start-3 flex max-w-[40%] items-center pb-0.5">
+          <ThreadSwitcher threadId={thread.id} />
+        </div>
+      )}
       <div className="absolute inset-y-0 end-1.5 flex items-center gap-1 pb-0.5">
         {shared ? <HelpdeskActions threadId={thread.id} /> : <MailActions thread={thread} />}
         <Action

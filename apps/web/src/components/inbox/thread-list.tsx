@@ -7,6 +7,7 @@ import { GridListLoadMoreItem } from "react-aria-components/GridList";
 import { ListLayout, Virtualizer } from "react-aria-components/Virtualizer";
 import { ConversationMeta, type ConversationRowInfo } from "@/components/inbox/conversation-meta";
 import { ListSweepSlot } from "@/components/inbox/list-sweep";
+import { OpenListContext } from "@/components/inbox/open-list";
 import { SearchPopover } from "@/components/search/search-popover";
 import { buttonStyles } from "@/components/ui/button";
 import { Link } from "@/components/ui/link";
@@ -133,6 +134,8 @@ export function List(
   // toolbar ends where the messages do) and the list the rest, down to its minimum.
   const hug = split && !listWidth.isSet;
   const [resizing, setResizing] = useState(false);
+  // The rows behind the open thread, for its full-screen switcher.
+  const openList = useMemo(() => ({ rows: threads, href: props.href }), [threads, props.href]);
   // Collapsed, the sidebar's own toggle is gone with it: the list's header offers it instead.
   const sidebar = useSidebar();
   const sidebarHidden = sidebar.isMobile || !sidebar.open;
@@ -157,7 +160,7 @@ export function List(
         className={`flex h-12 shrink-0 items-center gap-2 pe-2.5 ${sidebarHidden ? "ps-2.5" : "ps-5"}`}
       >
         {sidebarHidden && (
-          <SidebarTrigger size="sq-xs" aria-label="Open sidebar">
+          <SidebarTrigger intent="ghost" size="sq-xs" aria-label="Open sidebar">
             <IconSidebar />
           </SidebarTrigger>
         )}
@@ -246,7 +249,7 @@ export function List(
                 onResizingChange={setResizing}
               />
             )}
-            {props.children}
+            <OpenListContext value={openList}>{props.children}</OpenListContext>
           </div>
         )}
       </div>

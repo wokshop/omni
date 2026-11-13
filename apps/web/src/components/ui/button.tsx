@@ -51,6 +51,12 @@ export const buttonStyles = tv({
       sm: ["h-7 gap-x-2 px-2.5 text-sm", "*:[svg]:size-3.5", "*:data-[slot=loader]:size-3.5"],
       md: ["h-8 gap-x-2.5 px-2.5 text-sm", "*:[svg]:size-4", "*:data-[slot=loader]:size-4"],
       lg: ["h-10 gap-x-2.5 px-3 text-sm", "*:[svg]:size-4.5", "*:data-[slot=loader]:size-4.5"],
+      // 20px: a quiet action inside a line of text (a message's ⋯).
+      "sq-2xs": [
+        "touch-target size-5 shrink-0",
+        "*:[svg]:size-icon",
+        "*:data-[slot=loader]:size-icon",
+      ],
       "sq-xs": [
         "touch-target size-6.5 shrink-0",
         "*:[svg]:size-icon",
@@ -82,7 +88,10 @@ export const buttonStyles = tv({
       false: "rounded-lg",
     },
   },
-  compoundVariants: [{ size: "inset", isCircle: false, class: "rounded-sm" }],
+  compoundVariants: [
+    { size: "inset", isCircle: false, class: "rounded-sm" },
+    { size: "sq-2xs", isCircle: false, class: "rounded-sm" },
+  ],
   defaultVariants: {
     intent: "primary",
     size: "md",
