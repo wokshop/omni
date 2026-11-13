@@ -51,7 +51,7 @@ const KEEP_LAST = 8;
  * oldest first, ending at the newest with the reply box under it.
  */
 export function Conversation({ threadId }: { threadId: string }) {
-  const { thread, pending } = useThread(threadId);
+  const { thread, pending, error } = useThread(threadId);
   useMarkReadOnOpen(thread);
   const shared = useAllMailboxes().data?.find((m) => m.id === thread?.mailboxId)?.kind === "shared";
   // Notes and activity: shared inboxes only (a personal thread has no helpdesk state).
@@ -91,6 +91,9 @@ export function Conversation({ threadId }: { threadId: string }) {
 
   // The screen opens before the thread arrives (the route doesn't wait): a skeleton of it until
   // then, which skullet holds back 150 ms, so a thread warmed by hovering its row never shows one.
+  // A thread that failed to load (gone, no access, retries spent) goes to the route's error
+  // screen, as it did when the loader waited for it, rather than a skeleton that never ends.
+  if (error && !thread) throw error;
   if (!thread) return <ConversationSkeleton />;
   const subject = thread.messages.at(-1)?.subject || thread.messages[0]?.subject || "";
 

@@ -66,7 +66,7 @@ interface ListProps {
 
 /** One view's threads (inbox, queue, all mail...), loading more as it scrolls. */
 export function ThreadList(props: ListProps & { filter: ThreadFilter }) {
-  const { threads, hasNextPage, fetchNextPage, isFetchingNextPage, isPending } = useThreads(
+  const { threads, hasNextPage, fetchNextPage, isFetchingNextPage, isPending, error } = useThreads(
     props.filter,
   );
   const unread = useUnreadCount(props.filter);
@@ -81,6 +81,8 @@ export function ThreadList(props: ListProps & { filter: ThreadFilter }) {
     () => (hasNextPage ? () => void fetchNextPage() : undefined),
     [hasNextPage, fetchNextPage],
   );
+  // A first page that failed goes to the route's error screen, as when the loader waited for it.
+  if (error && !threads.length) throw error;
   return (
     <List
       {...props}

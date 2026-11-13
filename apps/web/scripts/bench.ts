@@ -260,7 +260,7 @@ for (let run = 0; run < RUNS; run++) {
   // pages, so a change of page size compares fairly). The second 500 against the first shows a
   // cost that grows with the loaded list.
   const grid = page.getByRole("grid");
-  const fetched = { threads: 0, at500: 0 };
+  const fetched = { threads: 0, at500: 0, at1000: 0 };
   // Each older page asks for `limit` threads and the seed never runs out, so the URL says how
   // many arrived (the protocol does not always keep response bodies around to count).
   const onResponse = (res: { url(): string }) => {
@@ -268,6 +268,7 @@ for (let run = 0; run < RUNS; run++) {
     if (u.pathname === "/api/threads" && u.searchParams.has("cursor")) {
       fetched.threads += Number(u.searchParams.get("limit"));
       if (fetched.threads >= 500 && !fetched.at500) fetched.at500 = performance.now();
+      if (fetched.threads >= 1000 && !fetched.at1000) fetched.at1000 = performance.now();
     }
   };
   page.on("response", onResponse);
@@ -276,10 +277,10 @@ for (let run = 0; run < RUNS; run++) {
     await grid.evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
     await page.waitForTimeout(16);
   }
-  await page.waitForLoadState("networkidle");
-  const finished = performance.now();
+  // Both batches end when their last page answers; settling afterwards counts in neither.
   record("older: first 500 threads ms", fetched.at500 - started);
-  record("older: next 500 threads ms", finished - fetched.at500);
+  record("older: next 500 threads ms", fetched.at1000 - fetched.at500);
+  await page.waitForLoadState("networkidle");
   page.off("response", onResponse);
 
   // Steady scrolling through what is loaded: frame times while the wheel turns.
