@@ -22,6 +22,8 @@ import { WorkerNotifier } from "./notify.ts";
 import { createS3Store } from "./objects.ts";
 import { PgActionSource, PgMailStore, PgSendFiles } from "./pg-store.ts";
 import { connectGoogle, createGoogleOAuth, disconnectGoogle } from "./providers/gmail.ts";
+import { createPurelymailHost } from "./hosting/purelymail-host.ts";
+import { createLoginRotation } from "./hosting/rotate-login.ts";
 import { createPurelymailClient } from "./providers/purelymail.ts";
 import { createProvisioner } from "./provisioning.ts";
 import { Supervisor } from "./supervisor.ts";
@@ -174,6 +176,12 @@ export async function startService(config: ServiceConfig, log: Logger): Promise<
     concurrency: config.MAILBOX_CONCURRENCY,
   });
 
+  // The host Omni operates, when configured: provisions hosted mailboxes and heals their logins.
+  const host = config.PURELYMAIL_API_TOKEN
+    ? createPurelymailHost(createPurelymailClient(config.PURELYMAIL_API_TOKEN), log)
+    : undefined;
+  let rotateLogin: ReturnType<typeof createLoginRotation> | undefined;
+
   // One reconcile at a time; a request during one runs once more after it.
   let reconciling: Promise<void> | null = null;
   let again = false;
@@ -219,7 +227,15 @@ export async function startService(config: ServiceConfig, log: Logger): Promise<
       connection.on("connected", () => void setStatus("active"));
       // Shows the app a mailbox whose app password or Google access was revoked; retrying
       // continues until the connection gives up.
-      connection.on("auth_failed", () => void setStatus("error"));
+      connection.on("auth_failed", () => {
+        void setStatus("error");
+        // A hosted login Omni can replace itself (plan H-4); others wait for their owner.
+        if (row.provider === "purelymail" && rotateLogin) {
+          rotateLogin(row).catch((error: unknown) =>
+            log.warn("hosting.rotate_failed", { mailboxId: row.id, error }),
+          );
+        }
+      });
     }
   }
   function reconcileMailboxes(): Promise<void> {
@@ -243,6 +259,15 @@ export async function startService(config: ServiceConfig, log: Logger): Promise<
     if (supervisor.has(mailboxId)) await supervisor.remove(mailboxId);
     await reconcileMailboxes();
   };
+  if (host) {
+    rotateLogin = createLoginRotation({
+      db,
+      keyring: config.MAIL_CREDENTIALS_KEY,
+      host,
+      reconnect,
+      logger: log,
+    });
+  }
 
   supervisor.start();
   await sweepNotifications().catch((error: unknown) => log.error("notify.sweep_failed", { error }));
@@ -259,9 +284,7 @@ export async function startService(config: ServiceConfig, log: Logger): Promise<
   const provisioner = createProvisioner({
     db,
     keyring: config.MAIL_CREDENTIALS_KEY,
-    purelymail: config.PURELYMAIL_API_TOKEN
-      ? createPurelymailClient(config.PURELYMAIL_API_TOKEN)
-      : undefined,
+    ...(host ? { host } : {}),
     connect: reconnect,
     logger: log,
   });
