@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { Avatar } from "@/components/ui/avatar";
 import { IconMail, IconNote } from "@/components/icons/central";
 import { MenuItem, MenuLabel } from "@/components/ui/menu";
@@ -76,34 +76,28 @@ export function MessageItem(props: {
     </MenuItem>
   );
 
+  const menu = (
+    <MessageMenu
+      start={ours}
+      label="Message actions"
+      from={sender}
+      text={message.cleanText}
+      messageId={message.id}
+      extra={toggle}
+    />
+  );
+
   return (
     <article
       aria-label={`${message.fromMe ? "You" : sender}, ${messageTime(message.sentAt)}`}
-      className={`group/item flex flex-col gap-3 ${ours ? "items-end" : "items-start"}`}
+      // An email's body sits further under its larger header than a bubble under its name.
+      className={`group/item flex flex-col ${props.flat ? "gap-5" : "gap-3"} ${ours ? "items-end" : "items-start"}`}
     >
-      <header className="flex items-center gap-2">
-        {!message.fromMe && (
-          <Avatar
-            isSquare
-            size="xs"
-            initials={sender.slice(0, 1).toUpperCase()}
-            // 18px, as on notes: a step under xs, so the face sits with the 14px name.
-            className="bg-accent text-foreground outline-0 [--avatar-radius:var(--radius-sm)] [--avatar-size:--spacing(4.5)]"
-          />
-        )}
-        <span className="text-sm">{message.fromMe ? "You" : sender}</span>
-        <time dateTime={message.sentAt} className="text-xs text-subtle-foreground tabular-nums">
-          {messageTime(message.sentAt)}
-        </time>
-        <MessageMenu
-          start={ours}
-          label="Message actions"
-          from={sender}
-          text={message.cleanText}
-          messageId={message.id}
-          extra={toggle}
-        />
-      </header>
+      {props.flat ? (
+        <EmailHeader message={message} sender={sender} menu={menu} />
+      ) : (
+        <ChatHeader message={message} sender={sender} menu={menu} />
+      )}
 
       {card ? (
         <div
@@ -134,6 +128,58 @@ export function MessageItem(props: {
         align={ours ? "end" : "start"}
       />
     </article>
+  );
+}
+
+/** A conversation message's line: a small face (not for yours), the name and the time. */
+function ChatHeader(props: { message: Message; sender: string; menu: ReactNode }) {
+  const { message, sender } = props;
+  return (
+    <header className="flex items-center gap-2">
+      {!message.fromMe && (
+        <Avatar
+          isSquare
+          size="xs"
+          initials={sender.slice(0, 1).toUpperCase()}
+          // 18px, as on notes: a step under xs, so the face sits with the 14px name.
+          className="bg-accent text-foreground outline-0 [--avatar-radius:var(--radius-sm)] [--avatar-size:--spacing(4.5)]"
+        />
+      )}
+      <span className="text-sm">{message.fromMe ? "You" : sender}</span>
+      <time dateTime={message.sentAt} className="text-xs text-subtle-foreground tabular-nums">
+        {messageTime(message.sentAt)}
+      </time>
+      {props.menu}
+    </header>
+  );
+}
+
+/**
+ * A single email's sender, laid out like mail rather than chat: a larger face, the name over
+ * the address, and the time at the end of the line.
+ */
+function EmailHeader(props: { message: Message; sender: string; menu: ReactNode }) {
+  const { message, sender } = props;
+  const named = !!message.fromName && message.fromName !== message.fromAddress;
+  return (
+    <header className="flex w-full items-center gap-3">
+      <Avatar
+        isSquare
+        size="md"
+        initials={sender.slice(0, 1).toUpperCase()}
+        className="bg-accent text-foreground outline-0"
+      />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate text-sm">{sender}</span>
+        {named && (
+          <span className="truncate text-xs text-muted-foreground">{message.fromAddress}</span>
+        )}
+      </div>
+      {props.menu}
+      <time dateTime={message.sentAt} className="text-xs text-subtle-foreground tabular-nums">
+        {messageTime(message.sentAt)}
+      </time>
+    </header>
   );
 }
 
