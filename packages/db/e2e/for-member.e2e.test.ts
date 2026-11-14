@@ -421,6 +421,68 @@ test("Later hides the thread from the member's inbox, only theirs, until they mo
   expect(await ids(dana, "later")).toEqual([]);
 });
 
+// Catches: a shared conversation a teammate owns, or that waits on the customer, sitting in
+// everyone's Inbox; and one member's Done hiding it from the team or changing its status (ADR 0029).
+test("a shared inbox's Inbox is what concerns you; Done is yours, Resolve is everyone's", async () => {
+  const org = await createOrg(db, "concerns-org");
+  const dana = (await createMember(db, org.id, "dana")).id;
+  const erin = (await createMember(db, org.id, "erin")).id;
+  const team = await createMailbox(db, org.id, "help@concerns.test");
+  const own = await createMailbox(db, org.id, "dana@concerns.test");
+  await db.update(schemaMailboxes).set({ kind: "personal" }).where(eq(schemaMailboxes.id, own.id));
+  for (const member of [dana, erin]) await grant(db, org.id, team.id, member);
+  await grant(db, org.id, own.id, dana);
+  const change = (
+    threadId: string,
+    actor: string,
+    c: Parameters<typeof applyConversationChange>[1]["change"],
+  ) => applyConversationChange(db, { threadId, actorMemberId: actor, change: c });
+
+  const open = (await seedThread(org.id, team.id, "open")).threadId;
+  const erins = (await seedThread(org.id, team.id, "erins")).threadId;
+  const snoozed = (await seedThread(org.id, team.id, "snoozed")).threadId;
+  const personal = (await seedThread(org.id, own.id, "personal")).threadId;
+  expect(await change(erins, erin, { type: "assign", memberId: erin })).toMatchObject({ ok: true });
+  expect(
+    await change(snoozed, erin, { type: "snooze", until: new Date(Date.now() + 86_400_000) }),
+  ).toMatchObject({ ok: true });
+
+  const inbox = async (member: string) =>
+    (await forMember(db, member).listThreads({ view: "inbox" })).map((t) => t.id).sort();
+  const inboxCount = async (member: string, mailboxId: string) =>
+    (await forMember(db, member).counts()).find((c) => c.mailboxId === mailboxId)?.inbox ?? 0;
+
+  // Dana: the unassigned open one and her personal thread. Erin: hers too. Nobody: the snoozed one.
+  expect(await inbox(dana)).toEqual([open, personal].sort());
+  expect(await inbox(erin)).toEqual([open, erins].sort());
+  expect(await inboxCount(dana, team.id)).toBe(1);
+  expect(await inboxCount(erin, team.id)).toBe(2);
+
+  // Done is Dana's alone: it leaves her Inbox, stays in Erin's, and the team's status is unchanged.
+  await forMember(db, dana).setThreadState(open, { doneThrough: new Date("2026-10-01T00:00:00Z") });
+  expect(await inbox(dana)).toEqual([personal]);
+  expect(await inbox(erin)).toEqual([open, erins].sort());
+  const [row] = await db
+    .select({ status: threads.status })
+    .from(threads)
+    .where(eq(threads.id, open));
+  expect(row?.status).toBe("open");
+
+  // Later keeps a teammate's conversation for Dana until the team resolves it.
+  await forMember(db, dana).setThreadState(erins, { later: true });
+  expect((await forMember(db, dana).listThreads({ view: "later" })).map((t) => t.id)).toEqual([
+    erins,
+  ]);
+
+  // Resolve is everyone's: it leaves Erin's Inbox and Dana's Later at once, before IMAP files it.
+  expect(await change(open, erin, { type: "resolve" })).toMatchObject({ ok: true });
+  expect(await change(erins, erin, { type: "resolve" })).toMatchObject({ ok: true });
+  expect(await inbox(erin)).toEqual([]);
+  expect(await forMember(db, dana).listThreads({ view: "later" })).toEqual([]);
+  expect(await inboxCount(erin, team.id)).toBe(0);
+  expect((await forMember(db, dana).counts()).find((c) => c.mailboxId === team.id)?.later).toBe(0);
+});
+
 test("a list row summarizes the thread: latest message, senders once each, count, attachments", async () => {
   const org = await createOrg(db, "row-org");
   const gil = (await createMember(db, org.id, "gil")).id;
