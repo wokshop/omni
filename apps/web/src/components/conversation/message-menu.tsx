@@ -24,6 +24,8 @@ export function MessageMenu(props: {
    * edge in line with the bubble instead of leaving room for a button that only shows on hover.
    */
   start?: boolean;
+  /** Always shown, not only on hover: a header with its other actions in view (a single email). */
+  visible?: boolean;
 }) {
   const composer = useComposerState();
   const { messageId } = props;
@@ -35,7 +37,7 @@ export function MessageMenu(props: {
         intent="ghost"
         size="sq-2xs"
         aria-label={props.label}
-        className={`-my-0.5 ${props.start ? "order-first" : ""} opacity-0 group-focus-within/item:opacity-100 group-hover/item:opacity-100 aria-expanded:opacity-100 [@media(hover:none)]:opacity-100`}
+        className={`-my-0.5 ${props.start ? "order-first" : ""} ${props.visible ? "" : "opacity-0 group-focus-within/item:opacity-100 group-hover/item:opacity-100 aria-expanded:opacity-100 [@media(hover:none)]:opacity-100"}`}
       >
         <IconEllipsis />
       </Button>

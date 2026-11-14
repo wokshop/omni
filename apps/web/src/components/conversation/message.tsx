@@ -102,6 +102,8 @@ export function MessageItem(props: {
       text={message.cleanText}
       messageId={message.id}
       extra={toggle}
+      // A single email's header shows Reply and Forward beside it: a hidden ⋯ would leave a gap.
+      visible={!!props.flat}
     />
   );
 
