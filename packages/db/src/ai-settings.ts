@@ -1,9 +1,9 @@
-// The workspace's AI settings (ADR 0033): what each member handles, and the tags triage chooses
-// from with what the team files under each. Read by the settings page and by the AI queue.
+// The workspace's AI settings (ADR 0033): what each member handles. Read by the settings page and
+// by the AI queue. Tags and their descriptions are read through `forMember` (the member's inboxes).
 
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import type { Db } from "./client.ts";
-import { mailboxAccess, mailboxes, memberRoleDescriptions, members, tags } from "./schema/index.ts";
+import { mailboxAccess, mailboxes, memberRoleDescriptions, members } from "./schema/index.ts";
 import { orgMember } from "./workspace-mailboxes.ts";
 
 /** A role description's longest form; the settings page and the API cap it here. */
@@ -77,49 +77,4 @@ export async function helpdeskTeammatesForAi(db: Db, mailboxId: string) {
     .where(eq(mailboxAccess.mailboxId, mailboxId))
     .orderBy(asc(sql`lower(${memberRoleDescriptions.description})`), asc(members.id))
     .limit(HELPDESK_TEAMMATES_FOR_AI);
-}
-
-/** The workspace's shared inboxes with their tags, as the AI settings page lists them. */
-export async function listSharedInboxTags(db: Db, orgId: string) {
-  const inboxes = await db
-    .select({ id: mailboxes.id, address: mailboxes.address })
-    .from(mailboxes)
-    .where(and(eq(mailboxes.orgId, orgId), eq(mailboxes.kind, "shared")))
-    .orderBy(asc(mailboxes.address));
-  if (inboxes.length === 0) return [];
-  const rows = await db
-    .select({
-      id: tags.id,
-      mailboxId: tags.mailboxId,
-      name: tags.name,
-      color: tags.color,
-      description: tags.description,
-    })
-    .from(tags)
-    .where(
-      and(
-        eq(tags.orgId, orgId),
-        inArray(
-          tags.mailboxId,
-          inboxes.map((inbox) => inbox.id),
-        ),
-      ),
-    )
-    .orderBy(asc(sql`lower(${tags.name})`), asc(tags.id));
-  return inboxes.map((inbox) => ({
-    ...inbox,
-    tags: rows
-      .filter((tag) => tag.mailboxId === inbox.id)
-      .map(({ mailboxId: _mailboxId, ...tag }) => tag),
-  }));
-}
-
-/** Sets what the team files under a tag of the workspace; blank clears it. Null when not found. */
-export async function setTagDescription(db: Db, orgId: string, tagId: string, description: string) {
-  const [tag] = await db
-    .update(tags)
-    .set({ description: description.trim() || null, updatedAt: new Date() })
-    .where(and(eq(tags.id, tagId), eq(tags.orgId, orgId)))
-    .returning({ id: tags.id, name: tags.name, color: tags.color, description: tags.description });
-  return tag ?? null;
 }

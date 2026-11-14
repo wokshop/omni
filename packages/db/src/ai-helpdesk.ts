@@ -50,7 +50,14 @@ export interface AiHelpdeskChanges {
 
 export type AiHelpdeskOutcome =
   /** Not a shared conversation, or `messageId` is no longer its latest message. */
-  { applied: false } | { applied: true; changed: boolean; queuedActions: number };
+  | { applied: false }
+  | {
+      applied: true;
+      changed: boolean;
+      queuedActions: number;
+      /** Members who got a new notification (the assignee): tell them in realtime. */
+      notified: string[];
+    };
 
 /** A member (not the AI, not the system) wrote an event of `kind` on the conversation. */
 async function personDid(
@@ -110,6 +117,7 @@ export async function applyAiHelpdeskTriage(
 
     let changed = false;
     let queuedActions = 0;
+    const notified: string[] = [];
     const apply = async (change: Parameters<typeof applyConversationChange>[1]["change"]) => {
       const result = await applyConversationChange(tx, {
         threadId,
@@ -120,6 +128,7 @@ export async function applyAiHelpdeskTriage(
       if (result.ok) {
         changed ||= result.changed;
         queuedActions += result.queuedActions;
+        notified.push(...result.notified);
       }
     };
 
@@ -159,6 +168,6 @@ export async function applyAiHelpdeskTriage(
       );
       if (!touched) await apply({ type: "resolve", reason: "ai_noise" });
     }
-    return { applied: true, changed, queuedActions };
+    return { applied: true, changed, queuedActions, notified };
   });
 }

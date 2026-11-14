@@ -28,7 +28,7 @@ import { openDb } from "./db.ts";
 import { loadConfig, type Config } from "./env.ts";
 import { createLogger } from "./log.ts";
 import { pingMailService } from "./mail-service.ts";
-import { fanOut } from "./realtime.ts";
+import { fanOut, notifyMembers } from "./realtime.ts";
 
 /**
  * Ids only, never mail content. `orgId`, `jobId` and `requestId` (the request that queued it)
@@ -146,6 +146,14 @@ export async function consumeAiQueue(batch: MessageBatch<AiJob>, env: Env) {
           return runAiJob(db, models, config, job, {
             // A noise resolve queued its IMAP archive: tell the mail service.
             outboxChanged: () => pingMailService({ config, requestId: jobRequestId(job), log }),
+            // AI handed it to someone: their notification list updates live.
+            assigned: (orgId, memberIds) =>
+              notifyMembers(env, db, {
+                orgId,
+                threadId: job.threadId,
+                memberIds,
+                kind: "assigned",
+              }),
           });
         });
         if (outcome === "triaged" || outcome === "triage_paused") {
@@ -204,7 +212,10 @@ export async function runAiJob(
   models: { triage: TriageClient },
   config: Config,
   job: AiJob,
-  hooks: { outboxChanged?: () => Promise<unknown> } = {},
+  hooks: {
+    outboxChanged?: () => Promise<unknown>;
+    assigned?: (orgId: string, memberIds: string[]) => Promise<unknown>;
+  } = {},
 ): Promise<AiJobOutcome> {
   const thread = await loadThreadForAi(db, job.threadId);
   const latest = thread?.messages.at(-1);
@@ -256,6 +267,9 @@ export async function runAiJob(
           },
         });
         if (applied.applied && applied.queuedActions > 0) await hooks.outboxChanged?.();
+        if (applied.applied && applied.notified.length > 0) {
+          await hooks.assigned?.(thread.orgId, applied.notified);
+        }
       }
       // Lanes are derived on read: below the auto-file confidence a thread shows in Unsure.
       const saved = await saveTriage(db, thread.id, {

@@ -280,12 +280,9 @@ async function setUpSupport() {
     expect(created.status).toBeLessThan(300);
     tagIds[tag.name] = created.body.tag.id;
     // Feature request has none: a blank one stays null.
-    const described = await call(
-      cookie,
-      "PUT",
-      `/workspace/ai/tags/${created.body.tag.id}/description`,
-      { description: tag.description ?? "" },
-    );
+    const described = await call(cookie, "PATCH", `/mailboxes/${id}/tags/${created.body.tag.id}`, {
+      description: tag.description ?? "",
+    });
     expect(described).toMatchObject({
       status: 200,
       body: { tag: { description: tag.description ?? null } },

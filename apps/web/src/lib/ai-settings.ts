@@ -27,10 +27,14 @@ export const setRoleMutation = (client: QueryClient) =>
     onSettled: () => client.invalidateQueries({ queryKey: keys.aiSettings() }),
   });
 
-/** A blank description clears it. The inbox's own tag list picks the change up too. */
+/**
+ * A blank description clears it. Written through the inbox's own tag route, which checks the
+ * member is on the inbox; the inbox's tag list picks the change up too.
+ */
 export const setTagDescriptionMutation = (client: QueryClient) =>
   mutationOptions({
     mutationFn: ({
+      mailboxId,
       tagId,
       description,
     }: {
@@ -39,8 +43,8 @@ export const setTagDescriptionMutation = (client: QueryClient) =>
       description: string;
     }) =>
       call(
-        api.workspace.ai.tags[":tagId"].description.$put({
-          param: { tagId },
+        api.mailboxes[":id"].tags[":tagId"].$patch({
+          param: { id: mailboxId, tagId },
           json: { description },
         }),
       ),
