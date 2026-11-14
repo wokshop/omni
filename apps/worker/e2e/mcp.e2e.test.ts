@@ -37,7 +37,8 @@ beforeAll(async () => {
   const started = await startWorker({
     databaseUrl: database.url,
     mailServiceUrl: mail.url,
-    vars: { SYSTEM_MAIL_FROM },
+    // Low enough that one test can use it up with full triage batches.
+    vars: { SYSTEM_MAIL_FROM, RATE_LIMIT_ACTIONS: "60/60" },
   });
   worker = { url: started.url.toString() };
   cleanup = async () => {
@@ -752,6 +753,14 @@ describe("changing mail", () => {
     ({ access_token: readOnly } = await connect(jar));
   });
 
+  /** Another personal inbox for Jo, so its outbox rows are this test's alone. */
+  const ownInbox = async (name: string) => {
+    const [jo] = await db.select().from(schema.members).where(eq(schema.members.id, member));
+    const box = await createMailbox(db, jo!.organizationId, `jo+${name}@writers.test`, "personal");
+    await grant(db, jo!.organizationId, box.id, member);
+    return box;
+  };
+
   const actionsFor = (threadId: string) =>
     db
       .select({ kind: schema.mailActions.kind })
@@ -805,14 +814,84 @@ describe("changing mail", () => {
       .where(eq(schema.auditEvents.subject, personal.threadId));
     expect(audit).toMatchObject([{ action: "mcp.triage", actorMemberId: member }]);
 
+    // A retry queues no second archive while the mail stays where it is (a second mark_read is
+    // harmless and allowed: read state must never dedupe away a later change).
     await tool(token, "triage", { changes: [change] });
-    expect((await actionsFor(personal.threadId)).length).toBe(2);
+    const kinds = (await actionsFor(personal.threadId)).map((a) => a.kind);
+    expect(kinds.filter((k) => k === "archive")).toHaveLength(1);
     expect(
       await db
         .select()
         .from(schema.triageFeedback)
         .where(eq(schema.triageFeedback.threadId, personal.threadId)),
     ).toHaveLength(1);
+  });
+
+  // Catches: read, unread, read again leaving IMAP unread because the third change reused the
+  // first one's outbox key.
+  test("every read change reaches IMAP, even back and forth", async () => {
+    const box = await ownInbox("flip");
+    const { threadId } = await seedMessage(db, box, {
+      subject: "Flip flop",
+      fromAddress: "a@flip.test",
+      uid: 40,
+    });
+    for (const read of [true, false, true]) {
+      await tool(token, "triage", { changes: [{ thread_id: threadId, read }] });
+    }
+    expect((await actionsFor(threadId)).map((a) => a.kind)).toEqual([
+      "mark_read",
+      "mark_unread",
+      "mark_read",
+    ]);
+  });
+
+  // Catches: the person's lane being replaced by the AI job of a message that arrived after
+  // they chose it, because reaffirming the lane left the old message marker.
+  test("reaffirming a lane after new mail moves its marker, without new feedback", async () => {
+    const box = await ownInbox("lane");
+    const { threadId } = await seedMessage(db, box, {
+      subject: "Status report",
+      fromAddress: "a@reports.test",
+      uid: 50,
+      sentAt: new Date("2026-10-01T00:00:00Z"),
+    });
+    await tool(token, "triage", { changes: [{ thread_id: threadId, lane: "fyi" }] });
+    const { messageId: newer } = await seedMessage(db, box, {
+      subject: "Re: Status report",
+      fromAddress: "a@reports.test",
+      uid: 51,
+      threadId,
+      sentAt: new Date("2026-10-02T00:00:00Z"),
+    });
+    await tool(token, "triage", { changes: [{ thread_id: threadId, lane: "fyi" }] });
+    const [thread] = await db.select().from(schema.threads).where(eq(schema.threads.id, threadId));
+    expect(thread).toMatchObject({ triage: "fyi", triageSource: "person", triageMessageId: newer });
+    expect(
+      await db
+        .select()
+        .from(schema.triageFeedback)
+        .where(eq(schema.triageFeedback.threadId, threadId)),
+    ).toHaveLength(1);
+  });
+
+  // Catches: a full batch counting as one action, so an agent could make 50x the changes the
+  // limit allows (the suite runs with 60 actions a minute).
+  test("each change in a batch counts toward the action limit", async () => {
+    const org = await createOrg(db, "busy");
+    await createMember(db, org.id, "lu@busy.test");
+    const jar = new CookieJar();
+    await signIn(worker, db, "lu@busy.test", jar);
+    const { access_token } = await connect(jar, { scope: "openid mail:read mail:triage" });
+    const batch = (n: number) =>
+      tool(access_token, "triage", {
+        changes: Array.from({ length: n }, () => ({ thread_id: "missing", read: true })),
+      });
+    expect((await batch(50)).isError).toBe(false);
+    const over = await batch(11);
+    expect(over.isError).toBe(true);
+    expect(over.text).toContain("Too many changes");
+    expect((await batch(10)).isError).toBe(false);
   });
 
   // Catches: helpdesk changes skipping the workflow (no event, wrong assignee), or one bad change

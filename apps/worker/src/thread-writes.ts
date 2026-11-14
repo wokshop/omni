@@ -62,18 +62,27 @@ export async function markRead(writer: ThreadWriter, threadId: string, read: boo
   return { state, actionIds, mailboxId: found?.mailboxId };
 }
 
+/** Where a thread's mail is: each folder's copies, as the outbox targets them. */
+export type ThreadTargets = NonNullable<Awaited<ReturnType<typeof threadActionTargets>>>["targets"];
+
 /**
  * Archives the thread: Postgres now (every member's app updates at once), and an outbox move out
- * of each folder that is not already Archive or Trash. Null when the member cannot see it.
+ * of each folder that is not already Archive or Trash. `key` may be derived from where the mail
+ * is, so the same archive repeats only once the mail has moved. Null when the member cannot see it.
  */
-export async function archiveThread(writer: ThreadWriter, threadId: string, key: string) {
+export async function archiveThread(
+  writer: ThreadWriter,
+  threadId: string,
+  key: string | ((targets: ThreadTargets) => Promise<string>),
+) {
   const found = await threadActionTargets(writer.db, writer.memberId, threadId);
   if (!found) return null;
+  const actionKey = typeof key === "string" ? key : await key(found.targets);
   await setThreadArchived(writer.db, writer.memberId, threadId, true);
   const actionIds = await enqueuePerFolder(
     writer,
     found,
-    key,
+    actionKey,
     found.targets
       .filter(({ role }) => role !== "archive" && role !== "trash")
       .map(({ role: _role, ...target }) => ({ kind: "archive", payload: target })),

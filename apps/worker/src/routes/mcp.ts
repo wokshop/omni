@@ -51,8 +51,8 @@ export const mcp = new Hono<AppEnv>()
       webAppURL: config.auth.webAppURL,
       log: c.var.log,
       // Per person, across their agents: a key apart from the app's per-member limits.
-      rateLimit: (rule: RateLimitRule) =>
-        checkRateLimit(c.env, config, rule, `mcp:${caller.userId}`),
+      rateLimit: (rule: RateLimitRule, cost?: number) =>
+        checkRateLimit(c.env, config, rule, `mcp:${caller.userId}`, cost),
     };
     const handler = createMcpHandler(() => createServer(context), {
       legacy: "stateless",

@@ -16,7 +16,12 @@ import { z } from "zod";
 import { inGoodStanding } from "../../billing.ts";
 import { pingMailService } from "../../mail-service.ts";
 import { fanOut, notifyMembers } from "../../realtime.ts";
-import { archiveThread, markRead, type ThreadWriter } from "../../thread-writes.ts";
+import {
+  archiveThread,
+  markRead,
+  type ThreadTargets,
+  type ThreadWriter,
+} from "../../thread-writes.ts";
 import { result, toolError } from "../format.ts";
 import { readsFor, type Reads } from "../scope.ts";
 import { guarded, type ToolContext } from "../server.ts";
@@ -94,15 +99,17 @@ interface Found {
 }
 
 /**
- * An outbox key that repeats only for the same change to the thread as it stands: a retried call
- * queues nothing new, and the same change after new mail arrived queues it again.
+ * The outbox key for archiving: the thread and where its mail is now. Repeating the archive (a
+ * retried call) queues nothing new until the mail has moved, e.g. back to the inbox in another
+ * mail app, when it is queued again.
  */
-async function keyOf(caller: string, threadId: string, found: Found, field: string) {
+async function archiveKey(threadId: string, targets: ThreadTargets) {
+  const where = targets.map((t) => `${t.folder}:${t.uidValidity}:${t.uids.join(",")}`).join("|");
   const digest = await crypto.subtle.digest(
     "SHA-256",
-    new TextEncoder().encode(`${caller}:${threadId}:${found.lastMessageAt.toISOString()}:${field}`),
+    new TextEncoder().encode(`${threadId}|${where}`),
   );
-  return `mcp.${[...new Uint8Array(digest).slice(0, 12)].map((b) => b.toString(16).padStart(2, "0")).join("")}`;
+  return `mcp.archive.${[...new Uint8Array(digest).slice(0, 12)].map((b) => b.toString(16).padStart(2, "0")).join("")}`;
 }
 
 async function conversationChanges(
@@ -156,12 +163,13 @@ interface Target {
 async function applyPersonal(context: ToolContext, target: Target, change: Change) {
   const { threadId, member, found, writer, effects } = target;
   const state = forMember(context.db, member.id);
-  const key = (field: string) => keyOf(context.caller.clientId, threadId, found, field);
   const applied: string[] = [];
   if (change.done !== undefined) {
     await state.setThreadState(
       threadId,
-      change.done ? { doneThrough: new Date(), later: false } : { doneThrough: null },
+      // Done through the mail this call saw, as the app's Done does: a message that arrives
+      // meanwhile stays in the Inbox.
+      change.done ? { doneThrough: found.lastMessageAt, later: false } : { doneThrough: null },
     );
     applied.push("done");
   }
@@ -173,7 +181,9 @@ async function applyPersonal(context: ToolContext, target: Target, change: Chang
     applied.push("later");
   }
   if (change.read !== undefined) {
-    const marked = await markRead(writer, threadId, change.read, await key(`read:${change.read}`));
+    // A fresh key per call: read, unread, read again must each reach IMAP. A retried call queues
+    // the same flag twice, which is harmless.
+    const marked = await markRead(writer, threadId, change.read, `mcp.read.${crypto.randomUUID()}`);
     if (marked?.actionIds.length) effects.queued = true;
     applied.push("read");
   }
@@ -182,7 +192,9 @@ async function applyPersonal(context: ToolContext, target: Target, change: Chang
     applied.push("lane");
   }
   if (change.archived) {
-    const archived = await archiveThread(writer, threadId, await key("archive"));
+    const archived = await archiveThread(writer, threadId, (targets) =>
+      archiveKey(threadId, targets),
+    );
     if (archived?.actionIds.length) effects.queued = true;
     applied.push("archived");
   }
@@ -268,7 +280,8 @@ async function applyOne(
 }
 
 async function triage(context: ToolContext, input: z.infer<typeof inputSchema>) {
-  const wait = await context.rateLimit("actions");
+  // Each change counts toward the per-person action limit, as it would one by one in the app.
+  const wait = await context.rateLimit("actions", input.changes.length);
   if (wait) return toolError(`Too many changes. Try again in ${wait} seconds.`);
   const scoped = readsFor(context, input.workspace);
   if ("error" in scoped) return toolError(scoped.error);
