@@ -486,7 +486,8 @@ function KindMenu({ kind, onChange }: { kind: Kind; onChange: (next: Kind) => vo
   const current = KINDS[kind];
   return (
     <MenuTrigger>
-      <Button intent="ghost" size="sm" aria-label={`${current.label}, change`}>
+      {/* Tertiary: an edge and no fill, so it reads as a choice, apart from the icon tools. */}
+      <Button intent="outline" size="sm" aria-label={`${current.label}, change`}>
         <current.icon />
         {current.label}
         <IconChevronDown />
