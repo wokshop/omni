@@ -227,7 +227,7 @@ export function List(
         <section
           ref={listRef}
           style={split && !hug ? { width: listWidth.width } : undefined}
-          className={`flex flex-col ${hug ? "min-w-80" : "min-w-0"} ${split && !hug ? "flex-none" : "flex-1"} ${hideList ? "hidden" : ""}`}
+          className={`relative flex flex-col ${hug ? "min-w-80" : "min-w-0"} ${split && !hug ? "flex-none" : "flex-1"} ${hideList ? "hidden" : ""}`}
         >
           {/* 10px on the right, the same as the 28px controls' inset from the top. */}
           <header
@@ -238,27 +238,16 @@ export function List(
                 <IconSidebar />
               </SidebarTrigger>
             )}
-            {count > 0 && props.bulkActions ? (
-              // A helpdesk list's actions carry their own count and labels: they take the
-              // title's place while rows are checked, so they fit beside the open reader.
-              <div className="flex min-w-0 flex-1 items-center overflow-x-auto">
-                {props.bulkActions({
-                  ids: selected === "all" ? threads.map((t) => t.id) : [...selected].map(String),
-                  clear: () => setSelected(new Set()),
-                })}
-              </div>
-            ) : (
-              <div className="flex min-w-0 flex-1 items-baseline gap-2">
-                {/* 1px down: centers the title's capitals on the sidebar header's icons.
+            <div className="flex min-w-0 flex-1 items-baseline gap-2">
+              {/* 1px down: centers the title's capitals on the sidebar header's icons.
                     Collapsed, the title centres on the sidebar button beside it instead. */}
-                <Heading className={`shrink-0 ${sidebarHidden ? "" : "translate-y-px"}`}>
-                  {props.title}
-                </Heading>
-                {props.caption && (
-                  <span className="truncate text-xs text-subtle-foreground">{props.caption}</span>
-                )}
-              </div>
-            )}
+              <Heading className={`shrink-0 ${sidebarHidden ? "" : "translate-y-px"}`}>
+                {props.title}
+              </Heading>
+              {props.caption && (
+                <span className="truncate text-xs text-subtle-foreground">{props.caption}</span>
+              )}
+            </div>
             {/* A plain list's checked rows: how many, before the actions. */}
             {count > 0 && !props.bulkActions && (
               <span className="shrink-0 text-sm text-muted-foreground tabular-nums">
@@ -266,13 +255,12 @@ export function List(
               </span>
             )}
             <div className="flex shrink-0 items-center gap-1">
-              {/* The sidebar's search field is gone with it: search from here instead. */}
-              {sidebarHidden && (
-                <HeaderAction label="Search" onPress={openSearch}>
-                  <IconSearch />
-                </HeaderAction>
-              )}
-              {props.shortcuts && <MarkAllRead threads={props.shortcuts.threads} />}
+              {/* The same search as the sidebar's field (and `/`), always here, so the header's
+                  actions never change. */}
+              <HeaderAction label="Search" onPress={openSearch}>
+                <IconSearch />
+              </HeaderAction>
+              <MarkAllRead rows={threads} />
               <HeaderAction label="Compose" shortcut="compose" onPress={openCompose}>
                 <IconPencil />
               </HeaderAction>
@@ -311,6 +299,19 @@ export function List(
               </RowHover>
             </ListSweepSlot>
           )}
+          {/* A helpdesk list's actions on its checked rows float at the column's foot, 16px up and
+              centred, framed like the reader's properties bar. 12px before the count, where the
+              buttons' labels sit from the other edge. */}
+          {count > 0 && props.bulkActions && (
+            <div className="pointer-events-none absolute inset-x-0 bottom-4 z-10 flex justify-center px-5">
+              <div className="pointer-events-auto max-w-full overflow-x-auto rounded-lg border bg-background p-0.5 ps-3">
+                {props.bulkActions({
+                  ids: selected === "all" ? threads.map((t) => t.id) : [...selected].map(String),
+                  clear: () => setSelected(new Set()),
+                })}
+              </div>
+            </div>
+          )}
         </section>
         {/* The reading column, from the window's top to its bottom, only with a thread open. The
             same wrapper in and out of full screen, so toggling it doesn't remount it. */}
@@ -337,6 +338,7 @@ export function List(
 function HeaderAction(props: {
   label: string;
   shortcut?: Parameters<typeof ariaKeyShortcuts>[0];
+  isDisabled?: boolean;
   onPress: () => void;
   children: ReactNode;
 }) {
@@ -347,6 +349,7 @@ function HeaderAction(props: {
         size="sq-sm-lg"
         aria-label={props.label}
         aria-keyshortcuts={props.shortcut && ariaKeyShortcuts(props.shortcut)}
+        isDisabled={props.isDisabled}
         onPress={props.onPress}
       >
         {props.children}
@@ -356,15 +359,18 @@ function HeaderAction(props: {
   );
 }
 
-/** Marks every unread thread in the list read, one at a time as `u` does; only while any is. */
-function MarkAllRead({ threads }: { threads: { id: string; unread: boolean }[] }) {
+/**
+ * Marks every unread row in the list read, one at a time as `u` does. Always in the header, so
+ * its actions stay put; disabled while nothing is unread.
+ */
+function MarkAllRead({ rows }: { rows: ListRow[] }) {
   const markRead = useMarkRead();
-  const unread = threads.filter((t) => t.unread);
-  if (!unread.length) return null;
+  const unread = rows.filter((r) => r.unread);
   return (
     <HeaderAction
       label="Mark all read"
-      onPress={() => unread.forEach((t) => markRead.mutate({ threadId: t.id, read: true }))}
+      isDisabled={!unread.length}
+      onPress={() => unread.forEach((r) => markRead.mutate({ threadId: r.id, read: true }))}
     >
       <IconMailOpen />
     </HeaderAction>
