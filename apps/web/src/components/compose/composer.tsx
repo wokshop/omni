@@ -732,9 +732,9 @@ function ComposerFrame(props: {
           "flex flex-col bg-background outline-hidden",
           props.flat ? "" : "rounded-xl border shadow-raised",
           props.fill ? "min-h-0 flex-1" : "",
-          // Row height: the full-page composer's rows match the app's 53px list rows; a reply's
-          // stay a compact 44px under the conversation.
-          props.fill ? "[--composer-row:--spacing(13.25)]" : "[--composer-row:--spacing(11)]",
+          // Row height: 52px on the full-page composer, a more compact 48px on a reply under the
+          // conversation.
+          props.fill ? "[--composer-row:--spacing(13)]" : "[--composer-row:--spacing(12)]",
           // Flat there is no border to light up, so a drop rings its inside edge.
           isDropTarget ? (props.flat ? "ring-1 ring-ring ring-inset" : "border-ring") : "",
         ].join(" ")
