@@ -87,14 +87,7 @@ type Anchor = { top: number; left?: number; right?: number };
  * top-right corner, growing left and down; `side="start"` (the sidebar) pins it to the top-left,
  * growing right, and the field fills its row.
  */
-export function SearchPopover({
-  side = "end",
-  field = true,
-}: {
-  side?: "start" | "end";
-  /** False: no field of its own (opened by `/`, ⌘K or `openSearch`), so it opens centred. */
-  field?: boolean;
-}) {
+export function SearchPopover({ side = "end" }: { side?: "start" | "end" }) {
   const [phase, setPhase] = useState<Phase>("closed");
   const [anchor, setAnchor] = useState<Anchor>({ top: 0, right: 0 });
   // The field's own width: the closed box matches it, so the box grows out of the field.
@@ -158,18 +151,16 @@ export function SearchPopover({
     <>
       {/* While the box is up it sits exactly over the field, so the field steps aside: the same
           frame the box goes, the field is back, pixel for pixel where the box ended. */}
-      {field && (
-        <Button
-          ref={triggerRef}
-          onPress={open}
-          aria-label="Search"
-          className={`flex h-7 ${side === "start" ? "w-full" : "w-60"} cursor-text items-center gap-2 rounded-lg border border-input bg-background ps-2 pe-0.75 text-sm text-subtle-foreground outline-hidden hover:border-muted-foreground/30 focus-visible:border-ring/70 ${phase === "closed" ? "" : "invisible"}`}
-        >
-          <IconSearch className="text-muted-foreground" />
-          <span className="flex-1 text-start">Search</span>
-          <Keyboard>/</Keyboard>
-        </Button>
-      )}
+      <Button
+        ref={triggerRef}
+        onPress={open}
+        aria-label="Search"
+        className={`flex h-7 ${side === "start" ? "w-full" : "w-60"} cursor-text items-center gap-2 rounded-lg border border-input bg-background ps-2 pe-0.75 text-sm text-subtle-foreground outline-hidden hover:border-muted-foreground/30 focus-visible:border-ring/70 ${phase === "closed" ? "" : "invisible"}`}
+      >
+        <IconSearch className="text-muted-foreground" />
+        <span className="flex-1 text-start">Search</span>
+        <Keyboard>/</Keyboard>
+      </Button>
       <ModalOverlay
         isOpen={phase !== "closed"}
         onOpenChange={(next) => (next ? open() : close())}

@@ -255,13 +255,15 @@ export function List(
               </span>
             )}
             <div className="flex shrink-0 items-center gap-1">
-              {/* The same search as the sidebar's field (and `/`), always here, so the header's
-                  actions never change. */}
-              <HeaderAction label="Search" onPress={openSearch}>
-                <IconSearch />
-              </HeaderAction>
-              {/* On a phone the sidebar's search unmounts with its sheet: keep one here. */}
-              {sidebar.isMobile && <SearchPopover field={false} />}
+              {/* The same search as the sidebar's field (and `/`). On a phone the sidebar is a sheet
+                  that unmounts when closed, so the header holds the search field itself there. */}
+              {sidebar.isMobile ? (
+                <SearchPopover />
+              ) : (
+                <HeaderAction label="Search" onPress={openSearch}>
+                  <IconSearch />
+                </HeaderAction>
+              )}
               <MarkAllRead rows={threads} />
               <HeaderAction label="Compose" shortcut="compose" onPress={openCompose}>
                 <IconPencil />
