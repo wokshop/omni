@@ -1,7 +1,7 @@
 // In-app notifications: the bell in the sidebar's footer, with your unread count, toggles a panel
 // the window's height that slides out from the sidebar's edge and floats over the page (Figma:
-// Omni, node 64:2). It is built from the thread list's parts: its 48px header and header actions,
-// its 52px rows (square avatar, unread dot, subject and detail, time) under the same fluid hover.
+// Omni, node 64:2). It shares the thread list's header height, header actions and fluid hover;
+// its rows are two lines beside who did it, so they read as notifications, not mail.
 // All or Unread; picking one marks it read and opens its conversation, or People in settings
 // for a new teammate. Escape or a press outside closes it.
 import { useRouter } from "@tanstack/react-router";
@@ -23,7 +23,6 @@ import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { FluidHoverHighlight } from "@/components/ui/fluid-hover-highlight";
 import { GridList, GridListItem } from "@/components/ui/grid-list";
-import { Heading } from "@/components/ui/heading";
 import { useSidebar } from "@/components/ui/sidebar";
 import { Tab, TabList, TabPanel, Tabs } from "@/components/ui/tabs";
 import { Tooltip, TooltipTrigger } from "@/components/ui/tooltip";
@@ -35,7 +34,12 @@ import {
   useNotificationsPanel,
 } from "@/hooks/use-notifications-panel.ts";
 import { openSettings } from "@/hooks/use-settings-dialog.ts";
-import { actorName, notificationSubject, notificationTitle } from "@/lib/notification-text.ts";
+import {
+  actorName,
+  notificationParts,
+  notificationSubject,
+  notificationTitle,
+} from "@/lib/notification-text.ts";
 import type { Notification } from "@/lib/types.ts";
 import { pictureUrl } from "@/lib/urls.ts";
 import { CountBadge } from "./count-badge";
@@ -44,6 +48,7 @@ import { CountBadge } from "./count-badge";
 export function NotificationsButton() {
   const { unread } = useNotifications();
   const open = useNotificationsPanel();
+  const { isMobile, setIsOpenOnMobile } = useSidebar();
   return (
     <TooltipTrigger delay={400}>
       <Button
@@ -53,7 +58,11 @@ export function NotificationsButton() {
         aria-expanded={open}
         aria-controls="notifications-panel"
         data-notifications-toggle
-        onPress={toggleNotificationsPanel}
+        onPress={() => {
+          // On a phone the bell sits in the sidebar's sheet, which would cover the panel.
+          if (isMobile) setIsOpenOnMobile(false);
+          toggleNotificationsPanel();
+        }}
         className="relative"
       >
         <IconBell />
@@ -120,10 +129,10 @@ export function NotificationsPanel() {
             : "invisible -translate-x-full opacity-0 motion-reduce:translate-x-0"
         }`}
       >
-        {/* The thread list's header: 48px, the title 20px in, actions 10px from the edge. */}
-        <header className="flex h-12 shrink-0 items-center gap-2 border-b ps-5 pe-2.5">
-          {/* 1px down, as the list's title: its capitals centre on the sidebar's icons. */}
-          <Heading className="min-w-0 flex-1 translate-y-px truncate">Notifications</Heading>
+        {/* The thread list's header height and insets: the title 20px in, actions 10px from the
+            edge. No rule under it: the tabs' line closes the header. */}
+        <header className="flex h-12 shrink-0 items-center gap-2 ps-5 pe-2.5">
+          <h2 className="min-w-0 flex-1 truncate text-sm font-medium">Notifications</h2>
           <div className="flex items-center gap-1">
             <HeaderAction
               label="Mark all read"
@@ -145,7 +154,8 @@ export function NotificationsPanel() {
           onSelectionChange={(key: Key) => setView(key as View)}
           className="min-h-0 w-full flex-1 gap-0"
         >
-          <TabList aria-label="Show" className="shrink-0 px-5">
+          {/* 4px up, under the header's title, so the tabs belong to it. */}
+          <TabList aria-label="Show" className="-mt-1 shrink-0 px-5">
             <Tab id="all">All</Tab>
             <Tab id="unread" className="gap-1.5">
               Unread
@@ -260,48 +270,58 @@ function NotificationList({ unread }: { unread: boolean }) {
   );
 }
 
-/** A thread row's grid: 28px square avatar, the unread dot in the gap, one line, the time. */
+/**
+ * Two lines beside who did it: "Bea Klein assigned you", then what it is about; the time and
+ * the unread dot at the end of the first line. 20px all round, ruled like the thread list.
+ */
 function NotificationRow({ notification: n }: { notification: Notification }) {
   const unread = !n.readAt;
+  const { actor, action } = notificationParts(n);
   const subject = notificationSubject(n);
   return (
-    <GridListItem id={n.id} textValue={notificationTitle(n)} className="h-13 gap-4 border-b px-5">
+    <GridListItem
+      id={n.id}
+      textValue={notificationTitle(n)}
+      className="items-center gap-3 border-b p-5"
+    >
       <Lead notification={n} />
-      <span className="relative ms-4 flex min-w-0 flex-1 items-center">
-        {unread && (
-          <span
-            aria-label="Unread"
-            className="absolute -left-4.25 size-2 rounded-full bg-primary"
-          />
-        )}
-        <span className="truncate">
-          <span className={unread ? "text-foreground" : "text-muted-foreground"}>
-            {notificationTitle(n)}
-            {subject && " –"}
+      <span className="flex min-w-0 flex-1 flex-col gap-1">
+        <span className="flex items-center gap-2">
+          <span className="min-w-0 flex-1 truncate text-sm">
+            {actor && (
+              <span className={unread ? "text-foreground" : "text-muted-foreground"}>{actor} </span>
+            )}
+            <span className={!actor && unread ? "text-foreground" : "text-muted-foreground"}>
+              {action}
+            </span>
           </span>
-          {subject && <span className="ms-1.5 text-subtle-foreground">{subject}</span>}
+          <time
+            dateTime={n.createdAt}
+            className="shrink-0 text-xs text-subtle-foreground tabular-nums"
+          >
+            {rowTime(n.createdAt)}
+          </time>
+          {/* Unread: a primary dot; read: the same space, so the times line up. */}
+          <span
+            aria-label={unread ? "Unread" : undefined}
+            className={`size-2 shrink-0 rounded-full ${unread ? "bg-primary" : ""}`}
+          />
         </span>
+        {subject && <span className="truncate text-xs text-subtle-foreground">{subject}</span>}
       </span>
-      <time
-        dateTime={n.createdAt}
-        className="w-14 shrink-0 text-end text-xs text-subtle-foreground tabular-nums"
-      >
-        {rowTime(n.createdAt)}
-      </time>
     </GridListItem>
   );
 }
 
 const AVATAR =
-  "shrink-0 bg-accent text-foreground outline-0 mix-blend-multiply [--avatar-radius:var(--radius-sm)] [--avatar-size:--spacing(7)]";
+  "shrink-0 bg-accent text-foreground outline-0 mix-blend-multiply [--avatar-size:--spacing(7)]";
 
-/** Who did it, as the thread list shows a sender; what happened, by a glyph, when no one did. */
+/** Who did it, by their picture; what happened, by a glyph, when no one did. */
 function Lead({ notification: n }: { notification: Notification }) {
   const name = actorName(n);
   if (name) {
     return (
       <Avatar
-        isSquare
         src={pictureUrl(n.actor?.image)}
         initials={name.slice(0, 1).toUpperCase()}
         className={AVATAR}
@@ -311,7 +331,7 @@ function Lead({ notification: n }: { notification: Notification }) {
   const Glyph =
     n.kind === "sla_breached" ? IconCircleAlert : n.kind === "sla_at_risk" ? IconClock3 : IconMail;
   return (
-    <span className="flex size-7 shrink-0 items-center justify-center rounded-sm bg-accent text-muted-foreground mix-blend-multiply">
+    <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-accent text-muted-foreground mix-blend-multiply">
       <Glyph aria-hidden className="size-icon" />
     </span>
   );
@@ -320,10 +340,11 @@ function Lead({ notification: n }: { notification: Notification }) {
 /** The rows while they load: the thread list's bones on the same grid. */
 function RowBones() {
   return Array.from({ length: 12 }, (_, i) => (
-    <div key={i} className="flex h-13 items-center gap-4 border-b px-5">
-      <SkeletonBox width={28} height={28} radius="var(--radius-sm)" />
-      <span className="ms-4 min-w-0 flex-1">
+    <div key={i} className="flex items-center gap-3 border-b p-5">
+      <SkeletonBox width={28} height={28} radius="9999px" />
+      <span className="flex min-w-0 flex-1 flex-col gap-2">
         <SkeletonBox width={`${55 + ((i * 23) % 35)}%`} height={10} />
+        <SkeletonBox width={`${35 + ((i * 17) % 30)}%`} height={8} />
       </span>
     </div>
   ));
