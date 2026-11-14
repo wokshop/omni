@@ -663,8 +663,14 @@ function FromRow(props: {
       <span className="w-8 shrink-0 text-sm text-muted-foreground">From</span>
       {props.mailboxes.length > 1 ? (
         <MenuTrigger>
-          {/* -8px: the address starts where the To field's text does, not at the button's edge. */}
-          <Button intent="plain" size="sm" aria-label={`From ${address}`} className="-ms-2 min-w-0">
+          {/* Grey on hover, like the composer's other menus. -2px: the button's 10px padding
+              puts the address 8px in, where the To pills' text starts. */}
+          <Button
+            intent="ghost"
+            size="sm"
+            aria-label={`From ${address}`}
+            className="-ms-0.5 min-w-0"
+          >
             <span className="truncate">{address}</span>
             <IconChevronDown className="text-muted-foreground" />
           </Button>
@@ -686,7 +692,8 @@ function FromRow(props: {
           </Menu>
         </MenuTrigger>
       ) : (
-        <span className="min-w-0 truncate text-sm">{address}</span>
+        // 8px in: the To pills' text starts there, inside their fill.
+        <span className="min-w-0 truncate ps-2 text-sm">{address}</span>
       )}
     </div>
   );

@@ -92,6 +92,8 @@ export function RecipientField(props: {
             ref={input}
             plain
             size="sm"
+            // With no pills yet, typing starts where a pill's text would (8px in), like From's.
+            className={value.length ? "" : "ps-2"}
             autoFocus={props.autoFocus}
             onKeyDown={(event) => {
               if ([",", ";", " "].includes(event.key) || (event.key === "Enter" && text)) {

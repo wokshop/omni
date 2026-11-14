@@ -193,7 +193,7 @@ function EmailHeader(props: { message: Message; sender: string; self: string; me
           initials={sender.slice(0, 1).toUpperCase()}
           className="bg-accent text-foreground outline-0"
         />
-        <div className="flex min-w-0 flex-1 flex-col items-start">
+        <div className="flex min-w-0 flex-1 flex-col items-start gap-1">
           <div className="flex max-w-full items-baseline gap-2">
             <span className="truncate text-sm">{sender}</span>
             <time dateTime={message.sentAt} className="text-xs text-subtle-foreground tabular-nums">
@@ -206,10 +206,11 @@ function EmailHeader(props: { message: Message; sender: string; self: string; me
             aria-expanded={open}
             aria-label={open ? "Hide details" : "Show details"}
             onPress={() => setOpen((was) => !was)}
-            className="max-w-full text-muted-foreground hover:text-foreground"
+            // Grey through the button's own colour, which a text class would not override.
+            className="max-w-full [--btn-foreground:var(--color-muted-foreground)] hover:[--btn-foreground:var(--color-foreground)]"
           >
             <span className="truncate">to {list(recipients) || "undisclosed recipients"}</span>
-            <IconChevronDown className={`transition-transform ${open ? "rotate-180" : ""}`} />
+            <IconChevronDown className={open ? "rotate-180" : ""} />
           </Button>
         </div>
         <HeaderAction label="Reply" onPress={() => composer.openReply("reply")}>
@@ -255,15 +256,19 @@ function Details(props: {
   return (
     <DescriptionList className="sm:grid-cols-[--spacing(20)_auto]">
       <DescriptionTerm>From</DescriptionTerm>
-      <DescriptionDetails className="flex flex-col">
-        <span>{message.fromName || message.fromAddress}</span>
-        {message.fromName && <span className="text-muted-foreground">{message.fromAddress}</span>}
+      {/* One line, name then address, so every row is the same height. */}
+      <DescriptionDetails className="flex min-w-0 items-baseline gap-2">
+        <span className="shrink-0">{message.fromName || message.fromAddress}</span>
+        {message.fromName && (
+          <span className="truncate text-muted-foreground">{message.fromAddress}</span>
+        )}
       </DescriptionDetails>
       {rows
         .filter(([, people]) => people.length > 0)
         .map(([label, people]) => (
           <Row key={label} label={label}>
-            <TagGroup aria-label={label}>
+            {/* Out by the pill's 8px padding, so its text lines up with From's and Date's. */}
+            <TagGroup aria-label={label} className="-ms-2">
               <TagList items={people.map((p) => ({ id: p.address, label: props.name(p) }))}>
                 {(item) => <Tag id={item.id}>{item.label}</Tag>}
               </TagList>
