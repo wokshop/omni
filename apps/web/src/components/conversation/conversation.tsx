@@ -46,7 +46,7 @@ const KEEP_FIRST = 1;
 const KEEP_LAST = 8;
 
 /**
- * The open conversation beside the list: its actions, subject and AI summary, then the messages
+ * The open conversation beside the list: its actions and subject, then the messages
  * oldest first, ending at the newest with the reply box under it.
  */
 export function Conversation({ threadId }: { threadId: string }) {
@@ -123,14 +123,12 @@ export function Conversation({ threadId }: { threadId: string }) {
                   <Properties thread={thread} />
                 </div>
               )}
-              {thread.summary && (
-                <p className="text-sm/6 text-muted-foreground">{thread.summary}</p>
-              )}
             </div>
             <Timeline
               key={threadId}
               threadId={threadId}
               mailboxId={thread.mailboxId}
+              mailboxAddress={thread.mailboxAddress}
               messages={thread.messages}
               helpdesk={shared ? helpdesk : undefined}
               flat={single}
@@ -227,11 +225,13 @@ function MessageBones({ width, ours = false }: { width: string; ours?: boolean }
 function Timeline(props: {
   threadId: string;
   mailboxId: string;
+  /** The inbox's own address: it reads as "You" among a message's recipients. */
+  mailboxAddress: string;
   messages: Message[];
   helpdesk: HelpdeskState | undefined;
   flat?: boolean;
 }) {
-  const { threadId, mailboxId, messages, helpdesk, flat } = props;
+  const { threadId, mailboxId, mailboxAddress, messages, helpdesk, flat } = props;
   const [unfolded, setUnfolded] = useState(false);
   const lines = useEventLines(mailboxId, helpdesk?.events ?? []);
   const entries: { at: string; key: string; node: ReactNode }[] = [
@@ -241,7 +241,7 @@ function Timeline(props: {
       node: (
         <>
           <AddedLine message={message} />
-          <MessageItem threadId={threadId} message={message} flat={flat} />
+          <MessageItem threadId={threadId} message={message} self={mailboxAddress} flat={flat} />
         </>
       ),
     })),
