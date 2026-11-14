@@ -4,10 +4,13 @@ import {
   infiniteQueryOptions,
   queryOptions,
   useInfiniteQuery,
+  useMutation,
   useQuery,
+  useQueryClient,
+  type InfiniteData,
 } from "@tanstack/react-query";
-import type { Mailbox } from "@omni/client";
-import { api, call } from "./api.ts";
+import type { Mailbox, ThreadPage } from "@omni/client";
+import { ApiError, api, call } from "./api.ts";
 import { keys } from "./query-keys.ts";
 
 const FIRST_PAGE_SIZE = 30;
@@ -73,4 +76,63 @@ const DAY = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" 
 export function listTime(iso: string, now = new Date()) {
   const date = new Date(iso);
   return date.toDateString() === now.toDateString() ? TIME.format(date) : DAY.format(date);
+}
+
+/** A thread with every message, each with only what its sender newly wrote. */
+export const threadQuery = (threadId: string) =>
+  queryOptions({
+    queryKey: keys.thread(threadId),
+    queryFn: ({ signal }) =>
+      call(api.threads[":id"].$get({ param: { id: threadId } }, { init: { signal } })),
+  });
+
+export const useThread = (threadId: string) => useQuery(threadQuery(threadId));
+
+/** One message's sanitized HTML, as the Worker serves it for a sandboxed view. */
+export const useMessageHtml = (threadId: string, messageId: string) =>
+  useQuery({
+    queryKey: [...keys.thread(threadId), "html", messageId],
+    queryFn: async ({ signal }) => {
+      const response = await api.threads[":id"].messages[":messageId"].html.$get(
+        { param: { id: threadId, messageId } },
+        { init: { signal } },
+      );
+      if (!response.ok) throw new ApiError(response.status, "the message didn't load");
+      return response.text();
+    },
+    staleTime: Infinity,
+  });
+
+/**
+ * Marks a thread read, as opening it does on the web: the list row and the counts follow at once,
+ * and a retry reuses the same idempotency key.
+ */
+export function useMarkRead() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ threadId, key }: { threadId: string; key: string }) =>
+      call(
+        api.threads[":id"].state.$patch({
+          param: { id: threadId },
+          header: { "idempotency-key": key },
+          json: { read: true },
+        }),
+      ),
+    onMutate: ({ threadId }) => {
+      client.setQueriesData<InfiniteData<ThreadPage>>({ queryKey: ["threads"] }, (data) =>
+        data
+          ? {
+              ...data,
+              pages: data.pages.map((page) => ({
+                ...page,
+                threads: page.threads.map((t) =>
+                  t.id === threadId ? { ...t, read: true, unread: false } : t,
+                ),
+              })),
+            }
+          : data,
+      );
+    },
+    onSettled: () => void client.invalidateQueries({ queryKey: keys.counts() }),
+  });
 }
