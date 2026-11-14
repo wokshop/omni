@@ -1,6 +1,6 @@
 # 0032: CRM forwarding address
 
-Date: 2026-11-14 · Status: proposed · Extends: spec v1 "Sending", "Data model"
+Date: 2026-11-14 · Status: accepted · Extends: spec v1 "Sending", "Data model"
 
 ## Context
 
@@ -25,6 +25,8 @@ thing, not an Attio integration. Attio is the first one we test against.
 1. **A mailbox can have one forwarding address.** New nullable columns on `mailboxes`:
    `forward_address` (text) and `forward_scope` (enum, below). Null means off. Personal mailboxes
    only in v1: Attio only accepts mail from a member's own login address, and `hello@` is not one.
+   That covers every personal mailbox alike, in a personal space and in a company workspace
+   (ADR 0024): both are `kind = personal`.
    No Attio-specific values in code; any address works (self-hosting).
 2. **What gets forwarded** (`forward_scope`):
    - `sent`: every message you send from Omni.
@@ -54,7 +56,9 @@ thing, not an Attio integration. Attio is the first one we test against.
    - `GET /api/mailboxes/:id/forwarding` → `{ address, scope, lastForwardedAt, lastError }`
    - `PUT /api/mailboxes/:id/forwarding` `{ address, scope }` · `DELETE` turns it off.
      `lastError` comes from the latest failed `forward_copy` action, so the settings row can show
-     "In sync" or the failure. The web and iOS settings row is Rodrigo's; this ships the API only.
+     "In sync" or the failure.
+8. **Settings.** A Forwarding page in the web app's personal settings lists each of your personal
+   mailboxes, across every workspace, with its forwarding address, scope and status. iOS can follow.
 
 ## Consequences
 
@@ -72,6 +76,6 @@ thing, not an Attio integration. Attio is the first one we test against.
   is forwarded once, `From:` the mailbox, even when sync runs twice; a newsletter is not
   forwarded under `conversations`; history import forwards nothing.
 - E2E (`apps/worker`): only the mailbox owner can read or change the setting.
-- Live, with your approval since it sends real mail: one send and one received reply from a test
+- Live (approved Nov 14, 2026): one send and one received reply from a test
   mailbox to your Attio forwarding address, then check both appear on the right Attio record. This
   picks redirect or inline forward (decision 4).
