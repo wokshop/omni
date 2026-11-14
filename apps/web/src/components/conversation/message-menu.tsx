@@ -26,11 +26,14 @@ export function MessageMenu(props: {
   start?: boolean;
   /** Always shown, not only on hover: a header with its other actions in view (a single email). */
   visible?: boolean;
+  /** Reply and Forward are buttons in the message's header, so the menu leaves them out. */
+  inline?: boolean;
 }) {
   const composer = useComposerState();
-  const { messageId } = props;
+  const messageId = props.inline ? undefined : props.messageId;
   const canReply = composer.chat && props.text.trim().length > 0;
-  if (!canReply && composer.chat && !props.messageId && !props.extra) return null;
+  const canMail = !props.inline && (!composer.chat || !!messageId);
+  if (!canReply && !canMail && !props.extra) return null;
   return (
     <MenuTrigger>
       <Button
@@ -54,10 +57,12 @@ export function MessageMenu(props: {
         )}
         {/* Email reply: always on a personal thread; on a shared inbox, from a mail message,
             which also reopens a composer a discard closed. To everyone there, as it defaults. */}
-        {(!composer.chat || messageId) && (
+        {canMail && (
           <MenuItem
             textValue="Reply"
-            onAction={() => composer.openReply(composer.chat ? "replyAll" : "reply")}
+            onAction={() =>
+              composer.openReply(composer.chat ? "replyAll" : "reply", props.messageId)
+            }
           >
             <IconReply data-slot="icon" />
             <MenuLabel>Reply</MenuLabel>

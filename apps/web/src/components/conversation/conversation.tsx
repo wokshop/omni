@@ -260,6 +260,8 @@ function Timeline(props: {
   const { threadId, mailboxId, mailboxAddress, messages, helpdesk, flat } = props;
   const [unfolded, setUnfolded] = useState(false);
   const lines = useEventLines(mailboxId, helpdesk?.events ?? []);
+  // Each message by its Message-ID, for the one a team reply answered.
+  const byHeader = new Map(messages.map((m) => [m.messageIdHeader, m]));
   const entries: { at: string; key: string; node: ReactNode }[] = [
     ...messages.map((message) => ({
       at: message.sentAt,
@@ -267,7 +269,13 @@ function Timeline(props: {
       node: (
         <>
           <AddedLine message={message} />
-          <MessageItem threadId={threadId} message={message} self={mailboxAddress} flat={flat} />
+          <MessageItem
+            threadId={threadId}
+            message={message}
+            self={mailboxAddress}
+            flat={flat}
+            repliedTo={message.inReplyTo ? byHeader.get(message.inReplyTo) : undefined}
+          />
         </>
       ),
     })),

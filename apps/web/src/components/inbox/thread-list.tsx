@@ -471,9 +471,10 @@ function ThreadRow({
         className="shrink-0 bg-accent text-foreground outline-0 mix-blend-multiply [--avatar-radius:var(--radius-sm)] [--avatar-size:--spacing(7)]"
       />
       {/* 16px gap plus 16px margin: the frame's 32px between avatar and sender. The sender
-          column narrows with the list beside an open thread, so the subject keeps room. */}
+          column narrows with the list beside an open thread, so the subject keeps room and
+          sits close to the name. */}
       <span
-        className={`ms-4 w-[min(--spacing(68),30%)] shrink-0 truncate ${thread.unread ? "text-foreground" : "text-muted-foreground"}`}
+        className={`ms-4 w-[min(--spacing(68),30%)] shrink-0 truncate @max-4xl:w-[min(--spacing(36),25%)] ${thread.unread ? "text-foreground" : "text-muted-foreground"}`}
       >
         {sender}
       </span>

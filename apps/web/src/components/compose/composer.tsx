@@ -41,7 +41,6 @@ import { ChatComposer } from "./chat-composer.tsx";
 import { useComposerState, type ReplyKind } from "./composer-state.tsx";
 import { RecipientField } from "./recipient-field.tsx";
 import { Toolbar } from "./toolbar.tsx";
-import { Visibility } from "./visibility.tsx";
 import { offerUndoSend } from "./undo-send.ts";
 
 /** The RFC 3676 signature separator, so mail clients can fold it. */
@@ -140,10 +139,10 @@ function customerRecipients(messages: Message[], inbox: string): string[] {
 type Mode = "reply" | "forward";
 
 /** Whom a reply starts addressed to, by kind: the latest sender, or everyone outside the team. */
-function recipientsFor(kind: ReplyKind, thread: Thread): string[] {
+function recipientsFor(kind: ReplyKind, thread: Thread, source: Message | undefined): string[] {
   return kind === "replyAll"
     ? customerRecipients(thread.messages, thread.mailboxAddress)
-    : replyRecipients(thread.messages.at(-1));
+    : replyRecipients(source ?? thread.messages.at(-1));
 }
 
 /**
@@ -170,14 +169,17 @@ export function ReplyComposer({ thread }: { thread: Thread }) {
           <ChatComposer key={thread.id} thread={thread} active={hidden} />
         </div>
       )}
-      {!hidden && (
-        // A fresh composer per reply or forwarded message: its own recipients, body and draft.
-        <ModeComposer
-          key={`${thread.id}:${state.forwardId ?? "reply"}:${state.generation}`}
-          thread={thread}
-          mode={state.forwardId ? "forward" : "reply"}
-          sourceId={state.forwardId}
-        />
+      {/* Kept mounted while Hidden shows after a send, so its undo can hand the text back. */}
+      {state.email && (
+        <div hidden={hidden}>
+          {/* A fresh composer per reply or forwarded message: its own recipients, body and draft. */}
+          <ModeComposer
+            key={`${thread.id}:${state.forwardId ? `forward:${state.forwardId}` : `reply:${state.replyToId ?? ""}`}:${state.generation}`}
+            thread={thread}
+            mode={state.forwardId ? "forward" : "reply"}
+            sourceId={state.forwardId ?? state.replyToId}
+          />
+        </div>
       )}
     </div>
   );
@@ -191,7 +193,6 @@ function ModeComposer(props: {
 }) {
   const { thread, mode } = props;
   const state = useComposerState();
-  const { chat } = state;
   const latest = thread.messages.at(-1);
   const { signature, isLoading: signatureLoading } = useSignature(thread.mailboxId);
   // A reply can leave the shared inbox from one of your own mailboxes: a hand-off (ADR 0030).
@@ -209,7 +210,8 @@ function ModeComposer(props: {
   const cancelSend = useCancelSend();
   const render = useRenderCannedReply(thread.id);
 
-  const defaultTo = mode === "reply" ? recipientsFor(state.replyKind, thread) : [];
+  const replied = thread.messages.find((m) => m.id === props.sourceId) ?? latest;
+  const defaultTo = mode === "reply" ? recipientsFor(state.replyKind, thread, replied) : [];
   const [to, setTo] = useState<string[]>(defaultTo);
   const [cc, setCc] = useState<string[]>([]);
   const [bcc, setBcc] = useState<string[]>([]);
@@ -303,7 +305,7 @@ function ModeComposer(props: {
     // Sent explicitly unless they are exactly whom the server would reply to on its own.
     const recipientsChanged =
       mode === "forward" ||
-      to.join() !== replyRecipients(latest).join() ||
+      to.join() !== replyRecipients(source).join() ||
       cc.length > 0 ||
       bcc.length > 0;
     const restore = () => {
@@ -313,6 +315,7 @@ function ModeComposer(props: {
         appToast.message("Send stopped", { description: "Its text is on your clipboard." });
         return;
       }
+      state.showEmail();
       setText(before.text);
       setTo(before.to);
       setCc(before.cc);
@@ -343,6 +346,7 @@ function ModeComposer(props: {
     touched.current = false;
     setText(startingBody(signature));
     files.reset();
+    state.sentEmail();
     if (mode === "forward") {
       setTo([]);
       setCc([]);
@@ -401,7 +405,7 @@ function ModeComposer(props: {
     if (next === "forward") return state.forward(source?.id ?? latest?.id ?? "");
     state.openReply(next);
     if (mode === "forward") return;
-    const recipients = recipientsFor(next, thread);
+    const recipients = recipientsFor(next, thread, source);
     setTo(recipients);
     edited({ to: recipients });
   };
@@ -482,8 +486,8 @@ function ModeComposer(props: {
           edited({ text: next });
         }}
         onSend={send}
-        // Opened by Reply on a personal thread: ready to write. A shared inbox's stays put.
-        autoFocus={!chat && mode === "reply"}
+        // Opened by Reply: ready to write.
+        autoFocus={mode === "reply"}
       />
       <ComposerFiles files={files.files} onRemove={files.remove} />
       <Toolbar
@@ -491,7 +495,6 @@ function ModeComposer(props: {
           <>
             <KindMenu kind={mode === "forward" ? "forward" : state.replyKind} onChange={switchTo} />
             <AttachButton onFiles={files.add} />
-            {chat && <Visibility />}
             <CannedPicker mailboxId={thread.mailboxId} onPick={(r) => void insertCanned(r)} />
           </>
         }

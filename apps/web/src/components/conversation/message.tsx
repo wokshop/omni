@@ -77,6 +77,8 @@ export function MessageItem(props: {
   self: string;
   /** The thread's only message, shown as the page: a card without its edge. */
   flat?: boolean | undefined;
+  /** The message this one answers (its In-Reply-To), when it is in the thread. */
+  repliedTo?: Message | undefined;
 }) {
   const { threadId, message } = props;
   const [full, setFull] = useState(opensFull(message));
@@ -86,12 +88,15 @@ export function MessageItem(props: {
   const card = message.display === "card" || full || !!props.flat;
   // Right-hand side: anything this inbox sent. Blue only for the reader's own replies.
   const ours = message.fromTeam && !card;
+  // Reply and Forward sit in the header of mail from outside the team (and a single email's).
+  const inline = !!props.flat || !message.fromTeam;
 
   const toggle = message.hasHtml && (
     <HtmlMenuItems
       full={full}
       onToggle={() => setFull((open) => !open)}
-      onLoadImages={full && !images && message.remoteImageCount > 0 ? () => setImages(true) : null}
+      blockedImages={images ? 0 : message.remoteImageCount}
+      onLoadImages={() => setImages(true)}
     />
   );
 
@@ -103,6 +108,7 @@ export function MessageItem(props: {
       text={message.cleanText}
       messageId={message.id}
       extra={toggle}
+      inline={inline}
       // A single email's header shows Reply and Forward beside it: a hidden ⋯ would leave a gap.
       visible={!!props.flat}
     />
@@ -110,15 +116,18 @@ export function MessageItem(props: {
 
   return (
     <article
+      id={messageAnchor(message.id)}
       aria-label={`${message.fromMe ? "You" : sender}, ${messageTime(message.sentAt)}`}
       // An email's body sits further under its larger header than a bubble under its name.
       className={`group/item flex flex-col ${props.flat ? "gap-4" : "gap-3"} ${ours ? "items-end" : "items-start"}`}
     >
-      {props.flat ? (
-        <EmailHeader message={message} sender={sender} self={props.self} menu={menu} />
-      ) : (
-        <ChatHeader message={message} sender={sender} menu={menu} />
-      )}
+      <MessageHeader
+        flat={!!props.flat}
+        message={message}
+        sender={sender}
+        self={props.self}
+        menu={menu}
+      />
 
       {card ? (
         <div
@@ -157,6 +166,7 @@ export function MessageItem(props: {
         attachments={message.attachments}
         align={ours ? "end" : "start"}
       />
+      {message.fromTeam && <RepliedTo message={props.repliedTo} />}
     </article>
   );
 }
@@ -165,17 +175,20 @@ export function MessageItem(props: {
 function HtmlMenuItems(props: {
   full: boolean;
   onToggle: () => void;
-  /** Set while the full message shows and has remote images still blocked. */
-  onLoadImages: (() => void) | null;
+  /** Remote images not loaded yet. */
+  blockedImages: number;
+  onLoadImages: () => void;
 }) {
   const label = props.full ? "Show text" : "Show full message";
+  // Offered while the full message shows and has remote images still blocked.
+  const canLoadImages = props.full && props.blockedImages > 0;
   return (
     <>
       <MenuItem textValue={label} onAction={props.onToggle}>
         {props.full ? <IconNote data-slot="icon" /> : <IconMail data-slot="icon" />}
         <MenuLabel>{label}</MenuLabel>
       </MenuItem>
-      {props.onLoadImages && (
+      {canLoadImages && (
         <MenuItem textValue="Load images" onAction={props.onLoadImages}>
           <IconImage data-slot="icon" />
           <MenuLabel>Load images</MenuLabel>
@@ -185,11 +198,62 @@ function HtmlMenuItems(props: {
   );
 }
 
-/** A conversation message's line: a small face (not for yours), the name and the time. */
-function ChatHeader(props: { message: Message; sender: string; menu: ReactNode }) {
+/** A single email's header, laid out like mail, or a conversation message's line. */
+function MessageHeader(props: {
+  flat: boolean;
+  message: Message;
+  sender: string;
+  self: string;
+  menu: ReactNode;
+}) {
+  const { message, sender, menu } = props;
+  if (props.flat)
+    return <EmailHeader message={message} sender={sender} self={props.self} menu={menu} />;
+  return <ChatHeader message={message} sender={sender} menu={menu} actions={!message.fromTeam} />;
+}
+
+/** Where a message sits in the page, so another can point to it. */
+const messageAnchor = (id: string) => `message-${id}`;
+
+/**
+ * Under a team email: the email it answered, by sender and time, so a reply in the linear thread
+ * says which message it was for. Pressing it brings that message into view.
+ */
+function RepliedTo({ message }: { message: Message | undefined }) {
+  if (!message) return null;
+  const sender = personName({ name: message.fromName, address: message.fromAddress });
+  return (
+    <Button
+      intent="plain"
+      size="text"
+      onPress={() =>
+        document
+          .getElementById(messageAnchor(message.id))
+          ?.scrollIntoView({ behavior: "smooth", block: "center" })
+      }
+      className="text-xs [--btn-foreground:var(--color-subtle-foreground)] hover:[--btn-foreground:var(--color-foreground)]"
+    >
+      <IconReply />
+      <span>
+        Replied to {sender} · <span className="tabular-nums">{messageTime(message.sentAt)}</span>
+      </span>
+    </Button>
+  );
+}
+
+/**
+ * A conversation message's line: a small face (not for yours), the name and the time. Mail from
+ * outside the team adds Reply and Forward at the far right, to answer that message by email.
+ */
+function ChatHeader(props: {
+  message: Message;
+  sender: string;
+  menu: ReactNode;
+  actions: boolean;
+}) {
   const { message, sender } = props;
   return (
-    <header className="flex items-center gap-2">
+    <header className={`flex items-center gap-2 ${props.actions ? "w-full" : ""}`}>
       {!message.fromMe && (
         <Avatar
           isSquare
@@ -204,7 +268,31 @@ function ChatHeader(props: { message: Message; sender: string; menu: ReactNode }
         {messageTime(message.sentAt)}
       </time>
       {props.menu}
+      {props.actions && (
+        <div className="ms-auto flex items-center gap-1">
+          <ReplyActions message={message} />
+        </div>
+      )}
     </header>
+  );
+}
+
+/** Reply and Forward to one message: the email composer opens answering it. */
+function ReplyActions({ message }: { message: Message }) {
+  const composer = useComposerState();
+  return (
+    <>
+      <HeaderAction
+        label="Reply"
+        // A shared inbox writes to everyone outside the team by default.
+        onPress={() => composer.openReply(composer.chat ? "replyAll" : "reply", message.id)}
+      >
+        <IconReply />
+      </HeaderAction>
+      <HeaderAction label="Forward" onPress={() => composer.forward(message.id)}>
+        <IconForward />
+      </HeaderAction>
+    </>
   );
 }
 
@@ -216,7 +304,6 @@ function ChatHeader(props: { message: Message; sender: string; menu: ReactNode }
 function EmailHeader(props: { message: Message; sender: string; self: string; menu: ReactNode }) {
   const { message, sender } = props;
   const [open, setOpen] = useState(false);
-  const composer = useComposerState();
   const name = (a: { name?: string | null; address: string }) =>
     a.address.toLowerCase() === props.self.toLowerCase() ? "You" : personName(a);
   const recipients = [...message.to, ...message.cc].map(name);
@@ -251,12 +338,7 @@ function EmailHeader(props: { message: Message; sender: string; self: string; me
         </div>
         {/* The three actions read as one group: closer to each other than to the name. */}
         <div className="flex items-center gap-1">
-          <HeaderAction label="Reply" onPress={() => composer.openReply("reply")}>
-            <IconReply />
-          </HeaderAction>
-          <HeaderAction label="Forward" onPress={() => composer.forward(message.id)}>
-            <IconForward />
-          </HeaderAction>
+          <ReplyActions message={message} />
           {props.menu}
         </div>
       </header>
