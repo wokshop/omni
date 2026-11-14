@@ -98,7 +98,7 @@ export function Conversation({ threadId }: { threadId: string }) {
 
   return (
     <section aria-label="Conversation" className={SECTION}>
-      <Actions thread={thread} />
+      <Actions thread={thread} subject={subject} />
       {/* The divider from the list runs beside the messages only; the toolbar row stays open,
           continuing the list's header row. */}
       {/* Per conversation: the timeline's menus and selections steer the composer under it. */}
@@ -110,12 +110,9 @@ export function Conversation({ threadId }: { threadId: string }) {
           // Full screen, the sidebar's own edge is the only line: a second beside it doubles up.
           className={`${SCROLLER} overflow-y-auto overscroll-none ${fullScreen ? "" : "border-s"}`}
         >
-          {/* A single email's title is a row of its own, level with the list's toolbar row. */}
-          {single && <TitleRow subject={subject} />}
           {/* Grows to fill a short thread, so the composer stays at the pane's bottom. */}
           {/* A shared inbox leaves room at the end for the properties pill over the composer. */}
           <div className={columnClass(single)}>
-            {!single && <Heading level={2}>{subject || "(no subject)"}</Heading>}
             <Timeline
               key={threadId}
               threadId={threadId}
@@ -138,21 +135,6 @@ export function Conversation({ threadId }: { threadId: string }) {
         </div>
       </ComposerProvider>
     </section>
-  );
-}
-
-/**
- * A single email's title, on one line, under the top bar: as tall as the list's toolbar row
- * beside it (and lifted 1px like it), so the two bottom lines run as one. It stays at the pane's
- * top, filled, so the email scrolls under it.
- */
-function TitleRow({ subject }: { subject: string }) {
-  return (
-    <div className="sticky top-0 z-10 flex h-10.5 shrink-0 items-center border-b bg-background px-5 pb-0.5">
-      <Heading level={2} className="truncate" title={subject || undefined}>
-        {subject || "(no subject)"}
-      </Heading>
-    </div>
   );
 }
 
@@ -188,7 +170,7 @@ const SCROLLER = "flex min-h-0 flex-1 flex-col";
 // 40px under the last message: more than the 24px between messages, so the newest one doesn't
 // sit on the composer when scrolled to the end.
 const COLUMN = "mx-auto flex w-full max-w-3xl grow flex-col gap-6 px-5 pt-6 pb-10";
-// A single email: the column without its width cap, under its title row.
+// A single email: the column without its width cap.
 const PAGE = "flex w-full grow flex-col gap-6 px-5 pt-5 pb-6";
 
 /** The messages' column, with room at the end for what floats over the composer. */
@@ -210,15 +192,18 @@ function ConversationSkeleton() {
         className={SECTION}
         skeleton={
           <>
-            {/* The toolbar's actions: 28px buttons with 16px icons, as `Actions` lays them out. */}
-            <div className="flex h-12 shrink-0 items-center justify-end gap-3 border-s pe-4">
+            {/* The top bar: the subject, then 28px buttons with 16px icons, as `Actions` lays them
+                out. */}
+            <div className="flex h-12 shrink-0 items-center gap-3 border-s border-b ps-5 pe-4">
+              <span className="min-w-0 flex-1">
+                <SkeletonBox width="45%" height={14} />
+              </span>
               {[0, 1, 2, 3].map((i) => (
                 <SkeletonBox key={i} width={16} height={16} radius={4} />
               ))}
             </div>
             <div className={`${SCROLLER} overflow-hidden border-s`}>
               <div className={COLUMN}>
-                <SkeletonBox width="45%" height={20} />
                 <MessageBones width="55%" />
                 <MessageBones width="25%" ours />
                 <MessageBones width="40%" />
@@ -340,22 +325,31 @@ function Entry({ children }: { children: ReactNode }) {
  * done and later (yours alone), read state and full screen. A shared conversation's team state
  * (status, owner, priority, tags) is the rail under its title.
  */
-function Actions({ thread }: { thread: Thread }) {
+function Actions({ thread, subject }: { thread: Thread; subject: string }) {
   const markRead = useMarkRead();
   const [fullScreen, toggleFullScreen] = useFullScreen();
 
   return (
-    // The reading column's own top bar, the window's top edge to the subject: as tall as the
-    // list's header beside it, borderless like it. end-2.5 matches that header's inset.
-    <div className={`relative flex h-12 shrink-0 items-center ${fullScreen ? "" : "border-s"}`}>
-      {/* Full screen hides the list: switch threads from here. 12px in, the label at 20px like
-          the list's rows. */}
+    // The reading column's top bar: the subject, then the actions. One row with the list's
+    // header beside it, the same height and bottom line; end-2.5 matches that header's inset.
+    <div
+      className={`flex h-12 shrink-0 items-center gap-3 border-b ps-5 pe-2.5 ${fullScreen ? "" : "border-s"}`}
+    >
+      {/* Full screen hides the list: switch threads from here, before the subject. */}
       {fullScreen && (
-        <div className="absolute inset-y-0 start-3 flex max-w-[40%] items-center">
+        <div className="-ms-2 flex max-w-[40%] shrink-0 items-center">
           <ThreadSwitcher threadId={thread.id} />
         </div>
       )}
-      <div className="absolute inset-y-0 end-2.5 flex items-center gap-1">
+      {/* 1px down, like the list's title beside it: the capitals centre on the icons. */}
+      <Heading
+        level={2}
+        className="min-w-0 flex-1 translate-y-px truncate"
+        title={subject || undefined}
+      >
+        {subject || "(no subject)"}
+      </Heading>
+      <div className="flex shrink-0 items-center gap-1">
         <TriageActions thread={thread} />
         <Action
           label={thread.read ? "Mark unread" : "Mark read"}

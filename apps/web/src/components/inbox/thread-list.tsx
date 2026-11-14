@@ -37,8 +37,8 @@ import type {
 
 // The middle of three columns: wide enough for a sender and the start of a subject, so the
 // reading column beside it gets the rest of the page.
-const LIST_WIDTH = 360;
-const LIST_MIN = 280;
+const LIST_WIDTH = 440;
+const LIST_MIN = 320;
 const LIST_MAX = 720;
 
 /** What a list row shows. Threads and search results both map to it. */
@@ -193,7 +193,10 @@ export function List(
   // Three columns, always: the list keeps a width the person can drag, and the reading column
   // takes the rest of the page at its full height, empty until a thread (or new mail) opens.
   const split = !hideList;
-  const listWidth = useStoredWidth("omni:list-width-3col", LIST_WIDTH, LIST_MIN, LIST_MAX);
+  const listWidth = useStoredWidth("omni:list-width", LIST_WIDTH, LIST_MIN, LIST_MAX);
+  // Until dragged, the reading column keeps a comfortable 672px (`w-2xl`) and the list takes the
+  // rest, down to its minimum.
+  const hug = split && !listWidth.isSet;
   const [resizing, setResizing] = useState(false);
   // The rows behind the open thread, for its full-screen switcher.
   // A helpdesk list's rows follow its status, not Done or Later: no view to leave there.
@@ -225,12 +228,12 @@ export function List(
       <div className={`flex min-h-0 flex-1 ${resizing ? "cursor-ew-resize select-none" : ""}`}>
         <section
           ref={listRef}
-          style={split ? { width: listWidth.width } : undefined}
-          className={`flex min-w-0 flex-none flex-col ${hideList ? "hidden" : ""}`}
+          style={split && !hug ? { width: listWidth.width } : undefined}
+          className={`flex flex-col ${hug ? "min-w-80 flex-1" : "min-w-0 flex-none"} ${hideList ? "hidden" : ""}`}
         >
           {/* 10px on the right, the same as the 28px controls' inset from the top. */}
           <header
-            className={`flex h-12 shrink-0 items-center gap-2 pe-2.5 ${sidebarHidden ? "ps-2.5" : "ps-5"}`}
+            className={`flex h-12 shrink-0 items-center gap-2 border-b pe-2.5 ${sidebarHidden ? "ps-2.5" : "ps-5"}`}
           >
             {sidebarHidden && (
               <SidebarTrigger intent="ghost" size="sq-xs" aria-label="Open sidebar">
@@ -303,10 +306,10 @@ export function List(
             </ListSweepSlot>
           )}
         </section>
-        {/* The reading column, from the window's top to its bottom: the open thread or nothing. The same wrapper in and out of full screen, so toggling it doesn't remount
-            the thread. */}
+        {/* The reading column, from the window's top to its bottom: the open thread or nothing.
+            The same wrapper in and out of full screen, so toggling it doesn't remount it. */}
         {
-          <div className="relative flex min-w-0 flex-1">
+          <div className={`relative flex min-w-0 ${hug ? "w-2xl shrink" : "flex-1"}`}>
             {split && (
               <ResizeGrip
                 label="Resize list"
@@ -319,7 +322,10 @@ export function List(
             {threadId && props.children ? (
               <OpenListContext value={openList}>{props.children}</OpenListContext>
             ) : (
-              <div className={`flex-1 ${fullScreen ? "" : "border-s"}`} />
+              // The top rail's line runs on over the empty column.
+              <div className={`flex flex-1 flex-col ${fullScreen ? "" : "border-s"}`}>
+                <div className="h-12 shrink-0 border-b" />
+              </div>
             )}
           </div>
         }
