@@ -297,8 +297,8 @@ additive.
   `https://chatgpt.com/connector_platform_oauth_redirect`.
 
 **Scopes.** `mail:read`, `mail:triage`, `mail:draft`, plus `openid`, `email`, `profile` and
-`offline_access` (offered, never challenged). Consent defaults to read only, with triage and
-drafts as checkboxes. A tool that needs a scope the token lacks answers HTTP 403 `error=
+`offline_access` (offered, never challenged). Consent lists the scopes the client asked for;
+Claude and ChatGPT ask for every advertised scope. A tool that needs a scope the token lacks answers HTTP 403 `error=
 "insufficient_scope"` naming every scope it needs, so the client can step up.
 
 **Tokens.** JWT access tokens (RFC 9068), 1 hour, audience-bound to `<BETTER_AUTH_URL>/mcp`
@@ -312,9 +312,8 @@ consent for that company. A scoped session cannot widen itself through OAuth. Ea
 the thread routes already do (ADR 0014). Membership is checked live on every call, so removing
 someone from a workspace cuts their agent off at once, before the token expires.
 
-**Screens (web).** OAuth needs two small screens: consent (client name and icon, scopes as
-checkboxes, workspace choice) and "Connected apps" in Settings to see and revoke grants. Login
-reuses `/login`. The Worker exposes the APIs; the screens follow `DESIGN.md`. See open question 3.
+**Screens (web).** OAuth needs two small screens: consent (see "Decided", item 3) and "Connected apps" in Settings to see and revoke grants. Login
+reuses `/login`. The Worker exposes the APIs; the screens follow `DESIGN.md`.
 
 ## Transport and runtime
 
@@ -404,7 +403,7 @@ Each layer is one PR, with its e2e tests run locally before push.
 
 1. **Auth and transport.** Better Auth 1.7.23 with `mcp`, `cimd` and `jwt`; migrations; metadata
    endpoints; `/mcp` with the SDK; the `inbox` tool; consent and Connected-apps APIs (and
-   screens, per question 3). Proof: Claude Code connects and calls `inbox`.
+   screen). Proof: Claude Code connects and calls `inbox`.
 2. **Read tools.** `search` with filters and `fetch` with batching; the new `forMember` read
    paths and their leak tests; perf numbers.
 3. **Writes.** `triage` and `draft_reply`; the handler refactor into shared functions; the lane
@@ -414,19 +413,14 @@ Each layer is one PR, with its e2e tests run locally before push.
 
 The agent eval runs at the end of layer 2 (reads) and again at the end of layer 4.
 
-## Open questions
+## Decided (Nov 14, 2026)
 
-1. **SQL in this version, or the typed tools first?** Recommended: yes, as layer 4. It is the
-   most capable tool and the one agents are best at, but it adds a database role, a second
-   Hyperdrive config and a one-time self-hosting step. The alternative is a typed `query` with
-   Attio-style JSON filters and `group_by` compiled through `forMember`. It is safer to build and
-   less expressive.
-2. **Writes in this version: triage and drafts?** Recommended: yes to both, sending no. Drafts
-   keep a person on every outgoing word.
-3. **Who builds the consent and Connected-apps screens?** Recommended: I build them small, from
-   existing components per `DESIGN.md` and the Figma file. They are needed before anyone outside
-   the team can connect.
-4. **Workspace choice at consent:** every workspace by default, with "only this workspace" as an
-   option. Or always one workspace per connection?
-5. **Public URL:** `https://omnidirectional.app/mcp` (same origin as the API) is the default. Do
-   you want a dedicated host such as `mcp.omnidirectional.app` for the connector directories?
+1. **SQL is in this version**, as layer 4.
+2. **Writes: triage and drafts.** No sending.
+3. **We build the consent screen** from Rodrigo's reference: an empty page with one centered
+   block. It has the title "<Client> access request", the line "<Client> is requesting access to
+   your Omni workspace", a "Select workspace" picker, the requested scopes as a list with icons,
+   and Cancel and Confirm. Connected apps in Settings waits for its own design; the API for it
+   ships in layer 1.
+4. **Workspace:** the picker defaults to "All workspaces". Picking one scopes the grant to it.
+5. **URL:** `https://omnidirectional.app/mcp`.
