@@ -5,9 +5,21 @@
 // message turns it into the email composer, and a send or a discard turns it back. A personal
 // thread has only Public, closed until Reply or Forward opens it and again after a discard.
 import { createContext, useContext, useState, type ReactNode } from "react";
+import type { ComposerFile } from "@/hooks/use-compose.ts";
 import type { Reply } from "@/lib/reply.ts";
 
 export type ComposerMode = "public" | "hidden";
+/** An undone send's content, handed to a fresh email composer when its own has gone. */
+export interface HandBack {
+  mode: "reply" | "forward";
+  sourceId: string | undefined;
+  text: string;
+  to: string[];
+  cc: string[];
+  bcc: string[];
+  files: ComposerFile[];
+}
+
 /** Who a reply goes to: the latest sender, or everyone on the thread outside the team. */
 export type ReplyKind = "reply" | "replyAll";
 
@@ -42,6 +54,13 @@ interface ComposerState {
   sentEmail: () => void;
   /** Shows the email composer again (an undone send). */
   showEmail: () => void;
+  /**
+   * An undone send whose composer was replaced (Reply again before the undo): opens a fresh one
+   * holding it. False while another email is being written, which it would replace.
+   */
+  handBack: (content: HandBack) => boolean;
+  /** The handed-back content, once, for the composer that opens with it. */
+  takeHandBack: () => HandBack | undefined;
   /** Changes on every close, so the next composer starts empty. */
   generation: number;
 }
@@ -55,15 +74,15 @@ export function ComposerProvider({ chat, children }: { chat: boolean; children: 
   const [seed, setSeed] = useState<{ text: string }>();
   const [forwardId, setForwardId] = useState<string>();
   const [replyToId, setReplyToId] = useState<string>();
+  const [handed, setHanded] = useState<HandBack>();
   const [email, setEmail] = useState(false);
   // A shared inbox writes to everyone outside the team by default, as it always did.
   const [replyKind, setReplyKind] = useState<ReplyKind>(chat ? "replyAll" : "reply");
   const [generation, setGeneration] = useState(0);
   const showing = email && (!chat || mode === "public");
-  // Reply or Forward while the email composer isn't in view starts a fresh one, so it answers
-  // the thread as it is now, not as it was at the last send.
+  // The composer's key follows the message it answers, so Reply on another message starts fresh;
+  // the same one keeps its composer, and with it an undo still waiting on its last send.
   const startEmail = () => {
-    if (!showing) setGeneration((n) => n + 1);
     setEmail(true);
     setMode("public");
   };
@@ -107,6 +126,19 @@ export function ComposerProvider({ chat, children }: { chat: boolean; children: 
       if (chat) setMode("hidden");
     },
     showEmail: () => setMode("public"),
+    handBack: (content) => {
+      if (showing) return false;
+      setHanded(content);
+      setForwardId(content.mode === "forward" ? content.sourceId : undefined);
+      if (content.mode === "reply" && content.sourceId) setReplyToId(content.sourceId);
+      setGeneration((n) => n + 1);
+      startEmail();
+      return true;
+    },
+    takeHandBack: () => {
+      setHanded(undefined);
+      return handed;
+    },
     generation,
   };
   return <Context value={value}>{children}</Context>;

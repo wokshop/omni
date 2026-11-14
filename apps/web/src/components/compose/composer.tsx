@@ -239,8 +239,18 @@ function ModeComposer(props: {
         load(theirs);
         appToast.message("A teammate changed this draft. You're now editing their version.");
       },
+      // Reply on a chosen message resumes only a draft answering that message.
+      matchSource: mode === "forward" || !!props.sourceId,
     },
   );
+  // Whether this composer is still on screen, for an undo that comes back after it was replaced.
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
 
   // Start from the shared draft when there is one, else from the signature (and, for a forward,
   // the original's files). Once: typing must never be replaced by a refetch.
@@ -258,6 +268,23 @@ function ModeComposer(props: {
     if (started.current || draft.isLoading || signatureLoading) return;
     started.current = true;
     setReady(true);
+    // Opened for an undone send whose own composer had gone: it comes back here, as a draft.
+    const handed = state.takeHandBack();
+    if (handed) {
+      setText(handed.text);
+      setTo(handed.to);
+      setCc(handed.cc);
+      setBcc(handed.bcc);
+      if (handed.cc.length || handed.bcc.length) setShowCopies(true);
+      files.reset(handed.files);
+      touched.current = true;
+      return draft.save({
+        bodyText: handed.text,
+        to: asDraftAddresses(handed.to),
+        cc: asDraftAddresses(handed.cc),
+        bcc: asDraftAddresses(handed.bcc),
+      });
+    }
     if (draft.draft) return load(draft.draft);
     setText(startingBody(signature));
     if (mode === "forward") files.reset(originalFiles(source));
@@ -309,8 +336,11 @@ function ModeComposer(props: {
       cc.length > 0 ||
       bcc.length > 0;
     const restore = () => {
+      // Replaced by Reply on another message: a fresh composer takes it, unless an email is
+      // being written there, which falls to the clipboard below.
+      if (!alive.current && state.handBack({ mode, sourceId, ...before })) return;
       // Something new was written since: keep it, and hand back the stopped one on the clipboard.
-      if (hasWords(current.current, signature)) {
+      if (!alive.current || hasWords(current.current, signature)) {
         void navigator.clipboard?.writeText(before.text).catch(() => undefined);
         appToast.message("Send stopped", { description: "Its text is on your clipboard." });
         return;

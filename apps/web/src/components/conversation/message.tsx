@@ -79,6 +79,8 @@ export function MessageItem(props: {
   flat?: boolean | undefined;
   /** The message this one answers (its In-Reply-To), when it is in the thread. */
   repliedTo?: Message | undefined;
+  /** Brings a message into view, unfolding the timeline first when it is folded away. */
+  onShow?: ((messageId: string) => void) | undefined;
 }) {
   const { threadId, message } = props;
   const [full, setFull] = useState(opensFull(message));
@@ -166,7 +168,7 @@ export function MessageItem(props: {
         attachments={message.attachments}
         align={ours ? "end" : "start"}
       />
-      {message.fromTeam && <RepliedTo message={props.repliedTo} />}
+      {message.fromTeam && <RepliedTo message={props.repliedTo} onShow={props.onShow} />}
     </article>
   );
 }
@@ -215,23 +217,32 @@ function MessageHeader(props: {
 /** Where a message sits in the page, so another can point to it. */
 const messageAnchor = (id: string) => `message-${id}`;
 
+/** Scrolls a mounted message to the middle of the reader; false when it isn't mounted. */
+export function scrollToMessage(id: string) {
+  const el = document.getElementById(messageAnchor(id));
+  el?.scrollIntoView({ behavior: "smooth", block: "center" });
+  return !!el;
+}
+
 /**
  * Under a team email: the email it answered, by sender and time, so a reply in the linear thread
  * says which message it was for. Pressing it brings that message into view.
  */
-function RepliedTo({ message }: { message: Message | undefined }) {
+function RepliedTo(props: {
+  message: Message | undefined;
+  onShow: ((messageId: string) => void) | undefined;
+}) {
+  const { message } = props;
   if (!message) return null;
   const sender = personName({ name: message.fromName, address: message.fromAddress });
   return (
     <Button
       intent="plain"
       size="text"
-      onPress={() =>
-        document
-          .getElementById(messageAnchor(message.id))
-          ?.scrollIntoView({ behavior: "smooth", block: "center" })
-      }
-      className="text-xs [--btn-foreground:var(--color-subtle-foreground)] hover:[--btn-foreground:var(--color-foreground)]"
+      onPress={() => (props.onShow ? props.onShow(message.id) : scrollToMessage(message.id))}
+      // 6px between the arrow and the words; icon and text share one colour, and the 16px line
+      // centres the 12px arrow on the text.
+      className="gap-x-1.5 text-xs/4 [--btn-foreground:var(--color-subtle-foreground)] [--btn-icon-active:var(--color-foreground)] [--btn-icon:var(--color-subtle-foreground)] hover:[--btn-foreground:var(--color-foreground)]"
     >
       <IconReply />
       <span>
