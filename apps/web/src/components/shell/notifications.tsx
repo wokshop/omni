@@ -17,6 +17,7 @@ import {
   IconMail,
   IconMailOpen,
   IconSliders,
+  IconX,
 } from "@/components/icons/central";
 import { rowTime } from "@/components/inbox/conversation-meta";
 import { Avatar } from "@/components/ui/avatar";
@@ -147,6 +148,12 @@ export function NotificationsPanel() {
             >
               <IconSliders />
             </HeaderAction>
+            {/* A phone shows the panel full width, with no outside to press: it closes here. */}
+            {isMobile && (
+              <HeaderAction label="Close" onPress={closeNotificationsPanel}>
+                <IconX />
+              </HeaderAction>
+            )}
           </div>
         </header>
         <Tabs
