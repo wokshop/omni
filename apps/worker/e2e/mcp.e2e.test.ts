@@ -701,3 +701,205 @@ test("fetch keeps ten long threads within max_chars", async () => {
     expect(document.metadata.truncated).toBe(true);
   }
 });
+
+describe("changing mail", () => {
+  let token: string;
+  let readOnly: string;
+  let member: string;
+  let personal: { threadId: string };
+  let ticket: string;
+  let strangers: string;
+
+  beforeAll(async () => {
+    const org = await createOrg(db, "writers");
+    const jo = await createMember(db, org.id, "jo@writers.test");
+    member = jo.id;
+    const box = await createMailbox(db, org.id, "jo@writers.test", "personal");
+    await grant(db, org.id, box.id, jo.id);
+    personal = await seedMessage(db, box, {
+      subject: "Weekly digest",
+      fromAddress: "news@digest.test",
+      to: ["jo@writers.test"],
+      uid: 7,
+      text: "This week in widgets.",
+    });
+    const desk = await createMailbox(db, org.id, "support@writers.test", "shared");
+    await grant(db, org.id, desk.id, jo.id);
+    ({ threadId: ticket } = await seedMessage(db, desk, {
+      subject: "Refund please",
+      fromAddress: "buyer@shop.test",
+      to: ["support@writers.test"],
+      uid: 1,
+      text: "I would like a refund.",
+    }));
+    await db.insert(schema.tags).values({ orgId: org.id, mailboxId: desk.id, name: "Refunds" });
+
+    const other = await createOrg(db, "strangers");
+    const kim = await createMember(db, other.id, "kim@strangers.test");
+    const kimBox = await createMailbox(db, other.id, "kim@strangers.test", "personal");
+    await grant(db, other.id, kimBox.id, kim.id);
+    ({ threadId: strangers } = await seedMessage(db, kimBox, {
+      subject: "Private",
+      fromAddress: "x@strangers.test",
+      uid: 1,
+    }));
+
+    const jar = new CookieJar();
+    await signIn(worker, db, "jo@writers.test", jar);
+    ({ access_token: token } = await connect(jar, {
+      scope: "openid mail:read mail:triage mail:draft",
+    }));
+    ({ access_token: readOnly } = await connect(jar));
+  });
+
+  const actionsFor = (threadId: string) =>
+    db
+      .select({ kind: schema.mailActions.kind })
+      .from(schema.mailActions)
+      .innerJoin(schema.threads, eq(schema.threads.mailboxId, schema.mailActions.mailboxId))
+      .where(eq(schema.threads.id, threadId));
+
+  // Catches: an agent's triage that reports success but changes nothing the app shows, writes
+  // state for the wrong person, loses the re-sort the model learns from, or queues the same
+  // IMAP move twice when a client retries.
+  test("triage files personal mail like the app does, and a retry queues nothing new", async () => {
+    const change = {
+      thread_id: personal.threadId,
+      read: true,
+      lane: "fyi",
+      later: true,
+      archived: true,
+    };
+    const first = await tool<{ results: { ok: boolean; applied: string[] }[] }>(token, "triage", {
+      changes: [change],
+    });
+    expect(first.data.results[0]).toMatchObject({ ok: true });
+    expect(first.data.results[0]!.applied.sort()).toEqual(["archived", "lane", "later", "read"]);
+
+    const [thread] = await db
+      .select()
+      .from(schema.threads)
+      .where(eq(schema.threads.id, personal.threadId));
+    expect(thread).toMatchObject({ archived: true, triage: "fyi", triageSource: "person" });
+    const [state] = await db
+      .select()
+      .from(schema.threadState)
+      .where(
+        and(
+          eq(schema.threadState.threadId, personal.threadId),
+          eq(schema.threadState.memberId, member),
+        ),
+      );
+    expect(state).toMatchObject({ read: true });
+    expect(state!.snoozedUntil).not.toBeNull();
+    const feedback = await db
+      .select()
+      .from(schema.triageFeedback)
+      .where(eq(schema.triageFeedback.threadId, personal.threadId));
+    expect(feedback).toMatchObject([{ toBucket: "fyi", memberId: member }]);
+    const queued = (await actionsFor(personal.threadId)).map((a) => a.kind).sort();
+    expect(queued).toEqual(["archive", "mark_read"]);
+    const audit = await db
+      .select()
+      .from(schema.auditEvents)
+      .where(eq(schema.auditEvents.subject, personal.threadId));
+    expect(audit).toMatchObject([{ action: "mcp.triage", actorMemberId: member }]);
+
+    await tool(token, "triage", { changes: [change] });
+    expect((await actionsFor(personal.threadId)).length).toBe(2);
+    expect(
+      await db
+        .select()
+        .from(schema.triageFeedback)
+        .where(eq(schema.triageFeedback.threadId, personal.threadId)),
+    ).toHaveLength(1);
+  });
+
+  // Catches: helpdesk changes skipping the workflow (no event, wrong assignee), or one bad change
+  // aborting the rest of the batch.
+  test("triage changes a shared conversation, and one bad change fails alone", async () => {
+    const { data } = await tool<{ results: { ok: boolean; error?: string }[] }>(token, "triage", {
+      changes: [
+        {
+          thread_id: ticket,
+          assignee: "me",
+          priority: "high",
+          add_tags: ["refunds"],
+          status: "resolved",
+        },
+        { thread_id: ticket, add_tags: ["Nope"] },
+        { thread_id: strangers, done: true },
+      ],
+    });
+    expect(data.results.map((r) => r.ok)).toEqual([true, false, false]);
+    expect(data.results[1]!.error).toContain("no tag Nope");
+    expect(data.results[2]!.error).toBe("not a thread you can see");
+    const [conversation] = await db
+      .select()
+      .from(schema.threads)
+      .where(eq(schema.threads.id, ticket));
+    expect(conversation).toMatchObject({
+      assigneeMemberId: member,
+      priority: "high",
+      status: "resolved",
+    });
+    const events = await db
+      .select({ kind: schema.conversationEvents.kind })
+      .from(schema.conversationEvents)
+      .where(eq(schema.conversationEvents.threadId, ticket));
+    expect(events.map((e) => e.kind).sort()).toEqual(
+      ["assigned", "priority", "status", "tag_added"].sort(),
+    );
+    // Nothing was written as Jo on someone else's thread.
+    const [stranger] = await db
+      .select()
+      .from(schema.threadState)
+      .where(
+        and(eq(schema.threadState.threadId, strangers), eq(schema.threadState.memberId, member)),
+      );
+    expect(stranger).toBeUndefined();
+  });
+
+  // Catches: a read-only grant changing mail, or a client never told which permission to ask for.
+  test("writing tools ask a read-only token to step up", async () => {
+    for (const [name, scope, args] of [
+      ["triage", "mail:triage", { changes: [{ thread_id: personal.threadId, read: false }] }],
+      ["draft_reply", "mail:draft", { thread_id: personal.threadId, body: "Hi" }],
+    ] as const) {
+      const response = await legacyCall(readOnly, {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/call",
+        params: { name, arguments: args },
+      });
+      expect(response.status).toBe(403);
+      expect(response.headers.get("www-authenticate")).toContain(`scope="${scope}"`);
+    }
+  });
+
+  // Catches: a draft addressed to ourselves, sent instead of saved, or saved on another person's
+  // thread.
+  test("draft_reply saves a reply for the person to send, addressed like a reply", async () => {
+    const { data, isError } = await tool<{ draft_id: string; to: string[]; subject: string }>(
+      token,
+      "draft_reply",
+      { thread_id: ticket, body: "Your refund is on its way." },
+    );
+    expect(isError).toBe(false);
+    expect(data).toMatchObject({ to: ["buyer@shop.test"], subject: "Re: Refund please" });
+    const [saved] = await db
+      .select()
+      .from(schema.drafts)
+      .where(eq(schema.drafts.id, data.draft_id));
+    expect(saved).toMatchObject({
+      kind: "reply",
+      threadId: ticket,
+      authorMemberId: member,
+      bodyText: "Your refund is on its way.",
+    });
+    expect((await actionsFor(ticket)).map((a) => a.kind)).not.toContain("send");
+
+    const elsewhere = await tool(token, "draft_reply", { thread_id: strangers, body: "Hi" });
+    expect(elsewhere.isError).toBe(true);
+  });
+});

@@ -13,6 +13,8 @@ import {
   members,
   messages,
   threads,
+  triageBucket,
+  triageFeedback,
 } from "./schema/index.ts";
 
 /** `exists` subquery: `memberId` has a grant on the row's mailbox, in the row's org. */
@@ -176,4 +178,58 @@ export async function findMemberMessageHtml(
     )
     .limit(1);
   return row?.htmlR2Key ?? null;
+}
+
+/**
+ * A person files a thread in `lane` (ADR 0029: an agent's `triage` does it for them): the triage
+ * becomes theirs (`triage_source = person`, which always files), describes the thread's latest
+ * message so a newer one re-triages it, and the re-sort is kept in `triage_feedback` to tune the
+ * model. Setting the lane it already has records nothing. Returns false when the member cannot
+ * see the thread.
+ */
+export async function resortThread(
+  db: Db,
+  memberId: string,
+  threadId: string,
+  lane: (typeof triageBucket.enumValues)[number],
+) {
+  return db.transaction(async (tx) => {
+    const [thread] = await tx
+      .select({
+        orgId: threads.orgId,
+        triage: threads.triage,
+        triageSource: threads.triageSource,
+        latest: sql<
+          string | null
+        >`(select m.id from ${messages} m where m.thread_id = ${threads.id} order by m.sent_at desc, m.id desc limit 1)`,
+      })
+      .from(threads)
+      .where(
+        and(
+          eq(threads.id, threadId),
+          exists(grantFor(db, memberId, threads.mailboxId, threads.orgId)),
+        ),
+      )
+      .for("update");
+    if (!thread) return false;
+    if (thread.triage === lane && thread.triageSource === "person") return true;
+    await tx
+      .update(threads)
+      .set({
+        triage: lane,
+        triageSource: "person",
+        triageConfidence: 1,
+        triageMessageId: thread.latest,
+        updatedAt: new Date(),
+      })
+      .where(eq(threads.id, threadId));
+    await tx.insert(triageFeedback).values({
+      orgId: thread.orgId,
+      threadId,
+      memberId,
+      fromBucket: thread.triage,
+      toBucket: lane,
+    });
+    return true;
+  });
 }
