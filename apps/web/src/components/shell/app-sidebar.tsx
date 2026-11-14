@@ -218,12 +218,13 @@ function UnreadCount({ mailbox }: { mailbox: string | undefined }) {
     .reduce((sum, c) => sum + c.unread, 0);
   if (!unread) return null;
   return (
-    // Square: 18px a side for one digit, wider only for more. It multiplies, so on the current
+    // Square: 18px a side for one digit, wider only for more. 4px into the row's end padding:
+    // its centre lines up with the sidebar toggle's and the search field's `/` above it. It multiplies, so on the current
     // row's fill it reads a step darker than on a plain row.
     <Badge
       intent="primary"
       isCircle={false}
-      className="ms-auto h-4.5 min-w-4.5 justify-center bg-unread-count px-1 py-0 text-xs/4.5 tabular-nums mix-blend-multiply"
+      className="ms-auto -me-1 h-4.5 min-w-4.5 justify-center bg-unread-count px-1 py-0 text-xs/4.5 tabular-nums mix-blend-multiply"
     >
       {unread}
     </Badge>
