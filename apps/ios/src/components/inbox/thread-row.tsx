@@ -1,7 +1,8 @@
 import type { ThreadSummary } from "@omni/client";
-import { Pressable, StyleSheet, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import { IconPaperclip, IconShared } from "@/components/icons.ts";
 import { Avatar } from "@/components/ui/avatar.tsx";
+import { PressableRow } from "@/components/ui/pressable-row.tsx";
 import { Text } from "@/components/ui/text.tsx";
 import { listTime } from "@/lib/mail.ts";
 import { colors, iconSize, space } from "@/theme/tokens.ts";
@@ -18,14 +19,7 @@ export function ThreadRow({ thread, sharedInbox, onPress }: ThreadRowProps) {
   const sender = thread.latestFrom?.name || thread.latestFrom?.address || "";
   const weight = thread.unread ? "semibold" : "regular";
   return (
-    <Pressable
-      onPress={onPress}
-      disabled={!onPress}
-      accessibilityRole="button"
-      accessibilityState={{ selected: false }}
-      accessibilityHint={thread.unread ? "Unread" : undefined}
-      style={({ pressed }) => [styles.row, pressed && styles.pressed]}
-    >
+    <PressableRow onPress={onPress} accessibilityHint={thread.unread ? "Unread" : undefined}>
       <Avatar name={sender} />
       <View style={styles.body}>
         <View style={styles.line}>
@@ -66,19 +60,11 @@ export function ThreadRow({ thread, sharedInbox, onPress }: ThreadRowProps) {
           ) : null}
         </View>
       </View>
-    </Pressable>
+    </PressableRow>
   );
 }
 
 const styles = StyleSheet.create({
-  row: {
-    flexDirection: "row",
-    gap: space(3),
-    paddingHorizontal: space(4),
-    paddingVertical: space(3),
-    backgroundColor: colors.background,
-  },
-  pressed: { backgroundColor: colors.accent },
   body: { flex: 1, gap: space(0.5) },
   line: { flexDirection: "row", alignItems: "center", gap: space(2) },
   grow: { flex: 1 },

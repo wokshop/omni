@@ -1,13 +1,14 @@
 import type { Mailbox } from "@omni/client";
 import type { ComponentType } from "react";
-import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { ScrollView, StyleSheet, View } from "react-native";
 import type { SvgProps } from "react-native-svg";
 import { IconCheck, IconInbox, IconShared } from "@/components/icons.ts";
 import { Avatar } from "@/components/ui/avatar.tsx";
 import { Badge } from "@/components/ui/badge.tsx";
+import { PressableRow } from "@/components/ui/pressable-row.tsx";
 import { Text } from "@/components/ui/text.tsx";
 import { mailboxName } from "@/lib/mail.ts";
-import { colors, iconSize, radius, space } from "@/theme/tokens.ts";
+import { colors, iconSize, space } from "@/theme/tokens.ts";
 
 export interface MailboxListProps {
   mailboxes: Mailbox[];
@@ -57,12 +58,7 @@ function Row(props: {
 }) {
   const Icon = props.icon;
   return (
-    <Pressable
-      onPress={props.onPress}
-      accessibilityRole="button"
-      accessibilityState={{ selected: props.current }}
-      style={({ pressed }) => [styles.row, (props.current || pressed) && styles.current]}
-    >
+    <PressableRow onPress={props.onPress} isCurrent={props.current} shape="inset">
       <View style={styles.lead}>
         {props.avatar !== undefined ? (
           <Avatar name={props.avatar} size={28} />
@@ -85,22 +81,12 @@ function Row(props: {
       </View>
       {props.count > 0 ? <Badge count={props.count} /> : null}
       {props.current ? <IconCheck size={iconSize.md} color={colors.foreground} /> : null}
-    </Pressable>
+    </PressableRow>
   );
 }
 
 const styles = StyleSheet.create({
   list: { padding: space(3), gap: space(1) },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: space(3),
-    minHeight: 52,
-    paddingHorizontal: space(3),
-    paddingVertical: space(2),
-    borderRadius: radius.field,
-  },
-  current: { backgroundColor: colors.accent },
   lead: { width: 28, alignItems: "center" },
   body: { flex: 1 },
 });
