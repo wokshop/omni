@@ -3,6 +3,7 @@
 import { expoClient } from "@better-auth/expo/client";
 import { createApi, createAuth } from "@omni/client";
 import * as SecureStore from "expo-secure-store";
+import { Platform } from "react-native";
 import { DetailedError, parseResponse, type ClientResponse } from "hono/client";
 import { config } from "./config.ts";
 
@@ -20,6 +21,8 @@ export const auth = createAuth({
 export const api = createApi({
   baseUrl: config.apiUrl,
   fetch: async (input, init) => {
+    // In a browser (Expo's web target) the session is a first-party cookie, as for the web app.
+    if (Platform.OS === "web") return fetch(input, { ...init, credentials: "include" });
     const headers = new Headers(init?.headers);
     const cookie = await auth.getCookie();
     if (cookie) headers.set("cookie", cookie);
