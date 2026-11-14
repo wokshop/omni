@@ -46,10 +46,15 @@ export function useOpenCompose() {
   return useCallback(() => set(true), []);
 }
 
-/** Opens the dialog again with an undone send's content. */
+/**
+ * Opens the dialog again with an undone send's content. False while the dialog is already open
+ * (a new message begun since): that one is kept, and the caller hands this one back another way.
+ */
 export function reopenCompose(content: NewMessageDraft) {
+  if (current) return false;
   draft = content;
   set(true);
+  return true;
 }
 
 /** The handed-back draft, once, for the composer that opens with it. */

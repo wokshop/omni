@@ -33,12 +33,12 @@ export function FloatingCompose({ onPress }: { onPress: () => void }) {
  * riding on the docked composer when one shows. Gone while the email composer is open, which
  * holds Send instead.
  */
-export function FloatingReply({ thread }: { thread: Thread }) {
+export function FloatingReply({ thread, stacked }: { thread: Thread; stacked?: boolean }) {
   const composer = useComposerState();
   const latest = thread.messages.at(-1);
   if (!latest || (composer.email && composer.mode === "public")) return null;
   return (
-    <Floating>
+    <Floating stacked={stacked}>
       <Button
         intent="outline"
         size="md"
@@ -62,10 +62,16 @@ export function FloatingReply({ thread }: { thread: Thread }) {
   );
 }
 
-/** Sits 20px over the top of its (sticky, bottom) parent and 20px in from its end. */
-function Floating({ children }: { children: ReactNode }) {
+/**
+ * Sits 20px over the top of its (sticky, bottom) parent and 20px in from its end. `stacked`: a
+ * shared inbox's properties pill floats there too (16px up, centred), so the buttons go above it
+ * rather than over its controls in a narrow pane.
+ */
+function Floating({ children, stacked }: { children: ReactNode; stacked?: boolean | undefined }) {
   return (
-    <div className="pointer-events-none absolute end-5 bottom-full z-20 mb-5 flex gap-2 *:pointer-events-auto">
+    <div
+      className={`pointer-events-none absolute end-5 bottom-full z-20 flex gap-2 *:pointer-events-auto ${stacked ? "mb-17" : "mb-5"}`}
+    >
       {children}
     </div>
   );

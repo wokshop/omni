@@ -129,7 +129,7 @@ export function Conversation({ threadId }: { threadId: string }) {
           {/* The pane's bottom edge, full width; the messages scroll above it. */}
           <div className="sticky bottom-0 w-full shrink-0 bg-background">
             {shared && <PropertiesPill thread={thread} />}
-            <FloatingReply thread={thread} />
+            <FloatingReply thread={thread} stacked={shared} />
             <ReplyComposer thread={thread} />
           </div>
         </div>

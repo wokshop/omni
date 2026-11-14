@@ -613,7 +613,8 @@ export function NewMessageComposer(props: {
    * caller closes the composer, and an undo gets the content back through `onUndone`.
    */
   onSent?: () => void;
-  onUndone?: (draft: NewMessageDraft) => void;
+  /** Takes an undone send back; false when it can't, and the text goes to the clipboard. */
+  onUndone?: (draft: NewMessageDraft) => boolean;
 }) {
   const mailboxId =
     props.restored?.mailboxId || props.initial.mailboxId || props.mailboxes[0]?.id || "";
@@ -627,7 +628,7 @@ function NewMessage(props: {
   island?: boolean | undefined;
   restored?: NewMessageDraft | undefined;
   onSent?: (() => void) | undefined;
-  onUndone?: ((draft: NewMessageDraft) => void) | undefined;
+  onUndone?: ((draft: NewMessageDraft) => boolean) | undefined;
 }) {
   const restored = props.restored;
   const [mailboxId, setMailboxId] = useState(props.mailboxId);
@@ -677,7 +678,12 @@ function NewMessage(props: {
             onSent();
             offerUndoSend(queued, async () => {
               const stopped = await cancelSend(queued.actionId);
-              if (stopped) onUndone?.({ mailboxId, ...before });
+              if (stopped && !onUndone?.({ mailboxId, ...before })) {
+                // A new message is open in its place: keep it, and hand this one back as the
+                // reply composer does.
+                void navigator.clipboard?.writeText(before.text).catch(() => undefined);
+                appToast.message("Send stopped", { description: "Its text is on your clipboard." });
+              }
               return stopped;
             });
             return;
