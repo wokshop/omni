@@ -126,11 +126,9 @@ export function AppSidebar() {
         {/* The first group needs no heading: it's what the app opens to. The same rows for every
             mailbox the switcher shows; a shared inbox adds its Mine. Every row
             keeps the switcher's choice: a link never changes which mailbox is shown. */}
-        {/* Search first, as wide as the links under it and 6px above them (the content's 12px
-            gap, less 6); its box grows out to the right. */}
-        <div className="-mb-1.5">
-          <SearchPopover side="start" />
-        </div>
+        {/* Search first, as wide as the links under it, the content's 12px gap above them; its
+            box grows out to the right. */}
+        <SearchPopover side="start" />
         <SidebarSection>
           <Items items={mail} mailbox={mailbox} />
           {shown?.kind === "shared" && <HelpdeskItems mailboxId={shown.id} />}
@@ -246,7 +244,12 @@ function UnreadCount({ mailbox }: { mailbox: string | undefined }) {
     .reduce((sum, c) => sum + c.unread, 0);
   if (!unread) return null;
   return (
-    <Badge intent="primary" isCircle={false} className="ms-auto tabular-nums">
+    // Square: 18px a side for one digit, wider only for more.
+    <Badge
+      intent="primary"
+      isCircle={false}
+      className="ms-auto h-4.5 min-w-4.5 justify-center px-1 py-0 text-xs/4.5 tabular-nums"
+    >
       {unread}
     </Badge>
   );

@@ -9,7 +9,10 @@ import { ConversationMeta, type ConversationRowInfo } from "@/components/inbox/c
 import { ListSweepSlot } from "@/components/inbox/list-sweep";
 import { OpenListContext } from "@/components/inbox/open-list";
 import { EmptyState } from "@/components/empty/empty-state";
-import { IconPencil } from "@/components/icons/central";
+import { IconMailOpen, IconPencil } from "@/components/icons/central";
+import { IconSearch } from "@/components/icons/sidebar";
+import { openSearch } from "@/components/search/search-popover";
+import { useMarkRead } from "@/hooks/use-mail-actions.ts";
 import { Tooltip, TooltipTrigger } from "@/components/ui/tooltip";
 import { ariaKeyShortcuts } from "@/lib/shortcuts.ts";
 import { Button } from "@/components/ui/button";
@@ -255,18 +258,18 @@ export function List(
                 })}
               </div>
             )}
-            <TooltipTrigger delay={400}>
-              <Button
-                intent="ghost"
-                size="sq-sm-lg"
-                aria-label="Compose"
-                aria-keyshortcuts={ariaKeyShortcuts("compose")}
-                onPress={openCompose}
-              >
+            <div className="flex shrink-0 items-center gap-1">
+              {/* The sidebar's search field is gone with it: search from here instead. */}
+              {sidebarHidden && (
+                <HeaderAction label="Search" onPress={openSearch}>
+                  <IconSearch />
+                </HeaderAction>
+              )}
+              {props.shortcuts && <MarkAllRead threads={props.shortcuts.threads} />}
+              <HeaderAction label="Compose" shortcut="compose" onPress={openCompose}>
                 <IconPencil />
-              </Button>
-              <Tooltip>Compose</Tooltip>
-            </TooltipTrigger>
+              </HeaderAction>
+            </div>
           </header>
 
           {/* Only the rows on screen are in the DOM, so thousands of threads scroll like fifty.
@@ -320,6 +323,44 @@ export function List(
         )}
       </div>
     </div>
+  );
+}
+
+/** An icon action in the list's header, the reader's toolbar size, with its tooltip. */
+function HeaderAction(props: {
+  label: string;
+  shortcut?: Parameters<typeof ariaKeyShortcuts>[0];
+  onPress: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <TooltipTrigger delay={400}>
+      <Button
+        intent="ghost"
+        size="sq-sm-lg"
+        aria-label={props.label}
+        aria-keyshortcuts={props.shortcut && ariaKeyShortcuts(props.shortcut)}
+        onPress={props.onPress}
+      >
+        {props.children}
+      </Button>
+      <Tooltip>{props.label}</Tooltip>
+    </TooltipTrigger>
+  );
+}
+
+/** Marks every unread thread in the list read, one at a time as `u` does; only while any is. */
+function MarkAllRead({ threads }: { threads: { id: string; unread: boolean }[] }) {
+  const markRead = useMarkRead();
+  const unread = threads.filter((t) => t.unread);
+  if (!unread.length) return null;
+  return (
+    <HeaderAction
+      label="Mark all read"
+      onPress={() => unread.forEach((t) => markRead.mutate({ threadId: t.id, read: true }))}
+    >
+      <IconMailOpen />
+    </HeaderAction>
   );
 }
 

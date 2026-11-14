@@ -64,6 +64,13 @@ const SIZE = {
   closed: { width: 240, height: 28, borderRadius: 6 },
   open: { width: 400, height: 338, borderRadius: 8 },
 };
+// With no field on screen (a collapsed sidebar) the box opens centred, wider: a command bar.
+const CENTERED_WIDTH = 600;
+
+/** Whatever search is mounted opens itself; set while it is (the sidebar's). */
+let openMounted: (() => void) | undefined;
+/** Opens search from a control elsewhere (the list's search icon), as `/` does. */
+export const openSearch = () => openMounted?.();
 const BAR = {
   closed: { height: 26, paddingInlineStart: 8, paddingInlineEnd: 3, columnGap: 8 },
   open: { height: 44, paddingInlineStart: 18, paddingInlineEnd: 12, columnGap: 10 },
@@ -85,6 +92,7 @@ export function SearchPopover({ side = "end" }: { side?: "start" | "end" }) {
   const [anchor, setAnchor] = useState<Anchor>({ top: 0, right: 0 });
   // The field's own width: the closed box matches it, so the box grows out of the field.
   const [fieldWidth, setFieldWidth] = useState(SIZE.closed.width);
+  const [openWidth, setOpenWidth] = useState(SIZE.open.width);
   const triggerRef = useRef<HTMLButtonElement>(null);
   // Reduced motion: no growing; the box takes its open size at once and crossfades.
   const reduceMotion = useReducedMotion();
@@ -94,9 +102,12 @@ export function SearchPopover({ side = "end" }: { side?: "start" | "end" }) {
     // no size) while `/` and ⌘K still open search: the box then opens centred near the
     // window's top instead.
     if (!rect || rect.width === 0 || rect.right <= 0 || rect.left >= window.innerWidth) {
-      setFieldWidth(SIZE.open.width);
-      setAnchor({ top: 64, left: Math.max(16, (window.innerWidth - SIZE.open.width) / 2) });
+      const width = Math.min(CENTERED_WIDTH, window.innerWidth - 32);
+      setOpenWidth(width);
+      setFieldWidth(width);
+      setAnchor({ top: 64, left: (window.innerWidth - width) / 2 });
     } else {
+      setOpenWidth(SIZE.open.width);
       setFieldWidth(rect.width);
       setAnchor(
         side === "start"
@@ -122,13 +133,18 @@ export function SearchPopover({ side = "end" }: { side?: "start" | "end" }) {
         open();
       }
     };
+    openMounted = open;
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      if (openMounted === open) openMounted = undefined;
+    };
   }, []);
 
   const isOpen = phase === "open";
   const state = isOpen ? "open" : "closed";
   const closedSize = { ...SIZE.closed, width: fieldWidth };
+  const openSize = { ...SIZE.open, width: openWidth };
   const transition = { duration: reduceMotion ? 0 : 0.24, ease };
 
   return (
@@ -166,12 +182,12 @@ export function SearchPopover({ side = "end" }: { side?: "start" | "end" }) {
               className="fixed flex flex-col overflow-clip border border-input bg-background transition-shadow duration-200 data-[open=true]:shadow-(--shadow-overlay)"
               data-open={isOpen}
               style={anchor}
-              initial={reduceMotion ? { ...SIZE.open, opacity: 0 } : closedSize}
+              initial={reduceMotion ? { ...openSize, opacity: 0 } : closedSize}
               animate={
                 reduceMotion
-                  ? { ...SIZE.open, opacity: isOpen ? 1 : 0 }
+                  ? { ...openSize, opacity: isOpen ? 1 : 0 }
                   : isOpen
-                    ? SIZE.open
+                    ? openSize
                     : closedSize
               }
               transition={reduceMotion ? { duration: 0.15, ease } : transition}
