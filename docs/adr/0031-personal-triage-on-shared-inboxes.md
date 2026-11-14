@@ -1,4 +1,4 @@
-# 0029: Personal triage on shared inboxes
+# 0031: Personal triage on shared inboxes
 
 Date: 2026-11-14 · Status: accepted · Amends: ADR 0021 ("Relation to ADR 0007")
 

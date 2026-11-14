@@ -32,7 +32,7 @@ export type Lane = (typeof triageBucket.enumValues)[number] | "unsure";
 export const LANES = [...triageBucket.enumValues, "unsure"] as const satisfies readonly Lane[];
 
 /**
- * Per-member triage views (ADR 0007, Later: ADR 0027, shared inboxes: ADR 0029). A thread is *done*
+ * Per-member triage views (ADR 0007, Later: ADR 0027, shared inboxes: ADR 0031). A thread is *done*
  * for a member while its `last_message_at` is at or before their `done_through`, and in *Later*
  * while their `snoozed_until` is in the future (`infinity` once moved there); done wins over Later.
  *
@@ -95,7 +95,7 @@ function laneFilter(lane: Lane): SQL {
 }
 
 /**
- * Whether a thread belongs in `me`'s Inbox (ADR 0029): open and nobody's or theirs, or theirs and
+ * Whether a thread belongs in `me`'s Inbox (ADR 0031): open and nobody's or theirs, or theirs and
  * waiting on the customer (a reply claims the conversation and makes it pending, so it stays under
  * Awaiting reply, as answered personal mail does). Snoozed and resolved conversations, and ones a
  * teammate owns, stay out of everyone else's Inbox (the team sees them in its helpdesk views).

@@ -422,7 +422,7 @@ test("Later hides the thread from the member's inbox, only theirs, until they mo
 });
 
 // Catches: a shared conversation a teammate owns, or that waits on the customer, sitting in
-// everyone's Inbox; and one member's Done hiding it from the team or changing its status (ADR 0029).
+// everyone's Inbox; and one member's Done hiding it from the team or changing its status (ADR 0031).
 test("a shared inbox's Inbox is what concerns you; Done is yours, Resolve is everyone's", async () => {
   const org = await createOrg(db, "concerns-org");
   const dana = (await createMember(db, org.id, "dana")).id;

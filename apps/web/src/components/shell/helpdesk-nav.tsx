@@ -1,7 +1,7 @@
 // A shared inbox's helpdesk views (ADR 0021). The sidebar shows the ones mail's own rows don't
 // already cover, Mine and Open, in the same group as Inbox and Later, for the shared inbox the
 // mailbox switcher shows. The Inbox holds only what concerns you (open, and nobody's or yours:
-// ADR 0029), so Open is the team's whole queue; Pending, Snoozed and Resolved are Awaiting reply,
+// ADR 0031), so Open is the team's whole queue; Pending, Snoozed and Resolved are Awaiting reply,
 // Later and All mail.
 import { useLocation, useSearch } from "@tanstack/react-router";
 import type { ReactNode } from "react";

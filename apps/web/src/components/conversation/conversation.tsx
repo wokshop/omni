@@ -436,7 +436,7 @@ function MailActions({ thread }: { thread: Thread }) {
 
 /**
  * Done and Later, which act for you alone, on a personal thread and on a shared conversation
- * alike (ADR 0029): on a shared inbox they leave the team's status as it is.
+ * alike (ADR 0031): on a shared inbox they leave the team's status as it is.
  */
 function TriageActions({ thread }: { thread: Thread }) {
   const threadId = thread.id;
