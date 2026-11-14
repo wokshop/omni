@@ -36,6 +36,7 @@ import {
   SidebarLabel,
   SidebarSection,
   SidebarTrigger,
+  useSidebar,
 } from "@/components/ui/sidebar";
 import { useConnectivity } from "@/hooks/use-connectivity.ts";
 import { useCounts } from "@/hooks/use-mail.ts";
@@ -90,6 +91,7 @@ const folders: NavItem[] = [
 // Figma: Omni, sidebar (node 1:3).
 export function AppSidebar() {
   const router = useRouter();
+  const { isMobile } = useSidebar();
   const shown = useShownMailbox();
   // The links carry the URL's mailbox as it is, not the one found in the workspace list: right
   // after a switch that list is still loading, and a link built from it would drop the mailbox.
@@ -128,7 +130,9 @@ export function AppSidebar() {
             keeps the switcher's choice: a link never changes which mailbox is shown. */}
         {/* Search first, as wide as the links under it, the content's 12px gap above them; its
             box grows out to the right. */}
-        <SearchPopover side="start" />
+        {/* On a phone the sidebar is a sheet that unmounts when closed: the list header holds
+            search there instead (one search mounted at a time, so keys open one panel). */}
+        {!isMobile && <SearchPopover side="start" />}
         <SidebarSection>
           <Items items={mail} mailbox={mailbox} />
           {shown?.kind === "shared" && <HelpdeskItems mailboxId={shown.id} />}

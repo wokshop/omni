@@ -11,7 +11,7 @@ import { OpenListContext } from "@/components/inbox/open-list";
 import { EmptyState } from "@/components/empty/empty-state";
 import { IconMailOpen, IconPencil } from "@/components/icons/central";
 import { IconSearch } from "@/components/icons/sidebar";
-import { openSearch } from "@/components/search/search-popover";
+import { openSearch, SearchPopover } from "@/components/search/search-popover";
 import { useMarkRead } from "@/hooks/use-mail-actions.ts";
 import { Tooltip, TooltipTrigger } from "@/components/ui/tooltip";
 import { ariaKeyShortcuts } from "@/lib/shortcuts.ts";
@@ -260,6 +260,8 @@ export function List(
               <HeaderAction label="Search" onPress={openSearch}>
                 <IconSearch />
               </HeaderAction>
+              {/* On a phone the sidebar's search unmounts with its sheet: keep one here. */}
+              {sidebar.isMobile && <SearchPopover field={false} />}
               <MarkAllRead rows={threads} />
               <HeaderAction label="Compose" shortcut="compose" onPress={openCompose}>
                 <IconPencil />
