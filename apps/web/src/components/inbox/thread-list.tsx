@@ -238,25 +238,32 @@ export function List(
                 <IconSidebar />
               </SidebarTrigger>
             )}
-            <div className="flex min-w-0 flex-1 items-baseline gap-2">
-              {/* 1px down: centers the title's capitals on the sidebar header's icons.
-                  Collapsed, the title centres on the sidebar button beside it instead. */}
-              <Heading className={`shrink-0 ${sidebarHidden ? "" : "translate-y-px"}`}>
-                {props.title}
-              </Heading>
-              {props.caption && (
-                <span className="truncate text-xs text-subtle-foreground">{props.caption}</span>
-              )}
-            </div>
-            {/* While rows are checked: how many, and what to do with them, before the pen. */}
-            {count > 0 && (
-              <div className="flex shrink-0 items-center gap-2">
-                <span className="text-sm text-muted-foreground tabular-nums">{count} selected</span>
-                {props.bulkActions?.({
+            {count > 0 && props.bulkActions ? (
+              // A helpdesk list's actions carry their own count and labels: they take the
+              // title's place while rows are checked, so they fit beside the open reader.
+              <div className="flex min-w-0 flex-1 items-center overflow-x-auto">
+                {props.bulkActions({
                   ids: selected === "all" ? threads.map((t) => t.id) : [...selected].map(String),
                   clear: () => setSelected(new Set()),
                 })}
               </div>
+            ) : (
+              <div className="flex min-w-0 flex-1 items-baseline gap-2">
+                {/* 1px down: centers the title's capitals on the sidebar header's icons.
+                    Collapsed, the title centres on the sidebar button beside it instead. */}
+                <Heading className={`shrink-0 ${sidebarHidden ? "" : "translate-y-px"}`}>
+                  {props.title}
+                </Heading>
+                {props.caption && (
+                  <span className="truncate text-xs text-subtle-foreground">{props.caption}</span>
+                )}
+              </div>
+            )}
+            {/* A plain list's checked rows: how many, before the actions. */}
+            {count > 0 && !props.bulkActions && (
+              <span className="shrink-0 text-sm text-muted-foreground tabular-nums">
+                {count} selected
+              </span>
             )}
             <div className="flex shrink-0 items-center gap-1">
               {/* The sidebar's search field is gone with it: search from here instead. */}
