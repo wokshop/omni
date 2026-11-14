@@ -6,6 +6,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import * as Sentry from "@sentry/cloudflare";
 import {
   chooseTriageClient,
+  DEFAULT_AUTO_FILE_THRESHOLD,
   triage,
   triageByRule,
   triageInputFor,
@@ -13,6 +14,8 @@ import {
 } from "@omni/ai";
 import {
   addAiUsage,
+  applyAiHelpdeskTriage,
+  helpdeskContextForAi,
   loadThreadForAi,
   markTriagePaused,
   recordDeadLetter,
@@ -24,6 +27,7 @@ import { gateTriage } from "./billing.ts";
 import { openDb } from "./db.ts";
 import { loadConfig, type Config } from "./env.ts";
 import { createLogger } from "./log.ts";
+import { pingMailService } from "./mail-service.ts";
 import { fanOut } from "./realtime.ts";
 
 /**
@@ -139,7 +143,10 @@ export async function consumeAiQueue(batch: MessageBatch<AiJob>, env: Env) {
       try {
         const outcome = await Sentry.withScope(async (scope) => {
           if (job.requestId) scope.setTag("request_id", job.requestId);
-          return runAiJob(db, models, config, job);
+          return runAiJob(db, models, config, job, {
+            // A noise resolve queued its IMAP archive: tell the mail service.
+            outboxChanged: () => pingMailService({ config, requestId: jobRequestId(job), log }),
+          });
         });
         if (outcome === "triaged" || outcome === "triage_paused") {
           const { mailboxId, threadId } = job;
@@ -188,11 +195,16 @@ export async function consumeAiQueue(batch: MessageBatch<AiJob>, env: Env) {
   }
 }
 
+function jobRequestId(job: AiJob) {
+  return job.requestId ?? job.jobId ?? crypto.randomUUID();
+}
+
 export async function runAiJob(
   db: Db,
   models: { triage: TriageClient },
   config: Config,
   job: AiJob,
+  hooks: { outboxChanged?: () => Promise<unknown> } = {},
 ): Promise<AiJobOutcome> {
   const thread = await loadThreadForAi(db, job.threadId);
   const latest = thread?.messages.at(-1);
@@ -213,6 +225,9 @@ export async function runAiJob(
   // person re-sorted. Without a model only the wordless-reply rule can file a thread.
   if (thread.triageMessageId !== latest.id) {
     const input = triageInputFor(thread.messages, isUs);
+    // A shared inbox: triage also judges priority, tags (ADR 0022) and who takes it (ADR 0033).
+    const helpdesk = await helpdeskContextForAi(db, thread.mailboxId);
+    if (helpdesk) input.helpdesk = helpdesk;
     const byRule = triageByRule(input);
     // A model call counts against the workspace's monthly allowance (ADR 0015); the rule is free.
     if (triageEnabled && !byRule) {
@@ -228,6 +243,20 @@ export async function runAiJob(
     const result = byRule ?? (triageEnabled ? await triage(models.triage, input) : null);
     if (result) {
       await addAiUsage(db, thread.orgId, day, result.usage);
+      // Before the triage is saved: a crash in between re-triages, and this applies again as a
+      // no-op, instead of being skipped as done.
+      if (result.helpdesk) {
+        const applied = await applyAiHelpdeskTriage(db, {
+          threadId: thread.id,
+          messageId: latest.id,
+          changes: {
+            ...result.helpdesk,
+            resolveNoise:
+              result.bucket === "noise" && result.confidence >= DEFAULT_AUTO_FILE_THRESHOLD,
+          },
+        });
+        if (applied.applied && applied.queuedActions > 0) await hooks.outboxChanged?.();
+      }
       // Lanes are derived on read: below the auto-file confidence a thread shows in Unsure.
       const saved = await saveTriage(db, thread.id, {
         bucket: result.bucket,
