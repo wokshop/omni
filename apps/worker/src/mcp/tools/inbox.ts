@@ -62,7 +62,11 @@ const inputSchema = z.object({
     .string()
     .optional()
     .describe("Only this inbox: its id or address. Default: every inbox."),
-  workspace: z.string().optional().describe("Only this workspace id. Default: every workspace."),
+  workspace: z
+    .string()
+    .min(1)
+    .optional()
+    .describe("Only this workspace id. Default: every workspace."),
   limit: z.number().int().min(1).max(50).default(10).describe("How many threads in attention."),
 });
 

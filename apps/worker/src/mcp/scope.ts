@@ -12,12 +12,18 @@ export function readsFor(
   workspace: string | undefined,
 ): { reads: Reads; scope: string | null } | { error: string } {
   const granted = context.caller.workspace;
-  if (workspace && granted && workspace !== granted) {
-    return {
-      error: "This connection only reaches one workspace. Leave `workspace` out to use it.",
-    };
+  // A one-workspace grant always reads that workspace; any other value, empty included, is
+  // refused rather than allowed to widen it.
+  if (granted !== null) {
+    if (workspace !== undefined && workspace !== granted) {
+      return {
+        error: "This connection only reaches one workspace. Leave `workspace` out to use it.",
+      };
+    }
+    return { reads: forUser(context.db, context.caller.userId, granted), scope: granted };
   }
-  const scope = workspace ?? granted;
+  // An empty id names no workspace; `forUser` would read it as every workspace.
+  const scope = workspace || null;
   return { reads: forUser(context.db, context.caller.userId, scope), scope };
 }
 

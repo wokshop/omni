@@ -27,7 +27,7 @@ const inputSchema = z.object({
     .max(100_000)
     .default(40_000)
     .describe("Text budget for the whole call. Over it, the oldest messages are cut first."),
-  workspace: z.string().optional(),
+  workspace: z.string().min(1).optional(),
 });
 
 const documentSchema = z.object({
@@ -125,31 +125,63 @@ interface Block {
   body: string;
   sentAt: number;
   latest: boolean;
+  /** Left out entirely: the thread says how many earlier messages it skipped. */
+  dropped: boolean;
+}
+
+const SEPARATOR = "\n\n---\n\n";
+
+/** One thread's `text`, exactly as `fetch` returns it. */
+function render(blocks: Block[], thread: number) {
+  const own = blocks.filter((b) => b.thread === thread);
+  const dropped = own.filter((b) => b.dropped).length;
+  const parts = own.filter((b) => !b.dropped).map((b) => `${b.header}\n\n${b.body}`);
+  if (dropped) {
+    parts.unshift(
+      `[${dropped} earlier message${dropped === 1 ? "" : "s"} not shown. Fetch this thread alone or raise max_chars to read ${dropped === 1 ? "it" : "them"}.]`,
+    );
+  }
+  return parts.join(SEPARATOR);
 }
 
 /**
- * Fits every block under `budget` characters: earlier messages' bodies give way first, oldest
- * first, then the latest ones share what is left. Returns which threads were cut.
+ * Fits the call's text under `budget` characters, measured as rendered (headers, separators and
+ * notices included): earlier messages' bodies give way first, oldest first, then earlier messages
+ * altogether, then the latest message of each thread shares what is left. Only the latest
+ * messages' headers always stay. Returns which threads were cut.
  */
-function fit(blocks: Block[], budget: number) {
-  const size = () => blocks.reduce((sum, b) => sum + b.header.length + b.body.length + 8, 0);
+function fit(blocks: Block[], threadCount: number, budget: number) {
+  const size = () =>
+    Array.from({ length: threadCount }, (_, i) => render(blocks, i).length).reduce(
+      (a, b) => a + b,
+      0,
+    );
   const cut = new Set<number>();
   const earlier = blocks.filter((b) => !b.latest).toSorted((a, b) => a.sentAt - b.sentAt);
   for (const block of earlier) {
-    if (size() <= budget) break;
+    if (size() <= budget) return cut;
     block.body = `[Earlier message not shown (${block.body.length} characters). Fetch this thread alone or raise max_chars to read it.]`;
     cut.add(block.thread);
   }
-  const over = size() - budget;
-  if (over > 0) {
-    const latest = blocks.filter((b) => b.latest);
-    const share = Math.max(500, Math.floor(budget / latest.length) - 200);
-    for (const block of latest) {
-      if (block.body.length <= share) continue;
-      block.body = `${block.body.slice(0, share)}\n[Cut here: ${block.body.length - share} more characters.]`;
-      cut.add(block.thread);
-    }
+  for (const block of earlier) {
+    if (size() <= budget) return cut;
+    block.dropped = true;
   }
+  if (size() <= budget) return cut;
+  const latest = blocks.filter((b) => b.latest);
+  const bodies = latest.map((b) => b.body);
+  for (const block of latest) block.body = "";
+  const share = Math.floor((budget - size()) / latest.length);
+  latest.forEach((block, i) => {
+    const full = bodies[i]!;
+    if (full.length <= share) {
+      block.body = full;
+      return;
+    }
+    const notice = `\n[Cut here: ${full.length} characters in all.]`;
+    block.body = `${full.slice(0, Math.max(0, share - notice.length))}${notice}`;
+    cut.add(block.thread);
+  });
   return cut;
 }
 
@@ -219,9 +251,10 @@ async function read(context: ToolContext, input: z.infer<typeof inputSchema>) {
       body: body(message),
       sentAt: message.sentAt.getTime(),
       latest: at === thread.messages.length - 1,
+      dropped: false,
     })),
   );
-  const cut = fit(blocks, input.max_chars);
+  const cut = fit(blocks, threads.length, input.max_chars);
 
   const documents = threads.map((thread, index) => {
     const self = thread.mailboxAddress.toLowerCase();
@@ -231,10 +264,7 @@ async function read(context: ToolContext, input: z.infer<typeof inputSchema>) {
       id: thread.id,
       title: thread.messages.at(-1)?.subject ?? thread.subjectKey,
       url: threadUrl(context.webAppURL, thread.id),
-      text: blocks
-        .filter((b) => b.thread === index)
-        .map((b) => `${b.header}\n\n${b.body}`)
-        .join("\n\n---\n\n"),
+      text: render(blocks, index),
       metadata: {
         mailbox: thread.mailboxAddress,
         shared: thread.mailboxKind === "shared",

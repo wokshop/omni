@@ -45,7 +45,7 @@ const inputSchema = z.object({
   has_attachments: z.boolean().optional(),
   from_me: z.boolean().optional().describe("Sent from the inbox's own address."),
   mailbox: z.string().optional().describe("One inbox: its id or address."),
-  workspace: z.string().optional().describe("One workspace id."),
+  workspace: z.string().min(1).optional().describe("One workspace id."),
   view: z
     .enum(THREAD_VIEWS)
     .optional()

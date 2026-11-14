@@ -426,6 +426,23 @@ describe("what a grant reaches", () => {
     const result = await inbox(workOnly.access_token);
     expect(result.mailboxes.map((m) => m.address)).toEqual(["cara@work.test"]);
     expect(result.workspaces.map((w) => w.id)).toEqual([work.id]);
+
+    // No argument widens it: an empty or other workspace is refused by every tool.
+    await seedMessage(db, sideBox, { subject: "Side project", fromAddress: "x@side.test", uid: 1 });
+    for (const [name, args] of [
+      ["inbox", { workspace: "" }],
+      ["search", { query: "", view: "all", workspace: "" }],
+      ["search", { query: "", view: "all", workspace: side.id }],
+    ] as const) {
+      const call = await tool(workOnly.access_token, name, args);
+      expect(call.isError).toBe(true);
+      expect(call.text).not.toContain("Side project");
+    }
+    const listed = await tool<SearchResult>(workOnly.access_token, "search", {
+      query: "",
+      view: "all",
+    });
+    expect(listed.data.results.map((r) => r.mailbox)).not.toContain("cara@side.test");
   });
 
   // Catches: picking a workspace that is not yours to widen a grant.
@@ -633,9 +650,54 @@ describe("finding and reading mail", () => {
       max_chars: 2_000,
     });
     const all = `${data.text}${data.more![0]!.text}`;
-    expect(all.length).toBeLessThan(2_600);
-    expect(data.text).toContain("Earlier message not shown");
+    expect(all.length).toBeLessThanOrEqual(2_000);
+    expect(data.text).toMatch(/earlier message.* not shown/i);
     expect(data.text).toContain("Card updated, please retry the charge.");
     expect(data.more![0]!.metadata.truncated).toBe(true);
   });
+});
+
+// Catches: fetch returning far more text than max_chars when many threads share a small budget
+// (a fixed minimum per thread, headers and notices that never shrink), flooding the agent's context.
+test("fetch keeps ten long threads within max_chars", async () => {
+  const org = await createOrg(db, "budget");
+  const ivy = await createMember(db, org.id, "ivy@budget.test");
+  const box = await createMailbox(db, org.id, "ivy@budget.test", "personal");
+  await grant(db, org.id, box.id, ivy.id);
+  const ids: string[] = [];
+  for (let i = 0; i < 10; i++) {
+    const { threadId } = await seedMessage(db, box, {
+      subject: `Long report ${i}`,
+      fromAddress: `writer${i}@reports.test`,
+      uid: 2 * i + 1,
+      sentAt: new Date(Date.UTC(2026, 9, 1, i)),
+      text: "Old context. ".repeat(500),
+    });
+    await seedMessage(db, box, {
+      subject: `Re: Long report ${i}`,
+      fromAddress: `writer${i}@reports.test`,
+      uid: 2 * i + 2,
+      threadId,
+      sentAt: new Date(Date.UTC(2026, 9, 2, i)),
+      text: `Report ${i} body. `.repeat(600),
+    });
+    ids.push(threadId);
+  }
+  const jar = new CookieJar();
+  await signIn(worker, db, "ivy@budget.test", jar);
+  const { access_token } = await connect(jar);
+  const [first, ...rest] = ids;
+  const { data, isError } = await tool<FetchResult>(access_token, "fetch", {
+    id: first,
+    ids: rest,
+    max_chars: 2_000,
+  });
+  expect(isError).toBe(false);
+  const documents = [data, ...(data.more ?? [])];
+  expect(documents).toHaveLength(10);
+  expect(documents.reduce((sum, d) => sum + d.text.length, 0)).toBeLessThanOrEqual(2_000);
+  for (const document of documents) {
+    expect(document.text).toContain("From: writer");
+    expect(document.metadata.truncated).toBe(true);
+  }
 });
