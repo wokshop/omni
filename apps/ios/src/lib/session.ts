@@ -4,8 +4,9 @@
 import { getSetCookie, storageAdapter } from "@better-auth/expo/client";
 import * as Linking from "expo-linking";
 import * as SecureStore from "expo-secure-store";
-import { useSyncExternalStore } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import { STORAGE_PREFIX, auth } from "./api.ts";
+import { queryClient } from "./query-client.ts";
 
 // The same storage object the auth client wraps, so both share one view of the stored cookie.
 const storage = storageAdapter(SecureStore);
@@ -37,6 +38,9 @@ export async function acceptSignInLink(url: string): Promise<boolean | "error"> 
 
 export async function signOut() {
   await auth.signOut();
+  // Nothing of this person's mail outlives their session on this phone.
+  await queryClient.cancelQueries();
+  queryClient.clear();
 }
 
 type SessionState = ReturnType<typeof auth.useSession.get>;
@@ -47,4 +51,20 @@ export function useSession(): SessionState {
     (listener) => auth.useSession.subscribe(listener),
     () => auth.useSession.get(),
   );
+}
+
+/**
+ * Drops every cached query when the signed-in user changes or the session ends (signed out
+ * here, elsewhere, or expired), so the next person never sees the last one's mail. Mount once.
+ */
+export function useClearCacheOnUserChange() {
+  const userId = useSession().data?.user.id ?? null;
+  const last = useRef(userId);
+  useEffect(() => {
+    if (last.current !== null && last.current !== userId) {
+      void queryClient.cancelQueries();
+      queryClient.clear();
+    }
+    last.current = userId;
+  }, [userId]);
 }

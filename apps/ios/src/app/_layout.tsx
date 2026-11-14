@@ -11,12 +11,13 @@ import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { queryClient } from "@/lib/query-client.ts";
-import { acceptSignInLink } from "@/lib/session.ts";
+import { acceptSignInLink, useClearCacheOnUserChange } from "@/lib/session.ts";
 import { colors } from "@/theme/tokens.ts";
 
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({ Inter_400Regular, Inter_500Medium, Inter_600SemiBold });
   useSignInLinks();
+  useClearCacheOnUserChange();
   if (!fontsLoaded) return null;
   return (
     <SafeAreaProvider>
