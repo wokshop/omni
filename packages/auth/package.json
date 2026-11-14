@@ -11,6 +11,7 @@
     "auth:generate": "auth generate --config auth.config.ts --output ../db/src/schema/auth.ts -y && cd ../db && oxfmt src/schema/auth.ts"
   },
   "dependencies": {
+    "@better-auth/expo": "1.7.21",
     "@better-auth/passkey": "^1.7.21",
     "@better-auth/stripe": "1.7.21",
     "@omni/db": "workspace:*",
