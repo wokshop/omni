@@ -95,13 +95,15 @@ function laneFilter(lane: Lane): SQL {
 }
 
 /**
- * Whether a thread belongs in `me`'s Inbox (ADR 0029): open, and nobody's or theirs. A shared
- * conversation that waits on the customer, is snoozed or resolved, or that a teammate owns, stays
- * out of everyone else's Inbox (the team sees it in its helpdesk views). Personal threads always
- * pass: their status is never changed from `open` and they have no assignee (ADR 0021).
+ * Whether a thread belongs in `me`'s Inbox (ADR 0029): open and nobody's or theirs, or theirs and
+ * waiting on the customer (a reply claims the conversation and makes it pending, so it stays under
+ * Awaiting reply, as answered personal mail does). Snoozed and resolved conversations, and ones a
+ * teammate owns, stay out of everyone else's Inbox (the team sees them in its helpdesk views).
+ * Personal threads always pass: their status is never changed from `open` and they have no
+ * assignee (ADR 0021).
  */
 function concernsMe(me: AnyColumn): SQL {
-  return sql`(${threads.status} = 'open' and (${threads.assigneeMemberId} is null or ${threads.assigneeMemberId} = ${me}))`;
+  return sql`((${threads.status} = 'open' and (${threads.assigneeMemberId} is null or ${threads.assigneeMemberId} = ${me})) or (${threads.status} = 'pending' and ${threads.assigneeMemberId} = ${me}))`;
 }
 
 /** Membership of a helpdesk view; `me` is the member column `mine` compares with. */

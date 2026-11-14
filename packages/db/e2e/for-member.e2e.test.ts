@@ -11,7 +11,7 @@ import {
   releaseDomain,
   transferDomain,
 } from "../src/domains.ts";
-import { applyConversationChange } from "../src/conversations.ts";
+import { applyAgentReply, applyConversationChange } from "../src/conversations.ts";
 import { forMember, forUser } from "../src/for-member.ts";
 import {
   drafts as schemaDrafts,
@@ -458,10 +458,27 @@ test("a shared inbox's Inbox is what concerns you; Done is yours, Resolve is eve
   expect(await inboxCount(dana, team.id)).toBe(1);
   expect(await inboxCount(erin, team.id)).toBe(2);
 
+  // Erin answers an unassigned one: it becomes hers and pending, so it stays in her Inbox (Awaiting
+  // reply) and leaves Dana's.
+  const answered = (await seedThread(org.id, team.id, "answered")).threadId;
+  expect(await inbox(dana)).toEqual([answered, open, personal].sort());
+  expect(await applyAgentReply(db, { threadId: answered, memberId: erin })).toMatchObject({
+    ok: true,
+  });
+  const [replied] = await db
+    .select({ status: threads.status, assignee: threads.assigneeMemberId })
+    .from(threads)
+    .where(eq(threads.id, answered));
+  expect(replied).toEqual({ status: "pending", assignee: erin });
+  expect(await inbox(erin)).toEqual([answered, open, erins].sort());
+  expect(await inbox(dana)).toEqual([open, personal].sort());
+  expect(await inboxCount(erin, team.id)).toBe(3);
+  expect(await inboxCount(dana, team.id)).toBe(1);
+
   // Done is Dana's alone: it leaves her Inbox, stays in Erin's, and the team's status is unchanged.
   await forMember(db, dana).setThreadState(open, { doneThrough: new Date("2026-10-01T00:00:00Z") });
   expect(await inbox(dana)).toEqual([personal]);
-  expect(await inbox(erin)).toEqual([open, erins].sort());
+  expect(await inbox(erin)).toEqual([answered, open, erins].sort());
   const [row] = await db
     .select({ status: threads.status })
     .from(threads)
@@ -477,9 +494,9 @@ test("a shared inbox's Inbox is what concerns you; Done is yours, Resolve is eve
   // Resolve is everyone's: it leaves Erin's Inbox and Dana's Later at once, before IMAP files it.
   expect(await change(open, erin, { type: "resolve" })).toMatchObject({ ok: true });
   expect(await change(erins, erin, { type: "resolve" })).toMatchObject({ ok: true });
-  expect(await inbox(erin)).toEqual([]);
+  expect(await inbox(erin)).toEqual([answered]);
   expect(await forMember(db, dana).listThreads({ view: "later" })).toEqual([]);
-  expect(await inboxCount(erin, team.id)).toBe(0);
+  expect(await inboxCount(erin, team.id)).toBe(1);
   expect((await forMember(db, dana).counts()).find((c) => c.mailboxId === team.id)?.later).toBe(0);
 });
 

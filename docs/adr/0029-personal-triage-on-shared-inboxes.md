@@ -24,9 +24,11 @@ Rodrigo decided (Nov 14, 2026) to separate them, with one coupling kept.
    change the conversation's status, owner or IMAP folder. The conversation toolbar shows them
    beside Resolve and Snooze.
 2. **The Inbox holds what concerns you.** A thread is in a member's Inbox (list and counts) when
-   it is not archived, not done or in Later for them, and it is `open` and unassigned or assigned
-   to them. Pending, snoozed and resolved conversations, and ones a teammate owns, are in nobody
-   else's Inbox. Personal threads always pass the rule: their status is never moved from `open`
+   it is not archived, not done or in Later for them, and it is either `open` and unassigned or
+   theirs, or `pending` and theirs. Replying claims an unassigned conversation and makes it
+   pending, so what you answered stays in your Inbox under Awaiting reply, as answered personal
+   mail does. Snoozed and resolved conversations, and ones a teammate owns, are in nobody else's
+   Inbox. Personal threads always pass the rule: their status is never moved from `open`
    and they have no owner (ADR 0021), so no mailbox-kind join is needed.
 3. **Resolve is everyone's.** A resolved conversation leaves every Inbox and every Later at once,
    by status, without waiting for the IMAP archive to land. Later also excludes resolved.
