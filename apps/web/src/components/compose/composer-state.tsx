@@ -4,7 +4,7 @@
 // reply or a forward. A shared inbox's composer is always there, in Hidden; Reply or Forward on a
 // message turns it into the email composer, and a send or a discard turns it back. A personal
 // thread has only Public, closed until Reply or Forward opens it and again after a discard.
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useContext, useRef, useState, type ReactNode } from "react";
 import type { ComposerFile } from "@/hooks/use-compose.ts";
 import type { Reply } from "@/lib/reply.ts";
 
@@ -80,6 +80,9 @@ export function ComposerProvider({ chat, children }: { chat: boolean; children: 
   const [replyKind, setReplyKind] = useState<ReplyKind>(chat ? "replyAll" : "reply");
   const [generation, setGeneration] = useState(0);
   const showing = email && (!chat || mode === "public");
+  // Read when an undo comes back: its callback was made at send time, when Public showed.
+  const showingNow = useRef(showing);
+  showingNow.current = showing;
   // The composer's key follows the message it answers, so Reply on another message starts fresh;
   // the same one keeps its composer, and with it an undo still waiting on its last send.
   const startEmail = () => {
@@ -127,7 +130,7 @@ export function ComposerProvider({ chat, children }: { chat: boolean; children: 
     },
     showEmail: () => setMode("public"),
     handBack: (content) => {
-      if (showing) return false;
+      if (showingNow.current) return false;
       setHanded(content);
       setForwardId(content.mode === "forward" ? content.sourceId : undefined);
       if (content.mode === "reply" && content.sourceId) setReplyToId(content.sourceId);
