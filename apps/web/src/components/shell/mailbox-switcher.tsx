@@ -51,14 +51,14 @@ export function mailboxName(mailbox: WorkspaceMailbox, you: string) {
 }
 
 /** A round avatar `size` px across: the picture when there is one, else the initial on a grey a
- *  step darker than the hover highlight, so a face without a picture still stands out. Multiply:
+ *  half step darker than the hover highlight, so a face without a picture still stands out. Multiply:
  *  under the row's hover highlight the fill darkens with it instead of sitting on top. */
 function FaceAvatar(props: { face: Face; size: number }) {
   return (
     <Avatar
       src={props.face.image}
       initials={props.face.name.slice(0, 1).toUpperCase() || undefined}
-      className="bg-muted text-foreground outline-0 mix-blend-multiply"
+      className="bg-[color-mix(in_oklab,var(--color-muted)_50%,var(--color-accent))] text-foreground outline-0 mix-blend-multiply"
       style={{ "--avatar-size": `${props.size}px` } as CSSProperties}
     />
   );
@@ -75,25 +75,23 @@ function clusterLayout(count: number, size: number) {
       { x: size - d, y: size - d, d },
     ];
   }
-  // Two faces on top, overlapping by a hair like the diagonal pair, and a smaller "+N" centred
-  // below that just meets them, so every ring between discs is the same hairline.
-  const d = size * 0.54;
-  const more = size * 0.44;
-  // The "+N" centre sits where it touches both top discs: (r + m) from each centre.
-  const reach = Math.sqrt((d / 2 + more / 2) ** 2 - (size / 2 - d / 2) ** 2);
-  const height = d / 2 + reach + more / 2;
-  const top = (size - height) / 2;
+  // Three equal discs on an even triangle: every pair of centres the same distance apart, a
+  // hair under one disc's width, so every ring between them is the same hairline. The triangle
+  // spans the square's width and sits centred in its height.
+  const d = size / 1.88;
+  const side = d * 0.88;
+  const top = (size - (side * Math.sqrt(3)) / 2 - d) / 2;
   return [
     { x: 0, y: top, d },
-    { x: size - d, y: top, d },
-    { x: (size - more) / 2, y: top + d / 2 + reach - more / 2, d: more },
+    { x: side, y: top, d },
+    { x: side / 2, y: top + (side * Math.sqrt(3)) / 2, d },
   ];
 }
 
 /**
  * "All mailboxes": the mailboxes' own avatars in one avatar's square. One fills it; two sit on
- * the diagonal; with three or more, the first two sit on top and a smaller "+N" (the rest) below
- * between them. A ring in the fill behind them (`ring`) keeps a hairline between neighbours on the menu,
+ * the diagonal; with three or more, the first two sit on top and "+N" (the rest) below between them,
+ * all three the same size. A ring in the fill behind them (`ring`) keeps a hairline between neighbours on the menu,
  * under the hover highlight and on the trigger.
  */
 function Cluster(props: { faces: Face[]; size: number; ring: string }) {
@@ -114,7 +112,7 @@ function Cluster(props: { faces: Face[]; size: number; ring: string }) {
             {"more" in item ? (
               <Avatar
                 initials={`+${item.more}`}
-                className="bg-muted text-foreground outline-0 mix-blend-multiply"
+                className="bg-[color-mix(in_oklab,var(--color-muted)_50%,var(--color-accent))] text-foreground outline-0 mix-blend-multiply"
                 style={{ "--avatar-size": `${spot.d}px` } as CSSProperties}
               />
             ) : (
