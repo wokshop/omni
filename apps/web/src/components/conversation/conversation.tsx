@@ -9,12 +9,13 @@ import {
   IconMailOpen,
   IconMaximize,
   IconMinimize,
+  IconX,
 } from "@/components/icons/central";
 import { Button } from "@/components/ui/button";
 import { Heading } from "@/components/ui/heading";
 import { ShowMore } from "@/components/ui/show-more";
 import { Tooltip, TooltipTrigger } from "@/components/ui/tooltip";
-import { useLeaveOpenThread } from "@/components/inbox/open-list";
+import { useLeaveOpenThread, useOpenList } from "@/components/inbox/open-list";
 import { useConversation } from "@/hooks/use-conversation.ts";
 import { useFullScreen } from "@/hooks/use-full-screen.ts";
 import { useAllMailboxes, useThread } from "@/hooks/use-mail.ts";
@@ -129,7 +130,10 @@ export function Conversation({ threadId }: { threadId: string }) {
           {/* The pane's bottom edge, full width; the messages scroll above it. */}
           <div className="sticky bottom-0 w-full shrink-0 bg-background">
             {shared && <PropertiesPill thread={thread} />}
-            <FloatingReply thread={thread} stacked={shared} />
+            {/* A shared inbox's composer is always docked here, under its properties: floating
+                Reply and Forward on top of both crowd the corner. Its messages' own Reply and
+                Forward (and their menu) stay. */}
+            {!shared && <FloatingReply thread={thread} />}
             <ReplyComposer thread={thread} />
           </div>
         </div>
@@ -328,6 +332,8 @@ function Entry({ children }: { children: ReactNode }) {
 function Actions({ thread, subject }: { thread: Thread; subject: string }) {
   const markRead = useMarkRead();
   const [fullScreen, toggleFullScreen] = useFullScreen();
+  const navigate = useNavigate();
+  const closeHref = useOpenList()?.closeHref;
 
   return (
     // The reading column's top bar: the subject, then the actions. One row with the list's
@@ -360,6 +366,12 @@ function Actions({ thread, subject }: { thread: Thread; subject: string }) {
         <Action label={fullScreen ? "Side by side" : "Full screen"} onPress={toggleFullScreen}>
           {fullScreen ? <IconMinimize /> : <IconMaximize />}
         </Action>
+        {/* Back to the list alone, as Esc and a click on the open row do. */}
+        {closeHref && (
+          <Action label="Close" onPress={() => void navigate({ href: closeHref })}>
+            <IconX />
+          </Action>
+        )}
       </div>
     </div>
   );

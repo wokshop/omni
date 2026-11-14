@@ -60,13 +60,14 @@ function Shell() {
         (settings.isOpen ? "scale-95 opacity-40" : "")
       }
     >
-      <AppSidebar />
-      <SidebarInset>
-        <SidebarResizeGrip />
-        <ListSweepProvider>
+      {/* Above the sidebar too: its search sweeps the list when smart search runs. */}
+      <ListSweepProvider>
+        <AppSidebar />
+        <SidebarInset>
+          <SidebarResizeGrip />
           <Outlet />
-        </ListSweepProvider>
-      </SidebarInset>
+        </SidebarInset>
+      </ListSweepProvider>
       <KeyboardShortcuts />
       <ComposeDialog />
       <LazySettingsDialog />

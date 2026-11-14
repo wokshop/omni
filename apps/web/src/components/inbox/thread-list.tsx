@@ -8,9 +8,10 @@ import { Skeleton, SkeletonBox } from "skullet/react";
 import { ConversationMeta, type ConversationRowInfo } from "@/components/inbox/conversation-meta";
 import { ListSweepSlot } from "@/components/inbox/list-sweep";
 import { OpenListContext } from "@/components/inbox/open-list";
-import { SearchPopover } from "@/components/search/search-popover";
 import { EmptyState } from "@/components/empty/empty-state";
-import { FloatingCompose } from "@/components/compose/floating-actions";
+import { IconPencil } from "@/components/icons/central";
+import { Tooltip, TooltipTrigger } from "@/components/ui/tooltip";
+import { ariaKeyShortcuts } from "@/lib/shortcuts.ts";
 import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
 import { Checkbox, CheckboxField } from "@/components/ui/checkbox";
@@ -160,14 +161,14 @@ export function List(
     loading?: boolean;
     /** Shown in brand blue after the title (unread threads), when above zero. */
     count?: number;
-    /** What the bar above the rows says about their order or scope. */
+    /** What the header says about the rows' order or scope, after the title. */
     caption?: ReactNode;
     /** Loads the next page, called as the end of the list nears. */
     loadMore?: (() => void) | undefined;
     isLoadingMore?: boolean;
     /** The list keys (j/k, x, e, ...), for lists of threads. */
     shortcuts?: ShortcutsSource;
-    /** Shown in place of the caption while rows are selected: what to do with them. */
+    /** Shown in the header while rows are selected: what to do with them. */
     bulkActions?: (selection: { ids: string[]; clear: () => void }) => ReactNode;
     /** Shown in place of the rows when there are none (or they failed to load). */
     empty?: ReactNode;
@@ -190,11 +191,11 @@ export function List(
   // Full screen (toggled from the conversation's toolbar): the open pane takes the whole width.
   const hideList = fullScreen && detail;
   const listRef = useRef<HTMLElement>(null);
-  // Three columns, always: the list keeps a width the person can drag, and the reading column
-  // takes the rest of the page at its full height, empty until a thread (or new mail) opens.
-  const split = !hideList;
+  // With a thread open, three columns: the list keeps a width the person can drag, the reading
+  // column the rest at the window's full height. Closed, the list fills the page.
+  const split = detail && !hideList;
   const listWidth = useStoredWidth("omni:list-width", LIST_WIDTH, LIST_MIN, LIST_MAX);
-  // Until dragged, the reading column keeps a comfortable 672px (`w-2xl`) and the list takes the
+  // Until dragged, the reading column keeps a comfortable 576px (`w-xl`) and the list takes the
   // rest, down to its minimum.
   const hug = split && !listWidth.isSet;
   const [resizing, setResizing] = useState(false);
@@ -229,7 +230,7 @@ export function List(
         <section
           ref={listRef}
           style={split && !hug ? { width: listWidth.width } : undefined}
-          className={`flex flex-col ${hug ? "min-w-80 flex-1" : "min-w-0 flex-none"} ${hideList ? "hidden" : ""}`}
+          className={`flex flex-col ${hug ? "min-w-80" : "min-w-0"} ${split && !hug ? "flex-none" : "flex-1"} ${hideList ? "hidden" : ""}`}
         >
           {/* 10px on the right, the same as the 28px controls' inset from the top. */}
           <header
@@ -240,38 +241,51 @@ export function List(
                 <IconSidebar />
               </SidebarTrigger>
             )}
-            {/* 1px down: centers the title's capitals on the sidebar header's icons. Collapsed, the
-                title centres on the sidebar button beside it instead, so it stays put. */}
-            <Heading className={sidebarHidden ? "" : "translate-y-px"}>
-              {props.title}
-              {unread > 0 && <span className="ms-1 text-primary tabular-nums">{unread}</span>}
-            </Heading>
-            <div className="ms-auto flex items-center gap-2">
-              <SearchPopover />
-            </div>
-          </header>
-          {/* pb-0.5 lifts the row 1px: under the borderless header the true middle reads low. */}
-          <div className="flex h-10.5 items-center gap-2 border-b px-5 pb-0.5">
-            <CheckboxField
-              aria-label="Select all"
-              isSelected={threads.length > 0 && count === threads.length}
-              isIndeterminate={count > 0 && count < threads.length}
-              onChange={(all) => setSelected(all ? "all" : new Set())}
-            >
-              <Checkbox />
-            </CheckboxField>
-            {count > 0 && props.bulkActions ? (
-              props.bulkActions({
-                ids: selected === "all" ? threads.map((t) => t.id) : [...selected].map(String),
-                clear: () => setSelected(new Set()),
-              })
+            {count > 0 ? (
+              // Selecting: select-all over the rows' checkboxes, the count, then what to do.
+              <div className="flex min-w-0 flex-1 items-center gap-2">
+                <CheckboxField
+                  aria-label="Select all"
+                  isSelected={threads.length > 0 && count === threads.length}
+                  isIndeterminate={count < threads.length}
+                  onChange={(all) => setSelected(all ? "all" : new Set())}
+                >
+                  <Checkbox />
+                </CheckboxField>
+                <span className="translate-y-px text-sm text-muted-foreground tabular-nums">
+                  {count} selected
+                </span>
+                {props.bulkActions?.({
+                  ids: selected === "all" ? threads.map((t) => t.id) : [...selected].map(String),
+                  clear: () => setSelected(new Set()),
+                })}
+              </div>
             ) : (
-              // 1px down: the caption's ink centers on the checkbox's, not its line box.
-              <span className="translate-y-px text-xs text-subtle-foreground">
-                {props.caption ?? "Most recent"}
-              </span>
+              <div className="flex min-w-0 flex-1 items-baseline gap-2">
+                {/* 1px down: centers the title's capitals on the sidebar header's icons.
+                    Collapsed, the title centres on the sidebar button beside it instead. */}
+                <Heading className={`shrink-0 ${sidebarHidden ? "" : "translate-y-px"}`}>
+                  {props.title}
+                  {unread > 0 && <span className="ms-1 text-primary tabular-nums">{unread}</span>}
+                </Heading>
+                {props.caption && (
+                  <span className="truncate text-xs text-subtle-foreground">{props.caption}</span>
+                )}
+              </div>
             )}
-          </div>
+            <TooltipTrigger delay={400}>
+              <Button
+                intent="ghost"
+                size="sq-sm-lg"
+                aria-label="Compose"
+                aria-keyshortcuts={ariaKeyShortcuts("compose")}
+                onPress={openCompose}
+              >
+                <IconPencil />
+              </Button>
+              <Tooltip>Compose</Tooltip>
+            </TooltipTrigger>
+          </header>
 
           {/* Only the rows on screen are in the DOM, so thousands of threads scroll like fifty.
               The list is its own scroll container; rows keep the frame's fixed height. The
@@ -306,10 +320,10 @@ export function List(
             </ListSweepSlot>
           )}
         </section>
-        {/* The reading column, from the window's top to its bottom: the open thread or nothing.
-            The same wrapper in and out of full screen, so toggling it doesn't remount it. */}
-        {
-          <div className={`relative flex min-w-0 ${hug ? "w-2xl shrink" : "flex-1"}`}>
+        {/* The reading column, from the window's top to its bottom, only with a thread open. The
+            same wrapper in and out of full screen, so toggling it doesn't remount it. */}
+        {threadId && props.children && (
+          <div className={`relative flex min-w-0 ${hug ? "w-xl shrink" : "flex-1"}`}>
             {split && (
               <ResizeGrip
                 label="Resize list"
@@ -319,20 +333,10 @@ export function List(
                 onResizingChange={setResizing}
               />
             )}
-            {threadId && props.children ? (
-              <OpenListContext value={openList}>{props.children}</OpenListContext>
-            ) : (
-              // The top rail's line runs on over the empty column.
-              <div className={`flex flex-1 flex-col ${fullScreen ? "" : "border-s"}`}>
-                <div className="h-12 shrink-0 border-b" />
-              </div>
-            )}
+            <OpenListContext value={openList}>{props.children}</OpenListContext>
           </div>
-        }
+        )}
       </div>
-      {/* With nothing open, new mail is the page's primary action; an open thread swaps it for
-          Reply and Forward (see `FloatingReply`). */}
-      {!detail && <FloatingCompose onPress={openCompose} />}
     </div>
   );
 }

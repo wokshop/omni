@@ -21,6 +21,7 @@ import {
 } from "@/components/icons/sidebar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { SearchPopover } from "@/components/search/search-popover";
 import { HelpdeskItems } from "./helpdesk-nav";
 import { MailboxSwitcher } from "./mailbox-switcher";
 import { Notifications } from "./notifications";
@@ -118,6 +119,10 @@ export function AppSidebar() {
         {/* The first group needs no heading: it's what the app opens to. The same rows for every
             mailbox the switcher shows; a shared inbox adds its Mine. Every row
             keeps the switcher's choice: a link never changes which mailbox is shown. */}
+        {/* Search first: the field fills the nav's row, and its box grows out to the right. */}
+        <div className="px-2 pt-1 pb-2">
+          <SearchPopover side="start" />
+        </div>
         <SidebarSection>
           <ComposeItem />
           <Items items={mail} mailbox={mailbox} />

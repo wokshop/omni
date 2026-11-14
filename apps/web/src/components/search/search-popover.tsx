@@ -73,18 +73,31 @@ const ICON = { closed: { width: 15, height: 15 }, open: { width: 16, height: 16 
 const ease = [0.23, 1, 0.32, 1] as const;
 
 type Phase = "closed" | "open" | "closing";
-type Anchor = { top: number; right: number };
+type Anchor = { top: number; left?: number; right?: number };
 
-/** The closed state is the 28px field in the title bar. */
-export function SearchPopover() {
+/**
+ * The closed state is the 28px field. `side="end"` (a title bar's end) pins the box to the field's
+ * top-right corner, growing left and down; `side="start"` (the sidebar) pins it to the top-left,
+ * growing right, and the field fills its row.
+ */
+export function SearchPopover({ side = "end" }: { side?: "start" | "end" }) {
   const [phase, setPhase] = useState<Phase>("closed");
   const [anchor, setAnchor] = useState<Anchor>({ top: 0, right: 0 });
+  // The field's own width: the closed box matches it, so the box grows out of the field.
+  const [fieldWidth, setFieldWidth] = useState(SIZE.closed.width);
   const triggerRef = useRef<HTMLButtonElement>(null);
   // Reduced motion: no growing; the box takes its open size at once and crossfades.
   const reduceMotion = useReducedMotion();
   const open = () => {
     const rect = triggerRef.current?.getBoundingClientRect();
-    if (rect) setAnchor({ top: rect.top, right: window.innerWidth - rect.right });
+    if (rect) {
+      setFieldWidth(rect.width);
+      setAnchor(
+        side === "start"
+          ? { top: rect.top, left: rect.left }
+          : { top: rect.top, right: window.innerWidth - rect.right },
+      );
+    }
     setPhase("open");
   };
   const close = () => setPhase((p) => (p === "closed" ? p : "closing"));
@@ -109,6 +122,7 @@ export function SearchPopover() {
 
   const isOpen = phase === "open";
   const state = isOpen ? "open" : "closed";
+  const closedSize = { ...SIZE.closed, width: fieldWidth };
   const transition = { duration: reduceMotion ? 0 : 0.24, ease };
 
   return (
@@ -119,7 +133,7 @@ export function SearchPopover() {
         ref={triggerRef}
         onPress={open}
         aria-label="Search"
-        className={`flex h-7 w-60 cursor-text items-center gap-2 rounded-lg border border-input bg-background ps-2 pe-0.75 text-sm text-subtle-foreground outline-hidden hover:border-muted-foreground/30 focus-visible:border-ring/70 ${phase === "closed" ? "" : "invisible"}`}
+        className={`flex h-7 ${side === "start" ? "w-full" : "w-60"} cursor-text items-center gap-2 rounded-lg border border-input bg-background ps-2 pe-0.75 text-sm text-subtle-foreground outline-hidden hover:border-muted-foreground/30 focus-visible:border-ring/70 ${phase === "closed" ? "" : "invisible"}`}
       >
         <IconSearch className="text-muted-foreground" />
         <span className="flex-1 text-start">Search</span>
@@ -146,8 +160,14 @@ export function SearchPopover() {
               className="fixed flex flex-col overflow-clip border border-input bg-background transition-shadow duration-200 data-[open=true]:shadow-(--shadow-overlay)"
               data-open={isOpen}
               style={anchor}
-              initial={reduceMotion ? { ...SIZE.open, opacity: 0 } : SIZE.closed}
-              animate={reduceMotion ? { ...SIZE.open, opacity: isOpen ? 1 : 0 } : SIZE[state]}
+              initial={reduceMotion ? { ...SIZE.open, opacity: 0 } : closedSize}
+              animate={
+                reduceMotion
+                  ? { ...SIZE.open, opacity: isOpen ? 1 : 0 }
+                  : isOpen
+                    ? SIZE.open
+                    : closedSize
+              }
               transition={reduceMotion ? { duration: 0.15, ease } : transition}
               onAnimationComplete={() => phase === "closing" && setPhase("closed")}
             >

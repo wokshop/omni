@@ -179,9 +179,9 @@ test("a mailbox in the other workspace opens; a switch the server refuses says s
   expect(new URL(page.url()).searchParams.get("mailbox")).toBe(boxes.hello.id);
 });
 
-// Catches: rows cropped to their content (a layout width of NaN), the list growing over the
-// full-height reading column, or the floating primary action not swapping to Reply.
-test("three columns: the list keeps its width beside a thread and under new mail", async () => {
+// Catches: rows cropped to their content (a layout width of NaN), an empty reading column left
+// standing with nothing open, or a thread that the top bar's close doesn't close.
+test("the list fills the page until a thread opens beside it, and again once it closes", async () => {
   const { email } = await ana("wide");
   const page = await openSwitcher(email);
   await page.keyboard.press("Escape");
@@ -189,29 +189,32 @@ test("three columns: the list keeps its width beside a thread and under new mail
   await row.waitFor();
   const list = page.getByRole("grid");
   const width = async (locator: typeof row) => (await locator.boundingBox())?.width ?? 0;
-  const viewport = page.viewportSize()!.width;
-  // The row fills the list, and the list leaves most of the page to the reading column.
-  const listWidth = await width(list);
-  expect(Math.abs((await width(row)) - listWidth)).toBeLessThan(2);
-  expect(listWidth).toBeLessThan(viewport / 2);
-  const compose = page.getByRole("button", { name: "Compose" });
-  await compose.waitFor();
+  // Alone, the list (and every row in it) runs to the window's edge.
+  const right = async () => {
+    const box = await row.boundingBox();
+    return box ? box.x + box.width : 0;
+  };
+  const viewport = page.viewportSize()?.width ?? 0;
+  await expect.poll(async () => viewport - (await right())).toBeLessThan(2);
+  expect(Math.abs((await width(row)) - (await width(list)))).toBeLessThan(2);
 
+  // Open, the thread takes the right of the page; the list keeps the rest.
   await row.click();
   await page.waitForURL((url) => url.pathname.startsWith("/inbox/"));
   await page.getByRole("button", { name: "Reply", exact: true }).last().waitFor();
-  expect(await compose.count()).toBe(0);
-  expect(Math.abs((await width(list)) - listWidth)).toBeLessThan(2);
+  await expect.poll(async () => viewport - (await right())).toBeGreaterThan(400);
 
-  await page.goBack();
+  // The top bar's close goes back to the list alone.
+  await page.getByRole("button", { name: "Close", exact: true }).click();
   await page.waitForURL((url) => url.pathname === "/inbox");
+  await expect.poll(async () => viewport - (await right())).toBeLessThan(2);
+
   // New mail opens in a dialog over the page and closes back to it.
-  await compose.click();
+  await page.getByRole("button", { name: "Compose" }).click();
   const dialog = page.getByRole("dialog", { name: "New email" });
   await dialog.waitFor();
   await page.keyboard.press("Escape");
   await dialog.waitFor({ state: "detached" });
-  expect(Math.abs((await width(list)) - listWidth)).toBeLessThan(2);
 });
 
 // Catches: a sidebar link that drops (or swaps) the mailbox the switcher shows.
