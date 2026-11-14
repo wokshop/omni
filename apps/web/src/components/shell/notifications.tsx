@@ -306,15 +306,15 @@ function NotificationRow({ notification: n }: { notification: Notification }) {
             {rowTime(n.createdAt)}
           </time>
         </span>
-        {subject && <span className="truncate text-xs text-subtle-foreground">{subject}</span>}
+        {subject && <span className="truncate text-sm text-subtle-foreground">{subject}</span>}
       </span>
     </GridListItem>
   );
 }
 
-/** A squircle: 28px with 8px corners. */
+/** A squircle: 28px with 6px corners. */
 const AVATAR =
-  "shrink-0 bg-accent text-foreground outline-0 mix-blend-multiply [--avatar-radius:var(--radius-xl)] [--avatar-size:--spacing(7)]";
+  "shrink-0 bg-accent text-foreground outline-0 mix-blend-multiply [--avatar-radius:var(--radius-lg)] [--avatar-size:--spacing(7)]";
 
 /** Who did it, by their picture; what happened, by a glyph, when no one did. */
 function Lead({ notification: n }: { notification: Notification }) {
@@ -332,7 +332,7 @@ function Lead({ notification: n }: { notification: Notification }) {
   const Glyph =
     n.kind === "sla_breached" ? IconCircleAlert : n.kind === "sla_at_risk" ? IconClock3 : IconMail;
   return (
-    <span className="flex size-7 shrink-0 items-center justify-center rounded-xl bg-accent text-muted-foreground mix-blend-multiply">
+    <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-accent text-muted-foreground mix-blend-multiply">
       <Glyph aria-hidden className="size-icon" />
     </span>
   );
@@ -342,7 +342,7 @@ function Lead({ notification: n }: { notification: Notification }) {
 function RowBones() {
   return Array.from({ length: 12 }, (_, i) => (
     <div key={i} className="flex items-center gap-3 border-b p-5">
-      <SkeletonBox width={28} height={28} radius="var(--radius-xl)" />
+      <SkeletonBox width={28} height={28} radius="var(--radius-lg)" />
       <span className="flex min-w-0 flex-1 flex-col gap-2">
         <SkeletonBox width={`${55 + ((i * 23) % 35)}%`} height={10} />
         <SkeletonBox width={`${35 + ((i * 17) % 30)}%`} height={8} />
