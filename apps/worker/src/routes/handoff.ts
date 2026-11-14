@@ -1,9 +1,8 @@
 // Hand-off (ADR 0030): a reply to a shared conversation from the member's own personal mailbox.
 // The mail threads for the customer (In-Reply-To and References point at the shared thread's
 // message), but it is sent, filed and answered on the personal mailbox, so the conversation goes
-// on one-to-one there. In the same transaction the shared conversation gets a `handoff` event
-// (its timeline line) and nothing else: status and owner stay, and it stays in each teammate's
-// Inbox until they mark it done (ADR 0032). Cancelling the send inside its undo window removes it.
+// on one-to-one there. The shared conversation is assigned to the sender and resolved in the
+// same transaction; cancelling the send inside its undo window puts it back.
 import { MAX_SEND_ATTACHMENTS } from "@omni/contracts";
 import { enqueueHandoff, forMember, undoSendSeconds } from "@omni/db";
 import { replySubject } from "@omni/mail-core/compose";
@@ -118,9 +117,9 @@ async function sendHandoff(
 export const handoff = new Hono<AppEnv>()
   /**
    * Replies to a shared conversation from one of the member's own personal mailboxes (ADR 0030)
-   * and logs a `handoff` event on it; its status and owner stay as they are (ADR 0032). Answers
-   * like a reply (`actionId`, `messageIdHeader`, `undoUntil`); cancelling it with
-   * `POST /actions/:id/cancel` inside the window removes the event. 404 for a mailbox
+   * and hands it off to them: assigned to them and resolved, with a `handoff` event. Answers like
+   * a reply (`actionId`, `messageIdHeader`, `undoUntil`); cancelling it with
+   * `POST /actions/:id/cancel` inside the window puts the conversation back. 404 for a mailbox
    * that is not theirs to send from; 409 for a personal thread, or with `messages` when the
    * thread has messages newer than `basedOnMessageId`.
    */
