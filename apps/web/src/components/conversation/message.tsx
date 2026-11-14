@@ -17,6 +17,7 @@ import {
 import { MenuItem, MenuLabel } from "@/components/ui/menu";
 import { Tag, TagGroup, TagList } from "@/components/ui/tag-group";
 import { appToast } from "@/components/ui/toast";
+import { Toolbar } from "@/components/ui/toolbar";
 import { Tooltip, TooltipTrigger } from "@/components/ui/tooltip";
 import type { PendingSend } from "@/lib/pending.ts";
 import type { Message } from "@/lib/types.ts";
@@ -113,6 +114,8 @@ export function MessageItem(props: {
       inline={inline}
       // A single email's header shows Reply and Forward beside it: a hidden ⋯ would leave a gap.
       visible={!!props.flat}
+      // Mail from outside the team keeps its ⋯ on the hover island with Reply and Forward.
+      island={!props.flat && !message.fromTeam}
     />
   );
 
@@ -121,7 +124,7 @@ export function MessageItem(props: {
       id={messageAnchor(message.id)}
       aria-label={`${message.fromMe ? "You" : sender}, ${messageTime(message.sentAt)}`}
       // An email's body sits further under its larger header than a bubble under its name.
-      className={`group/item flex flex-col ${props.flat ? "gap-4" : "gap-3"} ${ours ? "items-end" : "items-start"}`}
+      className={`group/item relative flex flex-col ${props.flat ? "gap-4" : "gap-3"} ${ours ? "items-end" : "items-start"}`}
     >
       <MessageHeader
         flat={!!props.flat}
@@ -264,7 +267,7 @@ function ChatHeader(props: {
 }) {
   const { message, sender } = props;
   return (
-    <header className={`flex items-center gap-2 ${props.actions ? "w-full" : ""}`}>
+    <header className="flex items-center gap-2">
       {!message.fromMe && (
         <Avatar
           isSquare
@@ -278,29 +281,43 @@ function ChatHeader(props: {
       <time dateTime={message.sentAt} className="text-xs text-subtle-foreground tabular-nums">
         {messageTime(message.sentAt)}
       </time>
-      {props.menu}
-      {props.actions && (
-        <div className="ms-auto flex items-center gap-1">
-          <ReplyActions message={message} />
-        </div>
-      )}
+      {props.actions ? <ActionIsland message={message} menu={props.menu} /> : props.menu}
     </header>
   );
 }
 
+/**
+ * Mail from outside the team: Reply, Forward and ⋯ on one small island at the message's top
+ * right, in line with its name, shown while the pointer is over the message or focus is in it
+ * (always on touch screens). The island is the toolbar primitive: one tab stop, arrows between.
+ */
+function ActionIsland({ message, menu }: { message: Message; menu: ReactNode }) {
+  return (
+    <Toolbar
+      aria-label="Message actions"
+      // 22px tall (20px buttons, 1px in), 2px up: measured, that centres it on the name.
+      className="absolute -top-0.5 end-0 z-10 gap-0.5 rounded-md bg-surface p-px opacity-0 transition-opacity duration-150 ease-out group-focus-within/item:opacity-100 group-hover/item:opacity-100 has-aria-expanded:opacity-100 motion-reduce:transition-none [@media(hover:none)]:opacity-100"
+    >
+      <ReplyActions message={message} small />
+      {menu}
+    </Toolbar>
+  );
+}
+
 /** Reply and Forward to one message: the email composer opens answering it. */
-function ReplyActions({ message }: { message: Message }) {
+function ReplyActions({ message, small = false }: { message: Message; small?: boolean }) {
   const composer = useComposerState();
   return (
     <>
       <HeaderAction
+        small={small}
         label="Reply"
         // A shared inbox writes to everyone outside the team by default.
         onPress={() => composer.openReply(composer.chat ? "replyAll" : "reply", message.id)}
       >
         <IconReply />
       </HeaderAction>
-      <HeaderAction label="Forward" onPress={() => composer.forward(message.id)}>
+      <HeaderAction small={small} label="Forward" onPress={() => composer.forward(message.id)}>
         <IconForward />
       </HeaderAction>
     </>
@@ -363,14 +380,25 @@ function EmailHeader(props: { message: Message; sender: string; self: string; me
   );
 }
 
-function HeaderAction(props: { label: string; onPress: () => void; children: ReactNode }) {
+/** A 20px island button's hit area: the island's height, its own width, no overlap. */
+const ISLAND_HIT = "before:min-w-0";
+
+function HeaderAction(props: {
+  label: string;
+  onPress: () => void;
+  children: ReactNode;
+  /** 20px, on a message's action island. */
+  small?: boolean;
+}) {
   return (
     <TooltipTrigger delay={400}>
       <Button
         intent="ghost"
-        size="sq-xs"
+        size={props.small ? "sq-2xs" : "sq-xs"}
+        // Side by side on the island, a 44px hit area would cover the button before it: each
+        // keeps the island's height and only its own width.
         aria-label={props.label}
-        className="text-muted-foreground hover:text-foreground"
+        className={`text-muted-foreground hover:text-foreground ${props.small ? ISLAND_HIT : ""}`}
         onPress={props.onPress}
       >
         {props.children}
