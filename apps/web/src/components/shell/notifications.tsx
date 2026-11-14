@@ -161,8 +161,12 @@ export function NotificationsPanel() {
           onSelectionChange={(key: Key) => setView(key as View)}
           className="min-h-0 w-full flex-1 gap-0"
         >
-          {/* 4px up, under the header's title, so the tabs belong to it. */}
-          <TabList aria-label="Show" className="-mt-1 shrink-0 px-5">
+          {/* 28px tabs, 8px up into the header's bottom space, so they sit right under its
+              title and belong to it. */}
+          <TabList
+            aria-label="Show"
+            className="-mt-2 shrink-0 px-5 [--tab-list-tab-y:--spacing(0.5)]"
+          >
             <Tab id="all">All</Tab>
             <Tab id="unread" className="gap-1.5">
               Unread
