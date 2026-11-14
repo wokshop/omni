@@ -90,7 +90,13 @@ export function SearchPopover({ side = "end" }: { side?: "start" | "end" }) {
   const reduceMotion = useReducedMotion();
   const open = () => {
     const rect = triggerRef.current?.getBoundingClientRect();
-    if (rect) {
+    // The field can be out of view (a collapsed sidebar slides off screen; a hidden column has
+    // no size) while `/` and ⌘K still open search: the box then opens centred near the
+    // window's top instead.
+    if (!rect || rect.width === 0 || rect.right <= 0 || rect.left >= window.innerWidth) {
+      setFieldWidth(SIZE.open.width);
+      setAnchor({ top: 64, left: Math.max(16, (window.innerWidth - SIZE.open.width) / 2) });
+    } else {
       setFieldWidth(rect.width);
       setAnchor(
         side === "start"

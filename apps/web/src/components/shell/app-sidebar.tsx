@@ -13,7 +13,6 @@ import {
   IconSettings,
   IconInbox,
   IconPaperPlane,
-  IconWrite,
   IconSidebar,
   IconStar,
   IconTrash,
@@ -39,10 +38,10 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar";
 import { useConnectivity } from "@/hooks/use-connectivity.ts";
+import { useCounts } from "@/hooks/use-mail.ts";
 import { useMember } from "@/hooks/use-session.ts";
 import { useWorkspaces } from "@/hooks/use-workspaces.ts";
 import { openSettings } from "@/hooks/use-settings-dialog.ts";
-import { useComposePane, useOpenCompose } from "@/hooks/use-compose-pane.ts";
 import { keys } from "@/lib/query-keys.ts";
 import { ariaKeyShortcuts } from "@/lib/shortcuts.ts";
 
@@ -53,10 +52,18 @@ interface NavItem {
   href?: string;
   /** Path (and lane, for inbox lanes) that marks this row current. */
   current?: { path: string; lane?: string; exact?: boolean };
+  /** Shows the inbox's unread threads at the row's end. */
+  unread?: boolean;
 }
 
 const mail: NavItem[] = [
-  { label: "Inbox", icon: <IconInbox />, href: "/inbox", current: { path: "/inbox" } },
+  {
+    label: "Inbox",
+    icon: <IconInbox />,
+    href: "/inbox",
+    current: { path: "/inbox" },
+    unread: true,
+  },
   { label: "Later", icon: <IconClock />, href: "/later", current: { path: "/later" } },
   {
     label: "Needs reply",
@@ -119,12 +126,12 @@ export function AppSidebar() {
         {/* The first group needs no heading: it's what the app opens to. The same rows for every
             mailbox the switcher shows; a shared inbox adds its Mine. Every row
             keeps the switcher's choice: a link never changes which mailbox is shown. */}
-        {/* Search first: the field fills the nav's row, and its box grows out to the right. */}
-        <div className="px-2 pt-1 pb-2">
+        {/* Search first, as wide as the links under it and 6px above them (the content's 12px
+            gap, less 6); its box grows out to the right. */}
+        <div className="-mb-1.5">
           <SearchPopover side="start" />
         </div>
         <SidebarSection>
-          <ComposeItem />
           <Items items={mail} mailbox={mailbox} />
           {shown?.kind === "shared" && <HelpdeskItems mailboxId={shown.id} />}
         </SidebarSection>
@@ -152,23 +159,6 @@ export function AppSidebar() {
         </div>
       </SidebarFooter>
     </Sidebar>
-  );
-}
-
-/** New mail, as a plain row above Inbox; the floating button at the page's bottom right is the
- * primary one. Both open the same dialog. */
-function ComposeItem() {
-  const openCompose = useOpenCompose();
-  const [composing] = useComposePane();
-  return (
-    <SidebarItem
-      isCurrent={composing}
-      aria-keyshortcuts={ariaKeyShortcuts("compose")}
-      onPress={openCompose}
-    >
-      <IconWrite />
-      <SidebarLabel>Compose</SidebarLabel>
-    </SidebarItem>
   );
 }
 
@@ -243,8 +233,23 @@ function Items({ items, mailbox }: { items: NavItem[]; mailbox: string | undefin
     >
       {item.icon}
       <SidebarLabel>{item.label}</SidebarLabel>
+      {item.unread && <UnreadCount mailbox={mailbox} />}
     </SidebarItem>
   ));
+}
+
+/** Unread threads in the inbox, across the shown mailbox (or all of them); nothing at zero. */
+function UnreadCount({ mailbox }: { mailbox: string | undefined }) {
+  const counts = useCounts().data?.counts ?? [];
+  const unread = counts
+    .filter((c) => !mailbox || c.mailboxId === mailbox)
+    .reduce((sum, c) => sum + c.unread, 0);
+  if (!unread) return null;
+  return (
+    <Badge intent="primary" isCircle={false} className="ms-auto tabular-nums">
+      {unread}
+    </Badge>
+  );
 }
 
 /**

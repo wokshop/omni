@@ -228,7 +228,8 @@ test("sidebar links keep the mailbox the switcher shows", async () => {
     ["All mail", "/all"],
     ["Inbox", "/inbox"],
   ] as const) {
-    await page.getByRole("link", { name, exact: true }).click();
+    // Inbox's name carries its unread count ("Inbox 3").
+    await page.getByRole("link", { name: new RegExp(`^${name}( \\d+)?$`) }).click();
     await page.waitForURL((url) => url.pathname === path);
     expect(new URL(page.url()).searchParams.get("mailbox")).toBe(boxes.hello.id);
     await page.getByRole("button", { name: /^Switch mailbox, currently Hello/ }).waitFor();

@@ -14,7 +14,6 @@ import { Tooltip, TooltipTrigger } from "@/components/ui/tooltip";
 import { ariaKeyShortcuts } from "@/lib/shortcuts.ts";
 import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
-import { Checkbox, CheckboxField } from "@/components/ui/checkbox";
 import { FluidHoverHighlight } from "@/components/ui/fluid-hover-highlight";
 import { GridList, GridListItem } from "@/components/ui/grid-list";
 import { Heading } from "@/components/ui/heading";
@@ -24,7 +23,7 @@ import { useFluidHoverList } from "@/hooks/use-fluid-hover-list";
 import { ResizeGrip, useStoredWidth } from "@/components/ui/resize-grip";
 import { useOpenCompose } from "@/hooks/use-compose-pane.ts";
 import { useFullScreen } from "@/hooks/use-full-screen.ts";
-import { useCounts, useThreads } from "@/hooks/use-mail.ts";
+import { useThreads } from "@/hooks/use-mail.ts";
 import { useThreadListShortcuts } from "@/hooks/use-thread-list-shortcuts.ts";
 import { useWorkspaceNames } from "@/hooks/use-workspaces.ts";
 import { senderLabel } from "@/lib/threads.ts";
@@ -77,7 +76,6 @@ export function ThreadList(props: ListProps & { filter: ThreadFilter }) {
     isSuccess,
     refetch,
   } = useThreads(props.filter);
-  const unread = useUnreadCount(props.filter);
   const names = useWorkspaceNames(props.filter.mailbox);
   // Stable rows, so the virtualized list's row cache survives renders that don't change them.
   const rows = useMemo(
@@ -105,7 +103,6 @@ export function ThreadList(props: ListProps & { filter: ThreadFilter }) {
       }
       rows={rows}
       loading={isPending}
-      count={unread}
       shortcuts={{ view: props.filter.view, threads, loadMore }}
       loadMore={loadMore}
       isLoadingMore={isFetchingNextPage}
@@ -159,8 +156,6 @@ export function List(
      * shows it.
      */
     loading?: boolean;
-    /** Shown in brand blue after the title (unread threads), when above zero. */
-    count?: number;
     /** What the header says about the rows' order or scope, after the title. */
     caption?: ReactNode;
     /** Loads the next page, called as the end of the list nears. */
@@ -175,7 +170,6 @@ export function List(
   },
 ) {
   const threads = props.rows;
-  const unread = props.count ?? 0;
   const [selected, setSelected] = useState<Selection>(new Set());
   const count = selected === "all" ? threads.length : selected.size;
   const [fullScreen] = useFullScreen();
@@ -241,36 +235,24 @@ export function List(
                 <IconSidebar />
               </SidebarTrigger>
             )}
-            {count > 0 ? (
-              // Selecting: select-all over the rows' checkboxes, the count, then what to do.
-              <div className="flex min-w-0 flex-1 items-center gap-2">
-                <CheckboxField
-                  aria-label="Select all"
-                  isSelected={threads.length > 0 && count === threads.length}
-                  isIndeterminate={count < threads.length}
-                  onChange={(all) => setSelected(all ? "all" : new Set())}
-                >
-                  <Checkbox />
-                </CheckboxField>
-                <span className="translate-y-px text-sm text-muted-foreground tabular-nums">
-                  {count} selected
-                </span>
+            <div className="flex min-w-0 flex-1 items-baseline gap-2">
+              {/* 1px down: centers the title's capitals on the sidebar header's icons.
+                  Collapsed, the title centres on the sidebar button beside it instead. */}
+              <Heading className={`shrink-0 ${sidebarHidden ? "" : "translate-y-px"}`}>
+                {props.title}
+              </Heading>
+              {props.caption && (
+                <span className="truncate text-xs text-subtle-foreground">{props.caption}</span>
+              )}
+            </div>
+            {/* While rows are checked: how many, and what to do with them, before the pen. */}
+            {count > 0 && (
+              <div className="flex shrink-0 items-center gap-2">
+                <span className="text-sm text-muted-foreground tabular-nums">{count} selected</span>
                 {props.bulkActions?.({
                   ids: selected === "all" ? threads.map((t) => t.id) : [...selected].map(String),
                   clear: () => setSelected(new Set()),
                 })}
-              </div>
-            ) : (
-              <div className="flex min-w-0 flex-1 items-baseline gap-2">
-                {/* 1px down: centers the title's capitals on the sidebar header's icons.
-                    Collapsed, the title centres on the sidebar button beside it instead. */}
-                <Heading className={`shrink-0 ${sidebarHidden ? "" : "translate-y-px"}`}>
-                  {props.title}
-                  {unread > 0 && <span className="ms-1 text-primary tabular-nums">{unread}</span>}
-                </Heading>
-                {props.caption && (
-                  <span className="truncate text-xs text-subtle-foreground">{props.caption}</span>
-                )}
               </div>
             )}
             <TooltipTrigger delay={400}>
@@ -519,13 +501,4 @@ function RowBones() {
       </span>
     </div>
   ));
-}
-
-/** Unread threads in the inbox (or one lane of it), across the filtered mailbox(es). */
-function useUnreadCount(filter: ThreadFilter) {
-  const { data } = useCounts();
-  if (filter.view !== "inbox" || filter.lane || !data) return 0;
-  return data.counts
-    .filter((c) => !filter.mailbox || c.mailboxId === filter.mailbox)
-    .reduce((sum, c) => sum + c.unread, 0);
 }
