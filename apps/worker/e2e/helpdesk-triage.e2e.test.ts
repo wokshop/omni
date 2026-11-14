@@ -318,7 +318,7 @@ async function triagedFor(threadId: string, messageId: string) {
 async function conversation(cookie: string, threadId: string) {
   const response = await call(cookie, "GET", `/threads/${threadId}/conversation`);
   expect(response.status).toBe(200);
-  return response.body as {
+  return response.body as unknown as {
     status: string;
     priority: string;
     assigneeMemberId: string | null;
