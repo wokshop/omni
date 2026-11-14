@@ -13,6 +13,7 @@ import {
   IconSettings,
   IconInbox,
   IconPaperPlane,
+  IconWrite,
   IconSidebar,
   IconStar,
   IconTrash,
@@ -40,6 +41,7 @@ import { useConnectivity } from "@/hooks/use-connectivity.ts";
 import { useMember } from "@/hooks/use-session.ts";
 import { useWorkspaces } from "@/hooks/use-workspaces.ts";
 import { openSettings } from "@/hooks/use-settings-dialog.ts";
+import { useComposePane, useOpenCompose } from "@/hooks/use-compose-pane.ts";
 import { keys } from "@/lib/query-keys.ts";
 import { ariaKeyShortcuts } from "@/lib/shortcuts.ts";
 
@@ -117,6 +119,7 @@ export function AppSidebar() {
             mailbox the switcher shows; a shared inbox adds its Mine. Every row
             keeps the switcher's choice: a link never changes which mailbox is shown. */}
         <SidebarSection>
+          <ComposeItem />
           <Items items={mail} mailbox={mailbox} />
           {shown?.kind === "shared" && <HelpdeskItems mailboxId={shown.id} />}
         </SidebarSection>
@@ -144,6 +147,23 @@ export function AppSidebar() {
         </div>
       </SidebarFooter>
     </Sidebar>
+  );
+}
+
+/** New mail, as a plain row above Inbox; the floating button at the page's bottom right is the
+ * primary one. Both open the same dialog. */
+function ComposeItem() {
+  const openCompose = useOpenCompose();
+  const [composing] = useComposePane();
+  return (
+    <SidebarItem
+      isCurrent={composing}
+      aria-keyshortcuts={ariaKeyShortcuts("compose")}
+      onPress={openCompose}
+    >
+      <IconWrite />
+      <SidebarLabel>Compose</SidebarLabel>
+    </SidebarItem>
   );
 }
 

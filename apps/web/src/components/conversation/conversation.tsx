@@ -29,6 +29,7 @@ import {
 import type { Conversation as HelpdeskState, Message, Thread } from "@/lib/types.ts";
 import { ReplyComposer } from "../compose/composer.tsx";
 import { ComposerProvider } from "../compose/composer-state.tsx";
+import { FloatingReply } from "../compose/floating-actions.tsx";
 import { SelectionReply } from "../compose/selection-reply.tsx";
 import { EventLine, NoteItem, useEventLines } from "./activity.tsx";
 import { AddedLine, MessageItem, PendingItem, scrollToMessage } from "./message.tsx";
@@ -109,12 +110,11 @@ export function Conversation({ threadId }: { threadId: string }) {
           // Full screen, the sidebar's own edge is the only line: a second beside it doubles up.
           className={`${SCROLLER} overflow-y-auto overscroll-none ${fullScreen ? "" : "border-s"}`}
         >
-          {/* A single email's title is a row of its own, as tall as a list row with the same
-              bottom edge, so it lines up with the row it was opened from. */}
+          {/* A single email's title is a row of its own, level with the list's toolbar row. */}
           {single && <TitleRow subject={subject} />}
           {/* Grows to fill a short thread, so the composer stays at the pane's bottom. */}
           {/* A shared inbox leaves room at the end for the properties pill over the composer. */}
-          <div className={columnClass(single, shared)}>
+          <div className={columnClass(single)}>
             {!single && <Heading level={2}>{subject || "(no subject)"}</Heading>}
             <Timeline
               key={threadId}
@@ -132,6 +132,7 @@ export function Conversation({ threadId }: { threadId: string }) {
           {/* The pane's bottom edge, full width; the messages scroll above it. */}
           <div className="sticky bottom-0 w-full shrink-0 bg-background">
             {shared && <PropertiesPill thread={thread} />}
+            <FloatingReply thread={thread} />
             <ReplyComposer thread={thread} />
           </div>
         </div>
@@ -141,12 +142,13 @@ export function Conversation({ threadId }: { threadId: string }) {
 }
 
 /**
- * A single email's title, on one line: as tall as a list row, with the same bottom edge. It stays
- * at the pane's top, filled, so the email scrolls under it.
+ * A single email's title, on one line, under the top bar: as tall as the list's toolbar row
+ * beside it (and lifted 1px like it), so the two bottom lines run as one. It stays at the pane's
+ * top, filled, so the email scrolls under it.
  */
 function TitleRow({ subject }: { subject: string }) {
   return (
-    <div className="sticky top-0 z-10 flex h-13.25 shrink-0 items-center border-b bg-background px-5">
+    <div className="sticky top-0 z-10 flex h-10.5 shrink-0 items-center border-b bg-background px-5 pb-0.5">
       <Heading level={2} className="truncate" title={subject || undefined}>
         {subject || "(no subject)"}
       </Heading>
@@ -189,9 +191,10 @@ const COLUMN = "mx-auto flex w-full max-w-3xl grow flex-col gap-6 px-5 pt-6 pb-1
 // A single email: the column without its width cap, under its title row.
 const PAGE = "flex w-full grow flex-col gap-6 px-5 pt-5 pb-6";
 
-/** The messages' column; on a shared inbox with room at the end for the properties pill. */
-function columnClass(single: boolean, shared: boolean) {
-  return `${single ? PAGE : COLUMN} ${shared ? "pb-20" : ""}`;
+/** The messages' column, with room at the end for what floats over the composer. */
+function columnClass(single: boolean) {
+  // Room at the end for the floating Reply and Forward (and a shared inbox's properties pill).
+  return `${single ? PAGE : COLUMN} pb-20`;
 }
 
 /**
@@ -208,7 +211,7 @@ function ConversationSkeleton() {
         skeleton={
           <>
             {/* The toolbar's actions: 28px buttons with 16px icons, as `Actions` lays them out. */}
-            <div className="flex h-10.5 shrink-0 items-center justify-end gap-3 border-s border-b border-s-transparent pe-3 pb-0.5">
+            <div className="flex h-12 shrink-0 items-center justify-end gap-3 border-s pe-4">
               {[0, 1, 2, 3].map((i) => (
                 <SkeletonBox key={i} width={16} height={16} radius={4} />
               ))}
@@ -342,20 +345,17 @@ function Actions({ thread }: { thread: Thread }) {
   const [fullScreen, toggleFullScreen] = useFullScreen();
 
   return (
-    // pb-0.5 lifts the icons 1px, in line with the list's header row beside it; end-1.5
-    // matches the 28px buttons' inset from the top.
-    // Full screen, the bottom line runs straight into the sidebar's edge, with no notch.
-    <div
-      className={`relative flex h-10.5 shrink-0 items-center border-b pb-0.5 ${fullScreen ? "" : "border-s border-s-transparent"}`}
-    >
+    // The reading column's own top bar, the window's top edge to the subject: as tall as the
+    // list's header beside it, borderless like it. end-2.5 matches that header's inset.
+    <div className={`relative flex h-12 shrink-0 items-center ${fullScreen ? "" : "border-s"}`}>
       {/* Full screen hides the list: switch threads from here. 12px in, the label at 20px like
           the list's rows. */}
       {fullScreen && (
-        <div className="absolute inset-y-0 start-3 flex max-w-[40%] items-center pb-0.5">
+        <div className="absolute inset-y-0 start-3 flex max-w-[40%] items-center">
           <ThreadSwitcher threadId={thread.id} />
         </div>
       )}
-      <div className="absolute inset-y-0 end-1.5 flex items-center gap-1 pb-0.5">
+      <div className="absolute inset-y-0 end-2.5 flex items-center gap-1">
         <TriageActions thread={thread} />
         <Action
           label={thread.read ? "Mark unread" : "Mark read"}

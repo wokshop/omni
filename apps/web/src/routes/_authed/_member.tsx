@@ -1,5 +1,6 @@
 import { createFileRoute, Outlet } from "@tanstack/react-router";
 import { lazy, Suspense, useEffect, useState } from "react";
+import { ComposeDialog } from "../../components/compose/compose-pane.tsx";
 import { ListSweepProvider } from "../../components/inbox/list-sweep.tsx";
 import { AppSidebar } from "../../components/shell/app-sidebar.tsx";
 import { KeyboardShortcuts } from "../../components/shell/keyboard-shortcuts.tsx";
@@ -67,6 +68,7 @@ function Shell() {
         </ListSweepProvider>
       </SidebarInset>
       <KeyboardShortcuts />
+      <ComposeDialog />
       <LazySettingsDialog />
     </ResizableSidebarProvider>
   );

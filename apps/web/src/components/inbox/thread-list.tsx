@@ -1,5 +1,5 @@
 import { useLocation, useParams } from "@tanstack/react-router";
-import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { memo, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Selection } from "react-aria-components";
 import { Collection } from "react-aria-components/Collection";
 import { GridListLoadMoreItem } from "react-aria-components/GridList";
@@ -9,9 +9,8 @@ import { ConversationMeta, type ConversationRowInfo } from "@/components/inbox/c
 import { ListSweepSlot } from "@/components/inbox/list-sweep";
 import { OpenListContext } from "@/components/inbox/open-list";
 import { SearchPopover } from "@/components/search/search-popover";
-import { ComposePane } from "@/components/compose/compose-pane";
 import { EmptyState } from "@/components/empty/empty-state";
-import { IconPencil } from "@/components/icons/central";
+import { FloatingCompose } from "@/components/compose/floating-actions";
 import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
 import { Checkbox, CheckboxField } from "@/components/ui/checkbox";
@@ -22,12 +21,11 @@ import { SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
 import { IconSidebar } from "@/components/icons/sidebar";
 import { useFluidHoverList } from "@/hooks/use-fluid-hover-list";
 import { ResizeGrip, useStoredWidth } from "@/components/ui/resize-grip";
-import { closeComposePane, useComposePane, useOpenCompose } from "@/hooks/use-compose-pane.ts";
+import { useOpenCompose } from "@/hooks/use-compose-pane.ts";
 import { useFullScreen } from "@/hooks/use-full-screen.ts";
 import { useCounts, useThreads } from "@/hooks/use-mail.ts";
 import { useThreadListShortcuts } from "@/hooks/use-thread-list-shortcuts.ts";
 import { useWorkspaceNames } from "@/hooks/use-workspaces.ts";
-import { ariaKeyShortcuts } from "@/lib/shortcuts.ts";
 import { senderLabel } from "@/lib/threads.ts";
 import type {
   ConversationFilter,
@@ -37,9 +35,10 @@ import type {
   ThreadView,
 } from "@/lib/types.ts";
 
-// The list beside an open thread: wide enough for a sender, subject and preview line.
-const LIST_WIDTH = 440;
-const LIST_MIN = 320;
+// The middle of three columns: wide enough for a sender and the start of a subject, so the
+// reading column beside it gets the rest of the page.
+const LIST_WIDTH = 360;
+const LIST_MIN = 280;
 const LIST_MAX = 720;
 
 /** What a list row shows. Threads and search results both map to it. */
@@ -185,22 +184,16 @@ export function List(
   const closeHref = threadId
     ? location.pathname.slice(0, location.pathname.lastIndexOf("/")) + location.searchStr
     : undefined;
-  // New mail opens in the reading pane, like a thread; a thread opening takes its place.
-  const [composing, closeCompose] = useComposePane();
+  // New mail opens in a dialog over the page (`ComposeDialog`).
   const openCompose = useOpenCompose();
-  useEffect(() => {
-    if (threadId) closeComposePane();
-  }, [threadId]);
-  const detail = !!threadId || composing;
+  const detail = !!threadId;
   // Full screen (toggled from the conversation's toolbar): the open pane takes the whole width.
   const hideList = fullScreen && detail;
   const listRef = useRef<HTMLElement>(null);
-  // Beside an open thread the list keeps a width the person can drag; alone it fills the page.
-  const split = detail && !hideList;
-  const listWidth = useStoredWidth("omni:list-width", LIST_WIDTH, LIST_MIN, LIST_MAX);
-  // Until dragged, the thread takes a 672px reading pane (`w-2xl`) and the list the rest, down to
-  // its minimum.
-  const hug = split && !listWidth.isSet;
+  // Three columns, always: the list keeps a width the person can drag, and the reading column
+  // takes the rest of the page at its full height, empty until a thread (or new mail) opens.
+  const split = !hideList;
+  const listWidth = useStoredWidth("omni:list-width-3col", LIST_WIDTH, LIST_MIN, LIST_MAX);
   const [resizing, setResizing] = useState(false);
   // The rows behind the open thread, for its full-screen switcher.
   // A helpdesk list's rows follow its status, not Done or Later: no view to leave there.
@@ -228,45 +221,33 @@ export function List(
           listHidden={hideList}
         />
       )}
-      {/* 10px on the right, the same as the 28px controls' inset from the top. */}
-      <header
-        className={`flex h-12 shrink-0 items-center gap-2 pe-2.5 ${sidebarHidden ? "ps-2.5" : "ps-5"}`}
-      >
-        {sidebarHidden && (
-          <SidebarTrigger intent="ghost" size="sq-xs" aria-label="Open sidebar">
-            <IconSidebar />
-          </SidebarTrigger>
-        )}
-        {/* 1px down: centers the title's capitals on the sidebar header's icons. Collapsed, the
-            title centres on the sidebar button beside it instead, so it stays put. */}
-        <Heading className={sidebarHidden ? "" : "translate-y-px"}>
-          {props.title}
-          {unread > 0 && <span className="ms-1 text-primary tabular-nums">{unread}</span>}
-        </Heading>
-        <div className="ms-auto flex items-center gap-2">
-          <SearchPopover />
-          <Button
-            intent="primary"
-            size="sm"
-            aria-keyshortcuts={ariaKeyShortcuts("compose")}
-            // 27px: a filled button reads 1px taller than the outlined search field beside it.
-            className="h-6.75"
-            onPress={openCompose}
-          >
-            <IconPencil />
-            Compose
-          </Button>
-        </div>
-      </header>
-
+      {/* The list and the reading column side by side, each the window's full height. */}
       <div className={`flex min-h-0 flex-1 ${resizing ? "cursor-ew-resize select-none" : ""}`}>
         <section
           ref={listRef}
-          style={split && !hug ? { width: listWidth.width } : undefined}
-          className={`flex flex-col ${hug ? "min-w-80" : "min-w-0"} ${split && !hug ? "flex-none" : "flex-1"} ${hideList ? "hidden" : ""}`}
+          style={split ? { width: listWidth.width } : undefined}
+          className={`flex min-w-0 flex-none flex-col ${hideList ? "hidden" : ""}`}
         >
-          {/* pb-0.5 lifts the row 1px: under the borderless header the true middle reads low.
-              The reader's toolbar beside it does the same, so the two stay on one line. */}
+          {/* 10px on the right, the same as the 28px controls' inset from the top. */}
+          <header
+            className={`flex h-12 shrink-0 items-center gap-2 pe-2.5 ${sidebarHidden ? "ps-2.5" : "ps-5"}`}
+          >
+            {sidebarHidden && (
+              <SidebarTrigger intent="ghost" size="sq-xs" aria-label="Open sidebar">
+                <IconSidebar />
+              </SidebarTrigger>
+            )}
+            {/* 1px down: centers the title's capitals on the sidebar header's icons. Collapsed, the
+                title centres on the sidebar button beside it instead, so it stays put. */}
+            <Heading className={sidebarHidden ? "" : "translate-y-px"}>
+              {props.title}
+              {unread > 0 && <span className="ms-1 text-primary tabular-nums">{unread}</span>}
+            </Heading>
+            <div className="ms-auto flex items-center gap-2">
+              <SearchPopover />
+            </div>
+          </header>
+          {/* pb-0.5 lifts the row 1px: under the borderless header the true middle reads low. */}
           <div className="flex h-10.5 items-center gap-2 border-b px-5 pb-0.5">
             <CheckboxField
               aria-label="Select all"
@@ -322,10 +303,10 @@ export function List(
             </ListSweepSlot>
           )}
         </section>
-        {/* Only with a thread (or new mail) open: closed, the list takes the full width. The same
-            wrapper in and out of full screen, so toggling it doesn't remount the thread. */}
-        {detail && (props.children || composing) && (
-          <div className={`relative flex min-w-0 ${hug ? "w-2xl shrink" : "flex-1"}`}>
+        {/* The reading column, from the window's top to its bottom: the open thread or nothing. The same wrapper in and out of full screen, so toggling it doesn't remount
+            the thread. */}
+        {
+          <div className="relative flex min-w-0 flex-1">
             {split && (
               <ResizeGrip
                 label="Resize list"
@@ -335,14 +316,17 @@ export function List(
                 onResizingChange={setResizing}
               />
             )}
-            {threadId ? (
+            {threadId && props.children ? (
               <OpenListContext value={openList}>{props.children}</OpenListContext>
             ) : (
-              <ComposePane onClose={closeCompose} />
+              <div className={`flex-1 ${fullScreen ? "" : "border-s"}`} />
             )}
           </div>
-        )}
+        }
       </div>
+      {/* With nothing open, new mail is the page's primary action; an open thread swaps it for
+          Reply and Forward (see `FloatingReply`). */}
+      {!detail && <FloatingCompose onPress={openCompose} />}
     </div>
   );
 }
