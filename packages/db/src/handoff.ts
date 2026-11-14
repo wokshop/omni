@@ -17,39 +17,8 @@ import {
   type Tx,
 } from "./conversation-core.ts";
 import { applyStatus, assign } from "./conversations.ts";
-import { conversationEvents, mailboxAccess, mailboxes, members } from "./schema/index.ts";
+import { conversationEvents } from "./schema/index.ts";
 import type { NewMailAction } from "./writers.ts";
-
-/**
- * The personal mailbox `memberId` may hand a conversation of `orgId` off to: their own (owner
- * grant), in the same workspace, and connected. Null otherwise.
- */
-export async function handoffMailbox(db: Db, memberId: string, orgId: string, mailboxId: string) {
-  const [row] = await db
-    .select({ id: mailboxes.id, orgId: mailboxes.orgId, address: mailboxes.address })
-    .from(mailboxes)
-    .innerJoin(
-      mailboxAccess,
-      and(
-        eq(mailboxAccess.mailboxId, mailboxes.id),
-        eq(mailboxAccess.memberId, memberId),
-        eq(mailboxAccess.role, "owner"),
-      ),
-    )
-    .innerJoin(
-      members,
-      and(eq(members.id, mailboxAccess.memberId), eq(members.organizationId, mailboxes.orgId)),
-    )
-    .where(
-      and(
-        eq(mailboxes.id, mailboxId),
-        eq(mailboxes.orgId, orgId),
-        eq(mailboxes.kind, "personal"),
-        eq(mailboxes.status, "active"),
-      ),
-    );
-  return row ?? null;
-}
 
 /** What a `handoff` event remembers, so a cancelled send can put the conversation back. */
 interface HandoffData {
@@ -158,7 +127,7 @@ export async function undoHandoff(
     );
   if (!event || event.actor !== input.memberId) return null;
   if (row.status !== "resolved" || row.assigneeMemberId !== input.memberId) {
-    return { conversation: row, changed: false, queuedActions: 0 };
+    return { conversation: row, changed: false, queuedActions: 0, notified: [] as string[] };
   }
   const { previous } = event.data as unknown as HandoffData;
   const cause = { cause: "handoff_cancelled" };
@@ -181,5 +150,7 @@ export async function undoHandoff(
     conversation: reassigned.row,
     changed: reopened.changed || reassigned.changed,
     queuedActions: reopened.queuedActions,
+    /** Whoever had it before and got an `assigned` notification back: tell them in realtime. */
+    notified: reassigned.notified ?? [],
   };
 }

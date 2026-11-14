@@ -4,7 +4,7 @@
 // on one-to-one there. The shared conversation is assigned to the sender and resolved in the
 // same transaction; cancelling the send inside its undo window puts it back.
 import { MAX_SEND_ATTACHMENTS } from "@omni/contracts";
-import { enqueueHandoff, handoffMailbox, undoSendSeconds } from "@omni/db";
+import { enqueueHandoff, forMember, undoSendSeconds } from "@omni/db";
 import { replySubject } from "@omni/mail-core/compose";
 import { Hono, type Context } from "hono";
 import { HTTPException } from "hono/http-exception";
@@ -51,7 +51,15 @@ async function sendHandoff(
   if (found.mailboxKind !== "shared") {
     throw new HTTPException(409, { message: "only a shared conversation can be handed off" });
   }
-  const mailbox = await handoffMailbox(c.var.db, c.var.member.id, found.orgId, body.mailboxId);
+  // The member's own (owner grant), connected, personal mailbox in the conversation's workspace.
+  const mailbox = (await forMember(c.var.db, c.var.member.id).listMailboxes()).find(
+    (m) =>
+      m.id === body.mailboxId &&
+      m.orgId === found.orgId &&
+      m.kind === "personal" &&
+      m.role === "owner" &&
+      m.status === "active",
+  );
   if (!mailbox) notFound();
   if (body.attachments.length > MAX_SEND_ATTACHMENTS) {
     throw new HTTPException(400, {

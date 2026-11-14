@@ -265,7 +265,9 @@ function ModeComposer(props: {
   // Only what the agent changed is saved: opening Forward must not leave an empty draft behind.
   const touched = useRef(false);
   const edited = (next: Partial<{ text: string; to: string[]; cc: string[]; bcc: string[] }>) => {
-    if (!started.current) return;
+    // A hand-off is your own mail, not the team's: it is not kept in the inbox's shared draft,
+    // which would also resume as a reply from the inbox.
+    if (!started.current || handingOff) return;
     touched.current = true;
     draft.save({
       bodyText: next.text ?? text,
@@ -448,6 +450,10 @@ function ModeComposer(props: {
             appToast.message("Attachments removed", {
               description: "Attach them again to send from this address.",
             });
+          }
+          if (next !== thread.mailboxId) {
+            touched.current = false;
+            void draft.discard();
           }
           setFromId(next);
         }}

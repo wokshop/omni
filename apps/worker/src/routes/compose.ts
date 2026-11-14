@@ -31,7 +31,7 @@ import { z } from "zod";
 import type { AppEnv } from "../context.ts";
 import { limitPerMember } from "../rate-limiter.ts";
 import { optionalJsonBody, zValidator } from "../validator.ts";
-import { fanOut } from "../realtime.ts";
+import { fanOut, notifyMembers } from "../realtime.ts";
 import { assertLatest, basedOnMessageId, StaleThread } from "./reply-precondition.ts";
 import { attachmentResponse } from "./assets.ts";
 import { idempotencyHeader, notFound, outboxKey, pingLater, type ActionMailbox } from "./mail.ts";
@@ -605,9 +605,17 @@ export const compose = new Hono<AppEnv>()
     // A hand-off's send: its shared conversation came back to the team (ADR 0030).
     if (result.handoff?.changed) {
       if (result.handoff.queuedActions > 0) pingLater(c);
-      const { mailboxId, id } = result.handoff.conversation;
+      const { mailboxId, id, orgId } = result.handoff.conversation;
       c.executionCtx.waitUntil(
-        fanOut(c.env, c.var.db, c.var.config, new Map([[mailboxId, new Set([id])]])),
+        Promise.all([
+          fanOut(c.env, c.var.db, c.var.config, new Map([[mailboxId, new Set([id])]])),
+          notifyMembers(c.env, c.var.db, {
+            orgId,
+            threadId: id,
+            memberIds: result.handoff.notified,
+            kind: "assigned",
+          }),
+        ]),
       );
     }
     return c.json({ cancelled: true, payload: result.payload });
