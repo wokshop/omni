@@ -1,6 +1,6 @@
 # 0030: Hand-off from a shared inbox to a personal mailbox
 
-Date: 2026-11-14 · Status: accepted
+Date: 2026-11-14 · Status: accepted · Decision 4 amended by ADR 0032 (a hand-off only logs)
 
 ## Context
 

@@ -1,12 +1,13 @@
-// Hand-off (ADR 0030) over the real Worker and Postgres: a reply to a shared conversation from
-// the member's own personal mailbox is queued on that mailbox, threaded to the customer's
-// message, and in the same transaction the shared conversation is assigned to the sender,
-// resolved and given a `handoff` event. Cancelling the send puts the conversation back.
+// Hand-off (ADR 0030, ADR 0032) over the real Worker and Postgres: a reply to a shared
+// conversation from the member's own personal mailbox is queued on that mailbox, threaded to the
+// customer's message, and in the same transaction the shared conversation gets a `handoff` event,
+// its status and owner unchanged. Cancelling the send removes the event.
 //
 // Bugs these catch: the reply going out from the shared address (the customer's answer would
 // land back in the team's inbox), a reply that does not thread for the customer, a member sending
-// from a teammate's mailbox, the conversation left open (or resolved without the send), and an
-// undone send leaving the conversation resolved and handed off for a reply that never went out.
+// from a teammate's mailbox, the hand-off resolving or taking the conversation from the team (it
+// would leave teammates' views), and an undone send leaving a hand-off line for a reply that never
+// went out.
 import { schema } from "@omni/db";
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, test } from "vitest";
@@ -99,7 +100,7 @@ async function conversation(threadId: string) {
   return row!;
 }
 
-test("a reply from Ana's own mailbox goes out from it, threaded, and hands the conversation to her", async () => {
+test("a reply from Ana's own mailbox goes out from it, threaded, and only logs the hand-off", async () => {
   const { db, ana, bea, threadId, customerHeader } = await setUp("handoff");
   const body = {
     mailboxId: ana.mailbox.id,
@@ -149,9 +150,10 @@ test("a reply from Ana's own mailbox goes out from it, threaded, and hands the c
   expect(action!.payload).not.toHaveProperty("inReplyToMessageId");
   expect(new Date(action!.runAfter).getTime()).toBeGreaterThan(Date.now());
 
+  // The team's conversation is left as it was: still open, still Bea's.
   const after = await conversation(threadId);
-  expect(after.assigneeMemberId).toBe(ana.member.id);
-  expect(after.status).toBe("resolved");
+  expect(after.assigneeMemberId).toBe(bea.member.id);
+  expect(after.status).toBe("open");
   const [handoff] = await db
     .select()
     .from(schema.conversationEvents)
@@ -167,9 +169,9 @@ test("a reply from Ana's own mailbox goes out from it, threaded, and hands the c
       mailboxId: ana.mailbox.id,
       address: ana.mailbox.address,
       actionId,
-      previous: { status: "open", assigneeMemberId: bea.member.id },
     },
   });
+  expect(handoff!.data).not.toHaveProperty("previous");
   // The timeline API returns it for the conversation's activity line.
   const timeline = await fetch(new URL(`/api/threads/${threadId}/conversation`, worker.url), {
     headers: { cookie: bea.cookie },
@@ -179,7 +181,7 @@ test("a reply from Ana's own mailbox goes out from it, threaded, and hands the c
   expect(events.map((e) => e.kind)).toContain("handoff");
 });
 
-test("cancelling the hand-off's send gives the conversation back to the team", async () => {
+test("cancelling the hand-off's send removes its line and leaves the conversation as it was", async () => {
   const { db, ana, bea, threadId } = await setUp("handoff-undo");
   const sent = await post(`/threads/${threadId}/handoff`, ana.cookie, {
     mailboxId: ana.mailbox.id,
@@ -188,14 +190,25 @@ test("cancelling the hand-off's send gives the conversation back to the team", a
   });
   expect(sent.status).toBe(202);
   const { actionId } = (await sent.json()) as { actionId: string };
-  expect((await conversation(threadId)).status).toBe("resolved");
+  const handoffs = () =>
+    db
+      .select()
+      .from(schema.conversationEvents)
+      .where(
+        and(
+          eq(schema.conversationEvents.threadId, threadId),
+          eq(schema.conversationEvents.kind, "handoff"),
+        ),
+      );
+  expect(await handoffs()).toHaveLength(1);
 
   const cancel = await post(`/actions/${actionId}/cancel`, ana.cookie);
   expect(cancel.status).toBe(200);
+  expect(await handoffs()).toEqual([]);
   const back = await conversation(threadId);
   expect(back.status).toBe("open");
   expect(back.assigneeMemberId).toBe(bea.member.id);
-  // The resolve's archive (still inside its delay) is dropped: the mail stays in INBOX.
+  // Nothing was ever filed: the mail stays in INBOX.
   const archives = await db
     .select()
     .from(schema.mailActions)
