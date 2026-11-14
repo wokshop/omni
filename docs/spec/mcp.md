@@ -77,8 +77,8 @@ Shared conventions:
 
 - **Ids** are the app's thread and message ids. Every thread carries `url`, its deep link
   (`<WEB_APP_URL>/all/<threadId>`), so answers can cite it.
-- **Times** are ISO 8601 UTC. `inbox` also returns the person's time zone so agents can reason
-  about "today".
+- **Times** are ISO 8601 UTC. `inbox` also returns the server's `now` so agents can reason about
+  "today" (Omni keeps no per-person time zone).
 - **Size** is bounded by default and the result says when it was cut: `truncated: true`, plus a
   `hint` naming how to narrow it (a filter, a cursor, or `fetch` for the full text). No result
   goes over ~20k tokens, under Claude Code's 25k cap.
@@ -93,7 +93,7 @@ Shared conventions:
 
 Returns:
 
-- `me`: name, sign-in address, time zone.
+- `now`, and `me`: name and sign-in address.
 - `workspaces`: each with `id`, `name`, `kind` (personal or company).
 - `mailboxes`: `id`, `address`, `kind` (personal or shared), `workspace`, `status`.
 - `counts` per mailbox: inbox, unread, Later, and per lane (`needs_reply`, `unsure`,
