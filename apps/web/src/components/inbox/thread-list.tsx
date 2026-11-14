@@ -232,15 +232,11 @@ export function List(
                 <IconSidebar />
               </SidebarTrigger>
             )}
-            {/* 1px down: centers the title's capitals on the sidebar header's icons. Collapsed,
-                the title centres on the sidebar button beside it instead. It never shrinks: the
+            {/* Centred as laid out, with no nudge: its capitals sit on the icons' centre line,
+                like the sidebar's "All" and the subject beside it. It never shrinks: the
                 caption truncates and the search field narrows first. */}
-            <Heading
-              className={`shrink-0 whitespace-nowrap ${sidebarHidden ? "" : "translate-y-px"}`}
-            >
-              {props.title}
-            </Heading>
-            <span className="min-w-0 flex-1 translate-y-px truncate text-xs text-subtle-foreground">
+            <Heading className="shrink-0 whitespace-nowrap">{props.title}</Heading>
+            <span className="min-w-0 flex-1 truncate text-xs text-subtle-foreground">
               {props.caption}
             </span>
             {/* A plain list's checked rows: how many, before the actions. */}
