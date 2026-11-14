@@ -54,7 +54,7 @@ export function NotificationsButton() {
     <TooltipTrigger delay={400}>
       <Button
         intent="ghost"
-        size="sq-xs"
+        size="sq-sm"
         aria-label={unread ? `Notifications, ${unread} unread` : "Notifications"}
         aria-expanded={open}
         aria-controls="notifications-panel"
@@ -192,7 +192,7 @@ function HeaderAction(props: {
     <TooltipTrigger delay={400}>
       <Button
         intent="ghost"
-        size="sq-sm-lg"
+        size="sq-sm"
         aria-label={props.label}
         isDisabled={props.isDisabled}
         onPress={props.onPress}
