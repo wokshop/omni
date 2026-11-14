@@ -248,7 +248,7 @@ function UnreadCount({ mailbox }: { mailbox: string | undefined }) {
     <Badge
       intent="primary"
       isCircle={false}
-      className="ms-auto h-4.5 min-w-4.5 justify-center px-1 py-0 text-xs/4.5 tabular-nums"
+      className="ms-auto h-4.5 min-w-4.5 justify-center bg-unread-count px-1 py-0 text-xs/4.5 tabular-nums"
     >
       {unread}
     </Badge>
