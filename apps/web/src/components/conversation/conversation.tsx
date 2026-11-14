@@ -141,7 +141,7 @@ export function Conversation({ threadId }: { threadId: string }) {
               <PendingItem key={send.key} send={send} />
             ))}
             {/* An email being written: the thread's next message, after the ones on their way. */}
-            <ReplyComposer thread={thread} />
+            {!single && <ReplyComposer thread={thread} />}
           </div>
           <Foot thread={thread} reader={single ? reader : undefined} />
         </div>
@@ -193,6 +193,8 @@ function Foot({
         <FloatingPager index={reader.index} count={thread.messages.length} onMove={reader.move} />
       )}
       <FloatingReply thread={thread} messageId={reader?.email?.id} />
+      {/* The email view's email composer floats here, as the notes' does in the conversation. */}
+      {reader && <ReplyComposer thread={thread} docked />}
       <ChatDock thread={thread} />
     </div>
   );

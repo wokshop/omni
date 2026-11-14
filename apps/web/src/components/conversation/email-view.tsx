@@ -94,15 +94,12 @@ export function ViewToggle({
   view: ReaderView;
   onChange: (next: ReaderView) => void;
 }) {
-  return view === "email" ? (
-    <Button intent="ghost" size="sm" onPress={() => onChange("conversation")}>
-      <IconBubble />
-      Show conversation
-    </Button>
-  ) : (
-    <Button intent="ghost" size="sm" onPress={() => onChange("email")}>
-      <IconMail />
-      Show email
+  // One quiet button either way: only its icon and label follow the view, never its fill.
+  const email = view === "email";
+  return (
+    <Button intent="ghost" size="sm" onPress={() => onChange(email ? "conversation" : "email")}>
+      {email ? <IconBubble /> : <IconMail />}
+      {email ? "Show conversation" : "Show email"}
     </Button>
   );
 }

@@ -152,26 +152,35 @@ function recipientsFor(kind: ReplyKind, thread: Thread, source: Message | undefi
  * show in the thread at once and can be undone while they wait in the outbox. From one of your own
  * mailboxes instead, a reply hands the conversation off to you (ADR 0030).
  */
-export function ReplyComposer({ thread }: { thread: Thread }) {
+export function ReplyComposer({ thread, docked = false }: { thread: Thread; docked?: boolean }) {
   const state = useComposerState();
   const showing = state.email && state.mode === "public";
   const box = useRef<HTMLDivElement>(null);
   const key = `${thread.id}:${state.forwardId ? `forward:${state.forwardId}` : `reply:${state.replyToId ?? ""}`}:${state.generation}`;
-  // The email being written is the thread's next message: brought into view where it opens.
+  // In the thread, the email being written is its next message: brought into view where it opens.
   useLayoutEffect(() => {
-    if (showing) box.current?.scrollIntoView({ block: "nearest" });
-  }, [showing, key]);
+    if (showing && !docked) box.current?.scrollIntoView({ block: "nearest" });
+  }, [showing, docked, key]);
   // Kept mounted while Hidden shows after a send, so its undo can hand the text back.
   if (!state.email) return null;
   return (
-    <div ref={box} hidden={!showing}>
+    // Docked (the email view): floating 16px off the pane's bottom over a fade, like the notes.
+    <div ref={box} hidden={!showing} className={docked ? "relative px-5 pb-4" : undefined}>
+      {docked && (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 -top-10 bottom-0 bg-linear-to-b from-transparent to-background to-[2.5rem]"
+        />
+      )}
       {/* A fresh composer per reply or forwarded message: its own recipients, body and draft. */}
-      <ModeComposer
-        key={key}
-        thread={thread}
-        mode={state.forwardId ? "forward" : "reply"}
-        sourceId={state.forwardId ?? state.replyToId}
-      />
+      <div className="relative">
+        <ModeComposer
+          key={key}
+          thread={thread}
+          mode={state.forwardId ? "forward" : "reply"}
+          sourceId={state.forwardId ?? state.replyToId}
+        />
+      </div>
     </div>
   );
 }
