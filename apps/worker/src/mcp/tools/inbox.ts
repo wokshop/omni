@@ -1,11 +1,12 @@
 // `inbox`: everything an agent needs to start, in one call (ADR 0029). Who the person is, their
 // workspaces and inboxes with counts, the threads that need them most, and unread notifications.
 // Every read is a `forUser` read, run in parallel.
-import { forUser, listUserWorkspaces, schema } from "@omni/db";
+import { listUserWorkspaces, schema } from "@omni/db";
 import type { McpServer } from "@modelcontextprotocol/server";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { result, threadSummary, threadSummarySchema, threadUrl, toolError } from "../format.ts";
+import { readsFor } from "../scope.ts";
 import { guarded, type ToolContext } from "../server.ts";
 
 const laneCounts = z.object({
@@ -87,13 +88,9 @@ export function registerInbox(server: McpServer, context: ToolContext) {
 
 async function overview(context: ToolContext, input: z.infer<typeof inputSchema>) {
   const { db, caller } = context;
-  if (input.workspace && caller.workspace && input.workspace !== caller.workspace) {
-    return toolError(
-      "This connection only reaches one workspace. Leave `workspace` out to use it.",
-    );
-  }
-  const scope = input.workspace ?? caller.workspace;
-  const reads = forUser(db, caller.userId, scope);
+  const scoped = readsFor(context, input.workspace);
+  if ("error" in scoped) return toolError(scoped.error);
+  const { reads, scope } = scoped;
   const [user, workspaces, mailboxes, counts, helpdesk] = await Promise.all([
     db
       .select({ name: schema.users.name, email: schema.users.email })
