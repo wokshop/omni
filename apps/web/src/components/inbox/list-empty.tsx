@@ -1,6 +1,6 @@
 // What an empty list says and offers, per view: a title, one short line on what lands there, and
 // the way out. A filtered list offers to clear its filters first (primary); the next place worth
-// going follows as a quiet ghost button.
+// going follows as a tertiary (outline) button.
 import { useNavigate } from "@tanstack/react-router";
 import { EmptyState } from "@/components/empty/empty-state";
 import { openSearch } from "@/components/search/search-popover";
@@ -70,7 +70,7 @@ export function ThreadListEmpty(props: { filter: ThreadFilter }) {
           Clear filters
         </Button>
       )}
-      <Button size="sm" intent={filtered ? "ghost" : "primary"} onPress={next.go}>
+      <Button size="sm" intent={filtered ? "outline" : "primary"} onPress={next.go}>
         {next.label}
       </Button>
     </EmptyState>
@@ -128,7 +128,7 @@ export function ConversationListEmpty(props: { filter: ConversationFilter }) {
       {showAll && (
         <Button
           size="sm"
-          intent={tag ? "ghost" : "primary"}
+          intent={tag ? "outline" : "primary"}
           onPress={() => void navigate({ to: "/inbox", search: { mailbox, view: "all" } })}
         >
           All conversations
@@ -147,19 +147,23 @@ export function SearchEmpty(props: { q: string; mailbox?: string | undefined }) 
       title="No matches"
       description={`Nothing matches “${props.q}”. Try fewer words, a sender, or a date.`}
     >
-      <Button size="sm" onPress={openSearch}>
+      <Button size="sm" onPress={() => openSearch({ q: props.q, mailbox: props.mailbox })}>
         Edit search
       </Button>
       {props.mailbox ? (
         <Button
           size="sm"
-          intent="ghost"
+          intent="outline"
           onPress={() => void navigate({ to: "/search", search: { q: props.q } })}
         >
           Search all inboxes
         </Button>
       ) : (
-        <Button size="sm" intent="ghost" onPress={() => void navigate({ to: "/all", search: {} })}>
+        <Button
+          size="sm"
+          intent="outline"
+          onPress={() => void navigate({ to: "/all", search: {} })}
+        >
           All mail
         </Button>
       )}
