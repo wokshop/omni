@@ -13,6 +13,7 @@ import {
 } from "@/components/icons/central";
 import { Button } from "@/components/ui/button";
 import { Heading } from "@/components/ui/heading";
+import { IconBubble } from "@/components/icons/sidebar";
 import { ShowMore } from "@/components/ui/show-more";
 import { Tooltip, TooltipTrigger } from "@/components/ui/tooltip";
 import { useLeaveOpenThread, useOpenList } from "@/components/inbox/open-list";
@@ -29,7 +30,7 @@ import {
 } from "@/hooks/use-mail-actions.ts";
 import type { Conversation as HelpdeskState, Message, Thread } from "@/lib/types.ts";
 import { ReplyComposer } from "../compose/composer.tsx";
-import { ComposerProvider } from "../compose/composer-state.tsx";
+import { ComposerProvider, useComposerState } from "../compose/composer-state.tsx";
 import { FloatingReply } from "../compose/floating-actions.tsx";
 import { SelectionReply } from "../compose/selection-reply.tsx";
 import { EventLine, NoteItem, useEventLines } from "./activity.tsx";
@@ -67,7 +68,10 @@ export function Conversation({ threadId }: { threadId: string }) {
   );
   const [fullScreen] = useFullScreen();
   const scroller = useRef<HTMLDivElement>(null);
-  const single = isSingleEmail(thread, pending.length, shared ? helpdesk : undefined);
+  // A shared email the team started talking about reads as a conversation, as a reply makes it.
+  const [started, setStarted] = useState<string>();
+  const single =
+    isSingleEmail(thread, pending.length, shared ? helpdesk : undefined) && started !== threadId;
   // Whether the reader sat at the bottom before this render: new mail follows them only then.
   const atBottom = useRef(true);
 
@@ -103,7 +107,14 @@ export function Conversation({ threadId }: { threadId: string }) {
       {/* The divider from the list runs beside the messages only; the toolbar row stays open,
           continuing the list's header row. */}
       {/* Per conversation: the timeline's menus and selections steer the composer under it. */}
-      <ComposerProvider key={threadId} chat={shared}>
+      <ComposerProvider
+        key={threadId}
+        chat={shared}
+        chatOpen={!single}
+        onStartChat={() => setStarted(threadId)}
+      >
+        {/* A shared conversation's status, owner, priority and tags, under the title. */}
+        {shared && <PropertiesRow thread={thread} />}
         <SelectionReply threadId={threadId} />
         <div
           ref={scroller}
@@ -129,11 +140,8 @@ export function Conversation({ threadId }: { threadId: string }) {
           </div>
           {/* The pane's bottom edge, full width; the messages scroll above it. */}
           <div className="sticky bottom-0 w-full shrink-0 bg-background">
-            {shared && <PropertiesPill thread={thread} />}
-            {/* A shared inbox's composer is always docked here, under its properties: floating
-                Reply and Forward on top of both crowd the corner. Its messages' own Reply and
-                Forward (and their menu) stay. */}
-            {!shared && <FloatingReply thread={thread} />}
+            {/* Reply and Forward float here until a composer docks in their place. */}
+            <FloatingReply thread={thread} />
             <ReplyComposer thread={thread} />
           </div>
         </div>
@@ -143,15 +151,22 @@ export function Conversation({ threadId }: { threadId: string }) {
 }
 
 /**
- * A shared conversation's status, owner, priority and tags, floating 16px over the composer,
- * centred: it rides up with the composer when the email composer opens.
+ * A shared conversation's status, owner, priority and tags, in a row of its own under the top
+ * bar; on a single email, ending with Start conversation, which opens the team's hidden notes.
  */
-function PropertiesPill({ thread }: { thread: Thread }) {
+function PropertiesRow({ thread }: { thread: Thread }) {
+  const composer = useComposerState();
   return (
-    <div className="pointer-events-none absolute inset-x-0 bottom-full mb-4 flex justify-center px-5">
-      <div className="pointer-events-auto max-w-full rounded-lg bg-background">
-        <Properties thread={thread} />
-      </div>
+    // 52px, as tall as a list row.
+    <div className="flex h-13 shrink-0 items-center border-s border-b px-3">
+      <Properties thread={thread}>
+        {!composer.open && (
+          <Button intent="ghost" size="sm" onPress={composer.startChat}>
+            <IconBubble />
+            Start conversation
+          </Button>
+        )}
+      </Properties>
     </div>
   );
 }

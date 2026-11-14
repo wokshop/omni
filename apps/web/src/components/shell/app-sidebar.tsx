@@ -1,7 +1,5 @@
-import { useQueryClient } from "@tanstack/react-query";
 import { useLocation, useRouter, useSearch } from "@tanstack/react-router";
-import { useState, type ReactNode } from "react";
-import { IconArrowRotateClockwise } from "@/components/icons/central";
+import type { ReactNode } from "react";
 import {
   IconBubble,
   IconBubbleAnnotation,
@@ -43,7 +41,6 @@ import { useCounts } from "@/hooks/use-mail.ts";
 import { useMember } from "@/hooks/use-session.ts";
 import { useWorkspaces } from "@/hooks/use-workspaces.ts";
 import { openSettings } from "@/hooks/use-settings-dialog.ts";
-import { keys } from "@/lib/query-keys.ts";
 import { ariaKeyShortcuts } from "@/lib/shortcuts.ts";
 
 /** A nav row. No `href`: the frame shows it, but the app has no view for it yet. */
@@ -98,7 +95,8 @@ export function AppSidebar() {
   const { mailbox } = useSearch({ strict: false }) as { mailbox?: string };
   return (
     <Sidebar>
-      <SidebarHeader className="justify-between">
+      {/* The switcher fills the row up to the icons, as close as they sit to each other. */}
+      <SidebarHeader className="justify-between gap-0.5">
         <MailboxSwitcher />
         <div className="flex items-center gap-0.5">
           <Button
@@ -117,7 +115,6 @@ export function AppSidebar() {
           >
             <IconChevronRight />
           </Button>
-          <ReloadButton />
           <SidebarTrigger intent="ghost" size="sq-xs">
             <IconSidebar />
           </SidebarTrigger>
@@ -161,33 +158,6 @@ export function AppSidebar() {
         </div>
       </SidebarFooter>
     </Sidebar>
-  );
-}
-
-/** Fetches everything on screen again: the lists, the open thread, the counts. */
-function ReloadButton() {
-  const client = useQueryClient();
-  const [pending, setPending] = useState(false);
-  return (
-    <Button
-      intent="ghost"
-      size="sq-xs"
-      aria-label="Reload"
-      isPending={pending}
-      onPress={() => {
-        setPending(true);
-        // Server data only: client-only state (pending and failed sends) has nothing to fetch,
-        // and refetching it would clear it.
-        void client
-          .refetchQueries({
-            type: "active",
-            predicate: (query) => query.queryKey[1] !== keys.local()[1],
-          })
-          .finally(() => setPending(false));
-      }}
-    >
-      <IconArrowRotateClockwise className="size-icon" />
-    </Button>
   );
 }
 
@@ -248,11 +218,12 @@ function UnreadCount({ mailbox }: { mailbox: string | undefined }) {
     .reduce((sum, c) => sum + c.unread, 0);
   if (!unread) return null;
   return (
-    // Square: 18px a side for one digit, wider only for more.
+    // Square: 18px a side for one digit, wider only for more. It multiplies, so on the current
+    // row's fill it reads a step darker than on a plain row.
     <Badge
       intent="primary"
       isCircle={false}
-      className="ms-auto h-4.5 min-w-4.5 justify-center bg-unread-count px-1 py-0 text-xs/4.5 tabular-nums"
+      className="ms-auto h-4.5 min-w-4.5 justify-center bg-unread-count px-1 py-0 text-xs/4.5 tabular-nums mix-blend-multiply"
     >
       {unread}
     </Badge>

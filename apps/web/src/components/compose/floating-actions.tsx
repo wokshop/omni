@@ -10,14 +10,13 @@ import { useComposerState } from "./composer-state.tsx";
 const FLOAT = "shadow-(--shadow-overlay)";
 
 /**
- * Reply and Forward for the open thread, in the reading pane's bottom right,
- * riding on the docked composer when one shows. Gone while the email composer is open, which
- * holds Send instead.
+ * Reply and Forward for the open thread, at the reading pane's bottom right. Gone while a
+ * composer is docked there (an email, or a shared conversation's hidden notes).
  */
 export function FloatingReply({ thread }: { thread: Thread }) {
   const composer = useComposerState();
   const latest = thread.messages.at(-1);
-  if (!latest || (composer.email && composer.mode === "public")) return null;
+  if (!latest || composer.open) return null;
   return (
     <Floating>
       <Button

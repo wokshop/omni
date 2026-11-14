@@ -9,7 +9,9 @@ import { ConversationMeta, type ConversationRowInfo } from "@/components/inbox/c
 import { ListSweepSlot } from "@/components/inbox/list-sweep";
 import { OpenListContext } from "@/components/inbox/open-list";
 import { EmptyState } from "@/components/empty/empty-state";
-import { IconMailOpen, IconPencil } from "@/components/icons/central";
+import { useQueryClient } from "@tanstack/react-query";
+import { IconArrowRotateClockwise, IconMailOpen, IconPencil } from "@/components/icons/central";
+import { keys } from "@/lib/query-keys.ts";
 import { IconSearch } from "@/components/icons/sidebar";
 import { openSearch, SearchPopover } from "@/components/search/search-popover";
 import { useMarkRead } from "@/hooks/use-mail-actions.ts";
@@ -238,23 +240,24 @@ export function List(
                 <IconSidebar />
               </SidebarTrigger>
             )}
-            <div className="flex min-w-0 flex-1 items-baseline gap-2">
-              {/* 1px down: centers the title's capitals on the sidebar header's icons.
-                    Collapsed, the title centres on the sidebar button beside it instead. */}
-              <Heading className={`shrink-0 ${sidebarHidden ? "" : "translate-y-px"}`}>
-                {props.title}
-              </Heading>
-              {props.caption && (
-                <span className="truncate text-xs text-subtle-foreground">{props.caption}</span>
-              )}
-            </div>
+            {/* 1px down: centers the title's capitals on the sidebar header's icons. Collapsed,
+                the title centres on the sidebar button beside it instead. It never shrinks: the
+                caption truncates and the search field narrows first. */}
+            <Heading
+              className={`shrink-0 whitespace-nowrap ${sidebarHidden ? "" : "translate-y-px"}`}
+            >
+              {props.title}
+            </Heading>
+            <span className="min-w-0 flex-1 translate-y-px truncate text-xs text-subtle-foreground">
+              {props.caption}
+            </span>
             {/* A plain list's checked rows: how many, before the actions. */}
             {count > 0 && !props.bulkActions && (
               <span className="shrink-0 text-sm text-muted-foreground tabular-nums">
                 {count} selected
               </span>
             )}
-            <div className="flex shrink-0 items-center gap-1">
+            <div className="flex min-w-0 items-center gap-1 *:shrink-0 *:data-[search-field]:shrink">
               {/* The same search as the sidebar's field (and `/`). On a phone the sidebar is a sheet
                   that unmounts when closed, so the header holds the search field itself there. */}
               {sidebar.isMobile ? (
@@ -265,6 +268,7 @@ export function List(
                 </HeaderAction>
               )}
               <MarkAllRead rows={threads} />
+              <ReloadAction />
               <HeaderAction label="Compose" shortcut="compose" onPress={openCompose}>
                 <IconPencil />
               </HeaderAction>
@@ -343,6 +347,7 @@ function HeaderAction(props: {
   label: string;
   shortcut?: Parameters<typeof ariaKeyShortcuts>[0];
   isDisabled?: boolean;
+  isPending?: boolean;
   onPress: () => void;
   children: ReactNode;
 }) {
@@ -354,12 +359,38 @@ function HeaderAction(props: {
         aria-label={props.label}
         aria-keyshortcuts={props.shortcut && ariaKeyShortcuts(props.shortcut)}
         isDisabled={props.isDisabled}
+        isPending={props.isPending}
         onPress={props.onPress}
       >
         {props.children}
       </Button>
       <Tooltip>{props.label}</Tooltip>
     </TooltipTrigger>
+  );
+}
+
+/** Fetches everything on screen again: the lists, the open thread, the counts. */
+function ReloadAction() {
+  const client = useQueryClient();
+  const [pending, setPending] = useState(false);
+  return (
+    <HeaderAction
+      label="Reload"
+      isPending={pending}
+      onPress={() => {
+        setPending(true);
+        // Server data only: client-only state (pending and failed sends) has nothing to fetch,
+        // and refetching it would clear it.
+        void client
+          .refetchQueries({
+            type: "active",
+            predicate: (query) => query.queryKey[1] !== keys.local()[1],
+          })
+          .finally(() => setPending(false));
+      }}
+    >
+      <IconArrowRotateClockwise />
+    </HeaderAction>
   );
 }
 

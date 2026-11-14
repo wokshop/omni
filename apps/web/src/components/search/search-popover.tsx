@@ -155,7 +155,8 @@ export function SearchPopover({ side = "end" }: { side?: "start" | "end" }) {
         ref={triggerRef}
         onPress={open}
         aria-label="Search"
-        className={`flex h-7 ${side === "start" ? "w-full" : "w-60"} cursor-text items-center gap-2 rounded-lg border border-input bg-background ps-2 pe-0.75 text-sm text-subtle-foreground outline-hidden hover:border-muted-foreground/30 focus-visible:border-ring/70 ${phase === "closed" ? "" : "invisible"}`}
+        data-search-field
+        className={`flex h-7 ${side === "start" ? "w-full" : "w-60 min-w-24"} cursor-text items-center gap-2 rounded-lg border border-input bg-background ps-2 pe-0.75 text-sm text-subtle-foreground outline-hidden hover:border-muted-foreground/30 focus-visible:border-ring/70 ${phase === "closed" ? "" : "invisible"}`}
       >
         <IconSearch className="text-muted-foreground" />
         <span className="flex-1 text-start">Search</span>
