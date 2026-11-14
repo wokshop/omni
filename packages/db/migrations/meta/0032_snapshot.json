@@ -1,5 +1,5 @@
 {
-  "id": "db41c05d-46b6-461a-9f46-996ad90f4bb4",
+  "id": "95c38d34-b52f-4950-a97e-1667ab3aefaf",
   "prevId": "84cac19a-1b1c-4f5a-ab47-dd80061d24ec",
   "version": "7",
   "dialect": "postgresql",
@@ -5391,27 +5391,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "messages_mailbox_from_address_idx": {
-          "name": "messages_mailbox_from_address_idx",
-          "columns": [
-            {
-              "expression": "mailbox_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "lower(\"from_address\")",
-              "asc": true,
-              "isExpression": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
@@ -7752,7 +7731,8 @@
         "first_response",
         "sla_at_risk",
         "sla_breached",
-        "merged"
+        "merged",
+        "handoff"
       ]
     },
     "public.conversation_priority": {
