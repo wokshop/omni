@@ -271,8 +271,8 @@ function NotificationList({ unread }: { unread: boolean }) {
 }
 
 /**
- * Two lines beside who did it: "Bea Klein assigned you", then what it is about; the time and
- * the unread dot at the end of the first line. 20px all round, ruled like the thread list.
+ * Two lines beside who did it: "Bea Klein assigned you", then what it is about; the unread dot
+ * and the time at the end of the first line. 20px all round, ruled like the thread list.
  */
 function NotificationRow({ notification: n }: { notification: Notification }) {
   const unread = !n.readAt;
@@ -295,17 +295,16 @@ function NotificationRow({ notification: n }: { notification: Notification }) {
               {action}
             </span>
           </span>
+          {/* Unread: a primary dot just before the time, which keeps the row's end. */}
+          {unread && (
+            <span aria-label="Unread" className="size-2 shrink-0 rounded-full bg-primary" />
+          )}
           <time
             dateTime={n.createdAt}
             className="shrink-0 text-xs text-subtle-foreground tabular-nums"
           >
             {rowTime(n.createdAt)}
           </time>
-          {/* Unread: a primary dot; read: the same space, so the times line up. */}
-          <span
-            aria-label={unread ? "Unread" : undefined}
-            className={`size-2 shrink-0 rounded-full ${unread ? "bg-primary" : ""}`}
-          />
         </span>
         {subject && <span className="truncate text-xs text-subtle-foreground">{subject}</span>}
       </span>
@@ -313,8 +312,9 @@ function NotificationRow({ notification: n }: { notification: Notification }) {
   );
 }
 
+/** A squircle: 28px with 8px corners. */
 const AVATAR =
-  "shrink-0 bg-accent text-foreground outline-0 mix-blend-multiply [--avatar-size:--spacing(7)]";
+  "shrink-0 bg-accent text-foreground outline-0 mix-blend-multiply [--avatar-radius:var(--radius-xl)] [--avatar-size:--spacing(7)]";
 
 /** Who did it, by their picture; what happened, by a glyph, when no one did. */
 function Lead({ notification: n }: { notification: Notification }) {
@@ -322,6 +322,7 @@ function Lead({ notification: n }: { notification: Notification }) {
   if (name) {
     return (
       <Avatar
+        isSquare
         src={pictureUrl(n.actor?.image)}
         initials={name.slice(0, 1).toUpperCase()}
         className={AVATAR}
@@ -331,7 +332,7 @@ function Lead({ notification: n }: { notification: Notification }) {
   const Glyph =
     n.kind === "sla_breached" ? IconCircleAlert : n.kind === "sla_at_risk" ? IconClock3 : IconMail;
   return (
-    <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-accent text-muted-foreground mix-blend-multiply">
+    <span className="flex size-7 shrink-0 items-center justify-center rounded-xl bg-accent text-muted-foreground mix-blend-multiply">
       <Glyph aria-hidden className="size-icon" />
     </span>
   );
@@ -341,7 +342,7 @@ function Lead({ notification: n }: { notification: Notification }) {
 function RowBones() {
   return Array.from({ length: 12 }, (_, i) => (
     <div key={i} className="flex items-center gap-3 border-b p-5">
-      <SkeletonBox width={28} height={28} radius="9999px" />
+      <SkeletonBox width={28} height={28} radius="var(--radius-xl)" />
       <span className="flex min-w-0 flex-1 flex-col gap-2">
         <SkeletonBox width={`${55 + ((i * 23) % 35)}%`} height={10} />
         <SkeletonBox width={`${35 + ((i * 17) % 30)}%`} height={8} />
