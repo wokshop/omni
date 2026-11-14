@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Heading } from "@/components/ui/heading";
 import { ShowMore } from "@/components/ui/show-more";
 import { Tooltip, TooltipTrigger } from "@/components/ui/tooltip";
+import { useLeaveOpenThread } from "@/components/inbox/open-list";
 import { useConversation } from "@/hooks/use-conversation.ts";
 import { useFullScreen } from "@/hooks/use-full-screen.ts";
 import { useAllMailboxes, useThread } from "@/hooks/use-mail.ts";
@@ -160,8 +161,10 @@ function ColumnHead(props: { subject: string; thread: Thread; shared: boolean; s
   return (
     <div className="flex flex-col gap-2">
       {!props.single && <Heading level={2}>{props.subject || "(no subject)"}</Heading>}
+      {/* Under a title, 16px from it; a single email's title is its own row, so the properties
+          take only the page's top padding, even with its side padding. */}
       {props.shared && (
-        <div className="mt-2">
+        <div className={props.single ? "" : "mt-2"}>
           <Properties thread={props.thread} />
         </div>
       )}
@@ -361,21 +364,26 @@ function TriageActions({ thread }: { thread: Thread }) {
   const moveToLater = useMoveToLater();
   const markDone = useMarkDone();
   const markUndone = useMarkUndone();
+  // Taken out of the list behind it, the thread gives way to the next row, as `e` and `h` do.
+  const leave = useLeaveOpenThread();
   return (
     <>
       <Action
         label={thread.done ? "Not done" : "Done"}
-        onPress={() =>
-          thread.done
-            ? markUndone.mutate({ threadId })
-            : markDone.mutate({ threadId, through: thread.lastMessageAt })
-        }
+        onPress={() => {
+          leave(threadId, thread.done ? "undone" : "done");
+          if (thread.done) markUndone.mutate({ threadId });
+          else markDone.mutate({ threadId, through: thread.lastMessageAt });
+        }}
       >
         {thread.done ? <IconInbox /> : <IconCheck />}
       </Action>
       <Action
         label={thread.later ? "Back to inbox" : "Later"}
-        onPress={() => moveToLater.mutate({ threadId, later: !thread.later })}
+        onPress={() => {
+          leave(threadId, thread.later ? "unlater" : "later");
+          moveToLater.mutate({ threadId, later: !thread.later });
+        }}
       >
         {thread.later ? <IconInbox /> : <IconClock3 />}
       </Action>

@@ -1,4 +1,4 @@
-import { useParams } from "@tanstack/react-router";
+import { useLocation, useParams } from "@tanstack/react-router";
 import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Selection } from "react-aria-components";
 import { Collection } from "react-aria-components/Collection";
@@ -180,6 +180,11 @@ export function List(
   const count = selected === "all" ? threads.length : selected.size;
   const [fullScreen] = useFullScreen();
   const { threadId } = useParams({ strict: false });
+  // The list without the open thread: its row links here, so clicking it again closes it.
+  const location = useLocation();
+  const closeHref = threadId
+    ? location.pathname.slice(0, location.pathname.lastIndexOf("/")) + location.searchStr
+    : undefined;
   // New mail opens in the reading pane, like a thread; a thread opening takes its place.
   const [composing, closeCompose] = useComposePane();
   const openCompose = useOpenCompose();
@@ -198,7 +203,12 @@ export function List(
   const hug = split && !listWidth.isSet;
   const [resizing, setResizing] = useState(false);
   // The rows behind the open thread, for its full-screen switcher.
-  const openList = useMemo(() => ({ rows: threads, href: props.href }), [threads, props.href]);
+  // A helpdesk list's rows follow its status, not Done or Later: no view to leave there.
+  const view = props.shortcuts?.helpdesk ? undefined : props.shortcuts?.view;
+  const openList = useMemo(
+    () => ({ rows: threads, href: props.href, closeHref, view }),
+    [threads, props.href, closeHref, view],
+  );
   // Collapsed, the sidebar's own toggle is gone with it: the list's header offers it instead.
   const sidebar = useSidebar();
   const sidebarHidden = sidebar.isMobile || !sidebar.open;
@@ -302,6 +312,7 @@ export function List(
                   rows={threads}
                   href={props.href}
                   current={threadId}
+                  closeHref={closeHref}
                   selected={selected}
                   onSelectionChange={setSelected}
                   loadMore={props.loadMore}
@@ -348,6 +359,8 @@ const Rows = memo(function Rows(props: {
   href: (threadId: string) => string;
   /** The open thread, whose row is filled. */
   current: string | undefined;
+  /** Where the open thread's row leads: back to the list alone. */
+  closeHref: string | undefined;
   selected: Selection;
   onSelectionChange: (keys: Selection) => void;
   loadMore?: (() => void) | undefined;
@@ -370,11 +383,15 @@ const Rows = memo(function Rows(props: {
         onSelectionChange={props.onSelectionChange}
       >
         {/* `items` lets React Aria cache rows by thread, so a scroll renders only new rows. */}
-        <Collection items={props.rows} dependencies={[props.href, props.current]}>
+        <Collection items={props.rows} dependencies={[props.href, props.current, props.closeHref]}>
           {(thread) => (
             <ThreadRow
               thread={thread}
-              href={props.href(thread.id)}
+              href={
+                thread.id === props.current && props.closeHref
+                  ? props.closeHref
+                  : props.href(thread.id)
+              }
               isCurrent={thread.id === props.current}
             />
           )}
