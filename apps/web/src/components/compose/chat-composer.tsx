@@ -61,11 +61,12 @@ function useWraps(ref: RefObject<HTMLTextAreaElement | null>, text: string) {
  * column; they scroll behind it and fade out as they reach it. Gone while an email is written.
  */
 export function ChatDock({ thread }: { thread: Thread }) {
-  const { chatOpen, mode } = useComposerState();
-  const active = mode === "hidden";
-  if (!chatOpen) return null;
+  const { chat, chatOpen, mode } = useComposerState();
+  const active = chatOpen && mode === "hidden";
+  if (!chat) return null;
   return (
-    // Kept mounted while an email is written, so a half-written note waits here.
+    // Kept mounted while an email is written or the email view shows, so a half-written note
+    // waits here.
     <div hidden={!active} className="relative mx-auto w-full max-w-3xl px-5 pb-4">
       <div
         aria-hidden

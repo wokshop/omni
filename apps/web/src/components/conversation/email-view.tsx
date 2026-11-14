@@ -37,9 +37,6 @@ export function useReaderView(threadId: string, thread: Thread | undefined, sing
   };
 }
 
-// Raised over whatever scrolls under it, as Reply and Forward are.
-const FLOAT = "shadow-(--shadow-overlay)";
-
 /** Older and newer email, at the reading pane's bottom left, across from Reply and Forward. */
 export function FloatingPager(props: {
   index: number;
@@ -48,7 +45,7 @@ export function FloatingPager(props: {
 }) {
   if (props.count < 2) return null;
   return (
-    <div className="pointer-events-none absolute start-5 bottom-full z-20 mb-5 flex gap-2 *:pointer-events-auto">
+    <div className="pointer-events-none absolute start-5 bottom-full z-20 mb-5 flex gap-1 *:pointer-events-auto">
       <Pager label="Previous email" isDisabled={props.index === 0} onPress={() => props.onMove(-1)}>
         <IconChevronUp />
       </Pager>
@@ -71,10 +68,10 @@ function Pager(props: {
 }) {
   return (
     <TooltipTrigger delay={400}>
+      {/* Plain glyphs, the toolbar's size: 28px squares that fill only on hover. */}
       <Button
-        intent="outline"
-        size="sq-md"
-        className={FLOAT}
+        intent="ghost"
+        size="sq-sm-lg"
         aria-label={props.label}
         isDisabled={props.isDisabled}
         onPress={props.onPress}

@@ -17,7 +17,9 @@ export function FloatingReply({ thread, messageId }: { thread: Thread; messageId
   const composer = useComposerState();
   // The email on screen, in the email view; the latest otherwise.
   const latest = thread.messages.find((m) => m.id === messageId) ?? thread.messages.at(-1);
-  if (!latest || composer.open) return null;
+  // Back once no composer shows: also after a send from the email view, whose notes stay away.
+  const composing = composer.chatOpen || (composer.email && composer.mode === "public");
+  if (!latest || composing) return null;
   return (
     <Floating>
       <Button

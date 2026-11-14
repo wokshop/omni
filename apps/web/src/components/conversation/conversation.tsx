@@ -85,7 +85,8 @@ export function Conversation({ threadId }: { threadId: string }) {
   useLayoutEffect(() => {
     atBottom.current = true;
     toEnd();
-  }, [threadId, reader.view, reader.email?.id]);
+    // Paging is the email view's alone: in the conversation, new mail keeps the guard below.
+  }, [threadId, reader.view, single ? reader.email?.id : undefined]);
   // A new message or reply keeps the newest in view, unless they scrolled up to read.
   useLayoutEffect(() => {
     if (atBottom.current) toEnd();

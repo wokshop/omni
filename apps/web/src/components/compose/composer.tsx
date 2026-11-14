@@ -165,7 +165,17 @@ export function ReplyComposer({ thread, docked = false }: { thread: Thread; dock
   if (!state.email) return null;
   return (
     // Docked (the email view): floating 16px off the pane's bottom over a fade, like the notes.
-    <div ref={box} hidden={!showing} className={docked ? "relative px-5 pb-4" : undefined}>
+    // In the conversation: your next message, under your name like the ones you sent.
+    <div
+      ref={box}
+      hidden={!showing}
+      className={docked ? "relative px-5 pb-4" : "flex flex-col items-end gap-3"}
+    >
+      {!docked && (
+        <header className="flex items-center gap-2">
+          <span className="text-sm">You</span>
+        </header>
+      )}
       {docked && (
         <div
           aria-hidden
@@ -173,7 +183,7 @@ export function ReplyComposer({ thread, docked = false }: { thread: Thread; dock
         />
       )}
       {/* A fresh composer per reply or forwarded message: its own recipients, body and draft. */}
-      <div className="relative">
+      <div className="relative w-full">
         <ModeComposer
           key={key}
           thread={thread}
