@@ -19,13 +19,13 @@ const KEYWORD = new RegExp(KEYWORD_SOURCE, "iu");
 const DIGITS = "\\d{3}[ -]\\d{3}|\\d{4,8}";
 // Letters and digits in one or two groups ("G7K2QX", "WDJB-MJHT"); checked for a digit below.
 const MIXED = "[A-Z0-9]{3,5}-[A-Z0-9]{3,5}|[A-Z0-9]{5,8}";
-// Not part of a longer number, amount, date, address or reference.
-const DIGITS_ALONE = `(?<![\\d#$€£:./,-])(${DIGITS})(?![\\d:/,-]|\\.\\d)`;
+// Not part of a longer number or code ("A123456B"), amount, date, address or reference.
+const DIGITS_ALONE = `(?<![\\p{L}\\d#$€£:./,-])(${DIGITS})(?![\\p{L}\\d:/,-]|\\.\\d)`;
 
 const STANDALONE_LINE = new RegExp(`^[ \\t>*_]*(${DIGITS}|${MIXED})[ \\t*_]*$`, "gm");
 // "code: 123456", "code is 123456", "código es 123456", within one line.
 const AFTER_KEYWORD = new RegExp(
-  `${KEYWORD_SOURCE}[^\\d\\n]{0,40}?(?<![\\d#$€£./,-])(${DIGITS}|${MIXED})(?![\\p{L}\\d:/,-]|\\.\\d)`,
+  `${KEYWORD_SOURCE}[^\\d\\n]{0,40}?(?<![\\p{L}\\d#$€£./,-])(${DIGITS}|${MIXED})(?![\\p{L}\\d:/,-]|\\.\\d)`,
   "giu",
 );
 // "123456 is your verification code", "123456 es tu código".
@@ -33,7 +33,7 @@ const BEFORE_KEYWORD = new RegExp(
   `${DIGITS_ALONE} (?:is|es|est|é|è) [^\\d\\n]{0,40}?${KEYWORD_SOURCE}`,
   "giu",
 );
-const SUBJECT_DIGITS = new RegExp(DIGITS_ALONE, "g");
+const SUBJECT_DIGITS = new RegExp(DIGITS_ALONE, "gu");
 
 /**
  * The verification code a message carries, as the reader would type it (digit groups joined:
@@ -48,15 +48,14 @@ export function verificationCode(message: { subject: string; text: string }): st
     const inSubject = only(codes(message.subject.matchAll(SUBJECT_DIGITS)));
     if (inSubject) return inSubject;
   }
-  // Alone on a line is how nearly every sender sets the code apart. Two different ones (a code
-  // and a postcode in the footer) are settled by the sentence that names one, or not at all.
-  const alone = codes(text.matchAll(STANDALONE_LINE));
-  if (alone.length === 1) return alone[0] ?? null;
+  // The code a sentence names wins over a number that merely stands alone (a postcode or a
+  // support PIN in the footer); two named codes are a guess, so neither.
   const named = [
-    ...codes(text.matchAll(AFTER_KEYWORD)),
-    ...codes(text.matchAll(BEFORE_KEYWORD)),
+    ...new Set([...codes(text.matchAll(AFTER_KEYWORD)), ...codes(text.matchAll(BEFORE_KEYWORD))]),
   ].filter((code) => !isYear(code));
-  return only(named);
+  if (named.length > 0) return only(named);
+  // Otherwise alone on a line, which is how nearly every sender sets the code apart.
+  return only(codes(text.matchAll(STANDALONE_LINE)));
 }
 
 /** Each match's code, normalized, once. Letter codes need a digit, or every heading is one. */
