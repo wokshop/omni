@@ -1,7 +1,7 @@
 // Reply and Forward, floating at the reading column's bottom right over an open thread; Compose,
 // at the list's bottom right while no thread is open (with one open, the list header's pen).
 import { verificationCode } from "@omni/mail-core/verification-code";
-import { type ReactNode, useMemo } from "react";
+import { type ReactNode, type Ref, useMemo, useRef } from "react";
 import {
   IconCheck,
   IconCopy,
@@ -31,6 +31,12 @@ export function FloatingReply({ thread, messageId }: { thread: Thread; messageId
   const latest = thread.messages.find((m) => m.id === messageId) ?? thread.messages.at(-1);
   // Back once no composer shows: also after a send from the email view, whose notes stay away.
   const composing = composer.chatOpen || (composer.email && composer.mode === "public");
+  const pair = useRef<HTMLDivElement>(null);
+  // Both buttons as one box, read when the menu places itself.
+  const pairBox = useMemo(
+    () => ({ getBoundingClientRect: () => pair.current?.getBoundingClientRect() ?? new DOMRect() }),
+    [],
+  );
   const code = useMemo(
     () =>
       latest && !latest.fromTeam
@@ -44,13 +50,17 @@ export function FloatingReply({ thread, messageId }: { thread: Thread; messageId
   const forward = () => composer.forward(latest.id);
   if (code) {
     return (
-      <Floating>
+      <Floating ref={pair}>
         <MenuTrigger>
           <Button intent="outline" size="md" className={FLOAT}>
             <IconReply />
             Respond
           </Button>
-          <Menu placement="top end">
+          {/* Over the pair: from Respond's start edge, as wide as both buttons. */}
+          <Menu
+            placement="top start"
+            popover={{ anchor: pairBox, className: "w-(--anchor-width)" }}
+          >
             <MenuItem textValue="Reply" onAction={reply}>
               <IconReply data-slot="icon" />
               <MenuLabel>Reply</MenuLabel>
@@ -103,9 +113,12 @@ export function FloatingCompose({ onPress }: { onPress: () => void }) {
 }
 
 /** Sits 20px over the top of its (sticky, bottom) parent and 20px in from its end. */
-function Floating({ children }: { children: ReactNode }) {
+function Floating({ children, ref }: { children: ReactNode; ref?: Ref<HTMLDivElement> }) {
   return (
-    <div className="pointer-events-none absolute end-5 bottom-full z-20 mb-5 flex gap-2 *:pointer-events-auto">
+    <div
+      ref={ref}
+      className="pointer-events-none absolute end-5 bottom-full z-20 mb-5 flex gap-2 *:pointer-events-auto"
+    >
       {children}
     </div>
   );
