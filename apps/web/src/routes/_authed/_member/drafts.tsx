@@ -1,5 +1,6 @@
 import { createFileRoute, Outlet, useRouter } from "@tanstack/react-router";
 import { useEffect, useMemo } from "react";
+import { filesFromDraft } from "../../../components/compose/composer.tsx";
 import { EmptyState } from "../../../components/empty/empty-state.tsx";
 import { List, ListFailed, type ListRow } from "../../../components/inbox/thread-list.tsx";
 import { useDrafts } from "../../../hooks/use-compose.ts";
@@ -56,7 +57,7 @@ function Drafts() {
       bcc: opened.bcc.map((a) => a.address),
       subject: opened.subject,
       text: opened.bodyText,
-      files: [],
+      files: filesFromDraft(opened),
     });
     void navigate({ search: ({ draft: _draft, ...rest }) => rest, replace: true });
   }, [opened, navigate]);

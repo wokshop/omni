@@ -68,7 +68,7 @@ const draftFiles = (files: ComposerFile[]): DraftFile[] =>
   );
 
 /** Files a saved draft carries, named from the thread where they came from an original. */
-function filesFromDraft(draft: Draft, messages: Message[] = []): ComposerFile[] {
+export function filesFromDraft(draft: Draft, messages: Message[] = []): ComposerFile[] {
   const originals = messages.flatMap((m) => m.attachments);
   return draft.attachments.map((a) => {
     if ("attachmentId" in a && a.attachmentId) {

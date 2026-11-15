@@ -70,7 +70,9 @@ export async function smartSearch(
   const matched = new Set(hits.map((hit) => hit.threadId));
   const unmatched = recent.filter((hit) => !matched.has(hit.threadId));
   const pool = [...hits.slice(0, RERANK_CANDIDATES), ...unmatched];
-  if (!config.TYPESAFE_API_KEY || pool.length < 2) return text;
+  // One word match alone has nothing to be ordered against; one thread that might match by
+  // meaning still has to be judged to show at all.
+  if (!config.TYPESAFE_API_KEY || (pool.length < 2 && !unmatched.length)) return text;
 
   const client = createJevClient({
     apiKey: config.TYPESAFE_API_KEY,
