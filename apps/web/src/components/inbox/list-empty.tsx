@@ -23,6 +23,9 @@ const VIEW_TEXT: Record<ThreadView, { title: string; description: string }> = {
     title: "No mail yet",
     description: "Mail from your connected accounts shows up here once it syncs.",
   },
+  sent: { title: "Nothing sent yet", description: "Mail you send is kept here." },
+  trash: { title: "Trash is empty", description: "Threads you move to the trash are kept here." },
+  spam: { title: "No spam", description: "Mail your provider marks as junk lands here." },
 };
 
 const LANE_TEXT: Partial<Record<string, { title: string; description: string }>> = {
@@ -42,6 +45,9 @@ const VIEW_PATH = {
   done: "/done",
   archive: "/archive",
   all: "/all",
+  sent: "/sent",
+  trash: "/trash",
+  spam: "/spam",
 } as const satisfies Record<ThreadView, string>;
 
 /** An empty thread list (Inbox, Later, Done, Archive, All mail). */
