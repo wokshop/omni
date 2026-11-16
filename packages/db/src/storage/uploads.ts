@@ -3,18 +3,20 @@
 import { and, eq, gt, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import { uuidv7 } from "uuidv7";
 import type { Db } from "../client.ts";
-import { storageNodes, storageUploads, type StorageUploadPart } from "../schema/storage.ts";
+import { storageUploads, type StorageUploadPart } from "../schema/storage.ts";
 import type { Door } from "./access.ts";
 import {
   addUsage,
   cleanName,
   insertNode,
+  lockTree,
   lockUsage,
   storageObjectKey,
   toNode,
   type StorageNode,
 } from "./core.ts";
 import {
+  reach,
   resolvePlace,
   type Forbidden,
   type InvalidName,
@@ -187,8 +189,8 @@ export function uploadOperations(db: Db, door: Door) {
     /**
      * Turns the upload into a file: inserts the node, adds its size to the workspace's usage and
      * marks the upload, in one transaction. Completing again returns the same file and counts
-     * nothing. Access to the folder and the allowance are checked again, as they may have
-     * changed since the upload opened.
+     * nothing, while the holder still reaches it. Access to the folder and the allowance are
+     * checked again, as they may have changed since the upload opened.
      */
     async completeUpload(
       uploadId: string,
@@ -197,17 +199,17 @@ export function uploadOperations(db: Db, door: Door) {
       const seen = await mine(db, uploadId);
       if (!seen) return NOT_FOUND;
       return db.transaction(async (tx): Promise<CompleteUploadResult> => {
-        // Usage row before the upload row, the order a delete takes them in.
+        // The tree first, so the folder cannot change drive between the lookup below and the
+        // insert. Then the usage row, then the upload row: the order a delete takes them in.
+        await lockTree(tx, seen.orgId);
         const usedBytes = await lockUsage(tx, seen.orgId);
         const upload = await mine(tx, uploadId, true);
         if (!upload) return NOT_FOUND;
         if (upload.nodeId) {
-          const [node] = await tx
-            .select()
-            .from(storageNodes)
-            .where(eq(storageNodes.id, upload.nodeId));
-          return node
-            ? { status: "ok", node: toNode(node), r2Key: upload.r2Key, created: false }
+          // Through the door as it stands now: the file may have left what the holder reaches.
+          const found = await reach(tx, door, upload.nodeId);
+          return found
+            ? { status: "ok", node: toNode(found.node), r2Key: upload.r2Key, created: false }
             : NOT_FOUND;
         }
         if (!live(upload)) return NOT_FOUND;

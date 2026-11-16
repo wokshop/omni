@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { afterAll, expect, test } from "vitest";
 import { forMember } from "../src/for-member.ts";
 import { storageNodes, storageUploads, storageUsage } from "../src/schema/index.ts";
@@ -10,7 +10,8 @@ import {
   STORAGE_TRASH_DAYS,
   storageUsageOf,
 } from "../src/storage.ts";
-import { addFile, addFolder } from "./storage-support.ts";
+import { lockTree } from "../src/storage/core.ts";
+import { addFile, addFolder, setRole } from "./storage-support.ts";
 import { createMember, createOrg, createTestDatabase } from "./support.ts";
 
 const { db, teardown } = await createTestDatabase();
@@ -23,6 +24,49 @@ async function workspace(slug: string) {
 }
 
 const DAY_MS = 24 * 60 * 60_000;
+
+/**
+ * Opens a transaction, runs `take` in it and keeps it open until `release` is called, then rolls
+ * it back. Resolves once `take` has run, so the caller knows what it holds is held.
+ */
+async function hold(take: (tx: typeof db) => Promise<unknown>) {
+  const released = Promise.withResolvers<void>();
+  const taken = Promise.withResolvers<void>();
+  const done = db
+    .transaction(async (tx) => {
+      await take(tx as unknown as typeof db);
+      taken.resolve();
+      await released.promise;
+      tx.rollback();
+    })
+    .catch((error: unknown) => {
+      taken.reject(error);
+    });
+  await taken.promise;
+  return async () => {
+    released.resolve();
+    await done;
+  };
+}
+
+/** How many connections to this test's database are waiting for a lock right now. */
+async function lockWaiters() {
+  const [row] = (await db.execute(sql`
+    select count(*)::int as waiting from pg_stat_activity
+    where datname = current_database() and wait_event_type = 'Lock'`)) as unknown as {
+    waiting: number;
+  }[];
+  return row?.waiting ?? 0;
+}
+
+/** Resolves once `count` connections wait for a lock, or `settled` says the wait is moot. */
+async function untilLockWaiters(count: number, settled: () => boolean = () => false) {
+  for (let attempt = 0; attempt < 500; attempt++) {
+    if (settled() || (await lockWaiters()) >= count) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`storage e2e: never saw ${count} lock waiter(s)`);
+}
 
 test("completing an upload twice, even at once, makes one file and counts its bytes once", async () => {
   const { org, storage } = await workspace("complete-twice");
@@ -232,4 +276,94 @@ test("an expired upload is handed to the cron once, cannot complete, and stops h
     [],
   );
   expect((await storage.file(done.id)).status).toBe("ok");
+});
+
+test("completing an upload again answers not_found once the file has left what the uploader reaches", async () => {
+  const org = await createOrg(db, "complete-after-move");
+  const ana = await createMember(db, org.id, "ana");
+  const admin = await createMember(db, org.id, "admin");
+  await setRole(db, admin.id, "admin");
+  const anaStorage = forMember(db, ana.id).storage;
+  const opened = await anaStorage.openUpload(
+    { space: "shared" },
+    { name: "plan.pdf", size: 10, limitBytes: null },
+  );
+  if (opened.status !== "ok") throw new Error(opened.status);
+  const { id } = opened.upload;
+  await anaStorage.recordUploadPart(id, { partNumber: 1, etag: "a", size: 10 });
+  expect((await anaStorage.completeUpload(id, { limitBytes: null })).status).toBe("ok");
+
+  // The admin takes the file into their own My files and renames it there.
+  const adminStorage = forMember(db, admin.id).storage;
+  expect((await adminStorage.move(id, { space: "personal" })).status).toBe("ok");
+  expect((await adminStorage.rename(id, "private.pdf")).status).toBe("ok");
+
+  expect(await anaStorage.node(id)).toBeNull();
+  expect(await anaStorage.completeUpload(id, { limitBytes: null })).toEqual({
+    status: "not_found",
+  });
+});
+
+test("an upload completing while its folder moves to another drive lands in the folder's drive", async () => {
+  const { org, member, storage } = await workspace("complete-during-move");
+  const folder = await addFolder(storage, { space: "shared" }, "Plans");
+  const opened = await storage.openUpload(
+    { parentId: folder.id },
+    { name: "a.bin", size: 10, limitBytes: null },
+  );
+  if (opened.status !== "ok") throw new Error(opened.status);
+  const { id } = opened.upload;
+  await storage.recordUploadPart(id, { partNumber: 1, etag: "a", size: 10 });
+
+  // An uncommitted sibling of the same name makes the completing insert wait on the unique
+  // index, after it has looked the folder up: the window a move has to land in.
+  const release = await hold((tx) =>
+    tx.insert(storageNodes).values({
+      orgId: org.id,
+      space: "shared",
+      parentId: folder.id,
+      kind: "folder",
+      name: "a.bin",
+    }),
+  );
+  const completing = storage.completeUpload(id, { limitBytes: null });
+  await untilLockWaiters(1);
+  let moved = false;
+  const moving = storage.move(folder.id, { space: "personal" }).finally(() => {
+    moved = true;
+  });
+  // The move either lands now, or waits its turn behind the completing upload.
+  await untilLockWaiters(2, () => moved);
+  await release();
+
+  expect((await completing).status).toBe("ok");
+  expect((await moving).status).toBe("ok");
+  const drive = { space: "personal", ownerMemberId: member.id };
+  const rows = await db.select().from(storageNodes).where(eq(storageNodes.orgId, org.id));
+  expect(rows.find((row) => row.id === folder.id)).toMatchObject(drive);
+  expect(rows.find((row) => row.id === id)).toMatchObject({ ...drive, parentId: folder.id });
+});
+
+test("a node restored and trashed again while a purge runs keeps its fresh 30 days", async () => {
+  const { org, storage } = await workspace("purge-retrashed");
+  const file = await addFile(storage, { space: "personal" }, "old.bin", 25);
+  await storage.trash(file.id);
+  await db
+    .update(storageNodes)
+    .set({ trashedAt: new Date(Date.now() - 31 * DAY_MS) })
+    .where(eq(storageNodes.id, file.id));
+
+  // The purge has picked the node and waits for the workspace's tree.
+  const release = await hold((tx) => lockTree(tx, org.id));
+  const purging = purgeStorageTrash(db, {
+    before: new Date(Date.now() - STORAGE_TRASH_DAYS * DAY_MS),
+  });
+  await untilLockWaiters(1);
+  expect((await storage.restore(file.id)).status).toBe("ok");
+  expect((await storage.trash(file.id)).status).toBe("ok");
+  await release();
+
+  expect(await purging).toEqual({ r2Keys: [], more: false });
+  expect((await storage.listTrash()).nodes.map((node) => node.id)).toEqual([file.id]);
+  expect((await storageUsageOf(db, org.id)).bytes).toBe(25);
 });

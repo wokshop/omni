@@ -32,11 +32,12 @@ export async function purgeStorageTrash(db: Db, options: { before: Date; limit?:
   for (const node of due.slice(0, limit)) {
     const deleted = await db.transaction(async (tx) => {
       await lockTree(tx, node.orgId);
-      // Still there and still trashed: it may have been restored, or gone with its folder.
+      // Still there and still due: it may have been restored (and trashed again, which starts
+      // its 30 days over), or gone with its folder.
       const [still] = await tx
         .select({ id: storageNodes.id })
         .from(storageNodes)
-        .where(and(eq(storageNodes.id, node.id), isNotNull(storageNodes.trashedAt)));
+        .where(and(eq(storageNodes.id, node.id), lt(storageNodes.trashedAt, options.before)));
       return still ? deleteSubtree(tx, node.orgId, node.id) : null;
     });
     if (deleted) r2Keys.push(...deleted.r2Keys);
