@@ -46,7 +46,7 @@ pub fn create<R: Runtime>(app: &App<R>) -> tauri::Result<()> {
         .title("Omni")
         .inner_size(1280.0, 800.0)
         .min_inner_size(720.0, 480.0)
-        .visible(!std::env::args().any(|arg| arg == HIDDEN_ARG))
+        .visible(!std::env::args().any(|arg| arg == HIDDEN_ARG) && !crate::updater::relaunched(app))
         .on_navigation(on_navigation)
         .on_new_window(on_new_window)
         // The destination arrives filled in: the Downloads folder, the suggested name, made unique.
