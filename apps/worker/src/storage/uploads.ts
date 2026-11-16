@@ -24,7 +24,7 @@ import {
 } from "./core.ts";
 import { zValidator } from "../validator.ts";
 import { announceDrives } from "./announce.ts";
-import { placeOf, refused, writeDoor } from "./http.ts";
+import { placeOf, refused, staleSave, writeDoor } from "./http.ts";
 
 const live = (upload: StorageUpload) => upload.expiresAt > new Date();
 const answer = (upload: StorageUpload) =>
@@ -163,6 +163,7 @@ export const storageUploads = new Hono<AppEnv>()
         log.error("storage.objects_left", { count: 1, error });
       });
     }
+    if (done.status === "version_conflict") return staleSave(c, done.contentVersion);
     return refused(c, done.status);
   })
 
