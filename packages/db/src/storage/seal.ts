@@ -1,8 +1,8 @@
 // The seal (ADR 0037 decision 4 step 4, ADR 0043 decision 6): once every signer has signed, the
 // Worker builds the signed copy (the PDF with an audit page) and this records it as a locked file
-// beside the original. Trusted background work, keyed by the request: the copy's object key and
-// node come from the request's id, so a run that dies half way and the run after it write the
-// same object, and only one of them records the file.
+// beside the original. Trusted background work, keyed by the request: two runs may build a copy
+// at once (the one after the last signature and the minute cron), each to an object key of its
+// own, and only the run that records first under the request's row lock keeps its object.
 import { and, asc, eq, isNull } from "drizzle-orm";
 import type { Db } from "../client.ts";
 import { members, organizations, users } from "../schema/auth.ts";
@@ -33,13 +33,13 @@ export interface StorageSealInput {
   fileName: string;
   /** The original as it was sent. */
   r2Key: string;
-  /** Where the sealed copy goes: the same key on every run for this request. */
+  /** Where this run writes its copy: a key of its own, so a concurrent run never overwrites it. */
   sealedR2Key: string;
 }
 
 export type RecordSealResult =
   | { status: "sealed"; node: StorageNode }
-  /** Another run recorded it first: this run's object is that one's too, so nothing to undo. */
+  /** Another run recorded it first: this run's object is unused, and the caller deletes it. */
   | { status: "already_sealed" }
   /** Not completed, or the original is gone or changed: nothing to seal. */
   | { status: "not_sealable" };
@@ -96,7 +96,7 @@ export async function storageSealInput(
     sentBy: context.sentBy,
     fileName: original.name,
     r2Key: original.r2Key,
-    sealedR2Key: storageObjectKey(row.orgId, `sealed-${row.id}`),
+    sealedR2Key: storageObjectKey(row.orgId, `sealed-${row.id}-${crypto.randomUUID()}`),
   };
 }
 

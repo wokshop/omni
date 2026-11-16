@@ -2,8 +2,9 @@
 // Worker appends an audit page to the PDF (each signer, address, time in UTC, IP, the original's
 // hash, the request id), stores the result beside the original as a locked file, records its
 // hash, and mails every party. It runs right after the last signature and again from the minute
-// cron for any request a run left unsealed. Keyed by the request: the object key is fixed per
-// request and `recordStorageSeal` records once, so a retry seals once and mails once.
+// cron for any request a run left unsealed. Each run writes its own object and `recordStorageSeal`
+// records once per request, so the recorded hash is always that of the object kept, a run that
+// loses deletes its object, and only the run that recorded mails.
 //
 // A PDF pdf-lib cannot open (encrypted, damaged) is not left unsealed forever: its sealed copy is
 // the audit page alone, as its own PDF, which still names the original's hash.
@@ -61,7 +62,9 @@ export function auditLines(input: StorageSealInput): string[] {
     );
   }
   lines.push("", "# Audit trail");
-  for (const event of request.events) {
+  // Up to completion: a view after it is not part of the signing.
+  const until = request.completedAt?.getTime() ?? Infinity;
+  for (const event of request.events.filter((e) => e.createdAt.getTime() <= until)) {
     lines.push(
       `${utc(event.createdAt)}  ${event.kind}  ${event.email}  IP ${event.ip ?? "-"}`,
       `  ${event.userAgent ?? "-"}`,
@@ -149,8 +152,8 @@ export interface SealDeps {
 }
 
 /**
- * Seals one request if it is completed and unsealed: builds the copy, writes it to its fixed key,
- * records it, and on the run that recorded it mails every party. Answers the new file, or null
+ * Seals one request if it is completed and unsealed: builds the copy, writes it to this run's key,
+ * records it, and on the run that recorded it mails every party; a run that lost deletes its copy. Answers the new file, or null
  * when there was nothing to do.
  */
 export async function sealSignatureRequest(
@@ -174,7 +177,10 @@ export async function sealSignatureRequest(
     size: sealed.byteLength,
     sha256,
   });
-  if (recorded.status !== "sealed") return null;
+  if (recorded.status !== "sealed") {
+    await deps.bucket.delete(input.sealedR2Key);
+    return null;
+  }
   deps.log.info("storage.sealed", { requestId, orgId: recorded.node.orgId });
   await mailParties(deps, input, recorded.node);
   return recorded.node;
