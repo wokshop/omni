@@ -583,14 +583,18 @@ export function SidebarDisclosureTrigger({
       <PrimitiveButton
         ref={ref}
         slot="trigger"
-        className={composeRenderProps(className, (className, { isFocusVisible, isDisabled }) =>
-          cn(
-            "flex h-8 w-full min-w-0 items-center gap-1 px-2.25 text-start text-label text-subtle-foreground",
-            "group/sidebar-disclosure-trigger relative focus-visible:outline-hidden",
-            isFocusVisible && "inset-ring inset-ring-ring/70",
-            isDisabled && "opacity-50",
-            className,
-          ),
+        // `text-label` joins after `cn`: it only knows t-shirt sizes, reads this one as a colour
+        // and drops it against `text-subtle-foreground`, leaving the heading's size.
+        className={composeRenderProps(
+          className,
+          (className, { isFocusVisible, isDisabled }) =>
+            `${cn(
+              "flex h-8 w-full min-w-0 items-center gap-1 px-2.25 text-start text-subtle-foreground",
+              "group/sidebar-disclosure-trigger relative focus-visible:outline-hidden",
+              isFocusVisible && "inset-ring inset-ring-ring/70",
+              isDisabled && "opacity-50",
+              className,
+            )} text-label`,
         )}
         {...props}
       >

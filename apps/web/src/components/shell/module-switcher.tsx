@@ -301,7 +301,9 @@ export function WorkspaceSwitcher({
           placement="bottom start"
           popover={{
             anchor: rowBox,
-            offset: 4,
+            // 2px in settings, on the next row's top edge: that row can be the current page's grey
+            // fill, and any wider gap shows its edge as a stripe (measured).
+            offset: workspacesOnly ? 2 : 4,
             collisionPadding: 8,
             // The sidebar's width: a touch past the links, never narrower than the row.
             className: "w-60 min-w-(--anchor-width) max-w-[calc(100vw-16px)]",
