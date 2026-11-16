@@ -118,7 +118,10 @@ async function ana(slug: string) {
 }
 
 /** Signed in, on the inbox, with the switcher open. */
-async function openSwitcher(email: string): Promise<Page> {
+async function openSwitcher(
+  email: string,
+  beforeLoad?: (page: Page) => Promise<void>,
+): Promise<Page> {
   const origin = String(worker.url);
   const cookie = await signIn({ url: new URL(origin) }, db, email);
   context = await browser.newContext();
@@ -129,6 +132,7 @@ async function openSwitcher(email: string): Promise<Page> {
     }),
   );
   const page = await context.newPage();
+  await beforeLoad?.(page);
   await page.goto(new URL("/inbox", origin).toString());
   await page.getByRole("button", { name: /^Switch mailbox/ }).click();
   await page.getByRole("menu").waitFor();
@@ -423,6 +427,60 @@ test("a send from another workspace's address that goes out closes that workspac
     .toBe(true);
   await page.getByRole("button", { name: "Switch workspace, currently Acme" }).waitFor();
 });
+
+// Catches: a send whose result comes after its workspace's socket has closed never being heard.
+// Tracking stopped with the socket (2 min), and a thread opened again is a new socket, not a
+// reconnect, so nothing asked the outbox again: the reply stayed "sending" though it failed.
+// The page's clock is Playwright's, so the 2 minutes pass at once; the server's is real.
+// (`passTime` keeps the sockets' pings answered, so no reconnect asks the outbox instead.)
+test("a reply from another workspace that fails after its socket closed shows as not sent", async () => {
+  const { email, beta, boxes, betaHello } = await ana("late");
+  const page = await openSwitcher(email, (p) => p.clock.install());
+  await page.keyboard.press("Escape");
+  const betaSockets = watchSockets(page, beta.orgId);
+
+  // Acme active; Beta's thread, opened by link, takes a reply.
+  await page.goto(new URL(`/inbox/${betaHello.threadId}`, String(worker.url)).toString());
+  await page.getByText("Hello from Beta").first().waitFor();
+  await page.getByRole("button", { name: "Reply", exact: true }).last().click();
+  await page.getByRole("textbox", { name: "Reply" }).fill("On my way");
+  await page.getByRole("button", { name: "Send", exact: true }).last().click();
+  const action = await expect
+    .poll(async () => (await sentFrom(boxes.hello.id).catch(() => null))?.id ?? "")
+    .not.toBe("")
+    .then(() => sentFrom(boxes.hello.id));
+
+  // Away from the thread (in the app, no reload), past the socket's 2 minutes: Beta's socket
+  // closes.
+  await page.getByRole("link", { name: "All mail", exact: true }).click();
+  await page.waitForURL((url) => url.pathname === "/all");
+  await passTime(page, 130_000);
+  await expect.poll(() => betaSockets.every((socket) => socket.closed())).toBe(true);
+
+  // The outbox gives up on it, with no event (none would reach a closed socket anyway).
+  await db
+    .update(schema.mailActions)
+    .set({ status: "failed", lastError: "550 mailbox unavailable" })
+    .where(eq(schema.mailActions.id, action.id));
+  await passTime(page, 65_000);
+
+  // Back in the thread, the reply shows it was not sent.
+  await page.goBack();
+  await page.waitForURL((url) => url.pathname.startsWith("/inbox/"));
+  await page.getByText("Not sent: 550 mailbox unavailable").waitFor({ timeout: 10_000 });
+});
+
+/**
+ * Moves the page's installed clock on by `ms` in 5 s steps, giving each step real time for the
+ * sockets' pongs to arrive: one jump would fire two pings with no pong between them, and the
+ * reconnect that follows would ask the outbox about every reply, hiding what is under test.
+ */
+async function passTime(page: Page, ms: number) {
+  for (let passed = 0; passed < ms; passed += 5_000) {
+    await page.clock.runFor(5_000);
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
+}
 
 /** Every socket the page opens for `orgId`: the frames it receives, and whether it closed. */
 function watchSockets(page: Page, orgId: string) {
