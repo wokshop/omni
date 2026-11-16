@@ -125,7 +125,8 @@ export function startRealtime(client: QueryClient, activeOrgId: string): Realtim
         return void client.invalidateQueries({ queryKey: keys.notifications() });
       case "action.succeeded": {
         settleOutstanding(event.actionId);
-        // A reply went out: refetch its thread now rather than waiting for the sync's event.
+        // A reply went out: refetch its thread now rather than waiting for the sync's event. (No
+        // sender emits this yet; outstanding sends are settled by `recheckOutstanding`.)
         const pending = allPending(client).find((p) => p.actionId === event.actionId);
         if (pending) changed(event.mailboxId, [pending.threadId]);
         return;
@@ -259,11 +260,20 @@ async function recheckPendingSends(client: QueryClient) {
   );
 }
 
-/** Asks the outbox about `orgId`'s outstanding sends: settles the finished, reports failures. */
-async function recheckOutstanding(client: QueryClient, orgId: string) {
-  const waiting = outstandingSends.get().filter((s) => s.orgId === orgId);
+/** How often outstanding sends are rechecked: nothing announces a send that went out. */
+export const RECHECK_SENDS_MS = 10_000;
+/** The longest a send keeps its workspace's socket open, whatever the outbox says. */
+const OUTSTANDING_MAX_MS = 2 * 60_000;
+
+/**
+ * Asks the outbox about the outstanding sends (only `orgId`'s when given): settles the finished,
+ * sent or failed, and reports failures. One past the cap is let go unasked.
+ */
+export async function recheckOutstanding(client: QueryClient, orgId?: string) {
+  const waiting = outstandingSends.get().filter((s) => !orgId || s.orgId === orgId);
   await Promise.all(
-    waiting.map(async ({ actionId }) => {
+    waiting.map(async ({ actionId, since }) => {
+      if (Date.now() - since > OUTSTANDING_MAX_MS) return settleOutstanding(actionId);
       try {
         const action = await client.fetchQuery({ ...actionQuery(actionId), staleTime: 0 });
         if (action.status === "done") settleOutstanding(actionId);

@@ -5,7 +5,9 @@ import { threadQuery } from "../lib/mail-queries.ts";
 import { outstandingSends } from "../lib/pending.ts";
 import {
   onThreadsMerged,
+  RECHECK_SENDS_MS,
   realtimeStatus,
+  recheckOutstanding,
   startRealtime,
   trackSends,
   type RealtimeConnections,
@@ -55,6 +57,13 @@ export function useRealtimeConnection(orgId: string, options: { memberId?: strin
     followed.current = others;
     connections.current?.follow(others ? others.split(",") : []);
   }, [others]);
+  // Nothing announces a send that went out: ask the outbox while any is waiting.
+  const waiting = sending.length > 0;
+  useEffect(() => {
+    if (!waiting) return;
+    const timer = setInterval(() => void recheckOutstanding(client), RECHECK_SENDS_MS);
+    return () => clearInterval(timer);
+  }, [client, waiting]);
 }
 
 /** `connecting`, `open` or `closed`: for a "reconnecting…" indicator. */
