@@ -215,7 +215,10 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
         if fields.contains(.filename), item.filename != node.name {
             node = try await sync.client.change(orgId: orgId, id: nodeId, StorageChangeNodeBody(name: item.filename, parentId: nil, space: nil), ifRevision: revision)
         }
-        if fields.contains(.contents), contents != nil {
+        // The system reports new contents for a move or a download too; only bytes that differ
+        // from the server's are an edit.
+        if fields.contains(.contents), let contents,
+           try Uploader.measure(contents).1 != node.contentSha256 {
             guard replaceInPlace else { throw NSFileProviderError(.cannotSynchronize) }
         }
         // Tags, ranks, last used dates and extended attributes stay on this computer.
