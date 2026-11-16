@@ -102,6 +102,14 @@ test("restoring a version swaps it with the current content and stores no more b
     r2Key: second.r2Key,
   });
   expect(await bytesOf(org.id)).toBe(50);
+  // Each kept version names the content version it was: 1 was replaced by the upload, 2 by the
+  // restore, which made the file's content version 3.
+  const kept = await db
+    .select({ size: storageVersions.size, contentVersion: storageVersions.contentVersion })
+    .from(storageVersions)
+    .where(eq(storageVersions.nodeId, file.id));
+  expect(kept).toEqual([{ size: 40, contentVersion: 2 }]);
+  expect(await storage.file(file.id)).toMatchObject({ file: { contentVersion: 3 } });
   // The same version cannot be restored twice: it is the current content now.
   expect(await storage.restoreVersion(file.id, old!.id)).toEqual({ status: "not_found" });
 });

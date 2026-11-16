@@ -139,6 +139,8 @@ async function keepCurrent(tx: Db, node: NodeRow, r2Key: string) {
     size: node.size,
     mimeType: node.mimeType,
     r2Key,
+    // So a comment or signature made on this content finds it once it is replaced.
+    contentVersion: node.contentVersion,
     ...(await currentWriter(tx, node)),
   });
 }
