@@ -154,10 +154,16 @@ export const storageUploadResponseSchema = z.object({ upload: storageUploadSchem
  * member who reaches it, or an Editor. A locked file answers `409 locked`.
  *
  * A checked save (ADR 0043 decision 3) names `ifContentVersion`, the file's `contentVersion` it
- * was based on. When the file has moved on, opening or completing answers `409
- * version_conflict` with the file's `contentVersion` now in `details`, and nothing is stored:
- * fetch that content, merge, and save again on top of it.
+ * was based on, and names it again when completing (`POST /uploads/:id/complete?ifContentVersion=`).
+ * When the file has moved on, either answers `409 version_conflict` with the file's
+ * `contentVersion` now in `details`, and nothing is stored: fetch that content, merge, and save
+ * again on top of it.
  */
+/** `POST /uploads/:id/complete?ifContentVersion=`: a checked save's base, checked again. */
+export const storageCompleteUploadQuerySchema = z.object({
+  ifContentVersion: z.coerce.number().int().nonnegative().optional(),
+});
+
 export const storageOpenVersionBodySchema = z.object({
   size: z.number().int().nonnegative(),
   mimeType: z.string().max(255).nullish(),

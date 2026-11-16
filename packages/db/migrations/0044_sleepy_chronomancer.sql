@@ -1,1 +1,0 @@
-ALTER TABLE "storage_upload_targets" ADD COLUMN "if_content_version" integer;

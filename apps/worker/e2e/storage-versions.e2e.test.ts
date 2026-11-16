@@ -215,19 +215,19 @@ test("a checked save on stale content answers 409 with the file's content versio
       size: body.length,
       ifContentVersion: base,
     });
-    if (opened.status !== 201) return { opened, uploadId: null };
+    if (opened.status !== 201) return { opened, complete: "" };
     const uploadId = opened.body.upload.id as string;
     const sent = await stack.putPart(ana.jar, uploadId, 1, body);
     await sent.body?.cancel();
-    return { opened, uploadId };
+    return { opened, complete: `/uploads/${uploadId}/complete?ifContentVersion=${base}` };
   }
 
   const mine = await open("mine", 1);
   const theirs = await open("theirs, saved first", 1);
-  const saved = await stack.api(ana.jar, "POST", `/uploads/${theirs.uploadId}/complete`);
+  const saved = await stack.api(ana.jar, "POST", theirs.complete);
   expect([saved.status, saved.body.node.contentVersion]).toEqual([200, 2]);
 
-  const late = await stack.api(ana.jar, "POST", `/uploads/${mine.uploadId}/complete`);
+  const late = await stack.api(ana.jar, "POST", mine.complete);
   expect([late.status, late.body.code, late.body.details]).toEqual([
     409,
     "VERSION_CONFLICT",
@@ -239,6 +239,6 @@ test("a checked save on stale content answers 409 with the file's content versio
   expect(await objectCount(org.id)).toBe(2);
 
   const merged = await open("theirs and mine", 2);
-  const done = await stack.api(ana.jar, "POST", `/uploads/${merged.uploadId}/complete`);
+  const done = await stack.api(ana.jar, "POST", merged.complete);
   expect([done.status, done.body.node.contentVersion]).toEqual([200, 3]);
 });

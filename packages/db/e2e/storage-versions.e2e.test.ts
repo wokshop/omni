@@ -42,7 +42,7 @@ async function addVersion(
   const opened = await storage.openVersionUpload(nodeId, { size, limitBytes, ifContentVersion });
   if (opened.status !== "ok") return opened;
   await storage.recordUploadPart(opened.upload.id, { partNumber: 1, etag: "etag-1", size });
-  const done = await storage.completeUpload(opened.upload.id, { limitBytes });
+  const done = await storage.completeUpload(opened.upload.id, { limitBytes, ifContentVersion });
   return done.status === "ok" ? { ...done, uploadId: opened.upload.id } : done;
 }
 
@@ -270,12 +270,13 @@ test("a checked save based on content the file no longer has is refused, on open
   });
   if (theirs.status !== "ok") throw new Error(theirs.status);
   await storage.recordUploadPart(theirs.upload.id, { partNumber: 1, etag: "e", size: 20 });
-  expect(await storage.completeUpload(theirs.upload.id, { limitBytes: null })).toMatchObject({
+  const checked = { limitBytes: null, ifContentVersion: 1 };
+  expect(await storage.completeUpload(theirs.upload.id, checked)).toMatchObject({
     status: "ok",
     node: { size: 20, contentVersion: 2 },
   });
 
-  expect(await storage.completeUpload(mine.upload.id, { limitBytes: null })).toEqual({
+  expect(await storage.completeUpload(mine.upload.id, checked)).toEqual({
     status: "version_conflict",
     contentVersion: 2,
   });

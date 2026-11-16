@@ -383,11 +383,6 @@ export const storageUploadTargets = pgTable(
     // Not the composite `(node_id, org_id)` key the other tables use: `set null` on that would
     // null `org_id` too. The upload row pins the workspace.
     nodeId: text("node_id").references(() => storageNodes.id, { onDelete: "set null" }),
-    /**
-     * A checked save (ADR 0043 decision 3): the file's `content_version` the new content was
-     * based on. Completing is refused once the file has moved past it. Null: unchecked.
-     */
-    ifContentVersion: integer("if_content_version"),
   },
   (t) => [index("storage_upload_targets_node_id_idx").on(t.nodeId)],
 );

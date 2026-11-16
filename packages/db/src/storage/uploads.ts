@@ -105,7 +105,6 @@ async function targetOf(ex: Db, uploadId: string) {
   const [row] = await ex
     .select({
       nodeId: storageUploadTargets.nodeId,
-      ifContentVersion: storageUploadTargets.ifContentVersion,
     })
     .from(storageUploadTargets)
     .where(eq(storageUploadTargets.uploadId, uploadId));
@@ -221,7 +220,7 @@ export function uploadOperations(db: Db, door: Door) {
         limitBytes: number | null;
         /** Hex SHA-256 the client computed while reading the file; kept on the file. */
         sha256?: string | null;
-        /** A checked save: the `contentVersion` it was based on. Checked again on complete. */
+        /** A checked save: the `contentVersion` it was based on. Complete checks it again. */
         ifContentVersion?: number | null;
       },
     ): Promise<OpenVersionUploadResult> {
@@ -253,12 +252,9 @@ export function uploadOperations(db: Db, door: Door) {
             expiresAt: new Date(Date.now() + STORAGE_UPLOAD_TTL_MS),
           })
           .returning();
-        await tx.insert(storageUploadTargets).values({
-          uploadId: id,
-          orgId: node.orgId,
-          nodeId: node.id,
-          ifContentVersion: file.ifContentVersion ?? null,
-        });
+        await tx
+          .insert(storageUploadTargets)
+          .values({ uploadId: id, orgId: node.orgId, nodeId: node.id });
         return { status: "ok", upload: upload! };
       });
     },
@@ -312,7 +308,11 @@ export function uploadOperations(db: Db, door: Door) {
      */
     async completeUpload(
       uploadId: string,
-      options: { limitBytes: number | null },
+      options: {
+        limitBytes: number | null;
+        /** A checked save's base, checked again here: see `openVersionUpload`. */
+        ifContentVersion?: number | null;
+      },
     ): Promise<CompleteUploadResult> {
       const seen = await mine(db, uploadId);
       if (!seen) return NOT_FOUND;
@@ -346,7 +346,7 @@ export function uploadOperations(db: Db, door: Door) {
           if (!target.nodeId) return NOT_FOUND;
           const replaced =
             (await full()) ??
-            (await replaceContent(tx, door, target.nodeId, upload, target.ifContentVersion));
+            (await replaceContent(tx, door, target.nodeId, upload, options.ifContentVersion));
           if (replaced.status !== "ok") return replaced;
           await addUsage(tx, upload.orgId, upload.size);
           await tx
