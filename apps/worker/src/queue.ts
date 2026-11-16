@@ -36,7 +36,6 @@ import {
   Retryable,
   retryTransient,
   scopedDb,
-  within,
 } from "./job-effects.ts";
 import { createLogger, type Logger } from "./log.ts";
 import { pingMailService } from "./mail-service.ts";
@@ -141,13 +140,6 @@ export type AiJobOutcome =
   | "ingesting"
   | "triaged";
 
-/**
- * How long one job may take, its in-invocation retries included. A batch's ten jobs run one at a
- * time, so ten of these stay inside a consumer's 15-minute wall clock. Past it the job is retried
- * by Queues, like any retryable failure.
- */
-const JOB_TIME_LIMIT = "60 seconds";
-
 interface AiRun {
   env: Env;
   db: Db;
@@ -201,7 +193,12 @@ function consumeAiMessage(run: AiRun, message: Message<AiJob>): Effect.Effect<vo
   );
 }
 
-/** The job, then the live update for the people who see the thread. */
+/**
+ * The job, then the live update for the people who see the thread. No `Effect.timeout` here: it
+ * would abandon the promise, not stop it, and a retry would then run beside writes still in
+ * flight. The model calls carry their own cancelling timeouts (TypeSafe 20 s, the Anthropic
+ * SDK's own), so an attempt always ends before the next one starts.
+ */
 function processAiJob(run: AiRun, job: AiJob, log: Logger): Effect.Effect<AiJobOutcome, JobError> {
   const { env, db, config, models } = run;
   return Effect.gen(function* () {
@@ -225,7 +222,7 @@ function processAiJob(run: AiRun, job: AiJob, log: Logger): Effect.Effect<AiJobO
       yield* attempt("fan_out", () => fanOut(env, db, config, changes)).pipe(retryTransient);
     }
     return outcome;
-  }).pipe(within("job", JOB_TIME_LIMIT));
+  });
 }
 
 function settle(message: Message<AiJob>, outcome: AiJobOutcome, log: Logger, started: number) {
