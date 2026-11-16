@@ -12,6 +12,7 @@ import {
   createOrg,
   createTestDatabase,
   grant,
+  postMailEvents,
   seedMessage,
   signIn,
   startMailServiceEndpoint,
@@ -107,13 +108,13 @@ async function ana(slug: string) {
     fromAddress: "x@y.test",
     uid: 1,
   });
-  for (const [uid, subject] of [
-    [1, "Hello from Beta"],
-    [2, "Beta again"],
-  ] as const) {
-    await seedMessage(db, boxes.hello, { subject, fromAddress: "x@y.test", uid });
-  }
-  return { email, acme, beta, boxes };
+  const betaHello = await seedMessage(db, boxes.hello, {
+    subject: "Hello from Beta",
+    fromAddress: "x@y.test",
+    uid: 1,
+  });
+  await seedMessage(db, boxes.hello, { subject: "Beta again", fromAddress: "x@y.test", uid: 2 });
+  return { email, acme, beta, boxes, betaHello };
 }
 
 /** Signed in, on the inbox, with the switcher open. */
@@ -311,6 +312,52 @@ test("g then f keeps the mailbox for the way back to Mail", async () => {
   await page.waitForURL((url) => url.pathname === "/inbox");
   expect(new URL(page.url()).searchParams.get("mailbox")).toBe(boxes.support.id);
   await page.getByRole("button", { name: /^Switch mailbox, currently Support/ }).waitFor();
+});
+
+// Catches: a thread from another workspace, opened by its link, never updating live: only the
+// active workspace's socket was open, so its new mail (and its sends' results) never arrived.
+test("a thread from another workspace, opened by link, shows new mail live", async () => {
+  const { email, boxes, betaHello } = await ana("live");
+  const page = await openSwitcher(email);
+  await page.keyboard.press("Escape");
+  await page.goto(new URL(`/inbox/${betaHello.threadId}`, String(worker.url)).toString());
+  await page.getByText("Hello from Beta").first().waitFor();
+  // Acme stays active: lists keep to it, the thread reads as Ana's Beta member.
+  const active = await page.evaluate(() =>
+    fetch("/api/workspaces").then((r) => r.json() as Promise<{ activeOrganizationId: string }>),
+  );
+  expect(active.activeOrganizationId).not.toBe(boxes.hello.orgId);
+
+  // A reply lands in the thread, the way the mail service records and announces it.
+  const reply = await seedMessage(db, boxes.hello, {
+    subject: "Re: Hello from Beta",
+    fromAddress: "x@y.test",
+    uid: 3,
+    threadId: betaHello.threadId,
+    text: "A reply that arrives while the thread is open",
+  });
+  // Until Beta's socket is open, an event would reach nobody: wait for it.
+  await expect
+    .poll(
+      async () => {
+        const response = await postMailEvents(worker, {
+          events: [
+            {
+              type: "message.created",
+              folderRole: "inbox",
+              orgId: boxes.hello.orgId,
+              mailboxId: boxes.hello.id,
+              threadId: betaHello.threadId,
+              messageId: reply.messageId,
+            },
+          ],
+        });
+        expect(response.status).toBe(202);
+        return page.getByText("A reply that arrives while the thread is open").count();
+      },
+      { timeout: 10_000, interval: 500 },
+    )
+    .toBeGreaterThan(0);
 });
 
 async function freePort() {
