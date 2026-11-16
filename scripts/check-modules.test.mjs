@@ -127,10 +127,11 @@ test("debt hides its own problem and is reported once it no longer fails", () =>
 
 test("a module cannot reach another undeclared module through the @omni/db barrel", () => {
   const files = {
-    "packages/db/src/index.ts": `export * from "./storage.ts";\nexport * from "./member-mail.ts";\nexport * as schema from "./schema/index.ts";`,
+    "packages/db/src/index.ts": `export * from "./storage.ts";\nexport * from "./mail.ts";\nexport * as schema from "./schema/index.ts";`,
     "packages/db/src/storage.ts": `export { readTree } from "./storage/tree.ts";`,
     "packages/db/src/storage/tree.ts": `export function readTree() {}`,
-    "packages/db/src/member-mail.ts": `export async function grantFor() {}`,
+    "packages/db/src/mail.ts": `export * from "./mail/member-mail.ts";`,
+    "packages/db/src/mail/member-mail.ts": `export async function grantFor() {}`,
     "packages/db/src/storage/lookup.ts": `import { grantFor, schema } from "../index.ts";`,
     "apps/worker/src/crm/files.ts": `import { readTree, grantFor } from "@omni/db";`,
   };
