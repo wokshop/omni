@@ -3,7 +3,6 @@
 import { verificationCode } from "@omni/mail-core/verification-code";
 import { type ReactNode, type Ref, useMemo, useRef } from "react";
 import {
-  IconBellOff,
   IconCheck,
   IconCopy,
   IconForward,
@@ -12,9 +11,7 @@ import {
 } from "@/components/icons/central";
 import { Button } from "@/components/ui/button";
 import { Menu, MenuItem, MenuLabel, MenuTrigger } from "@/components/ui/menu";
-import { appToast } from "@/components/ui/toast";
 import { useClipboard } from "@/hooks/use-clipboard";
-import { useUnsubscribe } from "@/hooks/use-mail-actions.ts";
 import type { Thread } from "@/lib/types.ts";
 import { useComposerState } from "./composer-state.tsx";
 
@@ -27,8 +24,6 @@ const FLOAT = "shadow-(--shadow-overlay)";
  *
  * On a sign-in or verification email the main action is Copy code instead: nobody answers
  * those. Reply and Forward move into a Respond menu beside it.
- *
- * Mail from a list (List-Unsubscribe) leads with Unsubscribe.
  */
 export function FloatingReply({ thread, messageId }: { thread: Thread; messageId?: string }) {
   const composer = useComposerState();
@@ -53,18 +48,9 @@ export function FloatingReply({ thread, messageId }: { thread: Thread; messageId
   // A shared inbox answers everyone outside the team, as a message's own Reply does.
   const reply = () => composer.openReply(composer.chat ? "replyAll" : "reply", messageId);
   const forward = () => composer.forward(latest.id);
-  const unsubscribe = latest.unsubscribe && (
-    <Unsubscribe
-      key={latest.id}
-      threadId={thread.id}
-      messageId={latest.id}
-      option={latest.unsubscribe}
-    />
-  );
   if (code) {
     return (
       <Floating ref={pair}>
-        {unsubscribe}
         <MenuTrigger>
           <Button intent="outline" size="md" className={FLOAT}>
             <IconReply />
@@ -91,7 +77,6 @@ export function FloatingReply({ thread, messageId }: { thread: Thread; messageId
   }
   return (
     <Floating>
-      {unsubscribe}
       <Button intent="outline" size="md" className={FLOAT} onPress={forward}>
         <IconForward />
         Forward
@@ -111,44 +96,6 @@ function CopyCode({ code }: { code: string }) {
     <Button intent="primary" size="md" className={FLOAT} onPress={() => copy(code)}>
       {copied ? <IconCheck /> : <IconCopy />}
       Copy code
-    </Button>
-  );
-}
-
-/**
- * Leaves the list. One-click and mailto lists are done by the API; a list that only offers a page
- * opens it in a new tab. Once done the button stays, disabled, as Unsubscribed.
- */
-function Unsubscribe({
-  threadId,
-  messageId,
-  option,
-}: {
-  threadId: string;
-  messageId: string;
-  option: NonNullable<Thread["messages"][number]["unsubscribe"]>;
-}) {
-  const leave = useUnsubscribe();
-  const press = () => {
-    if (option.url) window.open(option.url, "_blank", "noopener,noreferrer");
-    else
-      leave.mutate(
-        { threadId, messageId },
-        { onError: () => appToast.error("Unsubscribe failed") },
-      );
-  };
-  const done = leave.isSuccess;
-  return (
-    <Button
-      intent="danger"
-      size="md"
-      className={FLOAT}
-      isPending={leave.isPending}
-      isDisabled={done}
-      onPress={press}
-    >
-      {done ? <IconCheck /> : <IconBellOff />}
-      {done ? "Unsubscribed" : "Unsubscribe"}
     </Button>
   );
 }

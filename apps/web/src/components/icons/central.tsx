@@ -61,7 +61,6 @@ export { IconTag } from "central-icons-outlined/IconTag";
 export { IconUser as IconUserRound } from "central-icons-outlined/IconUser";
 export { IconLock } from "central-icons-outlined/IconLock";
 export { IconBell } from "central-icons-outlined/IconBell";
-export { IconBellOff } from "central-icons-outlined/IconBellOff";
 export { IconNoteText as IconNote } from "central-icons-outlined/IconNoteText";
 export { IconArrowUp } from "central-icons-outlined/IconArrowUp";
 export { IconAt } from "central-icons-outlined/IconAt";
