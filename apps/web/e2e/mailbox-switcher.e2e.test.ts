@@ -254,7 +254,7 @@ test("switching mailbox keeps the list on screen", async () => {
   expect(new URL(page.url()).pathname).toBe("/later");
 });
 
-// Catches: a workspace switch from Files throwing the person back to mail (or into a folder of
+// Catches: a workspace switch from Drive throwing the person back to mail (or into a folder of
 // the workspace left behind), and a module switch that changes the workspace.
 test("switching workspace keeps the module; switching module keeps the workspace", async () => {
   const { email, acme, beta } = await ana("modules");
@@ -268,19 +268,25 @@ test("switching workspace keeps the module; switching module keeps the workspace
     );
   const before = await active();
 
-  await page.getByRole("button", { name: /^Switch module, currently Mail/ }).click();
-  await page.getByRole("menuitemradio", { name: "Files" }).click();
+  const switcher = page.getByRole("button", { name: /^Switch module or workspace/ });
+  await switcher.click();
+  await page.getByRole("menuitem", { name: "Drive" }).click();
   await page.waitForURL((url) => url.pathname === "/files/my");
   expect(await active()).toBe(before);
-  // Files alone: mail's rows are gone.
+  // Drive alone: mail's rows are gone.
   expect(await page.getByRole("link", { name: "Later", exact: true }).count()).toBe(0);
 
   await page.getByRole("link", { name: "Trash", exact: true }).click();
   await page.waitForURL((url) => url.pathname === "/files/trash");
   const other = before === acme.orgId ? "Beta" : "Acme";
-  await page.getByRole("button", { name: /^Switch workspace/ }).click();
-  await page.getByRole("menuitemradio", { name: other }).click();
-  await page.getByRole("button", { name: `Switch workspace, currently ${other}` }).waitFor();
+  await switcher.click();
+  await page
+    .getByRole("group", { name: "Workspaces" })
+    .getByRole("menuitem", { name: other })
+    .click();
+  await page
+    .getByRole("button", { name: `Switch module or workspace, currently Drive in ${other}` })
+    .waitFor();
   expect(new URL(page.url()).pathname).toBe("/files/trash");
   expect(await active()).toBe(other === "Beta" ? beta.orgId : acme.orgId);
 });

@@ -1,17 +1,14 @@
-import { useLocation, useRouter, useSearch } from "@tanstack/react-router";
+import { useLocation, useSearch } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import {
   IconBubble,
   IconBubbleAnnotation,
-  IconChevronLeft,
-  IconChevronRight,
   IconClock,
   IconEmail,
   IconHelp,
   IconSettings,
   IconInbox,
   IconPaperPlane,
-  IconSidebar,
   IconTrash,
   IconWarning,
   IconWrite,
@@ -23,7 +20,6 @@ import { StorageNav } from "@/components/storage/storage-nav";
 import { HelpdeskItems } from "./helpdesk-nav";
 import { MailboxSwitcher } from "./mailbox-switcher";
 import { ModuleSwitcher, useCurrentModule } from "./module-switcher";
-import { WorkspaceSwitcher } from "./workspace-switcher";
 import { CountBadge } from "./count-badge";
 import { NotificationsButton } from "./notifications";
 import {
@@ -33,11 +29,9 @@ import {
   SidebarDisclosurePanel,
   SidebarDisclosureTrigger,
   SidebarFooter,
-  SidebarHeader,
   SidebarItem,
   SidebarLabel,
   SidebarSection,
-  SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useConnectivity } from "@/hooks/use-connectivity.ts";
@@ -89,49 +83,22 @@ const folders: NavItem[] = [
   { label: "Spam", icon: <IconWarning />, href: "/spam", current: { path: "/spam" } },
 ];
 
-// Figma: Omni, sidebar (node 1:3). One module at a time (ADR 0035), after Skiff: the top row
-// switches workspace, the first row under it switches module, and the rest is that module's own.
+// Figma: Omni, sidebar (node 1:3). One module at a time (ADR 0035), after Skiff: the top row is
+// the module, and its menu switches module and workspace; the rest is that module's own. Back,
+// Forward and the sidebar toggle start each page's header (`PageNav`).
 export function AppSidebar() {
-  const router = useRouter();
   const module = useCurrentModule();
   // The links carry the URL's mailbox as it is, not the one found in the workspace list: right
   // after a switch that list is still loading, and a link built from it would drop the mailbox.
   const { mailbox } = useSearch({ strict: false }) as { mailbox?: string };
   return (
-    // The sheet on a phone closes from the header's own sidebar toggle: no second close mark.
+    // The sheet on a phone closes from the page header's sidebar toggle: no second close mark.
     <Sidebar closeButton={false}>
-      {/* The workspace fills the row up to the icons, as close as they sit to each other. 2px
-          down: the row's centre (24px) meets the list and reading headers' (23.5px), so the
-          sidebar's icons sit on the same line as their toolbars. */}
-      <SidebarHeader className="justify-between gap-0.5 pt-0.5">
-        <WorkspaceSwitcher />
-        <div className="flex items-center gap-0.5">
-          <Button
-            intent="ghost"
-            size="sq-sm"
-            aria-label="Back"
-            onPress={() => router.history.back()}
-          >
-            <IconChevronLeft />
-          </Button>
-          <Button
-            intent="ghost"
-            size="sq-sm"
-            aria-label="Forward"
-            onPress={() => router.history.forward()}
-          >
-            <IconChevronRight />
-          </Button>
-          <SidebarTrigger intent="ghost" size="sq-sm">
-            <IconSidebar />
-          </SidebarTrigger>
-        </div>
-      </SidebarHeader>
-
       <SidebarContent>
-        <SidebarSection>
-          <ModuleSwitcher />
-        </SidebarSection>
+        {/* First, in the list the hover highlight runs through, centred on the page headers'
+            middle (24px down: the sidebar's 8px padding and half the 32px row), so it sits on
+            the same line as their titles. */}
+        <ModuleSwitcher />
         {module === "files" ? <StorageNav mailbox={mailbox} /> : <MailNav mailbox={mailbox} />}
       </SidebarContent>
 

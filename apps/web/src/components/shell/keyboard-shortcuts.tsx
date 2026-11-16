@@ -24,7 +24,7 @@ export function KeyboardShortcuts() {
   useShortcut("goInbox", () => void navigate({ to: "/inbox" }));
   useShortcut("goLater", () => void navigate({ to: "/later" }));
   useShortcut("goAll", () => void navigate({ to: "/all" }));
-  useShortcut("goFiles", () => void navigate({ to: "/files/my" }));
+  useShortcut("goDrive", () => void navigate({ to: "/files/my" }));
   useShortcut("help", () => setHelp(true));
 
   return (
