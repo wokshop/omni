@@ -19,6 +19,8 @@
 // - select file: a press on a file row to it being selected, with 3,000 loaded.
 // - scroll: 3 s of steady wheel scrolling through the 3,000 loaded files: frames over 50 ms, the
 //   slowest frame, and frames drawn (against the same 3 s idle).
+// - trash: from its sidebar link, scrolling to the end until 1,000 of its 3,000 items have
+//   loaded, the rows rendered then, and 3 s of steady scrolling through them.
 // - api: each route's time to first byte as the page saw it.
 //
 // BENCH_VERBOSE=1 prints each number as it is taken.
@@ -330,6 +332,46 @@ for (let run = 0; run < RUNS; run++) {
   });
   record("open deep folder ms", deepMs);
   await page.waitForLoadState("networkidle");
+
+  // Trash, 3,000 items: from its sidebar link, scrolling to the end until 1,000 have loaded,
+  // how many rows are rendered then, and steady scrolling through them.
+  await page.getByRole("link", { name: "Trash", exact: true }).first().click();
+  const trashBox = page.locator(".overflow-y-auto:has([aria-label='Trash'])").first();
+  await trashBox.waitFor();
+  const trash = { items: 100 };
+  const onTrash = (res: { url(): string }) => {
+    const u = new URL(res.url());
+    if (u.pathname === "/api/storage/trash" && u.searchParams.has("cursor")) {
+      trash.items += Number(u.searchParams.get("limit"));
+    }
+  };
+  page.on("response", onTrash);
+  const trashStarted = performance.now();
+  while (trash.items < 1000) {
+    await trashBox.evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+    await page.waitForTimeout(16);
+    if (performance.now() - trashStarted > 120_000) throw new Error("Trash stopped loading");
+  }
+  record("trash: items 100→1000 ms", performance.now() - trashStarted);
+  page.off("response", onTrash);
+  await page.waitForLoadState("networkidle");
+  record(
+    "trash: rows in DOM (1000 loaded)",
+    await page.locator("[aria-label='Trash'] [role='row']").count(),
+  );
+  await trashBox.evaluate((el) => el.scrollTo({ top: 0 }));
+  await trashBox.hover();
+  await page.waitForTimeout(500);
+  await page.evaluate(() => {
+    (window as unknown as { benchFrames: number[] }).benchFrames.splice(0);
+  });
+  const trashUntil = performance.now() + 3000;
+  while (performance.now() < trashUntil) await page.mouse.wheel(0, 400);
+  const trashFrames = await page.evaluate(
+    () => (window as unknown as { benchFrames: number[] }).benchFrames,
+  );
+  record("trash scroll: frames > 50 ms", trashFrames.filter((f) => f > 50).length);
+  record("trash scroll: frames in 3 s", trashFrames.length);
 
   const api = await page.evaluate(() =>
     performance
