@@ -1,6 +1,7 @@
-// Live updates: one websocket per workspace the user belongs to (the Durable Object is per org,
-// and lists span every workspace, ADR 0014), turned into cache invalidations. Events say what changed, not its contents, so this marks
-// those queries stale and TanStack Query refetches only the ones on screen.
+// Live updates: the active workspace's websocket (the Durable Object is per org, and lists show
+// only the active workspace, ADR 0014 as amended), turned into cache invalidations. Events say
+// what changed, not its contents, so this marks those queries stale and TanStack Query refetches
+// only the ones on screen.
 import {
   connectRealtime,
   type Realtime,

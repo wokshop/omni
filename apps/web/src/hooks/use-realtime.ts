@@ -1,34 +1,14 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import { onThreadsMerged, realtimeStatus, startRealtime } from "../lib/realtime.ts";
-import { useWorkspaces } from "./use-workspaces.ts";
-
 /**
- * Keeps the realtime socket for `orgId` open while mounted. With `everyWorkspace`, also one per
- * other workspace the user belongs to: the signed-in layout's lists span them all (ADR 0014).
- * A new `memberId` or org (organization or account switch), or a joined or left workspace,
- * reopens them.
+ * Keeps the realtime socket for `orgId`, the active workspace, open while mounted. Only that one:
+ * the lists show only the active workspace's mail (ADR 0014, amended: workspace isolation). A new
+ * `memberId` or org (organization or account switch) reopens it.
  */
-export function useRealtimeConnection(
-  orgId: string,
-  options: { memberId?: string; everyWorkspace?: boolean } = {},
-) {
+export function useRealtimeConnection(orgId: string, options: { memberId?: string } = {}) {
   const client = useQueryClient();
-  const workspaces = useWorkspaces({ enabled: !!options.everyWorkspace }).data?.workspaces;
-  // A string, so a refetch that returns the same workspaces keeps the sockets. Only workspaces
-  // with a mailbox: one with none (a Personal space before anything is connected, ADR 0024) has
-  // nothing to announce. Connecting its first mailbox refetches the workspaces and opens it.
-  const orgIds =
-    (options.everyWorkspace &&
-      workspaces
-        ?.filter((w) => w.mailboxes.length > 0)
-        .map((w) => w.id)
-        .join(",")) ||
-    "";
-  useEffect(
-    () => startRealtime(client, orgIds ? orgIds.split(",") : [], orgId),
-    [client, orgId, options.memberId, orgIds],
-  );
+  useEffect(() => startRealtime(client, [], orgId), [client, orgId, options.memberId]);
 }
 
 /** `connecting`, `open` or `closed`: for a "reconnecting…" indicator. */
