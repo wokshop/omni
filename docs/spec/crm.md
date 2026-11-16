@@ -154,6 +154,18 @@ Thread ids from `crm_fetch` go to the mail `fetch` tool, which applies mail's ow
 text is written by teammates, and names and titles can come from mail: the server's
 instructions keep telling agents to treat it as data.
 
+- A token reaches the company workspaces its grant does: its one workspace, or every company
+  the person belongs to (`workspace` narrows a read; a write to one of several must name it). A
+  Personal space has no CRM, so a token that reaches only one gets a tool error.
+- Every row carries `kind`, `id`, `workspace` and `url`. Records open in the web app at
+  `/crm/people/<id>`, `/crm/companies/<id>` and `/crm/deals/<id>`: the web app serves those
+  paths.
+- `crm_fetch` takes `records: [{ kind, id }]`. Its thread ids come from
+  `forUser(user, grant scope).threadsWith`, so they are threads the person can open.
+- `crm_write` takes exactly one of `person`, `company`, `deal` or `note`; with `id` it changes
+  that record, without it adds one. A deal's `stage` (name or id) moves it. It passes the
+  read-only billing gate, announces `crm.changed` and writes an `mcp.crm_write` audit row.
+
 ## Plan
 
 One stack for the CRM (C1 to C5), with two small PRs on `main` first for the modules it leans
