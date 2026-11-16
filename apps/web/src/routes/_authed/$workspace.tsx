@@ -14,6 +14,8 @@ import { SidebarInset } from "../../components/ui/sidebar.tsx";
 import { isSettingsPath, rememberAppHref, useToggleSettings } from "../../hooks/use-settings.ts";
 import { useShortcut } from "../../hooks/use-shortcuts.ts";
 import { useDesktopNotifications } from "../../hooks/use-desktop-notifications.ts";
+import { useDesktopShortcuts } from "../../hooks/use-desktop-shortcuts.ts";
+import { useDockBadge } from "../../hooks/use-dock-badge.ts";
 import { usePreloadScreens } from "../../hooks/use-preload-screens.ts";
 import { useRealtimeConnection } from "../../hooks/use-realtime.ts";
 import { useThreadInItsWorkspace } from "../../hooks/use-workspaces.ts";
@@ -88,6 +90,8 @@ function Shell() {
   useThreadInItsWorkspace();
   useRealtimeConnection(member.orgId, { memberId: member.id });
   useDesktopNotifications();
+  useDockBadge();
+  useDesktopShortcuts();
   usePreloadScreens();
   const settings = useSettingsLocation();
   useShortcut("settings", useToggleSettings());
