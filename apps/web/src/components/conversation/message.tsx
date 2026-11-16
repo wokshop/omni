@@ -9,7 +9,6 @@ import {
 import {
   IconChevronDown,
   IconForward,
-  IconImage,
   IconMail,
   IconNote,
   IconReply,
@@ -26,6 +25,7 @@ import { useComposerState } from "../compose/composer-state.tsx";
 import { REPLY_SOURCE } from "../compose/selection-reply.tsx";
 import { FullMessage } from "./full-message.tsx";
 import { MessageMenu } from "./message-menu.tsx";
+import { Unsubscribe } from "./unsubscribe.tsx";
 
 const TIME = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
 const DAY_TIME = new Intl.DateTimeFormat(undefined, {
@@ -85,8 +85,6 @@ export function MessageItem(props: {
 }) {
   const { threadId, message } = props;
   const [full, setFull] = useState(opensFull(message));
-  // Remote images stay blocked (spec: tracking pixels) until the reader loads them.
-  const [images, setImages] = useState(false);
   const sender = personName({ name: message.fromName, address: message.fromAddress });
   const card = message.display === "card" || full || !!props.flat;
   // Right-hand side: anything this inbox sent. Blue only for the reader's own replies.
@@ -95,12 +93,7 @@ export function MessageItem(props: {
   const inline = !!props.flat || !message.fromTeam;
 
   const toggle = message.hasHtml && (
-    <HtmlMenuItems
-      full={full}
-      onToggle={() => setFull((open) => !open)}
-      blockedImages={images ? 0 : message.remoteImageCount}
-      onLoadImages={() => setImages(true)}
-    />
+    <HtmlMenuItems full={full} onToggle={() => setFull((open) => !open)} />
   );
 
   const menu = (
@@ -132,6 +125,7 @@ export function MessageItem(props: {
         sender={sender}
         self={props.self}
         menu={menu}
+        unsubscribe={<Unsubscribe threadId={threadId} message={message} />}
       />
 
       {card ? (
@@ -142,14 +136,7 @@ export function MessageItem(props: {
           className={`flex w-full flex-col gap-3 bg-background ${props.flat ? "" : `rounded-xl border shadow-(--shadow-raised) ${full ? "overflow-hidden" : "p-4"}`}`}
         >
           {!full && <Body loose text={message.cleanText} />}
-          {full && (
-            <FullMessage
-              threadId={threadId}
-              messageId={message.id}
-              images={images}
-              flat={props.flat}
-            />
-          )}
+          {full && <FullMessage threadId={threadId} messageId={message.id} flat={props.flat} />}
         </div>
       ) : (
         <>
@@ -176,30 +163,14 @@ export function MessageItem(props: {
   );
 }
 
-/** In the ⋯ menu: the sender's layout or the text Omni drew from it, and its remote images. */
-function HtmlMenuItems(props: {
-  full: boolean;
-  onToggle: () => void;
-  /** Remote images not loaded yet. */
-  blockedImages: number;
-  onLoadImages: () => void;
-}) {
+/** In the ⋯ menu: the sender's layout or the text Omni drew from it. */
+function HtmlMenuItems(props: { full: boolean; onToggle: () => void }) {
   const label = props.full ? "Show text" : "Show full message";
-  // Offered while the full message shows and has remote images still blocked.
-  const canLoadImages = props.full && props.blockedImages > 0;
   return (
-    <>
-      <MenuItem textValue={label} onAction={props.onToggle}>
-        {props.full ? <IconNote data-slot="icon" /> : <IconMail data-slot="icon" />}
-        <MenuLabel>{label}</MenuLabel>
-      </MenuItem>
-      {canLoadImages && (
-        <MenuItem textValue="Load images" onAction={props.onLoadImages}>
-          <IconImage data-slot="icon" />
-          <MenuLabel>Load images</MenuLabel>
-        </MenuItem>
-      )}
-    </>
+    <MenuItem textValue={label} onAction={props.onToggle}>
+      {props.full ? <IconNote data-slot="icon" /> : <IconMail data-slot="icon" />}
+      <MenuLabel>{label}</MenuLabel>
+    </MenuItem>
   );
 }
 
@@ -210,11 +181,29 @@ function MessageHeader(props: {
   sender: string;
   self: string;
   menu: ReactNode;
+  /** List mail's Unsubscribe, on the sender's line. */
+  unsubscribe: ReactNode;
 }) {
-  const { message, sender, menu } = props;
+  const { message, sender, menu, unsubscribe } = props;
   if (props.flat)
-    return <EmailHeader message={message} sender={sender} self={props.self} menu={menu} />;
-  return <ChatHeader message={message} sender={sender} menu={menu} actions={!message.fromTeam} />;
+    return (
+      <EmailHeader
+        message={message}
+        sender={sender}
+        self={props.self}
+        menu={menu}
+        unsubscribe={unsubscribe}
+      />
+    );
+  return (
+    <ChatHeader
+      message={message}
+      sender={sender}
+      menu={menu}
+      actions={!message.fromTeam}
+      unsubscribe={unsubscribe}
+    />
+  );
 }
 
 /** Where a message sits in the page, so another can point to it. */
@@ -264,6 +253,7 @@ function ChatHeader(props: {
   sender: string;
   menu: ReactNode;
   actions: boolean;
+  unsubscribe: ReactNode;
 }) {
   const { message, sender } = props;
   return (
@@ -281,6 +271,7 @@ function ChatHeader(props: {
       <time dateTime={message.sentAt} className="text-xs text-subtle-foreground tabular-nums">
         {messageTime(message.sentAt)}
       </time>
+      {props.unsubscribe}
       {props.actions ? <ActionIsland message={message} menu={props.menu} /> : props.menu}
     </header>
   );
@@ -329,7 +320,13 @@ function ReplyActions({ message, small = false }: { message: Message; small?: bo
  * whom it went to, which opens the full From, To, Cc and Date. Reply and Forward sit at the end,
  * beside the ⋯.
  */
-function EmailHeader(props: { message: Message; sender: string; self: string; menu: ReactNode }) {
+function EmailHeader(props: {
+  message: Message;
+  sender: string;
+  self: string;
+  menu: ReactNode;
+  unsubscribe: ReactNode;
+}) {
   const { message, sender } = props;
   const [open, setOpen] = useState(false);
   const name = (a: { name?: string | null; address: string }) =>
@@ -350,6 +347,7 @@ function EmailHeader(props: { message: Message; sender: string; self: string; me
             <time dateTime={message.sentAt} className="text-xs text-subtle-foreground tabular-nums">
               {messageTime(message.sentAt)}
             </time>
+            {props.unsubscribe}
           </div>
           <Button
             intent="plain"
