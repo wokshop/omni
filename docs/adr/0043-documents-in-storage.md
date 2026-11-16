@@ -35,7 +35,8 @@ today and an editor's save, an agent's write and a restore later.
   - `storage_contents` (node_id, org_id, written_by_member_id, written_at): who wrote the
     current content and when, once it has replaced an earlier one. No row means "as created".
   - `storage_upload_targets` (upload_id, org_id, node_id): the file an upload is a new version
-    of.
+    of. Deleting the file leaves the row with `node_id` null, so a replacement whose target is
+    gone is refused instead of completing as a new file.
 - A new version is an upload with a target. Opening it is one new route; sending parts, resuming
   and completing are the routes that already exist. Completing it moves the node's current
   content into `storage_versions` and points the node at the new object, in the transaction that

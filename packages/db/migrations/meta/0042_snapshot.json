@@ -1,5 +1,5 @@
 {
-  "id": "ecf60c03-a33e-4cde-b5d1-0da4adc2a7ce",
+  "id": "451c7368-8002-4b57-b178-af7a64e3af66",
   "prevId": "eb2cd83c-3cf7-4e02-bdb1-78ee5e1ef723",
   "version": "7",
   "dialect": "postgresql",
@@ -8946,7 +8946,7 @@
           "name": "node_id",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         }
       },
       "indexes": {
@@ -8993,19 +8993,17 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "storage_upload_targets_node_org_fk": {
-          "name": "storage_upload_targets_node_org_fk",
+        "storage_upload_targets_node_id_storage_nodes_id_fk": {
+          "name": "storage_upload_targets_node_id_storage_nodes_id_fk",
           "tableFrom": "storage_upload_targets",
           "tableTo": "storage_nodes",
           "columnsFrom": [
-            "node_id",
-            "org_id"
+            "node_id"
           ],
           "columnsTo": [
-            "id",
-            "org_id"
+            "id"
           ],
-          "onDelete": "cascade",
+          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },

@@ -300,7 +300,9 @@ export const storageUploads = pgTable(
 /**
  * The file an upload is a new version of (ADR 0043 decision 1). An upload with no row here
  * becomes a new file. Completing one with a row replaces that file's content and sets the
- * upload's `node_id` to it. Goes with the upload, and with the file.
+ * upload's `node_id` to it. Goes with the upload. When the file is deleted first, the row stays
+ * with `node_id` null: the upload was a replacement whose target is gone, and must never
+ * complete as a file of its own.
  */
 export const storageUploadTargets = pgTable(
   "storage_upload_targets",
@@ -309,16 +311,11 @@ export const storageUploadTargets = pgTable(
       .primaryKey()
       .references(() => storageUploads.id, { onDelete: "cascade" }),
     orgId: orgId(),
-    nodeId: text("node_id").notNull(),
+    // Not the composite `(node_id, org_id)` key the other tables use: `set null` on that would
+    // null `org_id` too. The upload row pins the workspace.
+    nodeId: text("node_id").references(() => storageNodes.id, { onDelete: "set null" }),
   },
-  (t) => [
-    foreignKey({
-      name: "storage_upload_targets_node_org_fk",
-      columns: [t.nodeId, t.orgId],
-      foreignColumns: [storageNodes.id, storageNodes.orgId],
-    }).onDelete("cascade"),
-    index("storage_upload_targets_node_id_idx").on(t.nodeId),
-  ],
+  (t) => [index("storage_upload_targets_node_id_idx").on(t.nodeId)],
 );
 
 /**
