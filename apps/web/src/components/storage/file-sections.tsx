@@ -5,10 +5,12 @@
 // hover highlight springing between them. The open file is the Files section's one selected
 // item: a click or the arrow keys select a file and its preview follows.
 //
-// One page scroll for both sections. Off-screen rows and cards skip layout and paint
-// (`content-visibility`), and the next page of the folder loads as the end nears.
+// One page scroll for both sections. Each section is virtualized against it: only the rows and
+// cards near the screen are rendered, however many pages of the folder have loaded, and the
+// next page loads as the end nears.
 import { memo, useEffect, useRef, type ReactNode } from "react";
 import type { Selection } from "react-aria-components";
+import { ListLayout, Virtualizer } from "react-aria-components/Virtualizer";
 import { SkeletonBox } from "skullet/react";
 import { IconCards, IconRows } from "@/components/icons/central";
 import {
@@ -23,6 +25,7 @@ import { useFluidHoverList } from "@/hooks/use-fluid-hover-list";
 import { useStorageView, type StorageSection, type StorageView } from "@/hooks/use-storage-view.ts";
 import { fileType } from "@/lib/file-kind.ts";
 import { formatBytes, type StorageNode } from "@/lib/storage.ts";
+import { CARDS_LAYOUT, CardsLayout } from "./cards-layout.ts";
 import { FileCard, FileCardBones, KEEP_IN_MENU } from "./file-card.tsx";
 import { FileTile, TypeBadge } from "./file-glyph.tsx";
 import { DAY } from "./file-table.tsx";
@@ -163,37 +166,42 @@ function Items(props: {
   const href = (node: StorageNode) => (node.kind === "folder" ? props.href(node) : undefined);
   if (props.view === "cards") {
     return (
-      <GridList
-        aria-label={props.label}
-        layout="grid"
-        items={props.nodes}
-        {...props.selection}
-        // Cards 168px and up, 12px apart; the cards' own 6px inset puts their squares 20px from
-        // the page's edges, like the rows' tiles.
-        className="grid grid-cols-[repeat(auto-fill,minmax(10.5rem,1fr))] gap-x-3 gap-y-4 bg-transparent px-3.5"
-      >
-        {(node) => (
-          <FileCard
-            node={node}
-            href={href(node)}
-            url={props.fileUrl(node)}
-            menu={props.menu(node)}
-          />
-        )}
-      </GridList>
+      // Cards 168px and up, 12px apart, 14px in (`cards-layout.ts`); the cards' own 6px inset
+      // puts their squares 20px from the page's edges, like the rows' tiles.
+      <Virtualizer layout={CardsLayout} layoutOptions={CARDS_LAYOUT}>
+        <GridList
+          aria-label={props.label}
+          layout="grid"
+          items={props.nodes}
+          {...props.selection}
+          className="bg-transparent"
+        >
+          {(node) => (
+            <FileCard
+              node={node}
+              href={href(node)}
+              url={props.fileUrl(node)}
+              menu={props.menu(node)}
+            />
+          )}
+        </GridList>
+      </Virtualizer>
     );
   }
   return (
     <RowHover>
-      <GridList
-        aria-label={props.label}
-        items={props.nodes}
-        {...props.selection}
-        // Transparent: the hover highlight sits under the rows.
-        className="bg-transparent"
-      >
-        {(node) => <FileRow node={node} href={href(node)} menu={props.menu(node)} />}
-      </GridList>
+      <Virtualizer layout={ListLayout} layoutOptions={ROWS_LAYOUT}>
+        <GridList
+          aria-label={props.label}
+          items={props.nodes}
+          {...props.selection}
+          // Transparent: the hover highlight sits under the rows. The virtualizer gives its sizer
+          // and row wrappers no width, so they take the list's (as the mail list's do).
+          className="bg-transparent *:w-full *:*:w-full"
+        >
+          {(node) => <FileRow node={node} href={href(node)} menu={props.menu(node)} />}
+        </GridList>
+      </Virtualizer>
     </RowHover>
   );
 }
@@ -211,8 +219,8 @@ function FileRow(props: {
       href={props.href}
       textValue={node.name}
       // The open file keeps the accent fill, as the open thread's row does. 48px: a 32px tile,
-      // 8px above and below. Laid out only near the screen.
-      className="mx-2.5 h-12 gap-3 rounded-lg ps-2 pe-1 [contain-intrinsic-size:auto_3rem] [content-visibility:auto] selected:bg-accent"
+      // 8px above and below.
+      className="mx-2.5 h-12 gap-3 rounded-lg ps-2 pe-1 selected:bg-accent"
     >
       <FileTile kind={type?.kind ?? "folder"} />
       <span className="min-w-0 flex-1 truncate text-foreground">{node.name}</span>
@@ -231,7 +239,7 @@ function FileRow(props: {
         {...KEEP_IN_MENU}
         className="shrink-0 opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100 group-data-selected:opacity-100 has-[[aria-expanded=true]]:opacity-100 pointer-coarse:opacity-100 motion-reduce:transition-none"
       >
-        <SettingsRowMenu label={`Actions for ${node.name}`} items={props.menu} />
+        <SettingsRowMenu label={`Actions for ${node.name}`} items={props.menu} lazy />
       </span>
     </GridListItem>
   );
@@ -251,6 +259,9 @@ function RowHover({ children }: { children: ReactNode }) {
   );
 }
 
+/** Rows are 48px, as `FileRow` draws them. */
+const ROWS_LAYOUT = { rowSize: 48, loaderSize: 0 };
+
 /** Asks for the folder's next page when this nears the screen (two screens ahead). */
 function LoadMore(props: { onLoadMore: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -260,7 +271,9 @@ function LoadMore(props: { onLoadMore: () => void }) {
     const element = ref.current;
     if (!element) return;
     const observer = new IntersectionObserver(
-      ([entry]) => entry?.isIntersecting && load.current(),
+      // The latest entry: a busy page gets several at once, oldest first, and reading the first
+      // one missed that the end had come into view, leaving the list stuck there.
+      (entries) => entries.at(-1)?.isIntersecting && load.current(),
       { rootMargin: "200% 0px" },
     );
     observer.observe(element);
