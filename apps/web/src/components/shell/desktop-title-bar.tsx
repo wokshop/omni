@@ -1,13 +1,13 @@
 // The desktop app's title-bar group (docs/spec/desktop.md, "Navigation changes in the web app"):
-// the workspace switcher as its mark, notifications (as an inbox) and the sidebar toggle, on the
-// window's top 48px row, whose start is the macOS traffic lights'. With the sidebar open the group
-// ends where the sidebar's rows do, so the toggle sits over the rows' trailing icons, and the
-// sidebar's own rows start under this row. With it closed the group follows the traffic lights
-// and page headers leave room for it. Back and forward are keys only (⌘[ ⌘]). Not in Figma: built
+// the sidebar toggle beside the macOS traffic lights, then notifications (as an inbox) and the
+// workspace switcher as its mark, on the window's top 48px row. With the sidebar open the last two
+// sit at the sidebar's end, the mark on the rows' trailing axis, and the sidebar's own rows start
+// under this row. With it closed all three follow the traffic lights and page headers leave room
+// for them. Back and forward are keys only (⌘[ ⌘]). Not in Figma: built
 // from the sidebar's own switcher and bell and the page headers' 28px ghost buttons, nothing
 // added. The rest of the row moves the window (`routeTitleBarDrags`). Not drawn in a browser.
 import { useLayoutEffect, useRef } from "react";
-import { IconInbox, IconSidebar } from "@/components/icons/sidebar";
+import { IconSidebar } from "@/components/icons/sidebar";
 import { SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
 import { desktop } from "@/lib/desktop.ts";
 import { WorkspaceSwitcher } from "./module-switcher";
@@ -38,17 +38,12 @@ export function DesktopTitleBar() {
   return (
     <div
       ref={group}
-      // Open: as wide as the sidebar, ending 9px in (its 1px border and the rows' 8px padding).
-      // Closed: macOS keeps its traffic lights in the first 76px, on this row's centre line (the
-      // shell places them); elsewhere the group starts 8px in, as the sidebar's rows do.
-      className={
-        open
-          ? "fixed start-0 top-0 z-20 flex h-12 w-(--sidebar-width) items-center justify-end gap-0.5 pe-[9px]"
-          : `fixed start-0 top-0 z-20 flex h-12 items-center gap-0.5 pe-1 ${desktop.platform === "mac" ? "ps-19" : "ps-2"}`
-      }
+      // The sidebar toggle right after the traffic lights (macOS keeps them in the first 76px, on
+      // this row's centre line; elsewhere the row starts 8px in, as the sidebar's rows do).
+      // Open: as wide as the sidebar, notifications and the workspace at its end, the mark centred
+      // on the rows' trailing axis (the chevrons and counts, 21.5px in from the sidebar's edge).
+      className={`fixed start-0 top-0 z-20 flex h-12 items-center gap-0.5 ${desktop.platform === "mac" ? "ps-19" : "ps-2"} ${open ? "w-(--sidebar-width) pe-[7.5px]" : "pe-1"}`}
     >
-      <WorkspaceSwitcher iconOnly />
-      <NotificationsButton icon={<IconInbox />} />
       <SidebarTrigger
         intent="ghost"
         size="sq-sm"
@@ -56,6 +51,10 @@ export function DesktopTitleBar() {
       >
         <IconSidebar />
       </SidebarTrigger>
+      <span className={open ? "ms-auto flex items-center gap-0.5" : "flex items-center gap-0.5"}>
+        <NotificationsButton />
+        <WorkspaceSwitcher iconOnly />
+      </span>
     </div>
   );
 }

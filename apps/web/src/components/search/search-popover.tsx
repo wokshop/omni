@@ -75,7 +75,7 @@ export interface SearchSeed {
   q: string;
   mailbox?: string | undefined;
 }
-/** Whatever search is mounted opens itself; set while it is (the sidebar's). */
+/** Whatever search is mounted opens itself; set while it is (the mail list header's). */
 let openMounted: ((seed?: SearchSeed) => void) | undefined;
 /**
  * Opens search from a control elsewhere (the list's search icon), as `/` does; with a `seed`, to
