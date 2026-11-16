@@ -51,6 +51,31 @@ export const desktop = {
   },
 };
 
+/** The title bar's height: the page headers' 48px row, which is also the window's drag region. */
+const TITLE_BAR_PX = 48;
+
+// What a press in the title bar row works instead of moving the window.
+const CONTROL = "button, a, input, textarea, select, label, [role], [contenteditable]";
+
+/**
+ * In the desktop app, the top row of every screen moves the window, as a title bar does, except
+ * on its controls; a double click zooms it (docs/spec/desktop.md, "Navigation changes in the web
+ * app"). One listener here, rather than a drag attribute on each screen's header.
+ */
+export function routeTitleBarDrags() {
+  if (!inShell) return;
+  document.addEventListener("mousedown", onTitleBarPress);
+}
+
+function onTitleBarPress(event: MouseEvent) {
+  if (event.button !== 0 || event.clientY > TITLE_BAR_PX || event.defaultPrevented) return;
+  const target = event.target instanceof Element ? event.target : null;
+  if (!target || target.closest(CONTROL)) return;
+  event.preventDefault();
+  if (event.detail === 2) run("zoom", (b) => b.toggleMaximize());
+  else run("drag", (b) => b.startDragging());
+}
+
 /** Schemes the default browser or mail app should get rather than this window. */
 const OUTSIDE = new Set(["http:", "https:", "mailto:", "tel:"]);
 
