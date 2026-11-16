@@ -83,7 +83,9 @@ fn chrome<'a, R: Runtime, M: Manager<R>>(
     let builder = builder
         .title_bar_style(tauri::TitleBarStyle::Overlay)
         .hidden_title(true)
-        .traffic_light_position(tauri::LogicalPosition::new(16.0, 18.0));
+        // Tauri centres the buttons in a strip `y` plus their height (about 14pt) tall, so 34
+        // puts their centre 24pt down: the middle of the web app's 48px title row (`h-12`).
+        .traffic_light_position(tauri::LogicalPosition::new(16.0, 34.0));
     builder
 }
 
