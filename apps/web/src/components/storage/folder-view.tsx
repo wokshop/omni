@@ -15,13 +15,14 @@ import { MoveDialog, RenameDialog, type MoveScope } from "./file-dialogs.tsx";
 import { FolderBody, HeaderActions } from "./folder-body.tsx";
 import { PreviewPanel } from "./preview/preview-panel.tsx";
 import { ShareDialog } from "./share-dialog.tsx";
+import { SignaturesDialog } from "./signatures-dialog.tsx";
 import { storageErrorToast } from "./storage-errors.ts";
 import { StorageFrame } from "./storage-frame.tsx";
 import { UploadsPanel } from "./uploads-panel.tsx";
 import { VersionsDialog } from "./versions-dialog.tsx";
 
 export type FolderDialog = {
-  dialog: "rename" | "move" | "share" | "versions";
+  dialog: "rename" | "move" | "share" | "versions" | "signatures";
   node: StorageNode;
 } | null;
 
@@ -199,6 +200,8 @@ function FolderDialogs(props: { dialog: FolderDialog; source: FolderSource; onCl
       return <ShareDialog node={node} onClose={onClose} />;
     case "versions":
       return <VersionsDialog node={node} shareId={source.shareId} onClose={onClose} />;
+    case "signatures":
+      return <SignaturesDialog node={node} onClose={onClose} />;
   }
 }
 

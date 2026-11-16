@@ -8,7 +8,7 @@
 //   │        · thread(id) ─ conversation · search(q) · action(id) · tags(mailbox)
 //   │        · assignees(mailbox) · conversations(filter) · conversation-counts
 //   │        · notifications ─ { unread } · sla(mailbox)
-//   ├─ storage ─ list(place) · trash · usage · sharing(id) · versions(id) · shared-with-me · link(share, node)
+//   ├─ storage ─ list(place) · trash · usage · sharing(id) · versions(id) · signatures(id) · signing(id) · shared-with-me · link(share, node)
 //   │                                                                  (ADR 0034)
 //   ├─ crm ─ companies(q) · people(q) · deals(q) · company(id) · person(id) · deal(id) · stages
 //   │        · timeline(kind, id) · contracts(where) · find(q)                  (ADR 0036)
@@ -147,6 +147,10 @@ export const keys = {
   /** Who a file or folder is shared with, and its link. */
   storageSharing: (nodeId: string) => [...storage(), "sharing", nodeId] as const,
   storageVersions: (nodeId: string) => [...storage(), "versions", nodeId] as const,
+  /** A file's signature requests (ADR 0043 decision 6). */
+  storageSignatures: (nodeId: string) => [...storage(), "signatures", nodeId] as const,
+  /** A request the signed-in person was asked to sign. */
+  signing: (requestId: string) => [...storage(), "signing", requestId] as const,
   storageSharedWithMe: () => [...storage(), "shared-with-me"] as const,
   /** What a link opens: the shared node, or a folder inside it. */
   storageLink: (shareId: string, nodeId: string | undefined) =>
