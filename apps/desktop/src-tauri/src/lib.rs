@@ -8,6 +8,7 @@ mod sync;
 
 pub fn run() {
     tauri::Builder::default()
+        .setup(|app| sync::start(app.handle()))
         .invoke_handler(tauri::generate_handler![
             sync::sync_status,
             sync::sync_connect,

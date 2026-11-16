@@ -17,6 +17,8 @@ tauri-build = { version = "2.7", features = [] }
 [dependencies]
 tauri = { version = "2.12", features = [] }
 omni-sync-types.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 
 [lints]
 workspace = true
