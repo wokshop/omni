@@ -3,6 +3,7 @@
 // boundaries, toasts and retries decide on the kind, never on a message. API failures keep the
 // Worker's own taxonomy (ADR 0038): its category picks the kind, its code and request ID ride along.
 import * as Sentry from "@sentry/browser";
+import { onlineManager } from "@tanstack/react-query";
 import { ApiError } from "./api.ts";
 
 export type FailureKind =
@@ -98,15 +99,55 @@ export function classify(error: unknown): Failure {
   return { kind: "bug", retryable: false, cause: error };
 }
 
+/** The Worker's message as a sentence: it writes them in lower case ("this name is taken"). */
+function sentence(cause: unknown) {
+  const message = cause instanceof Error ? cause.message.trim() : "";
+  return message ? message.charAt(0).toUpperCase() + message.slice(1) : null;
+}
+
+/**
+ * The toast for a failed action that nobody handled itself (`lib/query-client.ts`), by kind:
+ * short and plain. A refusal says the Worker's own sentence. Null where something else already
+ * speaks (the sign-in redirect, the reload).
+ */
+export function failureMessage(failure: Failure): string | null {
+  switch (failure.kind) {
+    case "offline":
+      return "You're offline.";
+    case "unauthenticated":
+    case "stale_build":
+      return null;
+    case "permission":
+      return "You don't have access to that.";
+    case "not_found":
+      return "That's no longer here.";
+    case "refused":
+      return sentence(failure.cause) ?? "That didn't go through.";
+    case "rate_limit":
+      return "Too many at once. Try again in a minute.";
+    case "unavailable":
+      return "That's unavailable right now. Try again soon.";
+    case "server":
+      return "Something went wrong. Try again.";
+    case "bug":
+      return "Something went wrong.";
+  }
+}
+
 const RELOADED_AT = "omni:reloaded-for-update";
 /** A second stale-build failure this soon after reloading is not a deploy: stop, don't loop. */
 const RELOAD_WINDOW_MS = 60_000;
 
+/** Set once a reload is under way: what fails while the page goes away is not worth reporting. */
+let reloading = false;
+
 /**
  * Reloads once to pick up the deployed build. False when it reloaded within the last minute, so
- * the caller shows the error page instead of looping.
+ * the caller shows the error page instead of looping, and when offline, where a reload would
+ * land on the browser's own error page.
  */
 export function reloadForUpdate(): boolean {
+  if (!onlineManager.isOnline()) return false;
   try {
     const last = Number(sessionStorage.getItem(RELOADED_AT) ?? 0);
     if (Date.now() - last < RELOAD_WINDOW_MS) return false;
@@ -114,14 +155,22 @@ export function reloadForUpdate(): boolean {
   } catch {
     // No storage (a locked-down webview): reload anyway; the guard is a nicety.
   }
+  reloading = true;
   window.location.reload();
   return true;
 }
 
-/** Sends what nobody expected to Sentry (when the build has a DSN): bugs and server errors. */
+/**
+ * Sends what nobody expected to Sentry (when the build has a DSN): bugs and server errors. Safe
+ * to call for one failure from two layers (a query and the route that loaded it): Sentry marks
+ * the error object and sends it once.
+ */
 export function reportFailure(failure: Failure) {
-  if (failure.kind !== "bug" && failure.kind !== "server") return;
+  if (reloading || (failure.kind !== "bug" && failure.kind !== "server")) return;
   Sentry.captureException(failure.cause, {
-    tags: { failure_kind: failure.kind, ...(failure.requestId && { request_id: failure.requestId }) },
+    tags: {
+      failure_kind: failure.kind,
+      ...(failure.requestId && { request_id: failure.requestId }),
+    },
   });
 }
