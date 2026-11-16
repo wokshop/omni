@@ -243,7 +243,7 @@ async function signAll(person: Person, file: StorageNode, signers: string[]) {
 
 // Catches: a completed request never sealed, a seal that changes the original or drops its
 // pages, a sealed copy that is not locked or whose recorded hash is not its bytes, a copy the
-// signer cannot fetch (or one a member replaced that they still get), a retry (the minute cron) that seals or mails twice, sealed bytes left out
+// signer cannot fetch (or one a member replaced that they still get), a copy deleted for good sealed again, a retry (the minute cron) that seals or mails twice, sealed bytes left out
 // of usage, and a PDF pdf-lib cannot open leaving the request unsealed.
 test("the last signature seals: a locked signed copy beside the original with an audit page, mailed once to everyone", async () => {
   const { org, ana } = await owner();
@@ -294,6 +294,13 @@ test("the last signature seals: a locked signed copy beside the original with an
   const replaced = await stack.api(ana.jar, "POST", `/uploads/${opened.body.upload.id}/complete`);
   expect(replaced.status).toBe(200);
   expect((await stack.get(jars[0]!, `/signing/${requestId}/sealed`)).status).toBe(404);
+  // Deleted for good, it stays deleted: the cron does not seal the request again or mail again.
+  expect((await stack.api(ana.jar, "DELETE", `/nodes/${request.sealedNodeId}`)).status).toBe(200);
+  const gone = await stack.api(ana.jar, "DELETE", `/nodes/${request.sealedNodeId}?forever=1`);
+  expect(gone.status).toBe(204);
+  expect(await stack.cron("* * * * *")).toBe("ok");
+  expect((await stack.api(ana.jar, "GET", `/nodes?space=shared`)).body.nodes).toHaveLength(1);
+  expect(await signedMail(bob)).toHaveLength(1);
 
   // A PDF that will not open is sealed all the same, as the certificate alone.
   const broken = await pdf(ana, "broken.pdf", Buffer.from("%PDF-1.7 not really"));

@@ -57,7 +57,8 @@ export async function unsealedSignatureRequests(db: Db): Promise<{ id: string }[
     .where(
       and(
         eq(storageSignatureRequests.status, "completed"),
-        isNull(storageSignatureRequests.sealedNodeId),
+        // The hash, not the node: the copy may be deleted later, and that does not unseal it.
+        isNull(storageSignatureRequests.sealedSha256),
         eq(storageNodes.contentVersion, storageSignatureRequests.contentVersion),
         isNull(storageNodes.trashedAt),
         isNotNull(storageNodes.r2Key),
@@ -83,10 +84,10 @@ export async function storageSealInput(
   const row = await loadRequest(db, requestId);
   if (!row || row.status !== "completed") return null;
   const [sealed] = await db
-    .select({ sealedNodeId: storageSignatureRequests.sealedNodeId })
+    .select({ sealedSha256: storageSignatureRequests.sealedSha256 })
     .from(storageSignatureRequests)
     .where(eq(storageSignatureRequests.id, requestId));
-  if (sealed?.sealedNodeId) return null;
+  if (sealed?.sealedSha256) return null;
   const original = await sentOriginal(db, row);
   if (!original?.r2Key) return null;
   const [context] = await db
@@ -130,12 +131,12 @@ export function recordStorageSeal(
     if (!request || request.status !== "completed") return { status: "not_sealable" };
     const [current] = await tx
       .select({
-        sealedNodeId: storageSignatureRequests.sealedNodeId,
+        sealedSha256: storageSignatureRequests.sealedSha256,
         createdByMemberId: storageSignatureRequests.createdByMemberId,
       })
       .from(storageSignatureRequests)
       .where(eq(storageSignatureRequests.id, requestId));
-    if (current?.sealedNodeId) return { status: "already_sealed" };
+    if (current?.sealedSha256) return { status: "already_sealed" };
     await lockTree(tx, request.orgId);
     const original = await sentOriginal(tx, request);
     if (!original) return { status: "not_sealable" };
