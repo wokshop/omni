@@ -110,6 +110,7 @@ export {
 } from "./storage/signer.ts";
 export {
   recordStorageSeal,
+  sealedObject,
   sealedName,
   storageSealInput,
   unsealedSignatureRequests,

@@ -3,7 +3,7 @@
 // beside the original. Trusted background work, keyed by the request: two runs may build a copy
 // at once (the one after the last signature and the minute cron), each to an object key of its
 // own, and only the run that records first under the request's row lock keeps its object.
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNotNull, isNull } from "drizzle-orm";
 import type { Db } from "../client.ts";
 import { members, organizations, users } from "../schema/auth.ts";
 import { storageLocks, storageNodes, storageSignatureRequests } from "../schema/storage.ts";
@@ -44,15 +44,23 @@ export type RecordSealResult =
   /** Not completed, or the original is gone or changed: nothing to seal. */
   | { status: "not_sealable" };
 
-/** Completed requests with no sealed copy yet, oldest first. */
+/**
+ * Completed requests with no sealed copy yet whose original still holds what was sent, oldest
+ * first. One whose original was unlocked and then changed, trashed or deleted can never be
+ * sealed, so it is left out here rather than holding a place in every batch.
+ */
 export async function unsealedSignatureRequests(db: Db): Promise<{ id: string }[]> {
   return db
     .select({ id: storageSignatureRequests.id })
     .from(storageSignatureRequests)
+    .innerJoin(storageNodes, eq(storageNodes.id, storageSignatureRequests.nodeId))
     .where(
       and(
         eq(storageSignatureRequests.status, "completed"),
         isNull(storageSignatureRequests.sealedNodeId),
+        eq(storageNodes.contentVersion, storageSignatureRequests.contentVersion),
+        isNull(storageNodes.trashedAt),
+        isNotNull(storageNodes.r2Key),
       ),
     )
     .orderBy(asc(storageSignatureRequests.completedAt), asc(storageSignatureRequests.id))

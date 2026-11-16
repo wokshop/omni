@@ -11,6 +11,7 @@
 import { STORAGE_SIGNING_CONSENT } from "@omni/contracts";
 import {
   recordStorageSeal,
+  sealedObject,
   storageSealInput,
   unsealedSignatureRequests,
   type Db,
@@ -176,6 +177,9 @@ export async function sealSignatureRequest(
     r2Key: input.sealedR2Key,
     size: sealed.byteLength,
     sha256,
+  }).catch(async (error: unknown) => {
+    await dropUnrecorded(deps, requestId, input.sealedR2Key);
+    throw error;
   });
   if (recorded.status !== "sealed") {
     await deps.bucket.delete(input.sealedR2Key);
@@ -184,6 +188,20 @@ export async function sealSignatureRequest(
   deps.log.info("storage.sealed", { requestId, orgId: recorded.node.orgId });
   await mailParties(deps, input, recorded.node);
   return recorded.node;
+}
+
+/**
+ * After a failed record: deletes this run's object unless the record committed after all (a
+ * commit whose answer was lost). When even that check fails, the object stays: deleting a copy
+ * that may be recorded is worse than leaving an unused one.
+ */
+async function dropUnrecorded(deps: SealDeps, requestId: string, r2Key: string) {
+  try {
+    const kept = await sealedObject(deps.db, requestId);
+    if (kept?.r2Key !== r2Key) await deps.bucket.delete(r2Key);
+  } catch (error) {
+    deps.log.warn("storage.seal_candidate_left", { requestId, r2Key, error });
+  }
 }
 
 /** Tells every signer and the sender that the document is signed, and where the copy is. */
