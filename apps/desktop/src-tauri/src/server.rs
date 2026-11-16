@@ -43,15 +43,6 @@ pub struct Server {
     granted: Mutex<HashSet<String>>,
 }
 
-impl Server {
-    pub fn current(origin: &Mutex<Option<Url>>) -> Option<Url> {
-        origin
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    }
-}
-
 /// The origin of what the person typed or the build set: `https://` when no scheme is given,
 /// path, query and fragment dropped. Only `http` and `https` with a host and no credentials.
 pub fn parse_origin(input: &str) -> Result<Url, String> {

@@ -1,6 +1,11 @@
-//! Where a URL the main window is asked to load goes (ADR 0043 decision 2): the bundled local
-//! shell and the chosen Omni server stay in the window; links elsewhere open in the default
-//! browser; anything else is dropped. Pure, so the rules are tested without a window.
+//! Where a URL the main window is asked to load goes (ADR 0043 decision 2, docs/spec/desktop.md
+//! "The shell"). Web pages load in the window: only the chosen server's origin holds the remote
+//! capability, so another origin's page or frame can call nothing. They have to load there:
+//! WebKit asks this same hook for every subframe (Stripe Elements), and the app's round trips
+//! through another origin (Google connect, Stripe Checkout) keep their state in the window's
+//! cookies. Link clicks to other origins never get here: the web app hands them to the opener.
+//! `mailto:` and `tel:` go to their apps; any other scheme is dropped. Pure, so tested without a
+//! window.
 
 use url::Url;
 
@@ -8,7 +13,7 @@ use url::Url;
 pub enum Destination {
     /// Load it in the window.
     Window,
-    /// Cancel it and hand it to the default browser or mail app.
+    /// Cancel it and hand it to the default mail or phone app (or browser, for a new window).
     Browser,
     /// Cancel it: a scheme nothing should open from here (`file:`, `javascript:`, …).
     Drop,
@@ -37,15 +42,16 @@ pub fn same_origin(a: &Url, b: &Url) -> bool {
         && a.port_or_known_default() == b.port_or_known_default()
 }
 
-/// Where `url` goes, given the chosen server (none before the picker has an answer).
-pub fn destination(url: &Url, server: Option<&Url>, local: &[Url]) -> Destination {
-    let allowed = |origin: &Url| same_origin(url, origin);
-    if local.iter().any(allowed) || server.is_some_and(allowed) {
+/// Where `url` goes. The bundled shell's own scheme is allowed by origin; the chosen server
+/// needs no special case, it is a web page like any other here.
+pub fn destination(url: &Url, local: &[Url]) -> Destination {
+    if local.iter().any(|origin| same_origin(url, origin)) {
         return Destination::Window;
     }
     match url.scheme() {
+        "http" | "https" | "blob" => Destination::Window,
         "about" if url.path() == "blank" => Destination::Window,
-        "http" | "https" | "mailto" | "tel" => Destination::Browser,
+        "mailto" | "tel" => Destination::Browser,
         _ => Destination::Drop,
     }
 }
@@ -62,56 +68,65 @@ mod tests {
         local_origins(Some(&url("http://localhost:1420")))
     }
 
-    // Bug: Tauri's own scheme has an opaque origin; comparing `Url::origin` would send the
-    // bundled shell itself to the browser and leave the window blank on macOS and Linux.
+    // Bug: Tauri's own scheme has an opaque origin; comparing `Url::origin` would drop the
+    // bundled shell itself and leave the window blank on macOS and Linux.
     #[test]
     fn the_bundled_shell_stays_in_the_window() {
-        let server = url("https://omni.example.com/");
         for shell in [
             "tauri://localhost/index.html",
             "http://tauri.localhost/",
             "http://localhost:1420/",
         ] {
             assert_eq!(
-                destination(&url(shell), Some(&server), &local()),
+                destination(&url(shell), &local()),
                 Destination::Window,
                 "{shell}"
             );
         }
     }
 
-    // Bug: a look-alike host or another port of the same host would load with the remote
-    // capability's commands in reach, or the server's own pages would bounce to the browser.
+    // Bug: WebKit asks the navigation hook for subframes too; sending other origins to the
+    // browser removed Stripe's card iframe from Billing and opened a browser tab instead, and
+    // broke Google connect, whose state cookie lives in the window.
     #[test]
-    fn only_the_chosen_server_origin_stays() {
-        let server = url("http://127.0.0.1:8787/");
-        let here = |s: &str| destination(&url(s), Some(&server), &local());
-        assert_eq!(
-            here("http://127.0.0.1:8787/inbox?view=all#top"),
-            Destination::Window
-        );
-        assert_eq!(here("http://127.0.0.1:8788/inbox"), Destination::Browser);
-        assert_eq!(here("https://127.0.0.1:8787/inbox"), Destination::Browser);
-        assert_eq!(here("http://127.0.0.1.evil.example/"), Destination::Browser);
+    fn web_pages_and_frames_of_other_origins_load_in_the_window() {
+        for page in [
+            "https://js.stripe.com/v3/elements-inner-card.html",
+            "https://accounts.google.com/o/oauth2/v2/auth?state=x",
+            "blob:https://omni.example.com/3f1c",
+            "about:blank",
+        ] {
+            assert_eq!(
+                destination(&url(page), &local()),
+                Destination::Window,
+                "{page}"
+            );
+        }
     }
 
-    // Bug: before a server is chosen, any http page would load in the window.
-    #[test]
-    fn nothing_remote_stays_before_a_server_is_chosen() {
-        assert_eq!(
-            destination(&url("https://omni.example.com/"), None, &local()),
-            Destination::Browser
-        );
-    }
-
-    // Bug: a `file:` or `javascript:` link handed to the opener would run or reveal local files.
+    // Bug: a `file:` or `javascript:` URL loaded in the window or handed to the opener would run
+    // or reveal local files; a `mailto:` link would show an error page.
     #[test]
     fn unknown_schemes_are_dropped_and_mail_links_go_out() {
-        let server = url("https://omni.example.com/");
-        let here = |s: &str| destination(&url(s), Some(&server), &local());
-        assert_eq!(here("file:///etc/passwd"), Destination::Drop);
-        assert_eq!(here("javascript:alert(1)"), Destination::Drop);
-        assert_eq!(here("mailto:someone@example.com"), Destination::Browser);
-        assert_eq!(here("about:blank"), Destination::Window);
+        assert_eq!(
+            destination(&url("file:///etc/passwd"), &local()),
+            Destination::Drop
+        );
+        assert_eq!(
+            destination(&url("javascript:alert(1)"), &local()),
+            Destination::Drop
+        );
+        assert_eq!(
+            destination(&url("about:config"), &local()),
+            Destination::Drop
+        );
+        assert_eq!(
+            destination(&url("mailto:someone@example.com"), &local()),
+            Destination::Browser
+        );
+        assert_eq!(
+            destination(&url("tel:+15550100"), &local()),
+            Destination::Browser
+        );
     }
 }
