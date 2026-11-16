@@ -117,7 +117,9 @@ async function billWorkspace(
       day: now.toISOString().slice(0, 10),
       extraGb: extra,
     }),
-    timestamp: Math.floor(now.getTime() / 1000),
+    // Stamped when sent, not when the job started: an item added above in this run would
+    // otherwise exist only after its first event, and that event would not be billed.
+    timestamp: Math.floor(Math.max(now.getTime(), Date.now()) / 1000),
   });
   result.reported++;
 }
