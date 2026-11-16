@@ -225,3 +225,21 @@ test("a new version must fit the allowance on top of what it replaces", async ()
   expect(await addVersion(storage, file.id, 40, 100)).toMatchObject({ status: "ok" });
   expect(await bytesOf(org.id)).toBe(100);
 });
+
+// Catches: a version upload whose file was deleted for good meanwhile completing as a brand-new
+// file, bringing back what was deleted under another id.
+test("a new version of a file deleted for good is refused, not made a new file", async () => {
+  const { org, storage } = await workspace("versions-target-gone");
+  const file = await addFile(storage, { space: "personal" }, "gone.md", 10);
+  const opened = await storage.openVersionUpload(file.id, { size: 5, limitBytes: null });
+  if (opened.status !== "ok") throw new Error(opened.status);
+  await storage.recordUploadPart(opened.upload.id, { partNumber: 1, etag: "e", size: 5 });
+  await storage.trash(file.id);
+  expect((await storage.deleteForever(file.id)).status).toBe("ok");
+
+  expect(await storage.completeUpload(opened.upload.id, { limitBytes: null })).toEqual({
+    status: "not_found",
+  });
+  expect(await storage.file(opened.upload.id)).toEqual({ status: "not_found" });
+  expect(await bytesOf(org.id)).toBe(0);
+});

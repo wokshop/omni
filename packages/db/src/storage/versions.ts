@@ -7,7 +7,15 @@ import type { Db } from "../client.ts";
 import { members, users } from "../schema/auth.ts";
 import { storageContents, storageNodes, storageVersions } from "../schema/storage.ts";
 import { editsContent, type Door } from "./access.ts";
-import { inTrash, lockTree, orgOfNode, toNode, type NodeRow, type StorageNode } from "./core.ts";
+import {
+  inTrash,
+  lockTree,
+  lockUsage,
+  orgOfNode,
+  toNode,
+  type NodeRow,
+  type StorageNode,
+} from "./core.ts";
 import { nextRevision } from "./revision.ts";
 import { LOCKED, reach, type FileResult, type Locked, type NodeResult } from "./tree.ts";
 
@@ -213,8 +221,10 @@ export function versionOperations(db: Db, door: Door) {
       return db.transaction(async (tx): Promise<RestoreVersionResult> => {
         const orgId = await orgOfNode(tx, nodeId);
         if (!orgId) return NOT_FOUND;
-        // Under the tree lock, as a lock is taken and a new version lands.
+        // Under the tree lock, as a lock is taken and a new version lands; then the usage lock,
+        // so the daily recount never sums the nodes before the swap and the versions after it.
         await lockTree(tx, orgId);
+        await lockUsage(tx, orgId);
         const found = await editable(tx, door, nodeId);
         if (found.status !== "ok") return found;
         if (found.node.lockedAt) return LOCKED;

@@ -94,13 +94,16 @@ export async function reservedBytes(ex: Db, orgId: string, exceptUploadId?: stri
   return Number(row?.bytes ?? 0);
 }
 
-/** The file an upload is a new version of, or null when it becomes a file of its own. */
+/**
+ * The target of an upload that is a new version: `{ nodeId }`, null in it once the file was
+ * deleted for good. Null when the upload becomes a file of its own.
+ */
 async function targetOf(ex: Db, uploadId: string) {
   const [row] = await ex
     .select({ nodeId: storageUploadTargets.nodeId })
     .from(storageUploadTargets)
     .where(eq(storageUploadTargets.uploadId, uploadId));
-  return row?.nodeId ?? null;
+  return row ?? null;
 }
 
 /** Still in progress: not completed, not past its time. */
@@ -122,7 +125,8 @@ export function uploadOperations(db: Db, door: Door) {
     const target = await targetOf(ex, upload.id);
     if (target) {
       // A new version is a write to the file itself, not into its folder.
-      return (await mayReplace(ex, door, target)).status === "ok" ? upload : null;
+      if (!target.nodeId) return null;
+      return (await mayReplace(ex, door, target.nodeId)).status === "ok" ? upload : null;
     }
     const at = await resolvePlace(
       ex,
@@ -325,7 +329,10 @@ export function uploadOperations(db: Db, door: Door) {
         };
         const target = await targetOf(tx, upload.id);
         if (target) {
-          const replaced = (await full()) ?? (await replaceContent(tx, door, target, upload));
+          // The file it was a version of is gone: refused, never completed as a new file.
+          if (!target.nodeId) return NOT_FOUND;
+          const replaced =
+            (await full()) ?? (await replaceContent(tx, door, target.nodeId, upload));
           if (replaced.status !== "ok") return replaced;
           await addUsage(tx, upload.orgId, upload.size);
           await tx
