@@ -281,7 +281,8 @@ const FORBID_ATTR = ["srcset", "background", "poster", "ping", "action", "formac
 const BODY_TAG = /<body\b([^>]*)>/i;
 
 /**
- * Gives `<body>`'s style and `bgcolor` back to the body, as a first `html body { … }` rule.
+ * Gives `<body>`'s style and `bgcolor` back to the body, as a first `html body { … }` rule
+ * (and a `:where(body)` one for `bgcolor`).
  * Parsing in body context drops the `<body>` tag, and with it the font, colour and background
  * many senders set only there (`<body style="font-family: …">`), so their mail fell back to the
  * browser's serif. A rule rather than a wrapper element keeps the sender's own `body` rules in
@@ -295,11 +296,14 @@ function restoreBodyStyle(fragment: ReturnType<typeof parseBodyFragment>, html: 
   const body = parseBodyFragment(`<div${attrs}>`).childNodes.find(isElement);
   if (!body) return;
   const bgcolor = attribute(body, "bgcolor");
-  const background = bgcolor && /^#?[\da-z]+$/i.test(bgcolor) ? `background-color:${bgcolor};` : "";
-  const style = background + (attribute(body, "style") ?? "");
+  const style = attribute(body, "style") ?? "";
+  // `bgcolor` is a presentation hint: any author rule beats it, so it gets no specificity.
+  const hint =
+    bgcolor && /^#?[\da-z]+$/i.test(bgcolor) ? `:where(body){background-color:${bgcolor}}` : "";
   // Braces could close the rule and `<` could close the element: neither belongs in a style.
-  if (!style || /[{}<]/.test(style)) return;
-  const rule = parseBodyFragment(`<style>html body{${style}}</style>`).childNodes.find(isElement);
+  const inline = style && !/[{}<]/.test(style) ? `html body{${style}}` : "";
+  if (!hint && !inline) return;
+  const rule = parseBodyFragment(`<style>${hint}${inline}</style>`).childNodes.find(isElement);
   if (!rule) return;
   rule.parentNode = fragment;
   fragment.childNodes.unshift(rule);

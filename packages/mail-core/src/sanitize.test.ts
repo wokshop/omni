@@ -306,7 +306,7 @@ describe("the sender's own styles", () => {
       options,
     ).html;
     expect(html).toBe(
-      "<style>html body{background-color:#f6f8fa;font-family:Helvetica;color:#24292e}</style>" +
+      "<style>:where(body){background-color:#f6f8fa}html body{font-family:Helvetica;color:#24292e}</style>" +
         "<style>@media (prefers-color-scheme:dark){body{background:#000!important}}</style><p>x</p>",
     );
   });
