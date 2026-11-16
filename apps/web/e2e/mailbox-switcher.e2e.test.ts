@@ -254,6 +254,37 @@ test("switching mailbox keeps the list on screen", async () => {
   expect(new URL(page.url()).pathname).toBe("/later");
 });
 
+// Catches: a workspace switch from Files throwing the person back to mail (or into a folder of
+// the workspace left behind), and a module switch that changes the workspace.
+test("switching workspace keeps the module; switching module keeps the workspace", async () => {
+  const { email, acme, beta } = await ana("modules");
+  const page = await openSwitcher(email);
+  await page.keyboard.press("Escape");
+  const active = () =>
+    page.evaluate(() =>
+      fetch("/api/workspaces")
+        .then((r) => r.json() as Promise<{ activeOrganizationId: string }>)
+        .then((w) => w.activeOrganizationId),
+    );
+  const before = await active();
+
+  await page.getByRole("button", { name: /^Switch module, currently Mail/ }).click();
+  await page.getByRole("menuitemradio", { name: "Files" }).click();
+  await page.waitForURL((url) => url.pathname === "/files/my");
+  expect(await active()).toBe(before);
+  // Files alone: mail's rows are gone.
+  expect(await page.getByRole("link", { name: "Later", exact: true }).count()).toBe(0);
+
+  await page.getByRole("link", { name: "Trash", exact: true }).click();
+  await page.waitForURL((url) => url.pathname === "/files/trash");
+  const other = before === acme.orgId ? "Beta" : "Acme";
+  await page.getByRole("button", { name: /^Switch workspace/ }).click();
+  await page.getByRole("menuitemradio", { name: other }).click();
+  await page.getByRole("button", { name: `Switch workspace, currently ${other}` }).waitFor();
+  expect(new URL(page.url()).pathname).toBe("/files/trash");
+  expect(await active()).toBe(other === "Beta" ? beta.orgId : acme.orgId);
+});
+
 async function freePort() {
   const server = createServer();
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
