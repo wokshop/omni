@@ -4,6 +4,10 @@ name: Desktop
 # and tests on Linux, and an unsigned build of the shell on macOS and Windows. Runs only when the
 # app or the contracts its types come from change; `Checks` is unchanged for everyone else.
 # Signed builds and the updater feed come with the release layer.
+#
+# The macOS and Windows builds run only when started by hand: this repository's jobs run on its
+# `boat` runners, and GitHub-hosted macOS and Windows runners are not enabled for it yet (a job
+# on them fails before it starts). Run them on push once they are.
 on:
   pull_request:
     branches: [main]
@@ -32,8 +36,8 @@ env:
 jobs:
   rust:
     name: Rust (Linux)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    runs-on: boat # 4 vCPU / 8 GB: Tauri and WebKitGTK compile slowly on boat-small
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: apps/desktop
@@ -49,7 +53,14 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev
 
       - name: Toolchain
-        run: rustup toolchain install stable --profile minimal --component rustfmt,clippy
+        run: |
+          if ! command -v rustup >/dev/null; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+            export PATH="$HOME/.cargo/bin:$PATH"
+          fi
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy
+          rustup default stable
 
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
@@ -65,6 +76,7 @@ jobs:
 
   build:
     name: Build (${{ matrix.os }}, unsigned)
+    if: github.event_name == 'workflow_dispatch'
     strategy:
       fail-fast: false
       matrix:
