@@ -75,21 +75,6 @@ export class Realtime extends DurableObject<Env> {
     return this.send(memberIds, [event]);
   }
 
-  /**
-   * Sends the event to every socket of the workspace. Only for what every member may see (a
-   * CRM record, ADR 0036 decision 1): each socket here is a member of this object's org.
-   */
-  async everyone(event: OutboundEvent) {
-    const message = JSON.stringify(event);
-    for (const socket of this.ctx.getWebSockets()) {
-      try {
-        socket.send(message);
-      } catch {
-        // Closing; the runtime drops it.
-      }
-    }
-  }
-
   /** Sends the events, in order, to these members' sockets; returns the members with none open. */
   async send(memberIds: string[], events: OutboundEvent[]): Promise<string[]> {
     const messages = events.map((event) => JSON.stringify(event));
