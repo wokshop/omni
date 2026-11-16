@@ -12,7 +12,7 @@
 import { useLocation, useRouter, useSearch } from "@tanstack/react-router";
 import { cn } from "cn";
 import type { ComponentType, CSSProperties } from "react";
-import { IconCheck, IconFolder, IconMail } from "@/components/icons/central";
+import { IconCheck, IconChevronsUpDown, IconFolder, IconMail } from "@/components/icons/central";
 import { Avatar } from "@/components/ui/avatar";
 import { Loader } from "@/components/ui/loader";
 import {
@@ -146,6 +146,8 @@ export function ModuleSwitcher() {
           )}
         </span>
         <span className="min-w-0 truncate">{current.label}</span>
+        {/* The switcher's mark, as on the mailbox row: same glyph, at the row's end. */}
+        <IconChevronsUpDown className="ms-auto size-3.5 shrink-0 text-subtle-foreground" />
       </SidebarItemTrigger>
       <Menu
         placement="bottom start"
