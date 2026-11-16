@@ -3,6 +3,7 @@ import type {
   CrmChangedKind,
   HelpdeskRealtimeEvent,
   MailActionKind,
+  StorageFilePresenceEvent,
 } from "@omni/contracts";
 import type { schema } from "@omni/db";
 import type { Realtime as RealtimeObject } from "@omni/worker";
@@ -32,19 +33,19 @@ export type NotificationEvent =
 export type RealtimeEvent =
   | Parameters<RealtimeObject["broadcast"]>[1]
   | HelpdeskRealtimeEvent
-  | NotificationEvent;
+  | NotificationEvent
+  | StorageFilePresenceEvent;
 export type RealtimeStatus = "connecting" | "open" | "closed";
 
 /**
  * What an app sends on the socket. `presence`: this member is viewing or replying in a
  * conversation, or `left` it; the Durable Object adds the member and mailbox and tells the
- * inbox's other members (ADR 0021).
+ * inbox's other members (ADR 0021). `file.presence`: this socket has a Drive file open in its
+ * editor, or closed it; those who see the file hear it (ADR 0043 decision 3).
  */
-export type RealtimeClientMessage = {
-  type: "presence";
-  threadId: string;
-  state: "viewing" | "replying" | "left";
-};
+export type RealtimeClientMessage =
+  | { type: "presence"; threadId: string; state: "viewing" | "replying" | "left" }
+  | { type: "file.presence"; nodeId: string; state: "editing" | "left" };
 
 export interface RealtimeOptions {
   /** The Worker's origin; the socket is `/api/realtime` on it. */

@@ -177,6 +177,8 @@ export function FolderView(props: {
             fullScreen={hideFolder}
             onFullScreen={toggleFullScreen}
             shell={shell}
+            canWrite={source.canWrite}
+            shareId={source.shareId}
           />
         </div>
       )}

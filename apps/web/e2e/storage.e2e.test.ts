@@ -279,6 +279,95 @@ test("New folder is named in place, and each name creates one folder", async () 
   expect(await field.count()).toBe(0);
 }, 60_000);
 
+// Catches: the page editor saving something other than Markdown (its HTML, its JSON, the text
+// without its marks), a save that overwrites a teammate's newer version without asking, or "Keep
+// mine" losing the person's text instead of saving it over theirs.
+test("a Markdown file is edited as a page, saved as Markdown, and a newer save is never overwritten unasked", async () => {
+  const page = await signedIn(`edit-${Date.now()}@gmail.test`, "/files/my");
+  await page
+    .getByRole("button", { name: "Upload", exact: true })
+    .first()
+    .waitFor({ timeout: 15_000 });
+  await page
+    .locator("input[type=file]")
+    .first()
+    .setInputFiles({
+      name: "plan.md",
+      mimeType: "text/markdown",
+      buffer: Buffer.from("# Plan\n\n- First point\n"),
+    });
+  await page.getByRole("row", { name: /plan\.md/ }).click();
+  await page.getByRole("button", { name: "Edit" }).click();
+  const editor = page.locator("[contenteditable=true]");
+  await editor.getByRole("heading", { name: "Plan" }).waitFor({ timeout: 15_000 });
+  const [file] = await db
+    .select({ id: schema.storageNodes.id })
+    .from(schema.storageNodes)
+    .where(eq(schema.storageNodes.name, "plan.md"));
+  const id = file?.id ?? "";
+  const content = () =>
+    page.evaluate(async (at) => (await fetch(at)).text(), `/api/storage/files/${id}/content`);
+
+  // ProseMirror reads where a click or an arrow put the caret on the browser's next
+  // `selectionchange`; a key pressed sooner (as no person types) would act at the old caret.
+  const caretAtEndOf = async (text: string) => {
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const dom = document.querySelector(".ProseMirror") as
+            | (Element & {
+                editor?: {
+                  state: { selection: { $from: { parent: Node; parentOffset: number } } };
+                };
+              })
+            | null;
+          const at = dom?.editor?.state.selection.$from;
+          return at && `${at.parent.textContent}|${at.parentOffset}`;
+        }),
+      )
+      .toBe(`${text}|${text.length}`);
+  };
+
+  // After the last list item, a new one: it saves as a second bullet, not as HTML.
+  await editor.getByText("First point").click();
+  await page.keyboard.press("End");
+  await caretAtEndOf("First point");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("Second **point**");
+  const save = page.getByRole("button", { name: "Save" });
+  await save.click();
+  await expect
+    .poll(content, { timeout: 15_000 })
+    .toMatch(/^# Plan\n\n- First point\n- Second \*\*point\*\*\n*$/);
+  await expect.poll(() => save.isDisabled()).toBe(true);
+
+  // A teammate's save lands while this editor is open, through the same routes the app uses.
+  const theirs = await page.evaluate(async (fileId) => {
+    const text = "# Theirs\n";
+    const opened = await fetch(`/api/storage/files/${fileId}/versions`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ size: text.length, mimeType: "text/markdown" }),
+    });
+    const { upload } = (await opened.json()) as { upload: { id: string } };
+    await fetch(`/api/storage/uploads/${upload.id}/parts/1`, { method: "PUT", body: text });
+    return (await fetch(`/api/storage/uploads/${upload.id}/complete`, { method: "POST" })).status;
+  }, id);
+  expect(theirs).toBe(200);
+
+  await editor.getByText("Second").click();
+  await page.keyboard.press("End");
+  await caretAtEndOf("Second point");
+  await page.keyboard.type(" mine");
+  await save.click();
+  const conflict = page.getByRole("alertdialog", { name: "Someone saved a newer version" });
+  await conflict.waitFor({ timeout: 15_000 });
+  // Nothing was written over theirs while the person was asked.
+  expect(await content()).toBe("# Theirs\n");
+  await conflict.getByRole("button", { name: "Keep mine" }).click();
+  await expect.poll(content, { timeout: 15_000 }).toContain("- Second **point** mine");
+}, 120_000);
+
 /** Signed in as `email` (a magic link, so a new address signs up), on `path`. */
 async function signedIn(email: string, path: string) {
   const origin = String(worker.url);
