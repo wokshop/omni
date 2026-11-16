@@ -265,8 +265,8 @@ export function WorkspaceSwitcher({ end }: { end?: ReactNode }) {
             anchor: rowBox,
             offset: 4,
             collisionPadding: 8,
-            // The row's width at least, wider for a long name.
-            className: "min-w-(--anchor-width) w-max max-w-[min(20rem,calc(100vw-16px))]",
+            // 288px: past the sidebar's edge, never narrower than the row, within the window.
+            className: "w-72 min-w-(--anchor-width) max-w-[calc(100vw-16px)]",
           }}
         >
           {workspaces.map((workspace) => (
