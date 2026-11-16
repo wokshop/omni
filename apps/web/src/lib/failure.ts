@@ -153,7 +153,9 @@ export function reloadForUpdate(): boolean {
     if (Date.now() - last < RELOAD_WINDOW_MS) return false;
     sessionStorage.setItem(RELOADED_AT, String(Date.now()));
   } catch {
-    // No storage (a locked-down webview): reload anyway; the guard is a nicety.
+    // No storage (a locked-down webview): without the guard a chunk that stays missing would
+    // reload forever, so the failure goes to the error page, whose Reload button still works.
+    return false;
   }
   reloading = true;
   window.location.reload();
