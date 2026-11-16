@@ -4,6 +4,7 @@
 const COMMANDS: &[&str] = &[
     "server_origin",
     "open_server",
+    "sign_in_callback",
     "sync_status",
     "sync_connect",
     "sync_disconnect",
