@@ -82,7 +82,7 @@ export function FolderView(props: {
       storageErrorToast(error, `“${name}” was not uploaded`),
     );
   const open = useOpenFile(source.list);
-  const comments = useCommentsPanel(source.list.nodes);
+  const comments = useCommentsPanel(source.list);
   // New folder shows the folder at once, its name ready to type (Finder's way, not a dialog).
   const folders = useFolderDrafts({
     place: source.place,
@@ -242,12 +242,9 @@ export interface OpenFile {
  * folder's loaded pages (a bookmarked or shared `?file=`) loads the next pages until it is found.
  */
 function useOpenFile(list: FolderSource["list"]): OpenFile {
-  const { nodes, hasNextPage, isFetchingNextPage, fetchNextPage } = list;
+  const { nodes } = list;
   const { file } = useSearch({ strict: false }) as { file?: string };
-  const loaded = !file || nodes.some((n) => n.id === file);
-  useEffect(() => {
-    if (!loaded && hasNextPage && !isFetchingNextPage) void fetchNextPage();
-  }, [loaded, hasNextPage, isFetchingNextPage, fetchNextPage]);
+  useLoadUntilFound(list, file);
   const navigate = useNavigate();
   const select = useCallback(
     (id: string | null, replace = false) =>
@@ -275,9 +272,20 @@ function useOpenFile(list: FolderSource["list"]): OpenFile {
   }, [nodes, file, select]);
 }
 
+/** Loads the folder's next pages until `id` (a bookmarked or shared URL's) is among its nodes. */
+function useLoadUntilFound(list: FolderSource["list"], id: string | undefined) {
+  const { nodes, hasNextPage, isFetchingNextPage, fetchNextPage } = list;
+  const loaded = !id || nodes.some((n) => n.id === id);
+  useEffect(() => {
+    if (!loaded && hasNextPage && !isFetchingNextPage) void fetchNextPage();
+  }, [loaded, hasNextPage, isFetchingNextPage, fetchNextPage]);
+}
+
 /** The URL's commented file (a file of this folder), and the way to open or close its comments. */
-function useCommentsPanel(nodes: StorageNode[]) {
+function useCommentsPanel(list: FolderSource["list"]) {
+  const { nodes } = list;
   const { comments } = useSearch({ strict: false }) as { comments?: string };
+  useLoadUntilFound(list, comments);
   const navigate = useNavigate();
   const select = useCallback(
     (id: string | null) =>
