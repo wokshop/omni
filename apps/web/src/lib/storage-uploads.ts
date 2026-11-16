@@ -99,7 +99,15 @@ async function run(job: Job) {
       // Another tab may have switched the session's workspace or account: this tab's cache
       // would not know. Opening a file is what places it, so that asks the server first.
       confirm: async () => {
-        const me = await call(api.me.$get()).catch(() => null);
+        // Cancellable: a switch or sign-out waits for this job, so a stalled read must not hold
+        // it. Cancelled, it throws; any other failure falls back to this tab's cached session.
+        const signal = job.controller!.signal;
+        const me = await call(api.me.$get(undefined, { init: { signal } })).catch(
+          (error: unknown) => {
+            if (signal.aborted) throw error;
+            return null;
+          },
+        );
         if (!me) return guard(job);
         const place = job.shareId ? `link:${job.shareId}` : `org:${me.orgId}`;
         if (`${me.userId}|${place}` !== job.identity) throw new UploadIdentityChanged();
