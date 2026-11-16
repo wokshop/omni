@@ -21,7 +21,7 @@ import { type ComponentType, type CSSProperties, type ReactNode, useMemo } from 
 import { Avatar } from "@/components/ui/avatar";
 import { useMember } from "@/hooks/use-session.ts";
 import type { SettingsPageId } from "@/hooks/use-settings.ts";
-import { useWorkspaces } from "@/hooks/use-workspaces.ts";
+import { usePersonalWorkspace } from "@/hooks/use-workspaces.ts";
 import { useBilling } from "@/hooks/use-billing.ts";
 import { SHORTCUT_IDS, SHORTCUTS } from "@/lib/shortcuts.ts";
 import { isManager } from "./workspace-pages";
@@ -188,15 +188,6 @@ export function useWorkspacePages() {
           (manager || !MANAGER_PAGES.has(p.id)),
       ),
     [billed, personal, manager],
-  );
-}
-
-/** Whether the active workspace is the user's Personal space. */
-export function usePersonalWorkspace() {
-  const workspaces = useWorkspaces().data;
-  return (
-    workspaces?.workspaces.find((w) => w.id === workspaces.activeOrganizationId)?.kind ===
-    "personal"
   );
 }
 

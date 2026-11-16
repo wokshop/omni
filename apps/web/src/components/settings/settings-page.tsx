@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { Heading } from "@/components/ui/heading";
 import { PageNav } from "@/components/shell/page-nav";
 import type { SettingsPageId } from "@/hooks/use-settings.ts";
+import { usePersonalWorkspace } from "@/hooks/use-workspaces.ts";
 import { ProfilePage, SecurityPage, ShortcutsPage } from "./account-pages";
 import { AiPage } from "./ai-page";
 import { BillingPage } from "./billing-page";
@@ -20,7 +21,6 @@ import {
   COMPANY_PAGES,
   type PageDefinition,
   useAccountPages,
-  usePersonalWorkspace,
   WORKSPACE_PAGES,
 } from "./settings-pages";
 
