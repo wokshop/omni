@@ -83,7 +83,7 @@ export async function resetSession(client: QueryClient, router: Reloadable) {
 /** Only same-origin paths: `?redirect=https://evil.example` must not become an open redirect. */
 export function safeRedirect(to: string | undefined) {
   // `//host` and `/\host` are both protocol-relative to a browser.
-  return to && /^\/(?![/\\])/.test(to) ? to : "/inbox";
+  return to && /^\/(?![/\\])/.test(to) ? to : "/";
 }
 
 /**
