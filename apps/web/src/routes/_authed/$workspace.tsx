@@ -4,6 +4,7 @@ import { ComposeDialog } from "../../components/compose/compose-pane.tsx";
 import { ListSweepProvider } from "../../components/inbox/list-sweep.tsx";
 import { SettingsNav } from "../../components/settings/settings-nav.tsx";
 import { AppSidebar } from "../../components/shell/app-sidebar.tsx";
+import { DesktopTitleBar } from "../../components/shell/desktop-title-bar.tsx";
 import { KeyboardShortcuts } from "../../components/shell/keyboard-shortcuts.tsx";
 import { NotificationsPanel } from "../../components/shell/notifications.tsx";
 import {
@@ -21,6 +22,7 @@ import { useRealtimeConnection } from "../../hooks/use-realtime.ts";
 import { useThreadInItsWorkspace } from "../../hooks/use-workspaces.ts";
 import { billingQuery } from "../../lib/billing.ts";
 import { currentWorkspaceId } from "../../lib/current-workspace.ts";
+import { desktop } from "../../lib/desktop.ts";
 import { requireMember, requireUser } from "../../lib/guards.ts";
 import { allMailboxesQuery, countsQuery, mailboxesQuery } from "../../lib/mail-queries.ts";
 import {
@@ -109,6 +111,7 @@ function Shell() {
           <Outlet />
         </SidebarInset>
       </ListSweepProvider>
+      {desktop.isDesktop && <DesktopTitleBar />}
       <KeyboardShortcuts />
       <ComposeDialog />
     </ResizableSidebarProvider>
