@@ -4,7 +4,7 @@
 import { and, eq, getTableColumns, sql, type SQL } from "drizzle-orm";
 import { uuidv7 } from "uuidv7";
 import type { Db } from "../client.ts";
-import { storageLocks, storageNodes, storageUsage } from "../schema/storage.ts";
+import { storageLocks, storageNodes, storageUsage, storageVersions } from "../schema/storage.ts";
 
 /** Folders nest this deep at most where people create or move them. */
 export const STORAGE_MAX_DEPTH = 32;
@@ -174,6 +174,10 @@ const down = (nodeId: string) => sql`
 /** SQL condition: `storage_nodes.id` is inside the node, not the node itself. */
 export const isInside = (nodeId: string) =>
   sql`${storageNodes.id} in (${down(nodeId)} select id from down where depth > 0)`;
+
+/** SQL condition: `column` names the node or something inside it. */
+export const inSubtree = (column: SQL | typeof storageVersions.nodeId, nodeId: string) =>
+  sql`${column} in (${down(nodeId)} select id from down)`;
 
 /** The node and everything inside it, trashed or not. */
 export async function subtreeOf(ex: Db, nodeId: string): Promise<SubtreeRow[]> {
@@ -368,14 +372,20 @@ export async function addUsage(tx: Db, orgId: string, delta: number) {
 }
 
 /**
- * Deletes a node and everything inside it and subtracts its bytes, rows first: the caller
- * deletes the returned objects afterwards. Call with the tree locked.
+ * Deletes a node and everything inside it, kept versions included (they cascade with their
+ * file), and subtracts the bytes, rows first: the caller deletes the returned objects
+ * afterwards. Call with the tree locked.
  */
 export async function deleteSubtree(tx: Db, orgId: string, nodeId: string) {
   await lockUsage(tx, orgId);
   const rows = await subtreeOf(tx, nodeId);
+  const versions = await tx
+    .select({ size: storageVersions.size, r2Key: storageVersions.r2Key })
+    .from(storageVersions)
+    .where(inSubtree(storageVersions.nodeId, nodeId));
   await tx.delete(storageNodes).where(eq(storageNodes.id, nodeId));
-  const bytes = rows.reduce((sum, row) => sum + row.size, 0);
+  const owned = [...rows, ...versions];
+  const bytes = owned.reduce((sum, row) => sum + row.size, 0);
   if (bytes > 0) await addUsage(tx, orgId, -bytes);
-  return { r2Keys: rows.flatMap((row) => (row.r2Key ? [row.r2Key] : [])), bytes };
+  return { r2Keys: owned.flatMap((row) => (row.r2Key ? [row.r2Key] : [])), bytes };
 }
