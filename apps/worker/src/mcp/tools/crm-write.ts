@@ -131,6 +131,12 @@ async function writePerson(
     if (input.name === undefined || input.email === undefined) {
       return { error: "Adding a person needs `name` and `email`." };
     }
+    if (input.add_emails || input.remove_emails || input.primary_email) {
+      return {
+        error:
+          "Address edits need the person's `id`. Add the person with `email` first, then change their addresses.",
+      };
+    }
     const added = await crm.addPerson({
       name: input.name,
       address: input.email,
@@ -322,7 +328,7 @@ export function registerCrmWrite(server: McpServer, context: ToolContext) {
     {
       title: "Change the CRM",
       description:
-        "Add or change one record in the CRM, or add a note. Give exactly one of `person`, `company`, `deal` or `note`. With `id` it changes that record, only the fields given; without, it adds one (adding a person whose address is already known returns that person). A deal's `stage` moves it. Nothing is ever deleted or archived. Cite the returned `url`.",
+        "Add or change one record in the CRM, or add a note. Give exactly one of `person`, `company`, `deal` or `note`. With `id` it changes that record, only the fields given; without, it adds one (adding a person whose address is already known returns that person). A deal's `stage` moves it. Nothing is ever deleted or archived. Address edits (`add_emails`, `remove_emails`, `primary_email`) need `id`.",
       inputSchema,
       outputSchema,
       annotations: {

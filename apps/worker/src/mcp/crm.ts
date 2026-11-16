@@ -79,23 +79,11 @@ export const crmOf = (context: ToolContext, workspace: CrmWorkspace) =>
 
 export type RecordKind = "person" | "company" | "deal";
 
-const PATHS: Record<RecordKind, string> = {
-  person: "people",
-  company: "companies",
-  deal: "deals",
-};
-
-/** Where a record opens in the web app: `/crm/people/<id>`, `/crm/companies/<id>`, `/crm/deals/<id>`. */
-export function recordUrl(webAppURL: string, kind: RecordKind, id: string) {
-  return new URL(`/crm/${PATHS[kind]}/${encodeURIComponent(id)}`, webAppURL).toString();
-}
-
 const personNameSchema = z.object({ name: z.string().nullable(), address: z.string() });
 
 const common = {
   id: z.string(),
   name: z.string(),
-  url: z.string().describe("Open the record in Omni. Cite it when you answer."),
   workspace: z.string().describe("The workspace id it is in."),
   archived: z.boolean(),
 };
@@ -140,7 +128,6 @@ export type DealRow = z.infer<typeof dealRowSchema>;
 
 /** What rows need beside the record: the workspace, its stages and its owners' names. */
 export interface RowContext {
-  webAppURL: string;
   workspace: string;
   stages: CrmStage[];
   owners: Map<string, { name: string | null; address: string }>;
@@ -151,7 +138,6 @@ export function personRow(person: CrmPerson, row: RowContext): PersonRow {
     kind: "person",
     id: person.id,
     name: person.name,
-    url: recordUrl(row.webAppURL, "person", person.id),
     workspace: row.workspace,
     archived: person.archivedAt !== null,
     email: person.addresses.find((a) => a.isPrimary)?.address ?? null,
@@ -167,7 +153,6 @@ export function companyRow(company: CrmCompany, row: RowContext): CompanyRow {
     kind: "company",
     id: company.id,
     name: company.name,
-    url: recordUrl(row.webAppURL, "company", company.id),
     workspace: row.workspace,
     archived: company.archivedAt !== null,
     description: company.description,
@@ -180,7 +165,6 @@ export function dealRow(deal: CrmDeal, row: RowContext): DealRow {
     kind: "deal",
     id: deal.id,
     name: deal.name,
-    url: recordUrl(row.webAppURL, "deal", deal.id),
     workspace: row.workspace,
     archived: deal.archivedAt !== null,
     company_id: deal.companyId,
@@ -221,7 +205,6 @@ export async function rowContext(
     ),
   ]);
   return {
-    webAppURL: context.webAppURL,
     workspace: workspace.orgId,
     stages: stages?.status === "ok" ? stages.stages : [],
     owners,
