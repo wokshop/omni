@@ -89,22 +89,31 @@ export function trashOperations(db: Db, door: Door, memberId: string) {
 
     /** Puts a trashed node back where it was. A name taken meanwhile gets a number. */
     restore(nodeId: string): Promise<RestoreResult> {
-      return retryNameRace(async (): Promise<RestoreResult> => {
-        const found = await reach(db, door, nodeId);
-        if (!found || !found.node.trashedAt) return NOT_FOUND;
-        if (!found.access.remove) return FORBIDDEN;
-        if (found.chain.slice(1).some((row) => row.trashedAt)) return { status: "parent_trashed" };
-        const { node } = found;
-        const [row] = await db
-          .update(storageNodes)
-          .set({
-            trashedAt: null,
-            name: freeName(driveOf(node), node.parentId, node.name, node.kind, node.id),
-          })
-          .where(sql`${storageNodes.id} = ${nodeId} and ${storageNodes.trashedAt} is not null`)
-          .returning();
-        return row ? { status: "ok", node: toNode(row) } : NOT_FOUND;
-      });
+      return retryNameRace(() =>
+        db.transaction(async (tx): Promise<RestoreResult> => {
+          // Under the tree lock, like a permanent delete: a restore that slipped in after the
+          // delete had seen the node in Trash would report success for a file about to go.
+          const orgId = await orgOfNode(tx, nodeId);
+          if (!orgId) return NOT_FOUND;
+          await lockTree(tx, orgId);
+          const found = await reach(tx, door, nodeId);
+          if (!found || !found.node.trashedAt) return NOT_FOUND;
+          if (!found.access.remove) return FORBIDDEN;
+          if (found.chain.slice(1).some((row) => row.trashedAt)) {
+            return { status: "parent_trashed" };
+          }
+          const { node } = found;
+          const [row] = await tx
+            .update(storageNodes)
+            .set({
+              trashedAt: null,
+              name: freeName(driveOf(node), node.parentId, node.name, node.kind, node.id),
+            })
+            .where(sql`${storageNodes.id} = ${nodeId} and ${storageNodes.trashedAt} is not null`)
+            .returning();
+          return row ? { status: "ok", node: toNode(row) } : NOT_FOUND;
+        }),
+      );
     },
 
     /** Deletes a trashed node and everything inside it, rows first. */

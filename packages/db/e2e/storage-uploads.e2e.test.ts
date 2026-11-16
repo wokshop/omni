@@ -10,7 +10,7 @@ import {
   STORAGE_TRASH_DAYS,
   storageUsageOf,
 } from "../src/storage.ts";
-import { lockTree } from "../src/storage/core.ts";
+import { lockTree, lockUsage } from "../src/storage/core.ts";
 import { addFile, addFolder, setRole } from "./storage-support.ts";
 import { createMember, createOrg, createTestDatabase } from "./support.ts";
 
@@ -359,11 +359,33 @@ test("a node restored and trashed again while a purge runs keeps its fresh 30 da
     before: new Date(Date.now() - STORAGE_TRASH_DAYS * DAY_MS),
   });
   await untilLockWaiters(1);
-  expect((await storage.restore(file.id)).status).toBe("ok");
-  expect((await storage.trash(file.id)).status).toBe("ok");
+  // Restored and trashed again meanwhile: what a restore and a trash leave behind, written
+  // directly because a restore now queues on the same lock.
+  await db.update(storageNodes).set({ trashedAt: new Date() }).where(eq(storageNodes.id, file.id));
   await release();
 
   expect(await purging).toEqual({ r2Keys: [], more: false });
   expect((await storage.listTrash()).nodes.map((node) => node.id)).toEqual([file.id]);
   expect((await storageUsageOf(db, org.id)).bytes).toBe(25);
+});
+
+test("a restore racing a permanent delete cannot report success for a file that is then deleted", async () => {
+  const { org, storage } = await workspace("restore-vs-delete");
+  const file = await addFile(storage, { space: "personal" }, "keep.bin", 25);
+  await storage.trash(file.id);
+
+  // The delete has seen the node in Trash and waits for the usage row.
+  const release = await hold((tx) => lockUsage(tx, org.id));
+  const deleting = storage.deleteForever(file.id);
+  await untilLockWaiters(1);
+  let restored = false;
+  const restoring = storage.restore(file.id).finally(() => {
+    restored = true;
+  });
+  // The restore either lands now (the bug), or waits its turn behind the delete.
+  await untilLockWaiters(2, () => restored);
+  await release();
+
+  expect((await deleting).status).toBe("ok");
+  expect((await restoring).status).toBe("not_found");
 });
