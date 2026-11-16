@@ -1,10 +1,7 @@
-// The table Storage's lists share (ADR 0034 decision 8): Name, a date, Size, and each row's menu.
-//
-// Geometry, on the list header's grid: a row is 44px; the kind icon starts 20px from the left
-// edge, where the header's title starts, and the name 12px after it; the row's menu is a 26px
-// square whose right edge sits 10px in, under the header's own actions. Dates and sizes are
-// muted, in tabular figures, so the names carry the row.
-import type { ReactNode } from "react";
+// The table Storage's lists share (ADR 0034 decision 8): Name, a date, Size, and each row's menu,
+// on the table's `page` variant (rows 44px, cells from the page's 20px gutter, so the kind icon
+// starts where the header's title does, and the row's menu 10px in, under the header's actions).
+// Dates and sizes are muted, in tabular figures, so the names carry the row.
 import { TableLoadMoreItem } from "react-aria-components/Table";
 import { SkeletonBox } from "skullet/react";
 import { IconFile, IconFolder } from "@/components/icons/central";
@@ -22,17 +19,14 @@ import {
 } from "@/components/ui/table";
 import { formatBytes, type StorageNode } from "@/lib/storage.ts";
 
-const DAY = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" });
+export const DAY = new Intl.DateTimeFormat(undefined, {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+});
 
-// The date column leaves on a phone, where the name needs the room.
-const DATE = "w-36 max-sm:hidden";
-const SIZE = "w-24";
-const MENU = "w-13.5";
-const CELL = "h-11 py-0";
-
-/** The table's own wrapper scrolls nothing (the page does), so the header can stick to it. */
-const TABLE = "mx-0 overflow-visible [--gutter:--spacing(5)] [&_table]:table-fixed";
-const HEAD = "sticky top-0 z-10 bg-background";
+// Column widths; the date column leaves on a phone, where the name needs the room.
+export const COLUMN = { date: "w-36 max-sm:hidden", size: "w-24", menu: "w-13.5" } as const;
 
 export function FileTable(props: {
   label: string;
@@ -48,40 +42,37 @@ export function FileTable(props: {
   isLoadingMore?: boolean;
 }) {
   return (
-    <Table bleed aria-label={props.label} className={TABLE}>
-      <Head date={props.date.title} />
+    <Table variant="page" aria-label={props.label}>
+      <TableHeader>
+        <TableColumn isRowHeader>Name</TableColumn>
+        <TableColumn className={COLUMN.date}>{props.date.title}</TableColumn>
+        <TableColumn className={COLUMN.size}>Size</TableColumn>
+        <TableColumn className={COLUMN.menu}>
+          <span className="sr-only">Actions</span>
+        </TableColumn>
+      </TableHeader>
       <TableBody>
         {props.nodes.map((node) => {
           const href = props.href?.(node);
           const when = props.date.of(node);
+          const press = href
+            ? { href }
+            : props.onAction
+              ? { onAction: () => props.onAction?.(node) }
+              : {};
           return (
-            <TableRow
-              key={node.id}
-              id={node.id}
-              textValue={node.name}
-              {...(href
-                ? { href }
-                : props.onAction
-                  ? { onAction: () => props.onAction?.(node) }
-                  : {})}
-            >
-              <TableCell className={`${CELL} overflow-hidden`}>
-                <span className="flex min-w-0 items-center gap-3">
-                  <KindIcon kind={node.kind} />
-                  <span className="truncate">{node.name}</span>
-                </span>
+            <TableRow key={node.id} id={node.id} textValue={node.name} {...press}>
+              <TableCell>
+                <NameCell kind={node.kind} name={node.name} />
               </TableCell>
-              <TableCell className={`${CELL} ${DATE} text-muted-foreground tabular-nums`}>
-                {when ? DAY.format(new Date(when)) : "–"}
+              <TableCell className={COLUMN.date}>
+                <Muted>{when ? DAY.format(new Date(when)) : "–"}</Muted>
               </TableCell>
-              <TableCell className={`${CELL} text-muted-foreground tabular-nums`}>
-                {node.kind === "file" ? formatBytes(node.size) : "–"}
+              <TableCell>
+                <Muted>{node.kind === "file" ? formatBytes(node.size) : "–"}</Muted>
               </TableCell>
-              <TableCell className={`${CELL} px-0 last:pe-2.5`}>
-                {/* Not `text-end`: the menu opens inside the cell and would inherit it. */}
-                <span className="flex justify-end">
-                  <SettingsRowMenu label={`Actions for ${node.name}`} items={props.menu(node)} />
-                </span>
+              <TableCell actions>
+                <SettingsRowMenu label={`Actions for ${node.name}`} items={props.menu(node)} />
               </TableCell>
             </TableRow>
           );
@@ -92,24 +83,20 @@ export function FileTable(props: {
   );
 }
 
-function Head({ date }: { date: string }) {
+/** The kind's icon and the name, 12px apart, the name cut with an ellipsis. */
+export function NameCell(props: { kind: StorageNode["kind"]; name: string }) {
+  const Icon = props.kind === "folder" ? IconFolder : IconFile;
   return (
-    <TableHeader className={HEAD}>
-      <TableColumn isRowHeader className="h-9 py-0 text-xs font-normal">
-        Name
-      </TableColumn>
-      <TableColumn className={`h-9 py-0 text-xs font-normal ${DATE}`}>{date}</TableColumn>
-      <TableColumn className={`h-9 py-0 text-xs font-normal ${SIZE}`}>Size</TableColumn>
-      <TableColumn className={`h-9 py-0 ${MENU}`}>
-        <span className="sr-only">Actions</span>
-      </TableColumn>
-    </TableHeader>
+    <span className="flex min-w-0 items-center gap-3">
+      <Icon className="size-icon shrink-0 text-muted-foreground" />
+      <span className="truncate">{props.name}</span>
+    </span>
   );
 }
 
-function KindIcon({ kind }: { kind: StorageNode["kind"] }): ReactNode {
-  const Icon = kind === "folder" ? IconFolder : IconFile;
-  return <Icon className="size-icon shrink-0 text-muted-foreground" />;
+/** A secondary column's value: muted, in tabular figures. */
+export function Muted({ children }: { children: React.ReactNode }) {
+  return <span className="text-muted-foreground tabular-nums">{children}</span>;
 }
 
 /** The table while its rows load: skullet's boxes on the rows' own grid. */

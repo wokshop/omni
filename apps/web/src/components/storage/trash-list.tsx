@@ -19,7 +19,11 @@ export function TrashList() {
   const restore = useRestoreNode();
   const [deleting, setDeleting] = useState<StorageNode | null>(null);
   return (
-    <StorageFrame title={<Heading className="truncate">Trash</Heading>}>
+    <StorageFrame
+      title={<Heading className="truncate">Trash</Heading>}
+      // With rows to read it against; the empty state says it itself.
+      caption={trash.nodes.length > 0 && "Deleted forever after 30 days"}
+    >
       <div className="min-h-0 flex-1 overflow-y-auto">
         {trash.isPending ? (
           <Skeleton loading label="Loading Trash" skeleton={<FileTableBones />}>
@@ -31,7 +35,11 @@ export function TrashList() {
           </div>
         ) : !trash.nodes.length ? (
           <div className="flex h-full flex-col">
-            <EmptyState figure="drawer" title="Trash is empty" />
+            <EmptyState
+              figure="drawer"
+              title="Trash is empty"
+              description="Deleted files stay here for 30 days."
+            />
           </div>
         ) : (
           <FileTable

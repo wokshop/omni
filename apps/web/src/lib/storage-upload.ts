@@ -1,4 +1,4 @@
-// One file's upload (ADR 0034 decision 5): open it, send its parts (each `partSize` bytes but the
+// One file's upload (ADR 0034 decision 5), by the member's door or a shared link's: open it, send its parts (each `partSize` bytes but the
 // last, a few at once), then complete it. The server lists the parts it already has, so a retry
 // passes the upload's id and sends only what is missing; an upload that is gone starts over.
 import { api, ApiError, call } from "./api.ts";
@@ -12,6 +12,8 @@ const PART_TRIES = 3;
 export interface UploadRequest {
   file: File;
   place: StoragePlace;
+  /** A shared link's door, for an Editor uploading into what was shared; else the member's. */
+  shareId?: string | undefined;
   /** An earlier try's upload, to resume. */
   resumeId?: string | undefined;
   signal: AbortSignal;
@@ -24,7 +26,9 @@ export interface UploadRequest {
 /** Uploads `file` and answers the file it became. Rejects with `ApiError`, or `AbortError`. */
 export async function uploadFile(request: UploadRequest): Promise<StorageNode> {
   const { file, signal } = request;
-  const upload = (await resumable(request.resumeId)) ?? (await open(file, request.place));
+  const door = uploadDoor(request.shareId);
+  const upload =
+    (await resumable(door, request.resumeId)) ?? (await door.open(file, request.place));
   request.onOpened(upload.id);
   signal.throwIfAborted();
   if (!upload.nodeId) {
@@ -43,7 +47,7 @@ export async function uploadFile(request: UploadRequest): Promise<StorageNode> {
       if (n === undefined) return;
       const start = (n - 1) * upload.partSize;
       const part = file.slice(start, Math.min(start + upload.partSize, file.size));
-      await sendPart(upload.id, n, part, parts.signal, (sent) => {
+      await sendPart(door.partUrl(upload.id, n), part, parts.signal, (sent) => {
         stored.set(n, sent);
         report();
       });
@@ -62,32 +66,57 @@ export async function uploadFile(request: UploadRequest): Promise<StorageNode> {
     }
   }
   signal.throwIfAborted();
-  const { node } = await call(
-    api.storage.uploads[":id"].complete.$post({ param: { id: upload.id } }),
-  );
+  const { node } = await door.complete(upload.id);
   return node;
 }
 
 /** Frees what an unfinished upload holds (its parts, and its room against the limit). */
-export async function abortUpload(uploadId: string) {
-  await call(api.storage.uploads[":id"].$delete({ param: { id: uploadId } })).catch(() => {});
+export async function abortUpload(uploadId: string, shareId?: string) {
+  await uploadDoor(shareId)
+    .abort(uploadId)
+    .catch(() => {});
 }
 
-async function open(file: File, place: StoragePlace) {
-  const { upload } = await call(
-    api.storage.uploads.$post({
-      json: { name: file.name, size: file.size, mimeType: file.type || null, ...place },
-    }),
-  );
-  return upload;
+/** What opening an upload sends. */
+const openBody = (file: File, place: StoragePlace) => ({
+  name: file.name,
+  size: file.size,
+  mimeType: file.type || null,
+  ...place,
+});
+
+/** The upload routes of the member's door, or of a shared link's (the same shapes under it). */
+function uploadDoor(shareId: string | undefined) {
+  if (!shareId) {
+    const uploads = api.storage.uploads;
+    return {
+      open: async (file: File, place: StoragePlace) =>
+        (await call(uploads.$post({ json: openBody(file, place) }))).upload,
+      get: async (id: string) => (await call(uploads[":id"].$get({ param: { id } }))).upload,
+      partUrl: (id: string, n: number) => `${uploads[":id"].$url({ param: { id } })}/parts/${n}`,
+      complete: (id: string) => call(uploads[":id"].complete.$post({ param: { id } })),
+      abort: (id: string) => call(uploads[":id"].$delete({ param: { id } })),
+    };
+  }
+  const uploads = api.storage.shared[":shareId"].uploads;
+  return {
+    open: async (file: File, place: StoragePlace) =>
+      (await call(uploads.$post({ param: { shareId }, json: openBody(file, place) }))).upload,
+    get: async (id: string) => (await call(uploads[":id"].$get({ param: { shareId, id } }))).upload,
+    partUrl: (id: string, n: number) =>
+      `${uploads[":id"].$url({ param: { shareId, id } })}/parts/${n}`,
+    complete: (id: string) => call(uploads[":id"].complete.$post({ param: { shareId, id } })),
+    abort: (id: string) => call(uploads[":id"].$delete({ param: { shareId, id } })),
+  };
 }
+
+type UploadDoor = ReturnType<typeof uploadDoor>;
 
 /** The earlier upload with the parts it has, or null when it is gone (expired, aborted). */
-async function resumable(uploadId: string | undefined) {
+async function resumable(door: UploadDoor, uploadId: string | undefined) {
   if (!uploadId) return null;
   try {
-    const { upload } = await call(api.storage.uploads[":id"].$get({ param: { id: uploadId } }));
-    return upload;
+    return await door.get(uploadId);
   } catch (error) {
     if (error instanceof ApiError && error.status === 404) return null;
     throw error;
@@ -95,13 +124,11 @@ async function resumable(uploadId: string | undefined) {
 }
 
 async function sendPart(
-  uploadId: string,
-  n: number,
+  url: string,
   part: Blob,
   signal: AbortSignal,
   onSent: (bytes: number) => void,
 ) {
-  const url = `${api.storage.uploads[":id"].$url({ param: { id: uploadId } })}/parts/${n}`;
   for (let attempt = 1; ; attempt++) {
     try {
       return await putPart(url, part, signal, onSent);

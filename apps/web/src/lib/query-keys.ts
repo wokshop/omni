@@ -8,7 +8,8 @@
 //   │        · thread(id) ─ conversation · search(q) · action(id) · tags(mailbox)
 //   │        · assignees(mailbox) · conversations(filter) · conversation-counts
 //   │        · notifications ─ { unread } · sla(mailbox)
-//   ├─ storage ─ list(place) · trash · usage                         (ADR 0034)
+//   ├─ storage ─ list(place) · trash · usage · sharing(id) · shared-with-me · link(share, node)
+//   │                                                                  (ADR 0034)
 //   └─ local ─ pending(threadId) · failures       (client-only state, never fetched)
 //
 // Switching organization or account clears the whole cache (see `session.ts`), so keys do not
@@ -128,6 +129,13 @@ export const keys = {
   storageList: (place: { space: string } | { parentId: string }) =>
     [...storage, "list", place] as const,
   storageTrash: () => [...storage, "trash"] as const,
+  storageUsage: () => [...storage, "usage"] as const,
+  /** Who a file or folder is shared with, and its link. */
+  storageSharing: (nodeId: string) => [...storage, "sharing", nodeId] as const,
+  storageSharedWithMe: () => [...storage, "shared-with-me"] as const,
+  /** What a link opens: the shared node, or a folder inside it. */
+  storageLink: (shareId: string, nodeId: string | undefined) =>
+    [...storage, "link", shareId, nodeId ?? null] as const,
 
   /** App-only state, never fetched (`query-client.ts` keeps it forever). */
   local: () => local,

@@ -1,8 +1,8 @@
 // Storage's rows in the sidebar (ADR 0034 decision 8): My files, Shared (a company's only: a
-// Personal space has no Shared) and Trash, under the same disclosure as mail's Folders.
+// Personal space has no Shared), Shared with me and Trash, under the same disclosure as mail's Folders.
 import { useLocation } from "@tanstack/react-router";
 import type { ReactNode } from "react";
-import { IconFolder, IconFolderShared } from "@/components/icons/central";
+import { IconFolder, IconFolderShared, IconUsers } from "@/components/icons/central";
 import { IconTrash } from "@/components/icons/sidebar";
 import {
   SidebarDisclosure,
@@ -27,6 +27,11 @@ const ROWS: { label: string; path: string; icon: ReactNode; company?: boolean }[
     path: SPACE_PATH.shared,
     icon: <IconFolderShared className="size-icon" />,
     company: true,
+  },
+  {
+    label: "Shared with me",
+    path: "/files/shared-with-me",
+    icon: <IconUsers className="size-icon" />,
   },
   { label: "Trash", path: "/files/trash", icon: <IconTrash /> },
 ];

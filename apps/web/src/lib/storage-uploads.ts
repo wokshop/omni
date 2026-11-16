@@ -13,11 +13,14 @@ export interface UploadItem {
   /** Bytes sent so far. */
   sent: number;
   status: "queued" | "uploading" | "failed";
+  /** Why it failed, as the API (or the network) said it: the screen words it. */
+  error?: unknown;
 }
 
 interface Job extends UploadItem {
   file: File;
   place: StoragePlace;
+  shareId: string | undefined;
   client: QueryClient;
   onFailed: (name: string, error: unknown) => void;
   uploadId?: string;
@@ -30,7 +33,14 @@ let nextId = 1;
 const listeners = new Set<() => void>();
 
 function publish() {
-  items = jobs.map(({ id, name, size, sent, status }) => ({ id, name, size, sent, status }));
+  items = jobs.map(({ id, name, size, sent, status, error }) => ({
+    id,
+    name,
+    size,
+    sent,
+    status,
+    error,
+  }));
   for (const listener of listeners) listener();
 }
 
@@ -42,12 +52,13 @@ async function run(job: Job) {
     await uploadFile({
       file: job.file,
       place: job.place,
+      shareId: job.shareId,
       resumeId: job.uploadId,
       signal: job.controller.signal,
       onOpened: (uploadId) => {
         job.uploadId = uploadId;
         // Removed while it was opening: `removeUpload` had no id to free yet.
-        if (!jobs.includes(job)) void abortUpload(uploadId);
+        if (!jobs.includes(job)) void abortUpload(uploadId, job.shareId);
       },
       onProgress: (sent) => {
         job.sent = sent;
@@ -60,6 +71,7 @@ async function run(job: Job) {
     // Removed while it ran: `removeUpload` already dropped it.
     if (jobs.includes(job)) {
       job.status = "failed";
+      job.error = error;
       job.onFailed(job.name, error);
     }
   }
@@ -74,11 +86,11 @@ function pump() {
   if (next) void run(next);
 }
 
-/** Queues `files` for `place`. `onFailed` is told each file that did not make it, with why. */
+/** Queues `files` for `target` (a place, through a shared link's door when `shareId` is set). `onFailed` is told each file that did not make it, with why. */
 export function addUploads(
   client: QueryClient,
   files: File[],
-  place: StoragePlace,
+  target: { place: StoragePlace; shareId?: string | undefined },
   onFailed: (name: string, error: unknown) => void,
 ) {
   for (const file of files) {
@@ -89,7 +101,8 @@ export function addUploads(
       sent: 0,
       status: "queued",
       file,
-      place,
+      place: target.place,
+      shareId: target.shareId,
       client,
       onFailed,
     });
@@ -103,6 +116,7 @@ export function retryUpload(id: number) {
   const job = jobs.find((j) => j.id === id && j.status === "failed");
   if (!job) return;
   job.status = "queued";
+  job.error = undefined;
   publish();
   pump();
 }
@@ -113,7 +127,8 @@ export function removeUpload(id: number) {
   if (!job) return;
   jobs = jobs.filter((j) => j !== job);
   job.controller?.abort();
-  if (job.uploadId) void abortUpload(job.uploadId).then(() => storageChanged(job.client));
+  if (job.uploadId)
+    void abortUpload(job.uploadId, job.shareId).then(() => storageChanged(job.client));
   publish();
   pump();
 }

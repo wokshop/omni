@@ -76,3 +76,5 @@ export { IconMoveFolder as IconFolderMove } from "central-icons-outlined/IconMov
 export { IconFileBend as IconFile } from "central-icons-outlined/IconFileBend";
 export { IconArrowInbox as IconDownload } from "central-icons-outlined/IconArrowInbox";
 export { IconArrowRotateCounterClockwise as IconRestore } from "central-icons-outlined/IconArrowRotateCounterClockwise";
+export { IconUserAdd } from "central-icons-outlined/IconUserAdd";
+export { IconChainLink1 as IconLink } from "central-icons-outlined/IconChainLink1";

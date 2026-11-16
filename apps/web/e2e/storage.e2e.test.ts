@@ -1,6 +1,7 @@
 // Storage in the web app (ADR 0034 step 6), in a real Chromium, on the web app built and served by
 // the real Worker under `wrangler dev` (its local R2), on a real Postgres: a file larger than one
-// part goes up through the page's own file input and comes back byte for byte.
+// part goes up through the page's own file input and comes back byte for byte, and a link open to
+// anyone downloads it for someone signed out.
 import { createHash, randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -55,17 +56,7 @@ const sha256 = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest(
 // the wrong length, a part skipped when several go at once), so a file over one part never
 // completes or downloads corrupted.
 test("a file larger than one part uploads from the page and downloads byte for byte", async () => {
-  const origin = String(worker.url);
-  const cookie = await signIn({ url: new URL(origin) }, db, `files-${Date.now()}@gmail.test`);
-  context = await browser.newContext({ acceptDownloads: true });
-  await context.addCookies(
-    cookie.split("; ").map((pair) => {
-      const at = pair.indexOf("=");
-      return { name: pair.slice(0, at), value: pair.slice(at + 1), url: origin };
-    }),
-  );
-  const page = await context.newPage();
-  await page.goto(new URL("/files/my", origin).toString());
+  const page = await signedIn(`files-${Date.now()}@gmail.test`, "/files/my");
 
   // Two full parts and a short third: 16 MiB, 16 MiB, 1234 bytes.
   const bytes = randomBytes(2 * 16 * 1024 * 1024 + 1234);
@@ -76,6 +67,7 @@ test("a file larger than one part uploads from the page and downloads byte for b
   await page.getByRole("button", { name: "Upload", exact: true }).waitFor({ timeout: 15_000 });
   await page
     .locator("input[type=file]")
+    .first()
     .setInputFiles({ name: "footage.bin", mimeType: "application/octet-stream", buffer: bytes });
   await page.getByRole("row", { name: /footage\.bin/ }).waitFor({ timeout: 60_000 });
   expect(parts.toSorted()).toEqual(["1", "2", "3"]);
@@ -90,6 +82,59 @@ test("a file larger than one part uploads from the page and downloads byte for b
   expect(saved.byteLength).toBe(bytes.byteLength);
   expect(sha256(saved)).toBe(sha256(bytes));
 }, 120_000);
+
+// Catches: the link page reaching for a session (the member routes, a sign-in redirect) or
+// downloading through the member's door, so a link open to anyone fails for the people it is for.
+test("a link open to anyone downloads its file, byte for byte, for someone signed out", async () => {
+  const page = await signedIn(`link-${Date.now()}@gmail.test`, "/files/my");
+  const bytes = randomBytes(300_000);
+  await page.getByRole("button", { name: "Upload", exact: true }).waitFor({ timeout: 15_000 });
+  await page
+    .locator("input[type=file]")
+    .first()
+    .setInputFiles({ name: "brief.pdf", mimeType: "application/pdf", buffer: bytes });
+  await page.getByRole("row", { name: /brief\.pdf/ }).waitFor({ timeout: 30_000 });
+
+  await page.getByRole("button", { name: "Actions for brief.pdf" }).click();
+  await page.getByRole("menuitem", { name: "Share" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("combobox", { name: "General access" }).click();
+  await page.getByRole("option", { name: "Anyone with the link" }).click();
+  const link = await dialog.getByRole("textbox", { name: "Link" }).inputValue();
+  expect(new URL(link).pathname).toMatch(/^\/s\/[\w-]{22}$/);
+
+  const signedOut = await browser.newContext({ acceptDownloads: true });
+  try {
+    const anonymous = await signedOut.newPage();
+    await anonymous.goto(link);
+    const [download] = await Promise.all([
+      anonymous.waitForEvent("download"),
+      anonymous.getByRole("button", { name: "Download" }).click(),
+    ]);
+    expect(download.suggestedFilename()).toBe("brief.pdf");
+    const saved = await readFile(await download.path());
+    expect(sha256(saved)).toBe(sha256(bytes));
+  } finally {
+    await signedOut.close();
+  }
+}, 120_000);
+
+/** Signed in as `email` (a magic link, so a new address signs up), on `path`. */
+async function signedIn(email: string, path: string) {
+  const origin = String(worker.url);
+  const cookie = await signIn({ url: new URL(origin) }, db, email);
+  await context?.close();
+  context = await browser.newContext({ acceptDownloads: true });
+  await context.addCookies(
+    cookie.split("; ").map((pair) => {
+      const at = pair.indexOf("=");
+      return { name: pair.slice(0, at), value: pair.slice(at + 1), url: origin };
+    }),
+  );
+  const page = await context.newPage();
+  await page.goto(new URL(path, origin).toString());
+  return page;
+}
 
 function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
