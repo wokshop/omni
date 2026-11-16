@@ -69,6 +69,8 @@ const SIZE = {
 };
 // With no field on screen (a collapsed sidebar) the box opens centred, wider: a command bar.
 const CENTERED_WIDTH = 600;
+// The least room the box keeps from the window's edges.
+const EDGE = 16;
 
 /** What search opens holding: the words already searched, and the mailbox they were scoped to. */
 export interface SearchSeed {
@@ -115,17 +117,23 @@ export function SearchPopover({ side = "end" }: { side?: "start" | "end" }) {
     // no size) while `/` and ⌘K still open search: the box then opens centred near the
     // window's top instead.
     if (!rect || rect.width === 0 || rect.right <= 0 || rect.left >= window.innerWidth) {
-      const width = Math.min(CENTERED_WIDTH, window.innerWidth - 32);
+      const width = Math.min(CENTERED_WIDTH, window.innerWidth - 2 * EDGE);
       setOpenWidth(width);
       setFieldWidth(width);
       setAnchor({ top: 64, left: (window.innerWidth - width) / 2 });
     } else {
-      setOpenWidth(SIZE.open.width);
+      const width = Math.min(SIZE.open.width, window.innerWidth - 2 * EDGE);
+      setOpenWidth(width);
       setFieldWidth(rect.width);
+      // Growing left from a field near the window's start (a narrow list beside an open thread)
+      // would run off screen: the box then grows right from the window's edge instead.
+      const fitsLeft = rect.right - width >= EDGE;
       setAnchor(
         side === "start"
           ? { top: rect.top, left: rect.left }
-          : { top: rect.top, right: window.innerWidth - rect.right },
+          : fitsLeft
+            ? { top: rect.top, right: window.innerWidth - rect.right }
+            : { top: rect.top, left: EDGE },
       );
     }
     setPhase("open");
