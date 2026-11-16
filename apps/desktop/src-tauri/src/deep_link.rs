@@ -165,8 +165,8 @@ pub fn listen<R: Runtime>(app: &tauri::App<R>) {
 }
 
 /// Acts on `omni://` URLs from the deep-link plugin (cold start, or a second launch forwarded by
-/// single-instance).
-fn handle_urls<R: Runtime>(app: &AppHandle<R>, urls: Vec<Url>) {
+/// single-instance) and from the window's own navigations (`window::route`).
+pub fn handle_urls<R: Runtime>(app: &AppHandle<R>, urls: Vec<Url>) {
     crate::window::show(app);
     let Some(window) = app.get_webview_window("main") else {
         return;
