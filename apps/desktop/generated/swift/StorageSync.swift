@@ -1299,17 +1299,20 @@ public extension StorageSyncChangesResponse {
 // MARK: - StorageSyncChange
 public struct StorageSyncChange: Codable, Equatable {
     public let id: String
+    public let inTrash: Bool
     public let node: StorageNode?
     public let revision: Int
 
     public enum CodingKeys: String, CodingKey {
         case id = "id"
+        case inTrash = "inTrash"
         case node = "node"
         case revision = "revision"
     }
 
-    public init(id: String, node: StorageNode?, revision: Int) {
+    public init(id: String, inTrash: Bool, node: StorageNode?, revision: Int) {
         self.id = id
+        self.inTrash = inTrash
         self.node = node
         self.revision = revision
     }
@@ -1335,11 +1338,13 @@ public extension StorageSyncChange {
 
     func with(
         id: String? = nil,
+        inTrash: Bool? = nil,
         node: StorageNode?? = nil,
         revision: Int? = nil
     ) -> StorageSyncChange {
         return StorageSyncChange(
             id: id ?? self.id,
+            inTrash: inTrash ?? self.inTrash,
             node: node ?? self.node,
             revision: revision ?? self.revision
         )

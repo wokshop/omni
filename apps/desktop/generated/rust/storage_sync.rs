@@ -281,8 +281,11 @@ pub struct StorageSyncChangesResponse {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StorageSyncChange {
     pub id: String,
+
+    pub in_trash: bool,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub node: Option<StorageNode>,

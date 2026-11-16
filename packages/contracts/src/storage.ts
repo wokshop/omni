@@ -245,7 +245,10 @@ export const storageSharedResponseSchema = z.object({
 // shapes above, mounted again under that prefix. Swift and Rust types are generated from the
 // schemas in this section (`pnpm --filter @omni/contracts native-types`).
 
-/** A drive the person can sync, and its revision now: compare with a stored cursor's. */
+/**
+ * A drive the person can sync, and its revision now. A provider compares it with the revision it
+ * last saw here to know the drive changed; a changes cursor is opaque and is not comparable.
+ */
 export const storageSyncDriveSchema = z.object({
   space: storageSpaceSchema,
   revision: z.number().int().nonnegative(),
@@ -267,15 +270,17 @@ export const storageSyncDrivesResponseSchema = z.object({
 export const storageSyncChangesQuerySchema = z.object({ space: storageSpaceSchema, ...page });
 
 /**
- * One change to a drive, in revision order. `node` is the node as it is now, live or trashed (a
- * trashed node is reported as a deletion; a restore arrives later as a change with it live).
+ * One change to a drive, in revision order. `node` is the node as it is now. `inTrash` says
+ * whether it is in Trash, itself or under a trashed folder (only the folder trashed carries
+ * `trashedAt`): report it as a deletion, and a restore arrives later as a change with it false.
  * `node: null` is a tombstone: the node left this drive for good (deleted forever, purged from
- * Trash, or moved to the other space).
+ * Trash, or moved to the other space); `inTrash` is then false.
  */
 export const storageSyncChangeSchema = z.object({
   id,
   revision: z.number().int().nonnegative(),
   node: storageNodeSchema.nullable(),
+  inTrash: z.boolean(),
 });
 
 /**
