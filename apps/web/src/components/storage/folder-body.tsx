@@ -34,12 +34,8 @@ export function FolderBody(
       bare
       aria-label={`Upload to ${source.label}`}
       isDisabled={!source.canWrite}
-      className={
-        source.list.nodes.length > 0
-          ? // min-w-0: else the grid's one-row first layout sets the page's width.
-            "flex min-h-0 min-w-0 flex-1 flex-col"
-          : "min-h-0 flex-1 overflow-y-auto"
-      }
+      // A block that scrolls: content starts at the top, not centred by the drop zone's flex.
+      className="block min-h-0 min-w-0 flex-1 overflow-y-auto"
       onDrop={(event) =>
         void Promise.all(
           event.items.flatMap((item) => (item.kind === "file" ? [item.getFile()] : [])),

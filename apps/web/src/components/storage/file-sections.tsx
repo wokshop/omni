@@ -44,7 +44,7 @@ export const FileSections = memo(function FileSections(props: FileSectionsProps)
   const files = props.nodes.filter((n) => n.kind === "file");
   const { open } = props;
   return (
-    <div className="flex flex-col pb-6">
+    <div className="flex w-full flex-col pb-6">
       {folders.length > 0 && (
         <Section section="folders" label="Folders" count={folders.length} first>
           {(view) => (
