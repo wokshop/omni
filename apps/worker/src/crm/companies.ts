@@ -43,7 +43,7 @@ export const companies = new Hono<AppEnv>()
   .post("/companies", zValidator("json", crmCreateCompanyBodySchema), async (c) => {
     const made = await memberCrm(c).createCompany(c.req.valid("json"));
     if (made.status !== "ok") return refused(c, made);
-    announce(c, "company", [made.company.id]);
+    await announce(c, "company", [made.company.id]);
     return c.json({ company: wireCompany(made.company) } satisfies CrmCompanyResponse, 201);
   })
 
@@ -61,7 +61,7 @@ export const companies = new Hono<AppEnv>()
   .patch("/companies/:id", zValidator("json", crmUpdateCompanyBodySchema), async (c) => {
     const changed = await memberCrm(c).updateCompany(c.req.param("id"), c.req.valid("json"));
     if (changed.status !== "ok") return refused(c, changed);
-    announce(c, "company", [changed.company.id]);
+    await announce(c, "company", [changed.company.id]);
     return c.json({ company: wireCompany(changed.company) } satisfies CrmCompanyResponse);
   })
 
@@ -72,12 +72,12 @@ export const companies = new Hono<AppEnv>()
     if (c.req.valid("query").forever) {
       const deleted = await crm.deleteCompany(id);
       if (deleted.status !== "ok") return refused(c, deleted);
-      announce(c, "company", [id]);
+      await announce(c, "company", [id]);
       return c.body(null, 204);
     }
     const archived = await crm.archiveCompany(id);
     if (archived.status !== "ok") return refused(c, archived);
-    announce(c, "company", [id]);
+    await announce(c, "company", [id]);
     return c.json({ company: wireCompany(archived.company) } satisfies CrmCompanyResponse);
   })
 
@@ -85,7 +85,7 @@ export const companies = new Hono<AppEnv>()
     const id = c.req.param("id");
     const added = await memberCrm(c).addCompanyDomain(id, c.req.param("domain"));
     if (added.status !== "ok") return refused(c, added);
-    announce(c, "company", [id]);
+    await announce(c, "company", [id]);
     return c.json({ domains: added.domains } satisfies CrmDomainsResponse);
   })
 
@@ -93,6 +93,6 @@ export const companies = new Hono<AppEnv>()
     const id = c.req.param("id");
     const removed = await memberCrm(c).removeCompanyDomain(id, c.req.param("domain"));
     if (removed.status !== "ok") return refused(c, removed);
-    announce(c, "company", [id]);
+    await announce(c, "company", [id]);
     return c.json({ domains: removed.domains } satisfies CrmDomainsResponse);
   });

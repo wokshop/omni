@@ -266,7 +266,7 @@ async function writeNote(
   const made = await crmOf(context, workspace).createNote({ record, body: input.text });
   if (made.status !== "ok") return refusal(made);
   // The record's timeline has the note too.
-  announce(context, workspace, kind, [id]);
+  await announce(context, workspace, kind, [id]);
   return {
     output: {
       result: "added",
@@ -299,7 +299,7 @@ async function write(context: ToolContext, input: Input) {
           ? await writeNote(context, workspace, input.note)
           : { error: "Nothing to write." };
   if ("error" in written) return toolError(written.error);
-  announce(context, workspace, written.kind, [written.id]);
+  await announce(context, workspace, written.kind, [written.id]);
   await context.db.insert(schema.auditEvents).values({
     orgId: workspace.orgId,
     actorMemberId: workspace.memberId,

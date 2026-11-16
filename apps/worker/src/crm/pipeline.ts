@@ -39,6 +39,6 @@ export const pipeline = new Hono<AppEnv>()
   .put("/settings", zValidator("json", crmPutSettingsBodySchema), async (c) => {
     const saved = await memberCrm(c).putSettings(c.req.valid("json"));
     if (saved.status !== "ok") return refused(c, saved);
-    announce(c, "settings", [c.var.member.orgId]);
+    await announce(c, "settings", [c.var.member.orgId]);
     return c.json({ settings: saved.settings } satisfies CrmSettingsResponse);
   });

@@ -276,8 +276,12 @@ export function refusalText(refusal: { status: string }) {
   }
 }
 
-/** Tells the workspace's open apps what changed (`crm.changed`, ids only), after the answer. */
-export function announce(
+/**
+ * Tells the workspace's members what changed (`crm.changed`, ids only), as the HTTP routes do:
+ * the audience is read now, so a member removed after connecting hears nothing. Sent after the
+ * answer.
+ */
+export async function announce(
   context: ToolContext,
   workspace: CrmWorkspace,
   kind: CrmChangedKind,
@@ -285,10 +289,12 @@ export function announce(
 ) {
   const changed = [...new Set(ids.filter((id): id is string => Boolean(id)))];
   if (!changed.length) return;
+  const audience = await crmOf(context, workspace).audience();
+  if (audience.status !== "ok" || audience.memberIds.length === 0) return;
   const stub = context.env.REALTIME.get(context.env.REALTIME.idFromName(workspace.orgId));
   context.waitUntil(
     stub
-      .everyone({ type: "crm.changed", kind, ids: changed })
+      .broadcast(audience.memberIds, { type: "crm.changed", kind, ids: changed })
       .catch((error: unknown) => context.log.warn("crm.announce_failed", { error })),
   );
 }

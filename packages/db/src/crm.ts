@@ -32,7 +32,13 @@ import {
   type ContractPatch,
   type ListContractsInput,
 } from "./crm/contracts.ts";
-import { asMember, writeAsMember, type CrmDoor, type CrmRecordRef } from "./crm/core.ts";
+import {
+  asMember,
+  crmAudience,
+  writeAsMember,
+  type CrmDoor,
+  type CrmRecordRef,
+} from "./crm/core.ts";
 import {
   archiveDeal,
   createDeal,
@@ -220,6 +226,8 @@ export function memberCrm(db: Db, memberId: string) {
     replaceStages: (input: StageInput[]) =>
       writeAsMember(door, (m, tx) => replaceStages(tx, m, input)),
     settings: () => asMember(door, (m, ex) => getSettings(ex, m)),
+    /** The members a change is announced to (`crm.changed`): the workspace's members now. */
+    audience: () => asMember(door, (m, ex) => crmAudience(ex, m)),
     putSettings: (input: { defaultCurrency: string | null }) =>
       writeAsMember(door, (m, tx) => putSettings(tx, m, input)),
 

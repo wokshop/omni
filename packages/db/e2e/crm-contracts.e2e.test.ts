@@ -95,6 +95,28 @@ test("marking a contract signed locks its file in the same transaction; a refuse
   ]);
 });
 
+// Catches: signing that checks Shared only when the document is attached, so a member moves the
+// file to their My files and signs, locking a contract's file where nobody else can see it.
+test("a document moved to My files after it was attached cannot be signed", async () => {
+  const { crm, storage } = await company("crm-sign-moved");
+  const deal = ok(await crm.createDeal({ name: "Audit" })).deal;
+  const folder = ok(await crm.dealFolder(deal.id)).nodeId;
+  const file = await addFile(storage, { parentId: folder }, "sow.pdf");
+  const contract = ok(
+    await crm.createContract({ title: "SOW", dealId: deal.id, documentNodeId: file.id }),
+  ).contract;
+
+  ok(await storage.move(file.id, { space: "personal" }));
+  expect(await crm.updateContract(contract.id, { status: "signed" })).toEqual({
+    status: "invalid_contract",
+    param: "documentNodeId",
+  });
+  const [row] = await db.select().from(crmContracts).where(eq(crmContracts.id, contract.id));
+  expect(row).toMatchObject({ status: "draft", signedAt: null });
+  expect((await storage.node(file.id))?.node.lockedAt).toBeNull();
+  expect(await statusEvents(deal.id)).toEqual([]);
+});
+
 // Catches: `document_node_id` without `on delete set null`, which would make Storage's purge of
 // a draft's trashed file fail on the foreign key.
 test("purging a draft's trashed file leaves the contract without a document", async () => {
@@ -150,4 +172,32 @@ test("a signed contract keeps its status, its document and its row, and outlives
   const draftOnly = ok(await crm.createDeal({ name: "Pilot" })).deal;
   ok(await crm.createContract({ title: "Pilot", dealId: draftOnly.id }));
   expect(await crm.deleteDeal(draftOnly.id)).toEqual({ status: "ok" });
+});
+
+// Catches: a delete for good that checks for signed contracts without locking the record, so a
+// contract created and signed by another transaction meanwhile is cascaded away with it.
+test("a company deleted while a contract on it is being made and signed keeps both", async () => {
+  const org = await createOrg(db, "crm-sign-delete-race");
+  const ana = await createMember(db, org.id, "ana");
+  await setRole(db, ana.id, "owner");
+  const { crm, storage } = forMember(db, ana.id);
+  const client = ok(await crm.createCompany({ name: "Umbrella" })).company;
+  const folder = ok(await crm.companyFolder(client.id)).nodeId;
+  const file = await addFile(storage, { parentId: folder }, "msa.pdf");
+
+  let deleted: Promise<{ status: string }> | undefined;
+  await db.transaction(async (tx) => {
+    const inTx = forMember(tx, ana.id).crm;
+    const made = ok(
+      await inTx.createContract({ title: "MSA", companyId: client.id, documentNodeId: file.id }),
+    ).contract;
+    ok(await inTx.updateContract(made.id, { status: "signed" }));
+    // The delete starts before this commits, as a second request would.
+    deleted = crm.deleteCompany(client.id);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  });
+  expect(await deleted).toEqual({ status: "contract_signed" });
+  expect(ok(await crm.listContracts({ companyId: client.id })).contracts).toMatchObject([
+    { status: "signed", documentNodeId: file.id },
+  ]);
 });

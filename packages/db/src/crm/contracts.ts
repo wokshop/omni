@@ -147,6 +147,21 @@ async function loadContract(ex: Ex, orgId: string, id: string, lock = false) {
   return row ?? null;
 }
 
+/**
+ * Locks the records a contract is on, company then deal, always in that order. Signing, creating
+ * and a record's delete for good all take these first, so a contract cannot be made or signed
+ * between a delete's check for signed contracts and its cascade. False when one is gone.
+ */
+async function lockRecords(
+  tx: Ex,
+  orgId: string,
+  records: { companyId: string | null; dealId: string | null },
+) {
+  if (records.companyId && !(await loadCompany(tx, orgId, records.companyId, true))) return false;
+  if (records.dealId && !(await loadDeal(tx, orgId, records.dealId, true))) return false;
+  return true;
+}
+
 /** The record's contracts, newest first. A company's include those on its deals. */
 export async function listContracts(
   ex: Ex,
@@ -190,8 +205,8 @@ async function recordsOf(tx: Ex, member: CrmMember, input: ContractInput) {
     if (!deal) return NOT_FOUND;
     companyId ??= deal.companyId;
   }
-  if (input.companyId && !(await loadCompany(tx, member.orgId, input.companyId))) return NOT_FOUND;
   if (!companyId && !dealId) return invalid("dealId");
+  if (!(await lockRecords(tx, member.orgId, { companyId, dealId }))) return NOT_FOUND;
   return { status: "ok" as const, companyId, dealId };
 }
 
@@ -251,6 +266,9 @@ export async function updateContract(
   id: string,
   patch: ContractPatch,
 ): Promise<ContractResult> {
+  // Its records first, then the contract, in the order a delete for good takes them.
+  const seen = await loadContract(tx, member.orgId, id);
+  if (!seen || !(await lockRecords(tx, member.orgId, seen))) return NOT_FOUND;
   const current = await loadContract(tx, member.orgId, id, true);
   if (!current) return NOT_FOUND;
   const fields = fieldsOf(current, patch);
@@ -273,8 +291,11 @@ export async function updateContract(
     .returning(contractColumns);
   if (move.lock) {
     const locked = await memberStorage(tx as Db, member.id).lock(move.lock);
-    // Gone, in Trash, out of reach or a folder: nothing of this change is kept.
-    if (locked.status !== "ok") refuse(invalid("documentNodeId"));
+    // Gone, in Trash, out of reach, a folder, or moved out of Shared since it was attached (the
+    // node is read under Storage's tree lock, so no move lands between): nothing is kept.
+    if (locked.status !== "ok" || locked.node.space !== "shared") {
+      refuse(invalid("documentNodeId"));
+    }
   }
   if (move.documentChanged) {
     await contractEvent(tx, member, contract!, "contract_document_changed", {
@@ -307,14 +328,22 @@ export async function deleteContract(
 
 /**
  * Whether the record holds a signed (or ended) contract, which outlives it: deleting the record
- * for good would cascade to it. Its contracts stay locked until the transaction ends, so one
- * signed meanwhile is seen here or waits for the delete.
+ * for good would cascade to it. The record's row is locked first, as signing and creating a
+ * contract lock it (`lockRecords`), so a contract made or signed meanwhile is seen here or waits
+ * for the delete; its contracts stay locked until the transaction ends.
  */
 export async function holdsSignedContract(
   tx: Ex,
   orgId: string,
   record: { companyId: string } | { dealId: string },
 ) {
+  await lockRecords(
+    tx,
+    orgId,
+    "dealId" in record
+      ? { companyId: null, dealId: record.dealId }
+      : { companyId: record.companyId, dealId: null },
+  );
   const column =
     "dealId" in record
       ? eq(crmContracts.dealId, record.dealId)
