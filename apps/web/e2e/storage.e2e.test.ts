@@ -172,7 +172,7 @@ test("switching workspace mid-upload stops the queue and leaves nothing in eithe
 
   // Settings is in the sidebar's workspace menu.
   await page.getByRole("button", { name: /^Switch workspace/ }).click();
-  await page.getByRole("menuitem", { name: "Settings" }).click();
+  await page.getByRole("menuitem", { name: "Workspace settings" }).click();
   await page.getByRole("button", { name: /^Workspace: Acme Files/ }).click();
   await page.getByRole("menuitem", { name: /(?:'s|^Personal) Workspace$/ }).click();
   await page

@@ -10,16 +10,21 @@
 //
 // Geometry: the mark is an 18px tile on the nav icons' 15px axis (1.5px out on every side), so
 // its centre and the label after it line up with the rows below. The glyph is 12px, 3px in.
-import { useLocation, useRouter, useSearch } from "@tanstack/react-router";
+import { useLocation, useNavigate, useRouter, useSearch } from "@tanstack/react-router";
 import { cn } from "cn";
 import { useMemo, useRef, type ComponentType, type CSSProperties, type ReactNode } from "react";
 import {
-  IconCheck,
+  IconCircleCheckFilled,
+  IconConnections,
   IconFolderFilled,
   IconHandshakeFilled,
   IconLogOut,
   IconMailFilled,
+  IconPlus,
   IconSettings,
+  IconUpgrade,
+  IconUserAdd,
+  IconUserRound,
 } from "@/components/icons/central";
 import { Avatar } from "@/components/ui/avatar";
 import { Loader } from "@/components/ui/loader";
@@ -27,7 +32,10 @@ import { Button } from "@/components/ui/button";
 import { Menu, MenuItem, MenuLabel, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
 import { SidebarItemTrigger } from "@/components/ui/sidebar";
 import { appToast } from "@/components/ui/toast";
+import { isManager } from "@/components/settings/workspace-pages";
+import { useBilling } from "@/hooks/use-billing.ts";
 import { useHasCrm } from "@/hooks/use-crm.ts";
+import { useOnboarding } from "@/hooks/use-onboarding";
 import { useMember, useSignOut } from "@/hooks/use-session.ts";
 import { openSettings } from "@/hooks/use-settings-dialog.ts";
 import { ariaKeyShortcuts } from "@/lib/shortcuts.ts";
@@ -123,7 +131,7 @@ function Label({ name, current }: { name: string; current: boolean }) {
     // To the item's end (past the grid's empty columns), so the check sits at the far edge.
     <MenuLabel className="col-[2/-1] flex min-w-0 items-center justify-between gap-3">
       <span className="truncate">{name}</span>
-      {current && <IconCheck className="size-3.5 shrink-0 text-foreground" />}
+      {current && <IconCircleCheckFilled className="size-4 shrink-0 text-primary" />}
     </MenuLabel>
   );
 }
@@ -215,22 +223,33 @@ export function workspaceLabel(workspace: Workspace, userName: string | null | u
 
 /**
  * The sidebar's top row: the workspace's mark and name, hugging them (no chevron), with `end` (the
- * bell) at the row's far end. Its menu spans the whole row, the links' width or more: every
- * workspace, then Settings and Log out.
+ * bell) at the row's far end. Its menu, the sidebar's width: every workspace (the current one
+ * checked) and New workspace; account, workspace and connection settings; a company's Invite
+ * members and Upgrade for those who manage it; Log out.
  */
 export function WorkspaceSwitcher({ end }: { end?: ReactNode }) {
   const { member, user } = useMember();
   const workspaces = useWorkspaces().data?.workspaces ?? [];
   const openWorkspace = useOpenWorkspace();
   const signOut = useSignOut();
+  const navigate = useNavigate();
+  const canCreate = useOnboarding().data?.canCreateOrganization === true;
+  // Only for those who'd see Billing: a company's owners and admins.
+  const active = workspaces.find((w) => w.id === member.orgId);
+  const team = !!active && active.kind !== "personal" && isManager(member.role);
+  const billing = useBilling({ enabled: team }).data;
   const row = useRef<HTMLDivElement>(null);
   const rowBox = useMemo(
     () => ({ getBoundingClientRect: () => row.current?.getBoundingClientRect() ?? new DOMRect() }),
     [],
   );
-  const active = workspaces.find((w) => w.id === member.orgId);
   if (!active) return null;
   const label = (workspace: Workspace) => workspaceLabel(workspace, user.name);
+  const plan = billing?.enabled ? billing : null;
+  const upgrade =
+    team &&
+    !!plan?.canManage &&
+    (plan.readOnly || !plan.subscription || plan.subscription.status === "trialing");
 
   const choose = (workspace: Workspace) => {
     if (workspace.id === member.orgId) return;
@@ -246,7 +265,9 @@ export function WorkspaceSwitcher({ end }: { end?: ReactNode }) {
             the trigger hugs them. */}
         <SidebarItemTrigger
           aria-label={`Switch workspace, currently ${label(active)}`}
-          className="w-auto max-w-full shrink"
+          // 9px after the name against the mark's 6.5px from the start (optical, measured): the
+          // text's soft end needs a little more room than the mark's hard edge to look even.
+          className="w-auto max-w-full shrink pe-2.25"
         >
           <span className="grid size-icon shrink-0 place-items-center">
             {openWorkspace.isPending ? (
@@ -284,16 +305,60 @@ export function WorkspaceSwitcher({ end }: { end?: ReactNode }) {
               <Label name={label(workspace)} current={workspace.id === member.orgId} />
             </MenuItem>
           ))}
+          {canCreate && (
+            <MenuItem
+              id="new"
+              textValue="New workspace"
+              onAction={() => void navigate({ to: "/onboarding" })}
+            >
+              <IconPlus data-slot="icon" />
+              <MenuLabel>New workspace</MenuLabel>
+            </MenuItem>
+          )}
           <MenuSeparator />
           <MenuItem
-            id="settings"
-            textValue="Settings"
+            id="account"
+            textValue="Account settings"
+            onAction={() => openSettings("profile")}
+          >
+            <IconUserRound data-slot="icon" />
+            <MenuLabel>Account settings</MenuLabel>
+          </MenuItem>
+          <MenuItem
+            id="workspace"
+            textValue="Workspace settings"
             aria-keyshortcuts={ariaKeyShortcuts("settings")}
-            onAction={() => openSettings()}
+            onAction={() => openSettings("general")}
           >
             <IconSettings data-slot="icon" />
-            <MenuLabel>Settings</MenuLabel>
+            <MenuLabel>Workspace settings</MenuLabel>
           </MenuItem>
+          <MenuItem
+            id="connections"
+            textValue="Connections"
+            onAction={() => openSettings("accounts")}
+          >
+            <IconConnections data-slot="icon" />
+            <MenuLabel>Connections</MenuLabel>
+          </MenuItem>
+          {(team || upgrade) && <MenuSeparator />}
+          {team && (
+            <MenuItem
+              id="invite"
+              textValue="Invite members"
+              onAction={() => openSettings("people")}
+            >
+              <IconUserAdd data-slot="icon" />
+              <MenuLabel>Invite members</MenuLabel>
+            </MenuItem>
+          )}
+          {upgrade && (
+            <MenuItem id="upgrade" textValue="Upgrade" onAction={() => openSettings("billing")}>
+              <IconUpgrade data-slot="icon" />
+              <MenuLabel>Upgrade</MenuLabel>
+            </MenuItem>
+          )}
+          <MenuSeparator />
           <MenuItem id="log-out" textValue="Log out" onAction={() => signOut.mutate()}>
             <IconLogOut data-slot="icon" />
             <MenuLabel>Log out</MenuLabel>
