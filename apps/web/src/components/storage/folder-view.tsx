@@ -3,7 +3,7 @@
 // upload actions for whoever may write, the dialogs its rows open, and the open file's preview
 // beside it (ADR 0040). The open file is the URL's `?file=`, so Back closes it.
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { SettingsRowMenuItem } from "@/components/settings/kit/settings-row-menu";
 import { ResizeGrip, useStoredWidth } from "@/components/ui/resize-grip";
 import { useFullScreen } from "@/hooks/use-full-screen.ts";
@@ -74,7 +74,7 @@ export function FolderView(props: {
     upload(files, { place: source.place, shareId: source.shareId }, (name, error) =>
       storageErrorToast(error, `“${name}” was not uploaded`),
     );
-  const open = useOpenFile(source.list.nodes);
+  const open = useOpenFile(source.list);
   const menu = useCallback(
     (node: StorageNode) => source.menu(node, setDialog),
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- the menu builder is the dependency
@@ -193,9 +193,17 @@ export interface OpenFile {
   select: (id: string | null, replace?: boolean) => void;
 }
 
-/** The URL's open file, the files either side of it, and the way to change it. */
-function useOpenFile(nodes: StorageNode[]): OpenFile {
+/**
+ * The URL's open file, the files either side of it, and the way to change it. A file past the
+ * folder's loaded pages (a bookmarked or shared `?file=`) loads the next pages until it is found.
+ */
+function useOpenFile(list: FolderSource["list"]): OpenFile {
+  const { nodes, hasNextPage, isFetchingNextPage, fetchNextPage } = list;
   const { file } = useSearch({ strict: false }) as { file?: string };
+  const loaded = !file || nodes.some((n) => n.id === file);
+  useEffect(() => {
+    if (!loaded && hasNextPage && !isFetchingNextPage) void fetchNextPage();
+  }, [loaded, hasNextPage, isFetchingNextPage, fetchNextPage]);
   const navigate = useNavigate();
   const select = useCallback(
     (id: string | null, replace = false) =>

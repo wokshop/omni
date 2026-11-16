@@ -2,7 +2,7 @@
 // its kind's glyph on the card's surface), then the name with its menu beside it, and under it
 // what it is ("585 KB · PNG", "Folder"). Hovered the card washes; the open file's card keeps the
 // accent fill; a press squeezes it a touch (cards squeeze least).
-import { useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { SkeletonBox } from "skullet/react";
 import {
   SettingsRowMenu,
@@ -67,14 +67,18 @@ export function FileCard(props: {
 
 /** An image's thumbnail, faded in over its glyph once it has decoded. */
 function Thumbnail(props: { node: StorageNode; url: string; raster: string }) {
+  // Fetched only once the card nears the screen: a mounted card off screen fetches nothing.
+  const anchor = useRef<HTMLSpanElement>(null);
+  const near = useSeen(anchor);
   const thumb = useThumbnail(
     { url: props.url, version: props.node.updatedAt, size: props.node.size },
     props.raster,
-    true,
+    near,
   );
   const [shown, setShown] = useState(false);
   return (
     <>
+      <span ref={anchor} aria-hidden className="absolute inset-0" />
       {!shown && <FileGlyph kind="image" className="size-8 text-muted-foreground" />}
       {thumb.data && (
         <img
@@ -88,6 +92,24 @@ function Thumbnail(props: { node: StorageNode; url: string; raster: string }) {
       )}
     </>
   );
+}
+
+/** True once the element comes within a screen of the viewport, and from then on. */
+function useSeen(ref: RefObject<HTMLElement | null>) {
+  const [seen, setSeen] = useState(false);
+  useEffect(() => {
+    const element = ref.current;
+    if (!element || seen) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry?.isIntersecting) setSeen(true);
+      },
+      { rootMargin: "100% 0px" },
+    );
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [ref, seen]);
+  return seen;
 }
 
 /** Cards while they load: skullet's squares and captions on the cards' own grid. */
