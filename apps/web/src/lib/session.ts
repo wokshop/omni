@@ -4,6 +4,7 @@
 import { mutationOptions, queryOptions, type QueryClient } from "@tanstack/react-query";
 import { dropStartupResponses } from "./startup-fetch.ts";
 import { api, ApiError, auth, call } from "./api.ts";
+import { setCurrentWorkspaceId } from "./current-workspace.ts";
 import { keys } from "./query-keys.ts";
 import { forgetOutstanding } from "./pending.ts";
 import { cancelUploads } from "./storage-uploads.ts";
@@ -72,6 +73,9 @@ export async function resetSession(client: QueryClient, router: Reloadable) {
   // Already done before a switch; here for the rest (a 401): nothing goes on as someone else.
   await cancelUploads();
   dropStartupResponses();
+  // A new identity's calls must not name the old one's workspace (a 403 would read as "no
+  // member"); the next workspace route names its own.
+  setCurrentWorkspaceId(undefined);
   await client.cancelQueries();
   client.clear();
   await router.invalidate();

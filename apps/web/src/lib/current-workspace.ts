@@ -1,7 +1,7 @@
 // The workspace this tab is in: the one its URL names (`/<slug>/…`, ADR 0043). Every API call
 // names it (`omni-workspace`), so the Worker answers for this tab's workspace even after another
 // tab switched the session's. Set by the `$workspace` route before anything below it loads.
-import { WORKSPACE_HEADER } from "@omni/client";
+import { WORKSPACE_HEADER, WORKSPACE_PARAM } from "@omni/client";
 
 let current: string | undefined;
 
@@ -10,6 +10,14 @@ export const currentWorkspaceId = () => current;
 
 export function setCurrentWorkspaceId(id: string | undefined) {
   current = id;
+}
+
+/** `url` naming this tab's workspace, for what the browser fetches itself (no header). */
+export function withWorkspace(url: string) {
+  if (!current) return url;
+  const named = new URL(url, window.location.origin);
+  named.searchParams.set(WORKSPACE_PARAM, current);
+  return named.toString();
 }
 
 /**

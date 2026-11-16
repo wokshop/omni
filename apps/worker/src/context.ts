@@ -1,5 +1,5 @@
 import { createAuth, usesOAuthProvider, type Auth, type InvitationMessage } from "@omni/auth";
-import { WORKSPACE_HEADER } from "@omni/contracts/headers";
+import { WORKSPACE_HEADER, WORKSPACE_PARAM } from "@omni/contracts/headers";
 import { forUser, isCompany, schema, sessionAccess, type Db } from "@omni/db";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { createMiddleware } from "hono/factory";
@@ -116,6 +116,7 @@ export async function resolveSession(
   // every tab shares; a workspace the user is not a member of finds no member (403).
   const activeOrg =
     c.req.raw.headers.get(WORKSPACE_HEADER) ||
+    new URL(c.req.raw.url).searchParams.get(WORKSPACE_PARAM) ||
     (session.session as { activeOrganizationId?: string | null }).activeOrganizationId;
   // A session deleted since its cookie was cached is signed out (ADR 0024).
   const access = await sessionAccess(c.var.db, session.session.id);

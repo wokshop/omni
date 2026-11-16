@@ -91,8 +91,9 @@ export async function enterWorkspace(client: QueryClient, workspace: Pick<Worksp
   const session = await client.ensureQueryData(sessionQuery());
   // Both at once: the member here, and the session's workspace made this one.
   await Promise.all([
-    session?.member &&
-      session.member.orgId !== workspace.id &&
+    // No member yet counts too: it may be an answer read for another workspace or identity.
+    session &&
+      session.member?.orgId !== workspace.id &&
       client.fetchQuery({ ...sessionQuery(), staleTime: 0 }),
     session &&
       session.session.activeOrganizationId !== workspace.id &&

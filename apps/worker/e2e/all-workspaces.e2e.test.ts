@@ -428,7 +428,10 @@ test("a request that names its workspace is answered for it, whichever one the s
     const me = await tab(south.id, "/me");
     expect(((await me.response.json()) as { orgId: string }).orgId).toBe(south.id);
   }
-  // Without the header (iOS, old tabs): the session's, as before.
+  // A download or preview the browser loads itself names it in the URL instead.
+  const byUrl = await get<{ threads: Row[] }>(`/threads?workspace=${north.id}`, jar.header);
+  expect(byUrl.threads.map((t) => t.subject)).toEqual(["North"]);
+  // Without either (iOS, old tabs): the session's, as before.
   expect(await subjects(jar)).toEqual(["South"]);
 
   // A workspace the user is not a member of: refused, not the session's mail.

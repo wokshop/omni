@@ -7,3 +7,9 @@
  * Member-scoped answers carry it back, naming the workspace they were read from.
  */
 export const WORKSPACE_HEADER = "omni-workspace";
+
+/**
+ * The same, as a query parameter, for requests the browser makes itself and so cannot carry a
+ * header: a download it navigates to, an image or file preview it loads.
+ */
+export const WORKSPACE_PARAM = "workspace";
