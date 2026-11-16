@@ -43,9 +43,17 @@ function emailParam(c: Context<AppEnv>) {
   return parsed.success ? parsed.data : null;
 }
 
-/** The one mail a person gets when something is shared with them: who, what, and its link. */
+/**
+ * The one mail a person gets when something is shared with them: who, what, and its link. An
+ * install with no `SYSTEM_MAIL_FROM` sends no mail at all: the person is added all the same, and
+ * finds the item under Shared with me.
+ */
 async function sendShareMail(c: Context<AppEnv>, to: string, node: StorageNode, shareId: string) {
   const { config, user, log } = c.var;
+  if (!config.SYSTEM_MAIL_FROM) {
+    log.warn("storage.share_mail_skipped", { reason: "SYSTEM_MAIL_FROM is not set" });
+    return;
+  }
   const appName = config.auth.appName;
   const url = new URL(`/s/${shareId}`, config.auth.webAppURL);
   await systemMailSender({ email: c.env.EMAIL, config, log })({
@@ -85,7 +93,7 @@ export const storageSharing = new Hono<AppEnv>()
   /**
    * Adds a person, or changes their role. Adding sends them one mail and counts against
    * `RATE_LIMIT_STORAGE_SHARE`; a role change does neither. A person whose mail could not be
-   * sent is not added, so trying again sends it.
+   * sent is not added, so trying again sends it (with no system mail configured, none is sent).
    */
   .put(
     "/nodes/:id/sharing/people/:email",

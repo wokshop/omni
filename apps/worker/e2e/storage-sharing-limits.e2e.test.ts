@@ -169,6 +169,11 @@ test("a read-only workspace still serves its link; changes and sharing answer 40
       name: "New",
       parentId: folderId,
     }),
+    // The owner's own link is no way round the gate either.
+    await door("203.0.113.24", lapsed.owner.jar, "POST", `${shareId}/folders`, {
+      name: "Mine",
+      parentId: folderId,
+    }),
     await door("203.0.113.22", editor.jar, "POST", `${shareId}/uploads`, {
       name: "new.bin",
       size: 1,

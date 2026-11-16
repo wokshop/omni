@@ -378,8 +378,25 @@ test("a session scoped to a company does not see or open a grant addressed to th
   expect((await stack.api(scoped, "GET", `/shared/${personalLink}`)).status).toBe(404);
   expect(await opens(scoped, personalLink, toPersonal.id)).toBe(404);
 
+  // Pat is also a member of the owner's company: its Shared opens by link for the session that
+  // reaches every workspace, and not for the one scoped to the other company.
+  await db.insert(schema.members).values({
+    id: randomUUID(),
+    organizationId: owner.organizationId,
+    userId: pat!.id,
+    role: "member",
+    createdAt: new Date(),
+  });
+  const team = await folder(owner, { space: "shared" }, "Team");
+  const linked = await stack.api(owner.jar, "PUT", `/nodes/${team.id}/sharing/link`, {
+    linkAccess: "restricted",
+  });
+  const teamLink = linked.body.sharing.shareId as string;
+  expect((await stack.api(scoped, "GET", `/shared/${teamLink}`)).status).toBe(404);
+
   const full = await signedIn(personal);
   expect(await shared(full)).toEqual(["personal.txt", "work.txt"]);
+  expect((await stack.api(full, "GET", `/shared/${teamLink}`)).status).toBe(200);
   expect(await opens(full, personalLink, toPersonal.id)).toBe(200);
   expect(await opens(full, workLink, toWork.id)).toBe(200);
 });

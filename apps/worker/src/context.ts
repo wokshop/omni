@@ -160,6 +160,24 @@ export async function findMember(
   return member ?? null;
 }
 
+/**
+ * Every member the session may act as: the user's member in each workspace they belong to, or
+ * only the one in the company the session is scoped to (ADR 0024).
+ */
+export async function findMemberIds(db: Db, userId: string, scopeOrgId?: string | null) {
+  const rows = await db
+    .select({ id: schema.members.id })
+    .from(schema.members)
+    .where(
+      and(
+        eq(schema.members.userId, userId),
+        scopeOrgId ? eq(schema.members.organizationId, scopeOrgId) : undefined,
+      ),
+    )
+    .orderBy(asc(schema.members.createdAt));
+  return rows.map((row) => row.id);
+}
+
 function memberMiddleware(threadParam?: string) {
   return createMiddleware<AppEnv>(async (c, next) => {
     // Already resolved by `requireThreadMember` on this request: no second lookup.

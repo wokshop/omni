@@ -48,7 +48,8 @@ export const memberStorage = (c: Context<AppEnv>) => forMember(c.var.db, c.var.m
 
 /**
  * A request made at `/shared/:shareId` (`storage-shared.ts`): what the link carries, and the door
- * that opened it. A grant, when the signed-in person has one; else the link itself.
+ * that opened it. The member door, when the signed-in person reaches the item as a member of
+ * its workspace; else a grant, when they have one; else the link itself.
  */
 export interface SharedAccess {
   /** The node carrying the link. */
@@ -59,13 +60,13 @@ export interface SharedAccess {
     page: { cursor?: StorageListCursor | null; limit?: number },
   ): Promise<ListResult>;
   file(nodeId: string): Promise<FileResult>;
-  /** The grant door under the link, when a grant opened it. A link alone never writes. */
-  granted: SharedStorage | null;
+  /** The member or grant door that opened it, for changes. A link alone never writes. */
+  writer: MemberStorage | SharedStorage | null;
 }
 
 /**
- * The door a change goes through and the workspace it lands in: at `/shared/:shareId` the grant
- * door under that link and the shared node's workspace, anywhere else the member's own. The
+ * The door a change goes through and the workspace it lands in: at `/shared/:shareId` the door
+ * that opened the link and the shared node's workspace, anywhere else the member's own. The
  * routes that change files are written once against this and mounted in both places.
  */
 export function writeDoor(c: Context<AppEnv>): {
@@ -74,8 +75,8 @@ export function writeDoor(c: Context<AppEnv>): {
 } {
   const shared = c.var.shared;
   if (!shared) return { files: memberStorage(c), orgId: c.var.member.orgId };
-  if (!shared.granted) throw new HTTPException(403, { message: "you cannot change this" });
-  return { files: shared.granted, orgId: shared.root.node.orgId };
+  if (!shared.writer) throw new HTTPException(403, { message: "you cannot change this" });
+  return { files: shared.writer, orgId: shared.root.node.orgId };
 }
 
 /** A cursor travels as base64url JSON: opaque to the client, checked on the way back in. */
