@@ -132,6 +132,69 @@ export const storageNodes = pgTable(
 );
 
 /**
+ * Content a file used to have (ADR 0043 decision 1): one row per replaced content, kept 30 days
+ * from `replaced_at`. The file's current content stays on its node. A version owns its object as
+ * a node does, so whatever deletes a file deletes its versions' objects with it.
+ */
+export const storageVersions = pgTable(
+  "storage_versions",
+  {
+    id: id(),
+    orgId: orgId(),
+    nodeId: text("node_id").notNull(),
+    size: bigint("size", { mode: "number" }).notNull(),
+    mimeType: text("mime_type"),
+    r2Key: text("r2_key").notNull(),
+    /** Who wrote this content; null once that member is gone. */
+    writtenByMemberId: text("written_by_member_id").references(() => members.id, {
+      onDelete: "set null",
+    }),
+    writtenAt: timestamptz("written_at").notNull(),
+    replacedAt: timestamptz("replaced_at").notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      name: "storage_versions_node_org_fk",
+      columns: [t.nodeId, t.orgId],
+      foreignColumns: [storageNodes.id, storageNodes.orgId],
+    }).onDelete("cascade"),
+    // A file's versions, newest first.
+    index("storage_versions_node_id_idx").on(t.nodeId, t.replacedAt.desc().nullsFirst(), t.id),
+    // The daily purge of versions past their time.
+    index("storage_versions_replaced_at_idx").on(t.replacedAt),
+    // The usage recount's sum.
+    index("storage_versions_org_id_idx").on(t.orgId),
+    index("storage_versions_written_by_member_id_idx").on(t.writtenByMemberId),
+  ],
+);
+
+/**
+ * Who wrote a file's current content, and when, once it has replaced an earlier one (ADR 0043
+ * decision 1). No row: the content is the one the file was created with. A table of its own, as
+ * `storage_upload_targets` is, so that the code reading `storage_nodes` and `storage_uploads`
+ * before these existed keeps working beside them.
+ */
+export const storageContents = pgTable(
+  "storage_contents",
+  {
+    nodeId: text("node_id").primaryKey(),
+    orgId: orgId(),
+    writtenByMemberId: text("written_by_member_id").references(() => members.id, {
+      onDelete: "set null",
+    }),
+    writtenAt: timestamptz("written_at").notNull(),
+  },
+  (t) => [
+    foreignKey({
+      name: "storage_contents_node_org_fk",
+      columns: [t.nodeId, t.orgId],
+      foreignColumns: [storageNodes.id, storageNodes.orgId],
+    }).onDelete("cascade"),
+    index("storage_contents_written_by_member_id_idx").on(t.writtenByMemberId),
+  ],
+);
+
+/**
  * A locked file (ADR 0036 decision 6): it cannot be renamed, moved, trashed or deleted for good,
  * and a folder holding one cannot be trashed or leave its drive. A row is the lock; only a file
  * is locked, which `storage/lock.ts` checks. Only an owner or admin unlocks. Deleting the node,
@@ -231,6 +294,30 @@ export const storageUploads = pgTable(
     // The sweep of uploads nobody completed.
     index("storage_uploads_expires_at_idx").on(t.expiresAt),
     index("storage_uploads_member_id_idx").on(t.memberId),
+  ],
+);
+
+/**
+ * The file an upload is a new version of (ADR 0043 decision 1). An upload with no row here
+ * becomes a new file. Completing one with a row replaces that file's content and sets the
+ * upload's `node_id` to it. Goes with the upload, and with the file.
+ */
+export const storageUploadTargets = pgTable(
+  "storage_upload_targets",
+  {
+    uploadId: text("upload_id")
+      .primaryKey()
+      .references(() => storageUploads.id, { onDelete: "cascade" }),
+    orgId: orgId(),
+    nodeId: text("node_id").notNull(),
+  },
+  (t) => [
+    foreignKey({
+      name: "storage_upload_targets_node_org_fk",
+      columns: [t.nodeId, t.orgId],
+      foreignColumns: [storageNodes.id, storageNodes.orgId],
+    }).onDelete("cascade"),
+    index("storage_upload_targets_node_id_idx").on(t.nodeId),
   ],
 );
 
