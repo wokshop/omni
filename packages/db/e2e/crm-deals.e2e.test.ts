@@ -64,6 +64,21 @@ test("moving a deal to Won twice sets won_at once and writes one event", async (
   expect(ok(await crm.deal(deal.id)).deal.stageId).toBe(lost);
 });
 
+test("a bulk move that names a missing deal moves none of them", async () => {
+  const { crm } = await company("crm-bulk-missing");
+  const won = ok(await crm.stages()).stages.find((stage) => stage.name === "Won")!;
+  const deal = ok(await crm.createDeal({ name: "Kept in Lead" })).deal;
+  // Sorts after every real UUIDv7, so the real deal comes first in the move order.
+  const missing = "ffffffff-ffff-7fff-bfff-ffffffffffff";
+
+  expect((await crm.moveDeals({ dealIds: [deal.id, missing], stageId: won.id })).status).toBe(
+    "not_found",
+  );
+  const after = ok(await crm.deal(deal.id)).deal;
+  expect([after.stageId, after.wonAt]).toEqual([deal.stageId, null]);
+  expect(await stageMoves(deal.id)).toHaveLength(0);
+});
+
 test("a value takes the workspace's last currency, and a bad currency is refused", async () => {
   const { crm } = await company("crm-currency");
   expect((await crm.createDeal({ name: "No currency yet", valueMinor: 100 })).status).toBe(
