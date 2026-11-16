@@ -152,11 +152,23 @@ export const storageUploadResponseSchema = z.object({ upload: storageUploadSchem
  * any upload, and completing it answers the file. The content it replaces is kept `keepDays`
  * and counts toward the workspace's storage until then. Only someone who may edit the file: a
  * member who reaches it, or an Editor. A locked file answers `409 locked`.
+ *
+ * A checked save (ADR 0043 decision 3) names `ifContentVersion`, the file's `contentVersion` it
+ * was based on, and names it again when completing (`POST /uploads/:id/complete?ifContentVersion=`).
+ * When the file has moved on, either answers `409 version_conflict` with the file's
+ * `contentVersion` now in `details`, and nothing is stored: fetch that content, merge, and save
+ * again on top of it.
  */
+/** `POST /uploads/:id/complete?ifContentVersion=`: a checked save's base, checked again. */
+export const storageCompleteUploadQuerySchema = z.object({
+  ifContentVersion: z.coerce.number().int().nonnegative().optional(),
+});
+
 export const storageOpenVersionBodySchema = z.object({
   size: z.number().int().nonnegative(),
   mimeType: z.string().max(255).nullish(),
   sha256: sha256.optional(),
+  ifContentVersion: z.number().int().nonnegative().optional(),
 });
 
 /** Content a file has or had. `writtenByName` is null once its writer has left. */
@@ -271,6 +283,112 @@ export const storageSharedResponseSchema = z.object({
   /** Its contents when it is a folder; empty for a file. */
   nodes: z.array(storageNodeSchema),
   nextCursor: z.string().nullable(),
+});
+
+// --- Signing (ADR 0043 decision 6, the flow of ADR 0037 decision 4) ---
+
+/**
+ * The sentence a signer accepts, with its version. A signer sends the version back; one that is
+ * not the current version answers `409 consent_changed`, so nobody signs under words they did not
+ * see. Changing the words means a new version.
+ */
+export const STORAGE_SIGNING_CONSENT = {
+  version: "2026-11-16",
+  text: "I agree to sign this document electronically, and that my typed name is my signature on it.",
+} as const;
+
+export const storageSignatureStatusSchema = z.enum(["sent", "completed", "voided"]);
+
+/**
+ * `POST /files/:id/signatures`: sends a PDF the member reaches to these addresses, in this order.
+ * The Worker hashes the bytes, locks the file and mails each signer a link. Answers
+ * `201 { request }`; `415 not_a_pdf`, `409 signature_open` while another request is out on it.
+ */
+export const storageSendForSignatureBodySchema = z.object({
+  signers: z
+    .array(z.object({ email: storageEmailSchema, name: z.string().trim().min(1).max(200) }))
+    .min(1)
+    .max(20)
+    .refine((list) => new Set(list.map((s) => s.email)).size === list.length, {
+      message: "each address signs once",
+    }),
+});
+
+const storageSignatureEventSchema = z.object({
+  kind: z.enum(["sent", "viewed", "code_sent", "code_verified", "signed", "completed", "voided"]),
+  email: z.string(),
+  ip: z.string().nullable(),
+  userAgent: z.string().nullable(),
+  createdAt: isoDate,
+});
+
+/** A request as its sender sees it: every signer and the whole audit trail. */
+export const storageSignatureRequestSchema = z.object({
+  id: z.string(),
+  nodeId: z.string(),
+  contentVersion: z.number().int(),
+  /** Hex SHA-256 of the bytes sent, computed by the Worker. */
+  documentSha256: z.string(),
+  status: storageSignatureStatusSchema,
+  createdAt: isoDate,
+  completedAt: isoDate.nullable(),
+  voidedAt: isoDate.nullable(),
+  signers: z.array(
+    z.object({
+      email: z.string(),
+      name: z.string(),
+      signedAt: isoDate.nullable(),
+      typedName: z.string().nullable(),
+    }),
+  ),
+  events: z.array(storageSignatureEventSchema),
+});
+
+/** `POST /files/:id/signatures` and `POST /signatures/:requestId/void` answer this. */
+export const storageSignatureRequestResponseSchema = z.object({
+  request: storageSignatureRequestSchema,
+});
+
+/** `GET /files/:id/signatures`: every request made on the file, newest first. */
+export const storageSignatureRequestsResponseSchema = z.object({
+  requests: z.array(storageSignatureRequestSchema),
+});
+
+/**
+ * A request as a person asked to sign it sees it, under `/api/storage/signing`: the others by
+ * name only. `GET /signing` lists them, `GET /signing/:id` is one, `GET /signing/:id/content` is
+ * the document, `POST /signing/:id/code` mails a one-time code and `POST /signing/:id/sign` signs.
+ */
+export const storageSigningItemSchema = z.object({
+  id: z.string(),
+  status: storageSignatureStatusSchema,
+  fileName: z.string(),
+  size: z.number().int(),
+  workspaceName: z.string(),
+  sentBy: z.string().nullable(),
+  createdAt: isoDate,
+  documentSha256: z.string(),
+  signers: z.array(z.object({ name: z.string(), signed: z.boolean() })),
+  me: z.object({ email: z.string(), name: z.string(), signedAt: isoDate.nullable() }),
+});
+
+export const storageSigningListResponseSchema = z.object({
+  items: z.array(storageSigningItemSchema),
+});
+
+export const storageSigningItemResponseSchema = z.object({ item: storageSigningItemSchema });
+
+/** `POST /signing/:id/code` answers when the code mailed stops working. */
+export const storageSigningCodeResponseSchema = z.object({ expiresAt: isoDate });
+
+/** `POST /signing/:id/sign`. A wrong or expired code is `400 invalid_code`. */
+export const storageSignBodySchema = z.object({
+  code: z
+    .string()
+    .trim()
+    .regex(/^\d{6}$/),
+  typedName: z.string().trim().min(1).max(200),
+  consentVersion: z.string(),
 });
 
 // --- Sync (ADR 0043, docs/spec/desktop.md "The sync protocol") ---
@@ -388,6 +506,20 @@ export const desktopSyncStatusSchema = z.object({
 });
 
 /**
+ * On the workspace's realtime socket for the web app (ADR 0043 decision 3): someone who sees the
+ * file is editing it, or stopped. The app sends `{"type":"file.presence","nodeId","state"}`
+ * with `editing` while a file is open in its editor (again every 30 s, as a heartbeat) and
+ * `left` when it closes; the others who see the file hear this, and a newcomer hears who is
+ * already editing. Expire anyone not heard from in 90 s.
+ */
+export const storageFilePresenceEventSchema = z.object({
+  type: z.literal("file.presence"),
+  nodeId: id,
+  memberId: id,
+  state: z.enum(["editing", "left"]),
+});
+
+/**
  * What `omni-sync` (the macOS shell's sync helper, ADR 0043 amendment 1) prints for
  * `sign-in`: the authorize URL the shell opens in the app window.
  */
@@ -435,6 +567,7 @@ export const STORAGE_SYNC_NATIVE_TYPES = {
 
 export type StorageSpace = z.infer<typeof storageSpaceSchema>;
 export type StorageChangedEvent = z.infer<typeof storageChangedEventSchema>;
+export type StorageFilePresenceEvent = z.infer<typeof storageFilePresenceEventSchema>;
 export type StorageNodeKind = z.infer<typeof storageNodeKindSchema>;
 export type StorageRole = z.infer<typeof storageRoleSchema>;
 export type StorageGrantRole = z.infer<typeof storageGrantRoleSchema>;
@@ -461,6 +594,18 @@ export type StoragePutPersonBody = z.infer<typeof storagePutPersonBodySchema>;
 export type StorageSharedWithMeItem = z.infer<typeof storageSharedWithMeItemSchema>;
 export type StorageSharedWithMeResponse = z.infer<typeof storageSharedWithMeResponseSchema>;
 export type StorageSharedResponse = z.infer<typeof storageSharedResponseSchema>;
+export type StorageSignatureStatus = z.infer<typeof storageSignatureStatusSchema>;
+export type StorageSendForSignatureBody = z.infer<typeof storageSendForSignatureBodySchema>;
+export type StorageSignatureRequest = z.infer<typeof storageSignatureRequestSchema>;
+export type StorageSignatureRequestResponse = z.infer<typeof storageSignatureRequestResponseSchema>;
+export type StorageSignatureRequestsResponse = z.infer<
+  typeof storageSignatureRequestsResponseSchema
+>;
+export type StorageSigningItem = z.infer<typeof storageSigningItemSchema>;
+export type StorageSigningListResponse = z.infer<typeof storageSigningListResponseSchema>;
+export type StorageSigningItemResponse = z.infer<typeof storageSigningItemResponseSchema>;
+export type StorageSigningCodeResponse = z.infer<typeof storageSigningCodeResponseSchema>;
+export type StorageSignBody = z.infer<typeof storageSignBodySchema>;
 export type StorageSyncDrive = z.infer<typeof storageSyncDriveSchema>;
 export type StorageSyncWorkspace = z.infer<typeof storageSyncWorkspaceSchema>;
 export type StorageSyncDrivesResponse = z.infer<typeof storageSyncDrivesResponseSchema>;
