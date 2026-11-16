@@ -1,23 +1,17 @@
 // A file's comments (ADR 0043 decisions 4 and 5) beside its folder, where the preview opens, and
-// narrower: a 48px top bar (the file's name, then Close), the threads, and the chat box under
-// them. Open threads first, then resolved ones; each thread is its root and the replies under it,
-// drawn with the app's chat pieces (`components/chat/`). A message's ⋯ replies (the box then
-// answers that thread, with the reply banner on top), resolves or reopens, and edits or deletes
-// one's own. A new thread is on the whole file and on the version on screen.
+// narrower: a 48px top bar ("Comments", the file's name, Close), the chat, and the chat box under
+// it. One chat, oldest first, newest at the bottom, drawn with the app's chat pieces
+// (`components/chat/`) as the inbox's hidden notes are: a message's ⋯ replies to it (any message,
+// however old: the box then carries its quote on the reply banner, and the reply shows that quote
+// above its bubble) and edits or deletes one's own. Where a comment points into the file (a page,
+// lines, a cell) and an earlier version it was made on show as quiet tags beside the name.
 //
-// Geometry: threads 24px apart, inside a thread messages 12px apart and replies inset 16px; the
-// list and the box 20px from the panel's sides, as the preview's details are.
-import { useRef, useState, type ReactNode } from "react";
+// Geometry: messages 20px apart; the chat 20px from the panel's sides, and the box 8px from them,
+// so its text starts on the chat's left edge.
+import { useLayoutEffect, useRef, useState } from "react";
 import { Skeleton } from "skullet/react";
-import {
-  IconCheck,
-  IconPencil,
-  IconReply,
-  IconRestore,
-  IconTrash,
-  IconX,
-} from "@/components/icons/central";
-import { ChatBox, ReplyBanner } from "@/components/chat/chat-box";
+import { IconPencil, IconReply, IconTrash, IconX } from "@/components/icons/central";
+import { ChatBox, ReplyBanner, ReplyLine } from "@/components/chat/chat-box";
 import {
   ChatEdit,
   ChatFace,
@@ -25,7 +19,6 @@ import {
   ChatMessage,
   ChatText,
 } from "@/components/chat/chat-message";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Heading } from "@/components/ui/heading";
 import { MenuItem, MenuLabel } from "@/components/ui/menu";
@@ -37,14 +30,14 @@ import {
   useDeleteComment,
   useStorageComments,
 } from "@/hooks/use-storage.ts";
-import { quoteText, type Reply } from "@/lib/reply.ts";
+import { quoteText, withReply, type Reply } from "@/lib/reply.ts";
 import type { StorageNode } from "@/lib/storage.ts";
 import {
-  threadsOf,
-  type StorageComment,
+  chatOf,
+  commentAuthor,
+  type StorageChatLine,
   type StorageCommentAnchor,
   type StorageComments,
-  type StorageThread,
 } from "@/lib/storage-comments.ts";
 import { storageErrorToast } from "./storage-errors.ts";
 
@@ -76,7 +69,7 @@ function columnName(column: number) {
   return name;
 }
 
-/** Where a thread points, as a short label; null for the whole file. */
+/** Where a comment points, as a short label; null for the whole file. */
 function anchorLabel(anchor: StorageCommentAnchor | null) {
   switch (anchor?.kind) {
     case "pdf":
@@ -100,10 +93,21 @@ interface Door {
 }
 
 const withShare = ({ id, shareId }: Door) => ({ id, ...(shareId ? { shareId } : {}) });
-const nameOf = (comment: StorageComment) => comment.authorName ?? "Former member";
 
-/** The thread a reply goes to, and the passage it quotes on the box's banner. */
-type ReplyTo = Reply & { rootId: string };
+/** Keeps the newest message in view as the chat loads and grows, unless they scrolled up. */
+function useStickToBottom(count: number) {
+  const scroller = useRef<HTMLDivElement>(null);
+  const atBottom = useRef(true);
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    if (el && atBottom.current) el.scrollTop = el.scrollHeight;
+  }, [count]);
+  const onScroll = () => {
+    const el = scroller.current;
+    if (el) atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  };
+  return { scroller, onScroll };
+}
 
 export function CommentsPanel(props: {
   node: StorageNode;
@@ -113,10 +117,11 @@ export function CommentsPanel(props: {
   const { node, shareId } = props;
   const door = { id: node.id, shareId };
   const comments = useStorageComments(node.id, shareId);
-  const [replyTo, setReplyTo] = useState<ReplyTo | null>(null);
+  const [replyTo, setReplyTo] = useState<Reply | null>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
-  const reply = (root: StorageComment, comment: StorageComment) => {
-    setReplyTo({ rootId: root.id, from: nameOf(comment), text: quoteText(comment.body) });
+  const { scroller, onScroll } = useStickToBottom(comments.data?.comments.length ?? 0);
+  const reply = (line: StorageChatLine) => {
+    setReplyTo({ from: commentAuthor(line.comment), text: quoteText(line.body) });
     requestAnimationFrame(() => textarea.current?.focus());
   };
   return (
@@ -125,10 +130,13 @@ export function CommentsPanel(props: {
       className="flex min-w-0 flex-1 flex-col border-s bg-background"
     >
       {/* One row with the folder's header beside it: the same height and bottom line. */}
-      <div className="flex h-12 shrink-0 items-center gap-3 border-b ps-5 pe-2.5">
-        <Heading level={2} className="min-w-0 flex-1 text-md" title={node.name}>
-          <MiddleTruncate text={node.name} />
+      <div className="flex h-12 shrink-0 items-center gap-2 border-b ps-5 pe-2.5">
+        <Heading level={2} className="shrink-0 text-md">
+          Comments
         </Heading>
+        <span className="min-w-0 flex-1 text-sm text-muted-foreground" title={node.name}>
+          <MiddleTruncate text={node.name} />
+        </span>
         <TooltipTrigger delay={400}>
           <Button intent="ghost" size="sq-sm" aria-label="Close" onPress={props.onClose}>
             <IconX />
@@ -136,7 +144,7 @@ export function CommentsPanel(props: {
           <Tooltip>Close</Tooltip>
         </TooltipTrigger>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+      <div ref={scroller} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
         <Skeleton
           id="storage-comments"
           data={comments.data}
@@ -144,21 +152,22 @@ export function CommentsPanel(props: {
           label="Loading comments"
         >
           {(state) => (
-            <ul className="flex flex-col gap-6">
-              {threadsOf(state.comments).map((thread) => (
-                <Thread
-                  key={thread.root.id}
-                  door={door}
-                  thread={thread}
-                  current={state.contentVersion}
-                  onReply={reply}
-                />
+            <ul className="flex flex-col gap-5">
+              {chatOf(state.comments).map((line) => (
+                <li key={line.comment.id}>
+                  <Comment
+                    door={door}
+                    line={line}
+                    earlier={line.comment.contentVersion < state.contentVersion}
+                    onReply={() => reply(line)}
+                  />
+                </li>
               ))}
             </ul>
           )}
         </Skeleton>
       </div>
-      <div className="shrink-0 px-5 pb-4">
+      <div className="shrink-0 px-2 pb-2">
         <Composer
           door={door}
           textarea={textarea}
@@ -173,75 +182,28 @@ export function CommentsPanel(props: {
   );
 }
 
-function Thread(props: {
-  door: Door;
-  thread: StorageThread;
-  current: number;
-  onReply: (root: StorageComment, comment: StorageComment) => void;
-}) {
-  const { door, thread, current } = props;
-  const { root, replies } = thread;
-  const change = useChangeComment();
-  const where = anchorLabel(root.anchor);
-  const earlier = root.contentVersion < current;
-  const resolve = (resolved: boolean) =>
-    change.mutate(
-      { ...withShare(door), commentId: root.id, change: { resolved } },
-      { onError: (error) => storageErrorToast(error, "It was not changed") },
-    );
-  const message = (comment: StorageComment, extra?: ReactNode) => (
-    <Comment
-      door={door}
-      comment={comment}
-      onReply={() => props.onReply(root, comment)}
-      extra={extra}
-    />
-  );
+/** A quiet tag after the name: where the comment points, or the earlier version it was made on. */
+function Tags({ where, earlier }: { where: string | null; earlier: boolean }) {
+  if (!where && !earlier) return null;
   return (
-    <li className="flex flex-col gap-3">
-      {(where || earlier || root.resolvedAt) && (
-        <span className="flex flex-wrap items-center gap-1.5">
-          {where && <Badge intent="outline">{where}</Badge>}
-          {earlier && <Badge intent="secondary">Earlier version</Badge>}
-          {root.resolvedAt && <Badge intent="secondary">Resolved</Badge>}
-        </span>
-      )}
-      {message(
-        root,
-        root.resolvedAt ? (
-          <MenuItem textValue="Reopen" onAction={() => resolve(false)}>
-            <IconRestore data-slot="icon" />
-            <MenuLabel>Reopen</MenuLabel>
-          </MenuItem>
-        ) : (
-          <MenuItem textValue="Resolve" onAction={() => resolve(true)}>
-            <IconCheck data-slot="icon" />
-            <MenuLabel>Resolve</MenuLabel>
-          </MenuItem>
-        ),
-      )}
-      {replies.length > 0 && (
-        <ul className="flex flex-col gap-3 ps-4">
-          {replies.map((reply) => (
-            <li key={reply.id}>{message(reply)}</li>
-          ))}
-        </ul>
-      )}
-    </li>
+    <span className="shrink-0 text-xs text-subtle-foreground">
+      {[where, earlier && "Earlier version"].filter(Boolean).join(" · ")}
+    </span>
   );
 }
 
 function Comment(props: {
   door: Door;
-  comment: StorageComment;
+  line: StorageChatLine;
+  earlier: boolean;
   onReply: () => void;
-  extra?: ReactNode;
 }) {
-  const { door, comment } = props;
+  const { door, line } = props;
+  const { comment, body, reply } = line;
   const [editing, setEditing] = useState(false);
   const change = useChangeComment();
   const remove = useDeleteComment();
-  const name = nameOf(comment);
+  const name = commentAuthor(comment);
   const target = { ...withShare(door), commentId: comment.id };
   return (
     <ChatMessage
@@ -249,9 +211,18 @@ function Comment(props: {
       align="start"
       name={name}
       face={<ChatFace name={name} />}
+      tag={<Tags where={anchorLabel(comment.anchor)} earlier={props.earlier} />}
       createdAt={comment.createdAt}
       edited={comment.editedAt !== null}
       editing={editing}
+      quote={
+        reply &&
+        !editing && (
+          <div title={reply.text} className="flex max-w-[80%] text-xs text-muted-foreground">
+            <ReplyLine reply={reply} />
+          </div>
+        )
+      }
       menu={
         !editing && (
           <ChatMenu label="Comment actions">
@@ -259,7 +230,6 @@ function Comment(props: {
               <IconReply data-slot="icon" />
               <MenuLabel>Reply</MenuLabel>
             </MenuItem>
-            {props.extra}
             {comment.mine && (
               <>
                 <MenuItem textValue="Edit" onAction={() => setEditing(true)}>
@@ -287,29 +257,33 @@ function Comment(props: {
       {editing ? (
         <ChatEdit
           label="Edit comment"
-          text={comment.body}
+          text={body}
           onDone={() => setEditing(false)}
-          onSave={(body) =>
+          // Edits the words only: a reply's quote stays as it was.
+          onSave={(next) =>
             change.mutate(
-              { ...target, change: { body } },
+              { ...target, change: { body: comment.parentId ? next : withReply(reply, next) } },
               { onError: (error) => storageErrorToast(error, "It was not saved") },
             )
           }
         />
       ) : (
-        <ChatText>{comment.body}</ChatText>
+        <ChatText>{body}</ChatText>
       )}
     </ChatMessage>
   );
 }
 
-/** The chat box: a reply to `replyTo`'s thread, or a new thread on the version on screen. */
+/**
+ * The chat box: a comment on the version on screen, carrying the quote of the message it replies
+ * to when there is one.
+ */
 function Composer(props: {
   door: Door;
   textarea: React.RefObject<HTMLTextAreaElement | null>;
-  replyTo: ReplyTo | null;
+  replyTo: Reply | null;
   onClearReply: () => void;
-  onSent: (sent: ReplyTo | null) => void;
+  onSent: (sent: Reply | null) => void;
   contentVersion: number | undefined;
 }) {
   const { door, replyTo, contentVersion } = props;
@@ -320,18 +294,19 @@ function Composer(props: {
   const sending = useRef(false);
   const canSend = text.trim().length > 0 && !add.isPending;
   const send = () => {
-    const body = text.trim();
-    if (!body || sending.current) return;
+    const typed = text.trim();
+    if (!typed || sending.current) return;
     sending.current = true;
-    const json = replyTo
-      ? { body, parentId: replyTo.rootId }
-      : { body, ...(contentVersion === undefined ? {} : { contentVersion }) };
+    const body = withReply(replyTo ?? undefined, typed);
     add.mutate(
-      { ...withShare(door), body: json },
+      {
+        ...withShare(door),
+        body: { body, ...(contentVersion === undefined ? {} : { contentVersion }) },
+      },
       {
         // Clears what was sent, not what was typed while it was on its way.
         onSuccess: () => {
-          setText((current) => (current.trim() === body ? "" : current));
+          setText((current) => (current.trim() === typed ? "" : current));
           props.onSent(replyTo);
         },
         onError: (error) => storageErrorToast(error, "It was not sent"),
