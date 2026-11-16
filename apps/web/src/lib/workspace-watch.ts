@@ -85,11 +85,14 @@ async function announceMail(
 ) {
   if (!shouldShow(orgId)) return;
   if (threadIds.length > ONE_BY_ONE) {
+    // Claimed, so a "customer replied" in the same burst doesn't show again on its own.
+    const fresh = threadIds.filter((threadId) => claimThread(threadId));
+    if (fresh.length === 0) return;
     showNotification(
       {
-        tag: `mail:${orgId}:${threadIds.join(",")}`,
+        tag: `mail:${orgId}:${fresh.join(",")}`,
         title: options.nameOf(orgId) ?? "Omni",
-        body: `${threadIds.length} new messages`,
+        body: fresh.length === 1 ? "1 new message" : `${fresh.length} new messages`,
       },
       () => options.open({ orgId }),
     );
