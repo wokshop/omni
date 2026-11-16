@@ -78,9 +78,10 @@ under "All", so no workspace was ever a separate place.
   fewer threads, which is the intent. The parameter goes in a later contract step. A request that
   names a `mailboxId` still runs as the member who can open that mailbox (ADR 0024), as before.
 - **Web:** lists, counts and search stop sending `scope=all`; the mailbox menu lists only the
-  active workspace's mailboxes, and another workspace is chosen in settings; rows no longer name
-  their workspace; the shell opens only the active workspace's realtime socket, so the push
-  fallback for offline members covers other workspaces' mail again.
+  active workspace's mailboxes, and another workspace is chosen from the sidebar's workspace
+  menu; rows no longer name their workspace; the shell opens the active workspace's realtime
+  socket, plus the open thread's workspace while a thread from another one is open by link (so
+  it updates live), so the push fallback covers other workspaces' mail again.
 - **Unchanged:** `forUser` and its isolation proof; `GET /api/mailboxes?scope=all` (compose can
   still send from any address the session can open, ADR 0024); thread routes still open a
   thread by id as the member who can see it, so a link to one still works; `?org=` sockets.
