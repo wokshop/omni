@@ -106,7 +106,23 @@ const billingFields = {
   BILLING_TRIAL_DAYS: optionalText.pipe(wholeNumber.optional()).transform((days) => days ?? 0),
   /** AI-triaged emails per workspace per month. */
   BILLING_TRIAGE_ALLOWANCE: positiveInt,
+  /**
+   * Storage on the plan (ADR 0034 decision 7): the GB a company's plan includes, the metered
+   * price extra GB are billed at, and the event name of the Stripe meter behind that price. All
+   * three or none; with none, the plan has no storage allowance and nothing is metered.
+   */
+  BILLING_STORAGE_INCLUDED_GB: optionalText.pipe(
+    z.coerce.number<string | undefined>().positive().optional(),
+  ),
+  STRIPE_PRICE_STORAGE: optionalText,
+  STRIPE_STORAGE_METER_EVENT: optionalText.pipe(z.string().max(100).optional()),
 };
+
+const STORAGE_BILLING = [
+  "BILLING_STORAGE_INCLUDED_GB",
+  "STRIPE_PRICE_STORAGE",
+  "STRIPE_STORAGE_METER_EVENT",
+] as const;
 
 /** Auth variables, documented in `packages/auth/.env.example`. */
 export const authEnvSchema = z
@@ -149,6 +165,7 @@ export const authEnvSchema = z
         "STRIPE_PRICE_YEARLY",
         "STRIPE_PUBLISHABLE_KEY",
         "BILLING_TRIAGE_ALLOWANCE",
+        ...STORAGE_BILLING,
       ] as const;
       for (const name of stray.filter((n) => env[n] !== undefined)) {
         ctx.addIssue({ code: "custom", path: [name], message: "needs STRIPE_SECRET_KEY" });
@@ -165,6 +182,17 @@ export const authEnvSchema = z
           code: "custom",
           path: [name],
           message: "is required with STRIPE_SECRET_KEY",
+        });
+      }
+    }
+    // Storage on the plan is all three or none: an allowance with no price could bill nobody.
+    const storage = STORAGE_BILLING.filter((name) => env[name] !== undefined);
+    if (storage.length > 0 && storage.length < STORAGE_BILLING.length) {
+      for (const name of STORAGE_BILLING.filter((n) => env[n] === undefined)) {
+        ctx.addIssue({
+          code: "custom",
+          path: [name],
+          message: `is required with ${storage[0]}`,
         });
       }
     }
@@ -208,6 +236,17 @@ export const authEnvSchema = z
             publishableKey: env.STRIPE_PUBLISHABLE_KEY,
             trialDays: env.BILLING_TRIAL_DAYS,
             triageAllowance: env.BILLING_TRIAGE_ALLOWANCE!,
+            /** Absent: the plan has no storage allowance and nothing is metered. */
+            storage:
+              env.BILLING_STORAGE_INCLUDED_GB !== undefined &&
+              env.STRIPE_PRICE_STORAGE &&
+              env.STRIPE_STORAGE_METER_EVENT
+                ? {
+                    includedGb: env.BILLING_STORAGE_INCLUDED_GB,
+                    priceId: env.STRIPE_PRICE_STORAGE,
+                    meterEvent: env.STRIPE_STORAGE_METER_EVENT,
+                  }
+                : undefined,
           }
         : undefined,
   }));

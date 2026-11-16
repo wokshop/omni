@@ -12,11 +12,12 @@ import {
   type StorageTrashResponse,
   type StorageUsage,
 } from "@omni/contracts";
+import { storagePeakOf } from "@omni/db";
 import { Hono } from "hono";
 import { z } from "zod";
 import { inGoodStanding } from "../billing.ts";
 import type { AppEnv } from "../context.ts";
-import { storageLimit, wireNode } from "../storage.ts";
+import { extraGb, storageLimit, wireNode } from "../storage.ts";
 import { zValidator } from "../validator.ts";
 import { storageChanges } from "./storage-changes.ts";
 import {
@@ -80,11 +81,19 @@ export const storage = new Hono<AppEnv>()
     ]);
     const usedBytes = usage?.bytes ?? 0;
     const reservedBytes = usage?.reservedBytes ?? 0;
-    const full = limit.limitBytes !== null && usedBytes + reservedBytes >= limit.limitBytes;
+    const { limitBytes, allowanceBytes, overagePeriodStart } = limit;
+    const full = limitBytes !== null && usedBytes + reservedBytes >= limitBytes;
+    // The month's peak as the daily job last recorded it, or what is stored now if that is more.
+    const peak =
+      overagePeriodStart && allowanceBytes !== null
+        ? Math.max(usedBytes, await storagePeakOf(db, member.orgId, overagePeriodStart))
+        : null;
     return c.json({
       usedBytes,
       reservedBytes,
-      ...limit,
+      limitBytes,
+      allowanceBytes,
+      overage: peak === null ? null : { extraGb: extraGb(peak, allowanceBytes!) },
       uploadsBlocked: writable ? (full ? "STORAGE_FULL" : null) : "BILLING_INACTIVE",
     } satisfies StorageUsage);
   })
