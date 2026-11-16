@@ -142,8 +142,6 @@ export const keys = {
   pendingAll: () => [...local, "pending"] as const,
   pending: (threadId: string) => [...local, "pending", threadId] as const,
   failures: () => [...local, "failures"] as const,
-  /** Sends the outbox took whose result has not come back yet, with their workspace. */
-  outstanding: () => [...local, "outstanding"] as const,
 };
 
 /** Reads the filter back out of a `keys.threads(...)` key. */

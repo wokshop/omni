@@ -2,8 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import { threadQuery } from "../lib/mail-queries.ts";
-import type { OutstandingSend } from "../lib/pending.ts";
-import { keys } from "../lib/query-keys.ts";
+import { outstandingSends } from "../lib/pending.ts";
 import {
   onThreadsMerged,
   realtimeStatus,
@@ -29,11 +28,11 @@ export function useRealtimeConnection(orgId: string, options: { memberId?: strin
     enabled: !!threadId,
     select: (thread) => thread.orgId,
   }).data;
-  const sending = useQuery({
-    queryKey: keys.outstanding(),
-    queryFn: () => [] as OutstandingSend[],
-    initialData: [] as OutstandingSend[],
-  }).data;
+  const sending = useSyncExternalStore(
+    outstandingSends.subscribe,
+    outstandingSends.get,
+    outstandingSends.get,
+  );
   // A string, so a re-render with the same orgs leaves the sockets alone.
   const others = [...new Set([threadId ? threadOrg : undefined, ...sending.map((s) => s.orgId)])]
     .filter((id): id is string => !!id && id !== orgId)

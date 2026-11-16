@@ -124,7 +124,7 @@ export function startRealtime(client: QueryClient, activeOrgId: string): Realtim
       case "notification.removed":
         return void client.invalidateQueries({ queryKey: keys.notifications() });
       case "action.succeeded": {
-        settleOutstanding(client, event.actionId);
+        settleOutstanding(event.actionId);
         // A reply went out: refetch its thread now rather than waiting for the sync's event.
         const pending = allPending(client).find((p) => p.actionId === event.actionId);
         if (pending) changed(event.mailboxId, [pending.threadId]);
@@ -203,7 +203,7 @@ export function trackSends(client: QueryClient): () => void {
     if (event.type !== "updated" || event.action.type !== "success") return;
     const data = event.action.data as { actionId?: unknown; orgId?: unknown } | undefined;
     if (typeof data?.actionId === "string" && typeof data.orgId === "string") {
-      addOutstanding(client, { actionId: data.actionId, orgId: data.orgId });
+      addOutstanding({ actionId: data.actionId, orgId: data.orgId });
     }
   });
 }
@@ -231,7 +231,7 @@ function onActionFailed(
   kind: string | undefined,
   error: string,
 ) {
-  settleOutstanding(client, actionId);
+  settleOutstanding(actionId);
   // A failed reply shows on its pending bubble; anything else is reported as a failure, and the
   // lists refetch because an optimistic archive or move may not have happened after all.
   if (!failPendingByAction(client, actionId, error)) {
@@ -261,18 +261,18 @@ async function recheckPendingSends(client: QueryClient) {
 
 /** Asks the outbox about `orgId`'s outstanding sends: settles the finished, reports failures. */
 async function recheckOutstanding(client: QueryClient, orgId: string) {
-  const waiting = outstandingSends(client).filter((s) => s.orgId === orgId);
+  const waiting = outstandingSends.get().filter((s) => s.orgId === orgId);
   await Promise.all(
     waiting.map(async ({ actionId }) => {
       try {
         const action = await client.fetchQuery({ ...actionQuery(actionId), staleTime: 0 });
-        if (action.status === "done") settleOutstanding(client, actionId);
+        if (action.status === "done") settleOutstanding(actionId);
         if (action.status === "failed") {
           onActionFailed(client, action.id, action.kind, action.error ?? "Sending failed");
         }
       } catch (error) {
         // Gone: undone inside its window. Anything else (offline): the next open asks again.
-        if (error instanceof ApiError && error.status === 404) settleOutstanding(client, actionId);
+        if (error instanceof ApiError && error.status === 404) settleOutstanding(actionId);
       }
     }),
   );

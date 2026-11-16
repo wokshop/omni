@@ -3,7 +3,7 @@
 // server on another origin, the way a Google account's photo does.
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { createOrgWithOwner, schema } from "@omni/db";
+import { createOrgWithOwner, ensurePersonalSpace, schema } from "@omni/db";
 import { eq } from "drizzle-orm";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright-core";
 import { afterAll, afterEach, beforeAll, expect, test } from "vitest";
@@ -362,9 +362,11 @@ test("a thread from another workspace, opened by link, shows new mail live", asy
 
 // Catches: a send from another workspace's address failing silently. Only the active
 // workspace's socket was open, and the outbox announces a send's failure on the sender's own
-// workspace socket, so once the compose dialog closed nothing heard it.
-test("a send from another workspace's address hears its failure after the dialog closes", async () => {
+// workspace socket, so once the compose dialog closed nothing heard it; and a workspace switch
+// (which clears the query cache) forgetting the send, closing that socket before its result.
+test("a send from another workspace's address hears its failure after the dialog closes and a workspace switch", async () => {
   const { email, beta, boxes } = await ana("sendfail");
+  await ensurePersonalSpace(db, beta.userId);
   const page = await openSwitcher(email);
   await page.keyboard.press("Escape");
   const betaSockets: { frames: string[]; closed: () => boolean }[] = [];
@@ -390,6 +392,10 @@ test("a send from another workspace's address hears its failure after the dialog
   await dialog.getByRole("textbox", { name: "Subject" }).fill("From Beta");
   await dialog.getByRole("button", { name: "Send", exact: true }).click();
   await dialog.waitFor({ state: "detached" });
+  // To a third workspace (neither Acme nor Beta), through the sidebar's workspace menu.
+  await page.getByRole("button", { name: "Switch workspace, currently Acme" }).click();
+  await page.getByRole("menuitem", { name: "Personal" }).click();
+  await page.getByRole("button", { name: "Switch workspace, currently Personal" }).waitFor();
 
   const [action] = await db
     .select({ id: schema.mailActions.id })

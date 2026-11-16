@@ -216,7 +216,7 @@ export function useCancelSend() {
   return useCallback(
     async (actionId: string, pending?: { threadId: string; key: string }) => {
       const stopped = await cancelSend(actionId);
-      if (stopped) settleOutstanding(client, actionId);
+      if (stopped) settleOutstanding(actionId);
       if (stopped && pending) forgetPending(client, pending.threadId, pending.key);
       return stopped;
     },
