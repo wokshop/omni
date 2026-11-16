@@ -12,9 +12,12 @@ export const STORAGE_MAX_PARTS = 10_000;
 /** `personal` is the member's My files; `shared` is the company's shared drive. */
 export const storageSpaceSchema = z.enum(["personal", "shared"]);
 export const storageNodeKindSchema = z.enum(["folder", "file"]);
-/** `member` is someone in the node's space; `editor` and `viewer` come from a grant or a link. */
-export const storageRoleSchema = z.enum(["member", "editor", "viewer"]);
-export const storageGrantRoleSchema = z.enum(["viewer", "editor"]);
+/**
+ * `member` is someone in the node's space; the others come from a grant or a link. A `commenter`
+ * reads and writes comments (ADR 0043 decision 5); absent from a Worker older than comments.
+ */
+export const storageRoleSchema = z.enum(["member", "editor", "commenter", "viewer"]);
+export const storageGrantRoleSchema = z.enum(["viewer", "commenter", "editor"]);
 export const storageLinkAccessSchema = z.enum(["restricted", "anyone"]);
 
 const isoDate = z.iso.datetime();
@@ -152,11 +155,23 @@ export const storageUploadResponseSchema = z.object({ upload: storageUploadSchem
  * any upload, and completing it answers the file. The content it replaces is kept `keepDays`
  * and counts toward the workspace's storage until then. Only someone who may edit the file: a
  * member who reaches it, or an Editor. A locked file answers `409 locked`.
+ *
+ * A checked save (ADR 0043 decision 3) names `ifContentVersion`, the file's `contentVersion` it
+ * was based on, and names it again when completing (`POST /uploads/:id/complete?ifContentVersion=`).
+ * When the file has moved on, either answers `409 version_conflict` with the file's
+ * `contentVersion` now in `details`, and nothing is stored: fetch that content, merge, and save
+ * again on top of it.
  */
+/** `POST /uploads/:id/complete?ifContentVersion=`: a checked save's base, checked again. */
+export const storageCompleteUploadQuerySchema = z.object({
+  ifContentVersion: z.coerce.number().int().nonnegative().optional(),
+});
+
 export const storageOpenVersionBodySchema = z.object({
   size: z.number().int().nonnegative(),
   mimeType: z.string().max(255).nullish(),
   sha256: sha256.optional(),
+  ifContentVersion: z.number().int().nonnegative().optional(),
 });
 
 /** Content a file has or had. `writtenByName` is null once its writer has left. */
@@ -494,6 +509,20 @@ export const desktopSyncStatusSchema = z.object({
 });
 
 /**
+ * On the workspace's realtime socket for the web app (ADR 0043 decision 3): someone who sees the
+ * file is editing it, or stopped. The app sends `{"type":"file.presence","nodeId","state"}`
+ * with `editing` while a file is open in its editor (again every 30 s, as a heartbeat) and
+ * `left` when it closes; the others who see the file hear this, and a newcomer hears who is
+ * already editing. Expire anyone not heard from in 90 s.
+ */
+export const storageFilePresenceEventSchema = z.object({
+  type: z.literal("file.presence"),
+  nodeId: id,
+  memberId: id,
+  state: z.enum(["editing", "left"]),
+});
+
+/**
  * What `omni-sync` (the macOS shell's sync helper, ADR 0043 amendment 1) prints for
  * `sign-in`: the authorize URL the shell opens in the app window.
  */
@@ -541,6 +570,7 @@ export const STORAGE_SYNC_NATIVE_TYPES = {
 
 export type StorageSpace = z.infer<typeof storageSpaceSchema>;
 export type StorageChangedEvent = z.infer<typeof storageChangedEventSchema>;
+export type StorageFilePresenceEvent = z.infer<typeof storageFilePresenceEventSchema>;
 export type StorageNodeKind = z.infer<typeof storageNodeKindSchema>;
 export type StorageRole = z.infer<typeof storageRoleSchema>;
 export type StorageGrantRole = z.infer<typeof storageGrantRoleSchema>;
@@ -589,3 +619,5 @@ export type StorageReplaceUploadBody = z.infer<typeof storageReplaceUploadBodySc
 export type DesktopSyncState = z.infer<typeof desktopSyncStateSchema>;
 export type DesktopWorkspaceSync = z.infer<typeof desktopWorkspaceSyncSchema>;
 export type DesktopSyncStatus = z.infer<typeof desktopSyncStatusSchema>;
+
+export * from "./storage-comments.ts";

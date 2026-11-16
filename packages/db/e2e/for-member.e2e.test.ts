@@ -254,6 +254,9 @@ describe("forMember isolation", () => {
     const shared = await mine.createFolder({ space: "shared" }, "Team");
     if (shared.status !== "ok") throw new Error(shared.status);
     expect((await mine.file(file.node.id)).status).toBe("ok");
+    const comment = await mine.addComment(file.node.id, { body: "salary is wrong" });
+    if (comment.status !== "ok") throw new Error(comment.status);
+    const commentId = comment.comment.id;
     // A contract out for signature in the same private folder: its signers' addresses and audit
     // trail are the owner's to read, and nobody else's.
     const contractUpload = await mine.openUpload(
@@ -301,6 +304,12 @@ describe("forMember isolation", () => {
           )
         ).status,
       ).toBe("not_found");
+      // Its comments are as private as the file: none read, added, edited, resolved or deleted.
+      expect((await theirs.comments(file.node.id)).status).toBe("not_found");
+      expect((await theirs.addComment(file.node.id, { body: "seen" })).status).toBe("not_found");
+      expect((await theirs.editComment(file.node.id, commentId, "x")).status).toBe("not_found");
+      expect((await theirs.resolveComment(file.node.id, commentId, true)).status).toBe("not_found");
+      expect((await theirs.deleteComment(file.node.id, commentId)).status).toBe("not_found");
       // Someone else's upload cannot be read, fed, finished or dropped.
       expect(await theirs.upload(opened.upload.id)).toBeNull();
       expect((await theirs.completeUpload(opened.upload.id, { limitBytes: null })).status).toBe(

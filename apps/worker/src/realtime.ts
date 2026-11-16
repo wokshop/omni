@@ -18,6 +18,12 @@ import { z } from "zod";
 import { openDb } from "./db.ts";
 import type { Config } from "./env.ts";
 import { createLogger } from "./log.ts";
+import {
+  filePresenceMessage,
+  leaveFile,
+  onFilePresence,
+  setConversation,
+} from "./realtime-files.ts";
 
 /** Header the Worker sets (never the client) to tell the DO whose socket this is. */
 export const MEMBER_HEADER = "x-omni-member-id";
@@ -27,6 +33,13 @@ export const MEMBER_HEADER = "x-omni-member-id";
  */
 export const SYNC_HEADER = "x-omni-sync";
 const syncTag = (memberId: string) => `sync:${memberId}`;
+/**
+ * Set (by the Worker) on a watch socket: the desktop notifications of one workspace, kept open
+ * for every workspace the user is in. It hears `WATCHED` events alone and never counts as the
+ * member being online there, so their phone still gets its push. Tagged `watch:<memberId>`.
+ */
+export const WATCH_HEADER = "x-omni-watch";
+const watchTag = (memberId: string) => `watch:${memberId}`;
 
 export type RealtimeEvent =
   | { type: "changed"; mailboxId: string; threadIds: string[] }
@@ -45,7 +58,15 @@ export type RealtimeEvent =
    * Notifications this member had were withdrawn (the note that mentioned them was deleted):
    * refetch `GET /api/notifications`. Never shown as a new notification.
    */
-  | { type: "notification.removed"; threadId: string };
+  | { type: "notification.removed"; threadId: string }
+  /**
+   * New mail from someone else landed in the mailbox's inbox just now, in these threads. Watch
+   * sockets only: an app socket already hears `changed`.
+   */
+  | { type: "mail.arrived"; mailboxId: string; threadIds: string[] };
+
+/** What a watch socket hears. */
+const WATCHED = new Set(["notification", "notification.removed", "mail.arrived"]);
 
 type OutboundEvent = RealtimeEvent | HelpdeskRealtimeEvent | CrmChangedEvent | StorageChangedEvent;
 
@@ -55,6 +76,8 @@ const presenceMessage = z.object({
   threadId: z.string().min(1).max(64),
   state: z.enum(["viewing", "replying", "left"]),
 });
+/** What an app may send: conversation presence, or the file open in its editor. */
+const clientMessage = z.union([presenceMessage, filePresenceMessage]);
 /** Larger client messages are ignored unread. */
 const MAX_CLIENT_MESSAGE = 1024;
 
@@ -78,9 +101,12 @@ export class Realtime extends DurableObject<Env> {
       return new Response("expected a websocket upgrade", { status: 426 });
     }
     const { 0: client, 1: server } = new WebSocketPair();
-    this.ctx.acceptWebSocket(server, [
-      request.headers.has(SYNC_HEADER) ? syncTag(memberId) : memberId,
-    ]);
+    const tag = request.headers.has(SYNC_HEADER)
+      ? syncTag(memberId)
+      : request.headers.has(WATCH_HEADER)
+        ? watchTag(memberId)
+        : memberId;
+    this.ctx.acceptWebSocket(server, [tag]);
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -89,22 +115,19 @@ export class Realtime extends DurableObject<Env> {
     return this.send(memberIds, [event]);
   }
 
-  /** Sends the events, in order, to these members' sockets; returns the members with none open. */
+  /**
+   * Sends the events, in order, to these members' app sockets (all but `mail.arrived`) and watch
+   * sockets (`WATCHED` ones); returns the members with no app socket open.
+   */
   async send(memberIds: string[], events: OutboundEvent[]): Promise<string[]> {
-    const messages = events.map((event) => JSON.stringify(event));
+    const forApps = events.filter((e) => e.type !== "mail.arrived").map((e) => JSON.stringify(e));
+    const forWatch = events.filter((e) => WATCHED.has(e.type)).map((e) => JSON.stringify(e));
     const offline: string[] = [];
     for (const memberId of new Set(memberIds)) {
       const sockets = this.ctx.getWebSockets(memberId);
       if (sockets.length === 0) offline.push(memberId);
-      for (const socket of sockets) {
-        for (const message of messages) {
-          try {
-            socket.send(message);
-          } catch {
-            // Closing; the runtime drops it.
-          }
-        }
-      }
+      sendAll(sockets, forApps);
+      if (forWatch.length) sendAll(this.ctx.getWebSockets(watchTag(memberId)), forWatch);
     }
     return offline;
   }
@@ -140,13 +163,17 @@ export class Realtime extends DurableObject<Env> {
     if (typeof raw !== "string" || raw.length > MAX_CLIENT_MESSAGE) return;
     let message;
     try {
-      message = presenceMessage.parse(JSON.parse(raw));
+      message = clientMessage.parse(JSON.parse(raw));
     } catch {
       return;
     }
     const memberId = this.ctx.getTags(socket)[0];
-    // A sync socket only listens.
-    if (!memberId || memberId.startsWith("sync:")) return;
+    // A sync or watch socket only listens.
+    if (!memberId || memberId.startsWith("sync:") || memberId.startsWith("watch:")) return;
+    if (message.type === "file.presence") {
+      await onFilePresence(this.ctx, this.env, socket, memberId, message);
+      return;
+    }
     const current = presenceOf(socket);
     if (message.state === "left") {
       if (current?.threadId === message.threadId) await this.leave(socket, memberId, current);
@@ -168,7 +195,7 @@ export class Realtime extends DurableObject<Env> {
       mailboxId: audience.mailboxId,
       state: message.state,
     };
-    socket.serializeAttachment(presence);
+    setConversation(socket, presence);
     const others = audience.memberIds.filter((m) => m !== memberId);
     // Repeats go out too: they are the heartbeat that keeps the member listed on teammates'
     // screens, which expire anyone they have not heard from. Teammates hear the member's state
@@ -194,6 +221,7 @@ export class Realtime extends DurableObject<Env> {
   override async webSocketClose(socket: WebSocket, code: number) {
     const presence = presenceOf(socket);
     const memberId = this.ctx.getTags(socket)[0];
+    if (memberId) leaveFile(this.ctx, socket, memberId);
     if (presence && memberId) await this.leave(socket, memberId, presence);
     // 1005 (no code), 1006 (dropped without a close frame) and 1015 (TLS failure) only describe
     // a close; sending one throws.
@@ -203,6 +231,7 @@ export class Realtime extends DurableObject<Env> {
   override async webSocketError(socket: WebSocket) {
     const presence = presenceOf(socket);
     const memberId = this.ctx.getTags(socket)[0];
+    if (memberId) leaveFile(this.ctx, socket, memberId);
     if (presence && memberId) await this.leave(socket, memberId, presence);
   }
 
@@ -221,7 +250,7 @@ export class Realtime extends DurableObject<Env> {
    * there on another socket (a second tab), in which case they hear that socket's state.
    */
   private async leave(socket: WebSocket, memberId: string, presence: Presence) {
-    socket.serializeAttachment(null);
+    setConversation(socket, null);
     let still: Presence | null = null;
     for (const other of this.ctx.getWebSockets(memberId)) {
       const theirs = other === socket ? null : presenceOf(other);
@@ -252,9 +281,23 @@ export class Realtime extends DurableObject<Env> {
   }
 }
 
+function sendAll(sockets: WebSocket[], messages: string[]) {
+  for (const socket of sockets) {
+    for (const message of messages) {
+      try {
+        socket.send(message);
+      } catch {
+        // Closing; the runtime drops it.
+      }
+    }
+  }
+}
+
+/** The socket's conversation presence; null when it is in none (it may still edit a file). */
 function presenceOf(socket: WebSocket): Presence | null {
   try {
-    return (socket.deserializeAttachment() as Presence | null) ?? null;
+    const presence = (socket.deserializeAttachment() as Partial<Presence> | null) ?? null;
+    return presence?.threadId ? (presence as Presence) : null;
   } catch {
     return null;
   }
@@ -273,14 +316,15 @@ function presenceEvent(memberId: string, presence: Presence): HelpdeskRealtimeEv
 /**
  * Tells every member who can see the mailboxes that these threads changed: `changed` for the
  * mail views and `thread.changed` for helpdesk views. Members with no app open on a mailbox in
- * `push` get an Expo notification instead (when enabled).
+ * `push` get an Expo notification instead (when enabled). Watch sockets hear `arrived`, the new
+ * mail among the changes (`newArrivals`), as `mail.arrived`.
  */
 export async function fanOut(
   env: Env,
   db: Db,
   config: Config,
   changes: Map<string, Set<string>>,
-  options: { push?: Set<string> } = {},
+  options: { push?: Set<string>; arrived?: Map<string, Set<string>> } = {},
 ) {
   const audience = await mailboxAudience(db, [...changes.keys()]);
   const offlineByMailbox = new Map<string, { address: string; memberIds: string[] }>();
@@ -290,11 +334,15 @@ export async function fanOut(
     if (!first) continue;
     const threadIds = [...threadSet];
     const stub = env.REALTIME.get(env.REALTIME.idFromName(first.orgId));
+    const arrived = options.arrived?.get(mailboxId);
     const offline = await stub.send(
       rows.map((row) => row.memberId),
       [
         { type: "changed", mailboxId, threadIds },
         { type: "thread.changed", mailboxId, threadIds },
+        ...(arrived?.size
+          ? [{ type: "mail.arrived" as const, mailboxId, threadIds: [...arrived] }]
+          : []),
       ],
     );
     if (options.push?.has(mailboxId)) {
