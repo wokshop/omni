@@ -41,19 +41,19 @@ apply. The database is an index of your mail host: if it is lost, re-sync rebuil
 
 Filled in per unit: see each unit's `.env.example`.
 
-| Variable               | Used by                         | Required | Notes                                                                    |
-| ---------------------- | ------------------------------- | -------- | ------------------------------------------------------------------------ |
-| `DATABASE_URL`         | migrations, mail service, tests | yes      | `postgres://` URL. The Worker reaches the same database via Hyperdrive.  |
-| `BETTER_AUTH_SECRET`   | Worker (auth)                   | yes      | At least 32 random characters.                                           |
-| `BETTER_AUTH_URL`      | Worker (auth)                   | yes      | Public origin of the API.                                                |
-| `AUTH_TRUSTED_ORIGINS` | Worker (auth)                   | no       | Comma-separated web/app origins allowed to call auth; `omni://` for iOS. |
-| `AUTH_PASSKEY_RP_ID`   | Worker (auth)                   | no       | WebAuthn relying party ID; defaults to the `BETTER_AUTH_URL` host.       |
-| `APP_NAME`             | Worker (auth)                   | no       | Shown in passkey prompts; defaults to `Omni`.                            |
-| `GOOGLE_CLIENT_ID`     | Worker (auth)                   | no       | With `GOOGLE_CLIENT_SECRET`, turns on Google sign-in and Gmail connect.  |
-| `GOOGLE_CLIENT_SECRET` | Worker (auth)                   | no       | Secret. Set together with `GOOGLE_CLIENT_ID`, or neither.                |
-| `SIGN_UP`              | Worker (auth)                   | no       | `open` (default) or `invitation`: who may sign up (ADR 0018).            |
-| `MCP_CIMD_HOSTS`       | Worker (auth)                   | no       | Hosts whose OAuth client metadata agents connect with (ADR 0029).        |
-| `PURELYMAIL_API_TOKEN` | mail service                    | no       | Secret. Lets onboarding create domains, users and app passwords.         |
+| Variable               | Used by                         | Required | Notes                                                                                |
+| ---------------------- | ------------------------------- | -------- | ------------------------------------------------------------------------------------ |
+| `DATABASE_URL`         | migrations, mail service, tests | yes      | `postgres://` URL. The Worker reaches the same database via Hyperdrive.              |
+| `BETTER_AUTH_SECRET`   | Worker (auth)                   | yes      | At least 32 random characters.                                                       |
+| `BETTER_AUTH_URL`      | Worker (auth)                   | yes      | Public origin of the API.                                                            |
+| `AUTH_TRUSTED_ORIGINS` | Worker (auth)                   | no       | Comma-separated web/app origins allowed to call auth; `omni://` for iOS and desktop. |
+| `AUTH_PASSKEY_RP_ID`   | Worker (auth)                   | no       | WebAuthn relying party ID; defaults to the `BETTER_AUTH_URL` host.                   |
+| `APP_NAME`             | Worker (auth)                   | no       | Shown in passkey prompts; defaults to `Omni`.                                        |
+| `GOOGLE_CLIENT_ID`     | Worker (auth)                   | no       | With `GOOGLE_CLIENT_SECRET`, turns on Google sign-in and Gmail connect.              |
+| `GOOGLE_CLIENT_SECRET` | Worker (auth)                   | no       | Secret. Set together with `GOOGLE_CLIENT_ID`, or neither.                            |
+| `SIGN_UP`              | Worker (auth)                   | no       | `open` (default) or `invitation`: who may sign up (ADR 0018).                        |
+| `MCP_CIMD_HOSTS`       | Worker (auth)                   | no       | Hosts whose OAuth client metadata agents connect with (ADR 0029).                    |
+| `PURELYMAIL_API_TOKEN` | mail service                    | no       | Secret. Lets onboarding create domains, users and app passwords.                     |
 
 ### Mail service (`apps/mail`)
 
@@ -269,6 +269,10 @@ flyctl deploy . --config apps/mail/fly.toml --app <your-app>
 curl https://<your-app>.fly.dev/health
 ```
 
+The mail service needs at least 512 MB of memory, and 1 GB (what `fly.toml` asks for) once
+several mailboxes import at the same time: importing HTML mail peaks near 300 MB per mailbox. With
+less, a first sync slows to about a message a minute and `/health` starts timing out.
+
 Fly's GitHub deploy works the same with the repo root as working directory and this config path.
 Run the database migrations (`pnpm --filter @omni/db db:migrate`) before deploying code that needs
 them.
@@ -318,7 +322,7 @@ to `.dev.vars`.
 | ---------------------------- | ------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `BETTER_AUTH_SECRET`         | secret | yes      | At least 32 random characters.                                                                                                                                                              |
 | `BETTER_AUTH_URL`            | var    | yes      | Public origin of the Worker (and the web app it serves). Magic links point here.                                                                                                            |
-| `AUTH_TRUSTED_ORIGINS`       | var    | no       | Comma-separated web/app origins. Include `omni://` to let the iOS app sign in (its magic links end on that scheme).                                                                         |
+| `AUTH_TRUSTED_ORIGINS`       | var    | no       | Comma-separated web/app origins. Include `omni://` to let the iOS and desktop apps sign in (their magic links end on that scheme).                                                          |
 | `AUTH_PASSKEY_RP_ID`         | var    | no       | WebAuthn relying party ID.                                                                                                                                                                  |
 | `APP_NAME`                   | var    | no       | Defaults to `Omni`.                                                                                                                                                                         |
 | `WEB_APP_URL`                | var    | no       | Web app origin; invitation emails link to `<WEB_APP_URL>/invite/<id>`. Defaults to `BETTER_AUTH_URL`.                                                                                       |

@@ -5,8 +5,9 @@ use std::process::Command;
 use std::sync::Mutex;
 use std::time::Duration;
 
-use omni_sync_types::{DesktopSyncState, DesktopSyncStatus, DesktopWorkspaceSync};
-use serde::Deserialize;
+use omni_sync_types::{
+    DesktopSyncDone, DesktopSyncSignIn, DesktopSyncState, DesktopSyncStatus, DesktopWorkspaceSync,
+};
 use serde::de::DeserializeOwned;
 use tauri::{AppHandle, Manager, Runtime, Url};
 
@@ -43,14 +44,6 @@ async fn call<T: DeserializeOwned + Send + 'static>(args: Vec<String>) -> Result
     .map_err(|error| error.to_string())?
 }
 
-#[derive(Deserialize)]
-struct Opened {
-    url: String,
-}
-
-#[derive(Deserialize)]
-struct Done {}
-
 pub async fn status() -> Result<DesktopSyncStatus, String> {
     call(vec!["status".into()]).await
 }
@@ -67,7 +60,7 @@ pub async fn connect<R: Runtime>(
     let window = app.get_webview_window("main").ok_or("no main window")?;
     let here = window.url().map_err(|error| error.to_string())?;
     let origin = here.origin().ascii_serialization();
-    let opened: Opened = call(vec!["sign-in".into(), origin]).await?;
+    let opened: DesktopSyncSignIn = call(vec!["sign-in".into(), origin]).await?;
     let authorize = Url::parse(&opened.url).map_err(|error| error.to_string())?;
     if let Ok(mut pending) = app.state::<Pending>().0.lock() {
         *pending = Some((org_id, here));
@@ -87,7 +80,7 @@ pub async fn disconnect(org_id: String) -> Result<DesktopWorkspaceSync, String> 
     reason = "reached through `oauth_callback`, which the shell will call"
 )]
 pub async fn finish_sign_in<R: Runtime>(app: &AppHandle<R>, url: String) -> Result<(), String> {
-    let _: Done = call(vec!["finish-sign-in".into(), url]).await?;
+    let _: DesktopSyncDone = call(vec!["finish-sign-in".into(), url]).await?;
     let pending = app
         .state::<Pending>()
         .0
@@ -112,7 +105,7 @@ pub fn start<R: Runtime>(app: &AppHandle<R>) {
                 .is_ok_and(|status| !status.workspaces.is_empty());
             if synced {
                 // A failure here is the extension's to report, as a badge in Finder.
-                let _: Result<Done, String> = run(&["signal"]);
+                let _: Result<DesktopSyncDone, String> = run(&["signal"]);
             }
         }
     });

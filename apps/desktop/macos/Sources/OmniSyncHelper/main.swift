@@ -48,8 +48,6 @@ func print<T: Encodable>(json value: T) throws {
     FileHandle.standardOutput.write(try JSONEncoder().encode(value) + Data("\n".utf8))
 }
 
-struct OK: Encodable { let ok = true }
-
 func manager() throws -> NSFileProviderManager {
     guard let manager = NSFileProviderManager(for: Omni.domain) else { throw Failure("the Omni domain is not registered") }
     return manager
@@ -89,7 +87,7 @@ func run(_ arguments: [String]) async throws {
             throw Failure("not a server origin: \(arguments[1])")
         }
         let (_, url) = try SignIn.begin(origin: origin, container: container)
-        try print(json: ["url": url.absoluteString])
+        try print(json: DesktopSyncSignIn(url: url.absoluteString))
 
     case ("finish-sign-in", 2):
         guard let callback = URL(string: arguments[1]) else { throw Failure("not a callback URL") }
@@ -99,7 +97,7 @@ func run(_ arguments: [String]) async throws {
         next.origin = signIn.origin
         try next.write(to: container)
         try await signal()
-        try print(json: OK())
+        try print(json: DesktopSyncDone(ok: true))
 
     case ("connect", 2):
         let orgId = arguments[1]
@@ -125,14 +123,14 @@ func run(_ arguments: [String]) async throws {
 
     case ("signal", 1):
         try await signal()
-        try print(json: OK())
+        try print(json: DesktopSyncDone(ok: true))
 
     case ("pause", 1), ("resume", 1):
         guard var next = settings else { throw Failure("sync is not set up") }
         next.paused = arguments[0] == "pause"
         try next.write(to: container)
         try await signal()
-        try print(json: OK())
+        try print(json: DesktopSyncDone(ok: true))
 
     case ("sign-out", 1):
         if try await registered() {
@@ -143,7 +141,7 @@ func run(_ arguments: [String]) async throws {
         }
         try tokens.delete()
         try? FileManager.default.removeItem(at: container.appendingPathComponent(SyncSettings.fileName))
-        try print(json: OK())
+        try print(json: DesktopSyncDone(ok: true))
 
     default:
         throw Failure("usage: omni-sync status|sign-in <origin>|finish-sign-in <url>|connect <orgId>|disconnect <orgId>|signal|pause|resume|sign-out")

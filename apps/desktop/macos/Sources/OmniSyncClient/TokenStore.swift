@@ -63,9 +63,16 @@ public final class TokenStore: AccessTokenSource {
         defer { lock.unlock() }
         guard let tokens = try read() else { throw TokenError.signedOut }
         if tokens.accessToken != rejected, !tokens.expiresSoon { return tokens.accessToken }
-        let fresh = try await exchange(tokens.refreshToken)
-        try write(fresh)
-        return fresh.accessToken
+        do {
+            let fresh = try await exchange(tokens.refreshToken)
+            try write(fresh)
+            return fresh.accessToken
+        } catch TokenError.signedOut {
+            // The server refused the grant (revoked, expired): it is gone here too, so the app
+            // reports `needs_attention` and turning sync on signs in again.
+            try? delete()
+            throw TokenError.signedOut
+        }
     }
 
     private func exchange(_ refreshToken: String) async throws -> SyncTokens {

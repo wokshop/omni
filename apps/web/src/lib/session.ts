@@ -5,6 +5,7 @@ import { mutationOptions, queryOptions, type QueryClient } from "@tanstack/react
 import { dropStartupResponses } from "./startup-fetch.ts";
 import { api, ApiError, auth, call } from "./api.ts";
 import { setCurrentWorkspaceId } from "./current-workspace.ts";
+import { desktop } from "./desktop.ts";
 import { keys } from "./query-keys.ts";
 import { forgetOutstanding } from "./pending.ts";
 import { cancelUploads } from "./storage-uploads.ts";
@@ -98,15 +99,44 @@ export function isServerPath(to: string) {
   return to.startsWith("/api/");
 }
 
-/** Emails a sign-in link that returns to `redirect` (a same-origin path) or the inbox. */
-export function signInWithMagicLink(email: string, redirect?: string) {
+/**
+ * Emails a sign-in link that returns to `redirect` (a same-origin path) or the inbox. In the
+ * desktop app the link opens in the browser, so it returns to the app through the shell's
+ * `omni://` callback instead, success or failure; the window then reloads where it was.
+ */
+export async function signInWithMagicLink(email: string, redirect?: string) {
+  const callback = desktop.isDesktop ? await desktop.signInCallback() : null;
+  if (callback) rememberSignInRedirect(safeRedirect(redirect));
   return authCall(
     auth.signIn.magicLink({
       email,
-      callbackURL: safeRedirect(redirect),
-      errorCallbackURL: "/login?error=magic_link",
+      callbackURL: callback ?? safeRedirect(redirect),
+      errorCallbackURL: callback ?? "/login?error=magic_link",
     }),
   );
+}
+
+// The shell reloads the window at `/` once a desktop sign-in lands, so the destination the sign-in
+// started from waits here (this window's storage) for `/` to resume it.
+const SIGN_IN_REDIRECT = "omni.sign-in-redirect";
+
+function rememberSignInRedirect(to: string) {
+  try {
+    localStorage.setItem(SIGN_IN_REDIRECT, to);
+  } catch {
+    // Storage blocked: the sign-in still lands, on the inbox.
+  }
+}
+
+/** The destination a desktop sign-in started from, once; null when there is none. */
+export function takeSignInRedirect(): string | null {
+  try {
+    const to = localStorage.getItem(SIGN_IN_REDIRECT);
+    localStorage.removeItem(SIGN_IN_REDIRECT);
+    return to && to !== "/" ? safeRedirect(to) : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Which sign-in methods this deployment offers beyond email and passkeys. */
