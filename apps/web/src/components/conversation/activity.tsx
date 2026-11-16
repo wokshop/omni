@@ -11,7 +11,6 @@ import { useSession } from "@/hooks/use-session.ts";
 import { parseReply, withReply } from "@/lib/reply.ts";
 import type { ConversationEvent, Note, Priority } from "@/lib/types.ts";
 import { pictureUrl } from "@/lib/urls.ts";
-import { ReplyLine } from "../chat/chat-box.tsx";
 import { ChatEdit, ChatFace, ChatMessage, ChatText } from "../chat/chat-message.tsx";
 import { REPLY_SOURCE } from "../compose/selection-reply.tsx";
 import { messageTime } from "./message.tsx";
@@ -221,17 +220,7 @@ export function NoteItem(props: { threadId: string; mailboxId: string; note: Not
           />
         )
       }
-      quote={
-        reply &&
-        !editing && (
-          <div
-            title={reply.text}
-            className="flex max-w-[80%] justify-end text-xs text-muted-foreground"
-          >
-            <ReplyLine reply={reply} />
-          </div>
-        )
-      }
+      reply={reply}
     >
       {editing ? (
         <ChatEdit

@@ -11,7 +11,7 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { Skeleton } from "skullet/react";
 import { IconPencil, IconReply, IconTrash, IconX } from "@/components/icons/central";
-import { ChatBox, ReplyBanner, ReplyLine } from "@/components/chat/chat-box";
+import { ChatBox, ReplyBanner } from "@/components/chat/chat-box";
 import {
   ChatEdit,
   ChatFace,
@@ -215,14 +215,7 @@ function Comment(props: {
       createdAt={comment.createdAt}
       edited={comment.editedAt !== null}
       editing={editing}
-      quote={
-        reply &&
-        !editing && (
-          <div title={reply.text} className="flex max-w-[80%] text-xs text-muted-foreground">
-            <ReplyLine reply={reply} />
-          </div>
-        )
-      }
+      reply={reply}
       menu={
         !editing && (
           <ChatMenu label="Comment actions">

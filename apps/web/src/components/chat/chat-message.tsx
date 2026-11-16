@@ -7,6 +7,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Menu, MenuTrigger } from "@/components/ui/menu";
 import { Textarea } from "@/components/ui/textarea";
+import { replyLabel, type Reply } from "@/lib/reply.ts";
 import { messageTime } from "../conversation/message.tsx";
 
 /** Muted beside other actions; in a chat line, hidden until the message is hovered or focused. */
@@ -66,8 +67,8 @@ export function ChatMessage(props: {
   edited?: boolean;
   /** The ⋯, or nothing while it cannot be acted on. */
   menu?: ReactNode;
-  /** Between the header and the bubble: the passage it answers. */
-  quote?: ReactNode;
+  /** The passage it answers: quoted at the top of the bubble, behind a bar (not while editing). */
+  reply?: Reply | undefined;
   /** `end` for the team's side (notes), `start` for a conversation among equals. */
   align: "start" | "end";
   /** Dotted with no fill: hidden from someone. Else a plain outlined bubble. */
@@ -99,16 +100,31 @@ export function ChatMessage(props: {
         </time>
         {props.menu}
       </header>
-      {props.quote}
       <div
         {...props.bubbleProps}
         className={`rounded-xl border px-3 py-2 text-foreground ${
           props.dashed ? "border-dashed border-muted-foreground/40" : "border-border"
         } ${props.editing ? "w-full" : "max-w-[80%]"} ${props.pending ? "opacity-70" : ""}`}
       >
+        {props.reply && !props.editing && <ChatQuote reply={props.reply} />}
         {props.children}
       </div>
     </article>
+  );
+}
+
+/**
+ * The passage a message answers, at the top of its bubble: a 2px bar, then who wrote it and what,
+ * muted and cut to two lines (the whole passage on hover).
+ */
+export function ChatQuote({ reply }: { reply: Reply }) {
+  return (
+    <p
+      title={reply.text}
+      className="mb-1 line-clamp-2 border-s-2 border-border ps-2 text-sm/5 break-words text-muted-foreground"
+    >
+      {reply.from}: {replyLabel(reply)}
+    </p>
   );
 }
 
