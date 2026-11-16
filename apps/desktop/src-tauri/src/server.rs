@@ -15,7 +15,8 @@ const STORE: &str = "shell.json";
 const SERVER_KEY: &str = "server";
 
 /// What the server origin may call (ADR 0043 decision 2): window dragging and controls, the
-/// badge, notifications, opening links outside, events, and the sync commands. No filesystem,
+/// badge, notifications, opening links outside, events, the magic-link callback
+/// (`deep_link.rs`) and the sync commands. No filesystem,
 /// no shell, no HTTP. A new command of ours is added here as well as in `build.rs`.
 const REMOTE_PERMISSIONS: &[&str] = &[
     "core:event:default",
@@ -30,6 +31,7 @@ const REMOTE_PERMISSIONS: &[&str] = &[
     "notification:default",
     "opener:allow-open-url",
     "opener:allow-default-urls",
+    "allow-sign-in-callback",
     "allow-sync-status",
     "allow-sync-connect",
     "allow-sync-disconnect",
@@ -41,6 +43,16 @@ const REMOTE_PERMISSIONS: &[&str] = &[
 pub struct Server {
     pub origin: Arc<Mutex<Option<Url>>>,
     granted: Mutex<HashSet<String>>,
+}
+
+impl Server {
+    /// The chosen server, if the bundled page has opened one.
+    pub fn current(&self) -> Option<Url> {
+        self.origin
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
 }
 
 /// The origin of what the person typed or the build set: `https://` when no scheme is given,
