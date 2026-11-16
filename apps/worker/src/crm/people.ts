@@ -45,9 +45,9 @@ export const people = new Hono<AppEnv>()
     if (added.status !== "ok") return refused(c, added);
     const { person, created } = added;
     if (created) {
-      announce(c, "person", [person.id]);
+      await announce(c, "person", [person.id]);
       // Its company gained a person, or was made for it.
-      announce(c, "company", [person.companyId]);
+      await announce(c, "company", [person.companyId]);
     }
     return c.json(
       { person: wirePerson(person), created } satisfies CrmAddPersonResponse,
@@ -68,10 +68,11 @@ export const people = new Hono<AppEnv>()
     const before = await crm.person(id);
     const changed = await crm.updatePerson(id, c.req.valid("json"));
     if (changed.status !== "ok") return refused(c, changed);
-    announce(c, "person", [id]);
+    await announce(c, "person", [id]);
     // A move between companies changes both companies' people.
     const was = before.status === "ok" ? before.person.companyId : null;
-    if (was !== changed.person.companyId) announce(c, "company", [was, changed.person.companyId]);
+    if (was !== changed.person.companyId)
+      await announce(c, "company", [was, changed.person.companyId]);
     return c.json({ person: wirePerson(changed.person) } satisfies CrmPersonResponse);
   })
 
@@ -82,11 +83,11 @@ export const people = new Hono<AppEnv>()
     if (c.req.valid("query").forever) {
       const deleted = await crm.deletePerson(id);
       if (deleted.status !== "ok") return refused(c, deleted);
-      announce(c, "person", [id]);
+      await announce(c, "person", [id]);
       return c.body(null, 204);
     }
     const archived = await crm.archivePerson(id);
     if (archived.status !== "ok") return refused(c, archived);
-    announce(c, "person", [id]);
+    await announce(c, "person", [id]);
     return c.json({ person: wirePerson(archived.person) } satisfies CrmPersonResponse);
   });

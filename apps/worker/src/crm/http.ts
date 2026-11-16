@@ -242,16 +242,20 @@ export function decodeCursor<T extends z.ZodType>(value: string | undefined, sch
 export const nameCursor = z.object({ name: z.string(), id: z.string().min(1) });
 
 /**
- * Tells every socket of the workspace what changed (`crm.changed`, ids only): every member sees
- * every record. After the response, so a socket that is down never fails the write.
+ * Tells the workspace's members what changed (`crm.changed`, ids only): every member sees every
+ * record. The audience is read now, as mail's fan-out reads a mailbox's, so a member removed
+ * after connecting hears nothing. Sent after the response, so a socket that is down never fails
+ * the write.
  */
-export function announce(c: Context<AppEnv>, kind: CrmChangedKind, ids: (string | null)[]) {
+export async function announce(c: Context<AppEnv>, kind: CrmChangedKind, ids: (string | null)[]) {
   const changed = [...new Set(ids.filter((id): id is string => Boolean(id)))];
   if (changed.length === 0) return;
+  const audience = await memberCrm(c).audience();
+  if (audience.status !== "ok" || audience.memberIds.length === 0) return;
   const stub = c.env.REALTIME.get(c.env.REALTIME.idFromName(c.var.member.orgId));
   c.executionCtx.waitUntil(
     stub
-      .everyone({ type: "crm.changed", kind, ids: changed })
+      .broadcast(audience.memberIds, { type: "crm.changed", kind, ids: changed })
       .catch((error: unknown) => c.var.log.warn("crm.announce_failed", { error })),
   );
 }

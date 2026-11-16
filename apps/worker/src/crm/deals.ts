@@ -47,7 +47,7 @@ export const deals = new Hono<AppEnv>()
   .post("/deals", zValidator("json", crmCreateDealBodySchema), async (c) => {
     const made = await memberCrm(c).createDeal(c.req.valid("json"));
     if (made.status !== "ok") return refused(c, made);
-    announce(c, "deal", [made.deal.id]);
+    await announce(c, "deal", [made.deal.id]);
     return c.json({ deal: wireDeal(made.deal) } satisfies CrmDealResponse, 201);
   })
 
@@ -68,7 +68,7 @@ export const deals = new Hono<AppEnv>()
   .patch("/deals/:id", zValidator("json", crmUpdateDealBodySchema), async (c) => {
     const changed = await memberCrm(c).updateDeal(c.req.param("id"), c.req.valid("json"));
     if (changed.status !== "ok") return refused(c, changed);
-    announce(c, "deal", [changed.deal.id]);
+    await announce(c, "deal", [changed.deal.id]);
     return c.json({ deal: wireDeal(changed.deal) } satisfies CrmDealResponse);
   })
 
@@ -79,11 +79,11 @@ export const deals = new Hono<AppEnv>()
     if (c.req.valid("query").forever) {
       const deleted = await crm.deleteDeal(id);
       if (deleted.status !== "ok") return refused(c, deleted);
-      announce(c, "deal", [id]);
+      await announce(c, "deal", [id]);
       return c.body(null, 204);
     }
     const archived = await crm.archiveDeal(id);
     if (archived.status !== "ok") return refused(c, archived);
-    announce(c, "deal", [id]);
+    await announce(c, "deal", [id]);
     return c.json({ deal: wireDeal(archived.deal) } satisfies CrmDealResponse);
   });
