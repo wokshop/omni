@@ -79,9 +79,11 @@ under "All", so no workspace was ever a separate place.
   names a `mailboxId` still runs as the member who can open that mailbox (ADR 0024), as before.
 - **Web:** lists, counts and search stop sending `scope=all`; the mailbox menu lists only the
   active workspace's mailboxes, and another workspace is chosen from the sidebar's workspace
-  menu; rows no longer name their workspace; the shell opens the active workspace's realtime
-  socket, plus the open thread's workspace while a thread from another one is open by link (so
-  it updates live), so the push fallback covers other workspaces' mail again.
+  menu; rows no longer name their workspace. Realtime: only the active workspace's socket stays
+  open, so the push fallback covers other workspaces' mail again. Another workspace's socket
+  opens only while (a) one of its threads is on screen (opened by link) or (b) a send from one
+  of its addresses (a reply or new mail) has not had its result yet, and closes once neither
+  holds. Send responses carry the action's `orgId` for this (additive).
 - **Unchanged:** `forUser` and its isolation proof; `GET /api/mailboxes?scope=all` (compose can
   still send from any address the session can open, ADR 0024); thread routes still open a
   thread by id as the member who can see it, so a link to one still works; `?org=` sockets.

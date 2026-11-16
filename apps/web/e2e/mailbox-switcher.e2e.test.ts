@@ -360,6 +360,66 @@ test("a thread from another workspace, opened by link, shows new mail live", asy
     .toBeGreaterThan(0);
 });
 
+// Catches: a send from another workspace's address failing silently. Only the active
+// workspace's socket was open, and the outbox announces a send's failure on the sender's own
+// workspace socket, so once the compose dialog closed nothing heard it.
+test("a send from another workspace's address hears its failure after the dialog closes", async () => {
+  const { email, beta, boxes } = await ana("sendfail");
+  const page = await openSwitcher(email);
+  await page.keyboard.press("Escape");
+  const betaSockets: { frames: string[]; closed: () => boolean }[] = [];
+  page.on("websocket", (socket) => {
+    if (!socket.url().includes(`org=${beta.orgId}`)) return;
+    const frames: string[] = [];
+    let closed = false;
+    socket.on("framereceived", (frame) => frames.push(String(frame.payload)));
+    socket.on("close", () => (closed = true));
+    betaSockets.push({ frames, closed: () => closed });
+  });
+
+  await page.getByRole("button", { name: "Compose" }).click();
+  const dialog = page.getByRole("dialog", { name: "New email" });
+  await dialog.getByRole("button", { name: /^From / }).click();
+  await page
+    .getByRole("menuitemradio", { name: boxes.hello.address })
+    .or(page.getByRole("menuitem", { name: boxes.hello.address }))
+    .click();
+  await dialog.getByRole("button", { name: `From ${boxes.hello.address}` }).waitFor();
+  await dialog.getByRole("combobox", { name: "To" }).fill("client@example.test");
+  await dialog.getByRole("combobox", { name: "To" }).press("Enter");
+  await dialog.getByRole("textbox", { name: "Subject" }).fill("From Beta");
+  await dialog.getByRole("button", { name: "Send", exact: true }).click();
+  await dialog.waitFor({ state: "detached" });
+
+  const [action] = await db
+    .select({ id: schema.mailActions.id })
+    .from(schema.mailActions)
+    .where(eq(schema.mailActions.mailboxId, boxes.hello.id));
+  expect(action).toBeDefined();
+  // The mail service gives up on it, after the dialog has closed.
+  const failure = {
+    type: "action.failed" as const,
+    orgId: beta.orgId,
+    mailboxId: boxes.hello.id,
+    actionId: action!.id,
+    memberId: beta.memberId,
+    error: "550 mailbox unavailable",
+  };
+  // Until Beta's socket is open, the event would reach nobody: repeat it (receivers key on
+  // `actionId`, so a repeat is harmless).
+  await expect
+    .poll(
+      async () => {
+        expect((await postMailEvents(worker, { events: [failure] })).status).toBe(202);
+        return betaSockets.some((socket) => socket.frames.some((f) => f.includes(action!.id)));
+      },
+      { timeout: 10_000, interval: 500 },
+    )
+    .toBe(true);
+  // Heard: nothing more to wait for, so Beta's socket closes again.
+  await expect.poll(() => betaSockets.every((socket) => socket.closed())).toBe(true);
+});
+
 async function freePort() {
   const server = createServer();
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));

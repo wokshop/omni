@@ -99,3 +99,34 @@ export function dismissFailure(client: QueryClient, actionId: string) {
     list.filter((f) => f.actionId !== actionId),
   );
 }
+
+/**
+ * A send (reply or new mail) the outbox accepted whose result, sent or failed, has not come back
+ * yet, and the workspace it runs in: that workspace's socket stays open until it does.
+ */
+export interface OutstandingSend {
+  actionId: string;
+  orgId: string;
+}
+
+export function outstandingSends(client: QueryClient): OutstandingSend[] {
+  return client.getQueryData<OutstandingSend[]>(keys.outstanding()) ?? [];
+}
+
+export function addOutstanding(client: QueryClient, send: OutstandingSend) {
+  client.setQueryData<OutstandingSend[]>(keys.outstanding(), (list = []) => [
+    ...list.filter((s) => s.actionId !== send.actionId),
+    send,
+  ]);
+}
+
+/** Its result came back (or it was cancelled): nothing left to wait for. */
+export function settleOutstanding(client: QueryClient, actionId: string) {
+  const list = outstandingSends(client);
+  if (list.some((s) => s.actionId === actionId)) {
+    client.setQueryData(
+      keys.outstanding(),
+      list.filter((s) => s.actionId !== actionId),
+    );
+  }
+}

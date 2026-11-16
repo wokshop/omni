@@ -2,14 +2,23 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import { threadQuery } from "../lib/mail-queries.ts";
-import { onThreadsMerged, realtimeStatus, startRealtime } from "../lib/realtime.ts";
+import type { OutstandingSend } from "../lib/pending.ts";
+import { keys } from "../lib/query-keys.ts";
+import {
+  onThreadsMerged,
+  realtimeStatus,
+  startRealtime,
+  trackSends,
+  type RealtimeConnections,
+} from "../lib/realtime.ts";
 
 /**
  * Keeps the realtime socket for `orgId`, the active workspace, open while mounted. The lists show
  * only the active workspace's mail (ADR 0014, amended: workspace isolation), so that is the one
- * socket, plus the open thread's workspace while a thread from another one is open (a link to it
- * opens it as that workspace's member): its new messages and its sends' results arrive there. A
- * new `memberId`, org, or open thread's workspace reopens them.
+ * socket that always stays open. Another workspace's opens only while (a) a thread of it is on
+ * screen (a link opens it as that workspace's member) or (b) a send from one of its addresses
+ * has not had its result yet, and closes once neither holds: its new messages and its sends'
+ * results arrive there. A new `memberId` or org reopens the active one.
  */
 export function useRealtimeConnection(orgId: string, options: { memberId?: string } = {}) {
   const client = useQueryClient();
@@ -20,11 +29,33 @@ export function useRealtimeConnection(orgId: string, options: { memberId?: strin
     enabled: !!threadId,
     select: (thread) => thread.orgId,
   }).data;
-  const other = threadId && threadOrg && threadOrg !== orgId ? threadOrg : "";
-  useEffect(
-    () => startRealtime(client, other ? [other] : [], orgId),
-    [client, orgId, options.memberId, other],
-  );
+  const sending = useQuery({
+    queryKey: keys.outstanding(),
+    queryFn: () => [] as OutstandingSend[],
+    initialData: [] as OutstandingSend[],
+  }).data;
+  // A string, so a re-render with the same orgs leaves the sockets alone.
+  const others = [...new Set([threadId ? threadOrg : undefined, ...sending.map((s) => s.orgId)])]
+    .filter((id): id is string => !!id && id !== orgId)
+    .sort()
+    .join(",");
+
+  const connections = useRef<RealtimeConnections | null>(null);
+  const followed = useRef(others);
+  useEffect(() => trackSends(client), [client]);
+  useEffect(() => {
+    const opened = startRealtime(client, orgId);
+    connections.current = opened;
+    opened.follow(followed.current ? followed.current.split(",") : []);
+    return () => {
+      opened.stop();
+      connections.current = null;
+    };
+  }, [client, orgId, options.memberId]);
+  useEffect(() => {
+    followed.current = others;
+    connections.current?.follow(others ? others.split(",") : []);
+  }, [others]);
 }
 
 /** `connecting`, `open` or `closed`: for a "reconnecting…" indicator. */
