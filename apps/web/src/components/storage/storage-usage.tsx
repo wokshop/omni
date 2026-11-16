@@ -12,6 +12,7 @@ const SAMPLE = {
   reservedBytes: 0,
   allowanceBytes: null,
   limitBytes: 5 * 1024 ** 3,
+  overage: null,
   uploadsBlocked: null,
 };
 
