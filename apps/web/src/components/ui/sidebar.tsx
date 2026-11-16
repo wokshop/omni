@@ -369,7 +369,7 @@ export function SidebarSection({ className, ...props }: SidebarSectionProps) {
       {...props}
     >
       {state !== "collapsed" && "label" in props && (
-        <Header className="flex h-8 shrink-0 items-center px-2.25 text-xs text-subtle-foreground">
+        <Header className="flex h-8 shrink-0 items-center px-2.25 text-label text-subtle-foreground">
           {props.label}
         </Header>
       )}
@@ -585,7 +585,7 @@ export function SidebarDisclosureTrigger({
         slot="trigger"
         className={composeRenderProps(className, (className, { isFocusVisible, isDisabled }) =>
           cn(
-            "flex h-8 w-full min-w-0 items-center gap-1 px-2.25 text-start text-xs text-subtle-foreground",
+            "flex h-8 w-full min-w-0 items-center gap-1 px-2.25 text-start text-label text-subtle-foreground",
             "group/sidebar-disclosure-trigger relative focus-visible:outline-hidden",
             isFocusVisible && "inset-ring inset-ring-ring/70",
             isDisabled && "opacity-50",

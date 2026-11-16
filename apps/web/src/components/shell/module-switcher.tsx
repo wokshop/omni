@@ -14,6 +14,7 @@ import { useLocation, useNavigate, useRouter, useSearch } from "@tanstack/react-
 import { cn } from "cn";
 import { useMemo, useRef, type ComponentType, type CSSProperties, type ReactNode } from "react";
 import {
+  IconChevronsUpDown,
   IconCircleCheckFilled,
   IconConnections,
   IconFolderFilled,
@@ -253,7 +254,6 @@ export function WorkspaceSwitcher({
   // Only for those who'd see Billing: a company's owners and admins.
   const active = workspaces.find((w) => w.id === member.orgId);
   const team = !!active && active.kind !== "personal" && isManager(member.role);
-  const billing = useBilling({ enabled: team }).data;
   const row = useRef<HTMLDivElement>(null);
   const rowBox = useMemo(
     () => ({ getBoundingClientRect: () => row.current?.getBoundingClientRect() ?? new DOMRect() }),
@@ -261,11 +261,6 @@ export function WorkspaceSwitcher({
   );
   if (!active) return null;
   const label = (workspace: Workspace) => workspaceLabel(workspace, user.name);
-  const plan = billing?.enabled ? billing : null;
-  const upgrade =
-    team &&
-    !!plan?.canManage &&
-    (plan.readOnly || !plan.subscription || plan.subscription.status === "trialing");
 
   const choose = (workspace: Workspace) => {
     if (onChoose) return onChoose(workspace);
@@ -283,8 +278,9 @@ export function WorkspaceSwitcher({
         <SidebarItemTrigger
           aria-label={`Switch workspace, currently ${label(active)}`}
           // 9px after the name against the mark's 6.5px from the start (optical, measured): the
-          // text's soft end needs a little more room than the mark's hard edge to look even.
-          className="w-auto max-w-full shrink pe-2.25"
+          // text's soft end needs a little more room than the mark's hard edge to look even. In
+          // settings it is a full row with the mailbox switcher's chevron, as a chooser.
+          className={workspacesOnly ? undefined : "w-auto max-w-full shrink pe-2.25"}
         >
           <span className="grid size-icon shrink-0 place-items-center">
             {openWorkspace.isPending || pending ? (
@@ -297,6 +293,9 @@ export function WorkspaceSwitcher({
             )}
           </span>
           <span className="min-w-0 truncate">{label(active)}</span>
+          {workspacesOnly && (
+            <IconChevronsUpDown className="ms-auto -me-0.75 size-3.5 shrink-0 text-subtle-foreground group-hover/sidebar-item:text-foreground group-aria-expanded/sidebar-item:text-foreground" />
+          )}
         </SidebarItemTrigger>
         <Menu
           placement="bottom start"
@@ -332,9 +331,7 @@ export function WorkspaceSwitcher({
               <MenuLabel>New workspace</MenuLabel>
             </MenuItem>
           )}
-          {!workspacesOnly && (
-            <SettingsItems team={team} upgrade={upgrade} onLogOut={() => signOut.mutate()} />
-          )}
+          {!workspacesOnly && <SettingsItems team={team} onLogOut={() => signOut.mutate()} />}
         </Menu>
       </MenuTrigger>
       {end}
@@ -343,8 +340,14 @@ export function WorkspaceSwitcher({
 }
 
 /** The workspace menu's way into settings, a company's Invite and Upgrade, and Log out. */
-function SettingsItems(props: { team: boolean; upgrade: boolean; onLogOut: () => void }) {
-  const { team, upgrade } = props;
+function SettingsItems(props: { team: boolean; onLogOut: () => void }) {
+  const { team } = props;
+  const billing = useBilling({ enabled: team }).data;
+  const plan = billing?.enabled ? billing : null;
+  const upgrade =
+    team &&
+    !!plan?.canManage &&
+    (plan.readOnly || !plan.subscription || plan.subscription.status === "trialing");
   const openSettings = useOpenSettings();
   return (
     <>

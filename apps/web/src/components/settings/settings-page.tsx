@@ -55,8 +55,9 @@ export function SettingsPage({ page }: { page: SettingsPageId }) {
 
   return (
     <section className="flex h-svh min-h-0 min-w-0 flex-col">
-      {/* The thread list's header: 10px each side, the title after the sidebar toggle. */}
-      <header className="flex h-12 shrink-0 items-center gap-2 ps-2.5 pe-2.5">
+      {/* The thread list's header: 10px each side, the title after the sidebar toggle. A rule under
+          it here only: the page scrolls under the header. */}
+      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border ps-2.5 pe-2.5">
         <PageNav />
         <Heading className="min-w-0 truncate text-md">{title}</Heading>
       </header>

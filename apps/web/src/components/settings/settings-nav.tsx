@@ -33,15 +33,14 @@ export function SettingsNav() {
   return (
     <Sidebar closeButton={false}>
       <SidebarContent className="*:shrink-0">
-        <SidebarSection>
-          <SidebarItem href={settingsBackHref()} aria-label="Back to the app">
-            <IconChevronLeft className="size-icon" />
-            <SidebarLabel>Settings</SidebarLabel>
-          </SidebarItem>
-          <SearchField aria-label="Search settings" value={query} onChange={setQuery}>
-            <SearchInput placeholder="Search settings" />
-          </SearchField>
-        </SidebarSection>
+        <SidebarItem href={settingsBackHref()} aria-label="Back to the app">
+          <IconChevronLeft className="size-icon" />
+          <SidebarLabel>Settings</SidebarLabel>
+        </SidebarItem>
+        {/* Its own step in the content's 12px rhythm: as far from Back as from the first group. */}
+        <SearchField aria-label="Search settings" value={query} onChange={setQuery}>
+          <SearchInput placeholder="Search settings" />
+        </SearchField>
         {shownAccount.length > 0 && <Group label="Personal" pages={shownAccount} />}
         {/* The switcher stays while the search hides pages: it is what the pages act on. */}
         <Group label="Workspace" pages={shownWorkspace} switcher={<SettingsWorkspaceSwitcher />} />
