@@ -418,7 +418,11 @@ const Rows = memo(function Rows(props: {
           <Collection items={groups} dependencies={dependencies}>
             {(group) => (
               <GridListSection id={group.id} aria-label={group.label} className="divide-y-0">
-                <DateHeader label={group.label} count={group.rows.length} />
+                <DateHeader
+                  label={group.label}
+                  count={group.rows.length}
+                  first={group === groups[0]}
+                />
                 <Collection items={group.rows} dependencies={dependencies}>
                   {row}
                 </Collection>
@@ -461,10 +465,10 @@ function RowHover({ children }: { children: ReactNode }) {
   );
 }
 
-// 40px rows (the row's own `h-10` must match) under 48px date headers, which hold the room
-// above each group. The load-more sentinel takes no space; `loaderSize` 0 keeps the list's end
-// where it was.
-const LIST_LAYOUT = { rowSize: 40, headingSize: 48, loaderSize: 0 };
+// 40px rows (the row's own `h-10` must match) under date headers, measured: the first is shorter
+// than the rest (`DateHeader`). The load-more sentinel takes no space; `loaderSize` 0 keeps the
+// list's end where it was.
+const LIST_LAYOUT = { rowSize: 40, estimatedHeadingSize: 48, loaderSize: 0 };
 
 interface ShortcutsSource {
   view: ThreadView;

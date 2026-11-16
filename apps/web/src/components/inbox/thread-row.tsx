@@ -65,12 +65,16 @@ export function ThreadRow({
   );
 }
 
-/** A date group's label and how many rows it holds. The hover highlight skips it. */
-export function DateHeader({ label, count }: { label: string; count: number }) {
+/**
+ * A date group's label and how many rows it holds. The hover highlight skips it. 48px, the room
+ * above each group; the first is 36px, so it sits close under the list's title.
+ */
+export function DateHeader(props: { label: string; count: number; first: boolean }) {
+  const { label, count } = props;
   return (
     <GridListHeader
       data-fluid-hover-skip
-      className="mx-2.5 flex h-full items-end gap-1.5 px-3 pb-2 text-sm text-muted-foreground"
+      className={`mx-2.5 flex items-end gap-1.5 px-3 pb-3 text-sm text-muted-foreground ${props.first ? "h-9" : "h-12"}`}
     >
       {label}
       <span className="text-subtle-foreground tabular-nums">{count}</span>
