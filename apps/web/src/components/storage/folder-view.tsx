@@ -194,7 +194,9 @@ export function FolderView(props: {
           style={phone ? undefined : { width: COMMENTS_WIDTH }}
           className={`flex min-w-0 ${phone ? "flex-1" : "shrink"}`}
         >
+          {/* Keyed: a reply or a draft on one file never carries over to the next. */}
           <CommentsPanel
+            key={comments.node.id}
             node={comments.node}
             shareId={source.shareId}
             onClose={() => comments.select(null)}
