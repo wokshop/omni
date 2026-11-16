@@ -300,13 +300,14 @@ describe("the sender's own styles", () => {
     expect(html).not.toContain("w-full");
   });
 
-  test("<body>'s style and bgcolor stay with the content", () => {
+  test("<body>'s style and bgcolor go back to the body, under the sender's !important rules", () => {
     const html = sanitizeHtml(
-      `<html><body style="font-family:Helvetica;color:#24292e" bgcolor="#f6f8fa"><p>x</p></body></html>`,
+      `<html><head><style>@media (prefers-color-scheme:dark){body{background:#000!important}}</style></head><body style="font-family:Helvetica;color:#24292e" bgcolor="#f6f8fa"><p>x</p></body></html>`,
       options,
     ).html;
     expect(html).toBe(
-      '<div style="background-color:#f6f8fa;font-family:Helvetica;color:#24292e"><p>x</p></div>',
+      "<style>html body{background-color:#f6f8fa;font-family:Helvetica;color:#24292e}</style>" +
+        "<style>@media (prefers-color-scheme:dark){body{background:#000!important}}</style><p>x</p>",
     );
   });
 });

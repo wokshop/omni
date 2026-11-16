@@ -281,12 +281,15 @@ const FORBID_ATTR = ["srcset", "background", "poster", "ping", "action", "formac
 const BODY_TAG = /<body\b([^>]*)>/i;
 
 /**
- * Moves the content into a `<div>` that carries `<body>`'s style and `bgcolor`. Parsing in body
- * context drops the `<body>` tag, and with it the font, colour and background many senders set
- * only there (`<body style="font-family: …">`), so their mail fell back to the browser's serif.
- * The div goes through DOMPurify and the CSS rewrite like any other element.
+ * Gives `<body>`'s style and `bgcolor` back to the body, as a first `html body { … }` rule.
+ * Parsing in body context drops the `<body>` tag, and with it the font, colour and background
+ * many senders set only there (`<body style="font-family: …">`), so their mail fell back to the
+ * browser's serif. A rule rather than a wrapper element keeps the sender's own `body` rules in
+ * charge where they were: `!important` ones (dark mode, responsive padding) still win, and the
+ * extra `html` keeps plain ones from beating what was inline. The `<style>` goes through the
+ * same CSS rewrite as any other.
  */
-function wrapInBodyStyle(fragment: ReturnType<typeof parseBodyFragment>, html: string) {
+function restoreBodyStyle(fragment: ReturnType<typeof parseBodyFragment>, html: string) {
   const attrs = BODY_TAG.exec(html)?.[1];
   if (!attrs) return;
   const body = parseBodyFragment(`<div${attrs}>`).childNodes.find(isElement);
@@ -294,14 +297,12 @@ function wrapInBodyStyle(fragment: ReturnType<typeof parseBodyFragment>, html: s
   const bgcolor = attribute(body, "bgcolor");
   const background = bgcolor && /^#?[\da-z]+$/i.test(bgcolor) ? `background-color:${bgcolor};` : "";
   const style = background + (attribute(body, "style") ?? "");
-  if (!style) return;
-  const wrapper = parseBodyFragment("<div></div>").childNodes.find(isElement);
-  if (!wrapper) return;
-  wrapper.attrs = [{ name: "style", value: style }];
-  wrapper.childNodes = fragment.childNodes;
-  for (const child of wrapper.childNodes) child.parentNode = wrapper;
-  wrapper.parentNode = fragment;
-  fragment.childNodes = [wrapper];
+  // Braces could close the rule and `<` could close the element: neither belongs in a style.
+  if (!style || /[{}<]/.test(style)) return;
+  const rule = parseBodyFragment(`<style>html body{${style}}</style>`).childNodes.find(isElement);
+  if (!rule) return;
+  rule.parentNode = fragment;
+  fragment.childNodes.unshift(rule);
 }
 
 /**
@@ -316,7 +317,7 @@ export function sanitizeHtml(html: string, options: SanitizeOptions): SanitizedH
   }
 
   const fragment = parseBodyFragment(input);
-  wrapInBodyStyle(fragment, input);
+  restoreBodyStyle(fragment, input);
   capDepth(fragment);
   for (const element of elements(fragment)) {
     element.attrs = element.attrs
