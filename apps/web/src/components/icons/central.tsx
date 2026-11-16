@@ -93,3 +93,5 @@ export { IconAudio } from "central-icons-outlined/IconAudio";
 export { IconCodeBrackets as IconCode } from "central-icons-outlined/IconCodeBrackets";
 export { IconTable } from "central-icons-outlined/IconTable";
 export { IconSlidesWide as IconSlides } from "central-icons-outlined/IconSlidesWide";
+export { IconAlignmentJustify as IconRows } from "central-icons-outlined/IconAlignmentJustify";
+export { IconGrid as IconCards } from "central-icons-outlined/IconGrid";

@@ -1,4 +1,4 @@
-// Video and audio, streamed from the download route by `Range` (ADR 0039): the element fetches
+// Video and audio, streamed from the download route by `Range` (ADR 0040): the element fetches
 // only the metadata until it plays. A codec the browser can't play falls back to Download.
 import { useState } from "react";
 import type { FileKind } from "@/lib/file-kind.ts";

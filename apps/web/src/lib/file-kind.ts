@@ -1,4 +1,4 @@
-// What a stored file is, for its icon, its type badge and how it previews (ADR 0039). Read from
+// What a stored file is, for its icon, its type badge and how it previews (ADR 0040). Read from
 // the name's extension first (what the person sees), then the type the browser gave at upload.
 
 export type FileKind =
@@ -18,7 +18,7 @@ export type FileKind =
 /** How a file previews; `none` shows its type and Download. */
 export type PreviewKind = "image" | "video" | "audio" | "pdf" | "text" | "csv" | "none";
 
-/** Rasters a `Blob` may be re-typed as for `<img>`. Never SVG: it is a document (ADR 0039). */
+/** Rasters a `Blob` may be re-typed as for `<img>`. Never SVG: it is a document (ADR 0040). */
 const RASTER: Record<string, string> = {
   png: "image/png",
   jpg: "image/jpeg",
@@ -124,7 +124,7 @@ const RULES: {
   { kind: "spreadsheet", preview: "none", matches: (e) => SPREADSHEET.has(e) },
   { kind: "document", preview: "none", matches: (e) => DOCUMENT.has(e) },
   { kind: "presentation", preview: "none", matches: (e) => PRESENTATION.has(e) },
-  // SVG and other image types: an image, with no preview (ADR 0039).
+  // SVG and other image types: an image, with no preview (ADR 0040).
   { kind: "image", preview: "none", matches: (_, m) => m.startsWith("image/") },
 ];
 

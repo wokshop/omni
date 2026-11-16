@@ -1,4 +1,4 @@
-// The stage: the file through the renderer its kind calls for (ADR 0039). PDF, code and CSV
+// The stage: the file through the renderer its kind calls for (ADR 0040). PDF, code and CSV
 // renderers load on their own chunks (pdf.js, Shiki and Papa Parse stay off the app's entry), and
 // each is keyed by the file, so stepping to the next file starts it fresh.
 import { lazy, Suspense } from "react";

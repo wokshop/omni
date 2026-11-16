@@ -1,4 +1,4 @@
-// A file's preview (ADR 0039): its text, its image, its grid thumbnail.
+// A file's preview (ADR 0040): its text, its image, its grid thumbnail.
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   previewImageQuery,

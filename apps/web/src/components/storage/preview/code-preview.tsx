@@ -1,4 +1,4 @@
-// Text and code: the file's first 512 KB as lines with their numbers (ADR 0039). Shown as plain
+// Text and code: the file's first 512 KB as lines with their numbers (ADR 0040). Shown as plain
 // text at once, then coloured by Shiki once its grammar has loaded (one chunk per language, on
 // first use). Everything renders as React text nodes: a file's markup never becomes ours.
 // Lines go in blocks the browser skips laying out while off screen, so 10,000 lines scroll freely.

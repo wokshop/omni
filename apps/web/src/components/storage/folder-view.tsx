@@ -1,7 +1,7 @@
 // A folder's page, whichever door it is opened through (a member's My files or Shared, or a
 // shared link): the folder as a list or a grid, files dropped anywhere on it uploaded here, the
 // upload actions for whoever may write, the dialogs its rows open, and the open file's preview
-// beside it (ADR 0039). The open file is the URL's `?file=`, so Back closes it.
+// beside it (ADR 0040). The open file is the URL's `?file=`, so Back closes it.
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import type { SettingsRowMenuItem } from "@/components/settings/kit/settings-row-menu";
@@ -9,7 +9,6 @@ import { ResizeGrip, useStoredWidth } from "@/components/ui/resize-grip";
 import { useFullScreen } from "@/hooks/use-full-screen.ts";
 import { useIsMobile } from "@/hooks/use-mobile.ts";
 import { useUploads } from "@/hooks/use-storage.ts";
-import { useStorageView } from "@/hooks/use-storage-view.ts";
 import type { StorageNode, StoragePlace } from "@/lib/storage.ts";
 import { MoveDialog, NewFolderDialog, RenameDialog, type MoveScope } from "./file-dialogs.tsx";
 import { FolderBody, HeaderActions } from "./folder-body.tsx";
@@ -75,7 +74,6 @@ export function FolderView(props: {
     upload(files, { place: source.place, shareId: source.shareId }, (name, error) =>
       storageErrorToast(error, `“${name}” was not uploaded`),
     );
-  const [view, setView] = useStorageView();
   const open = useOpenFile(source.list.nodes);
   const menu = useCallback(
     (node: StorageNode) => source.menu(node, setDialog),
@@ -114,8 +112,6 @@ export function FolderView(props: {
           sidebar={props.sidebar}
           actions={
             <HeaderActions
-              view={view}
-              onView={setView}
               canWrite={source.canWrite}
               onNewFolder={() => setDialog({ dialog: "new" })}
               onFiles={send}
@@ -124,7 +120,6 @@ export function FolderView(props: {
         >
           <FolderBody
             source={source}
-            view={view}
             menu={menu}
             open={open}
             onNewFolder={() => setDialog({ dialog: "new" })}

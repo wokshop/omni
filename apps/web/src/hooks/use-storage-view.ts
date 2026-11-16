@@ -1,38 +1,48 @@
-// How Storage lays out a folder, list or grid: one choice for every folder, remembered in this
-// browser, like the reader's full screen.
+// How Storage lays out each section of a folder, rows or cards: folders as cards and files as
+// rows until the person picks otherwise. One choice per section for every folder, remembered in
+// this browser.
 import { useCallback, useSyncExternalStore } from "react";
 
-export type StorageView = "list" | "grid";
+export type StorageView = "rows" | "cards";
+export type StorageSection = "folders" | "files";
 
-const KEY = "omni:storage-view";
+const DEFAULT: Record<StorageSection, StorageView> = { folders: "cards", files: "rows" };
+const KEY = (section: StorageSection) => `omni:storage-view:${section}`;
 const listeners = new Set<() => void>();
 
-function read(): StorageView {
+function read(section: StorageSection): StorageView {
   try {
-    return localStorage.getItem(KEY) === "grid" ? "grid" : "list";
+    const stored = localStorage.getItem(KEY(section));
+    return stored === "rows" || stored === "cards" ? stored : DEFAULT[section];
   } catch {
-    return "list"; // Storage unavailable (private mode).
+    return DEFAULT[section]; // Storage unavailable (private mode).
   }
 }
 
-let current = read();
+const current: Record<StorageSection, StorageView> = {
+  folders: read("folders"),
+  files: read("files"),
+};
 
 function subscribe(listener: () => void) {
   listeners.add(listener);
   return () => listeners.delete(listener);
 }
 
-/** `[view, setView]`. A list until the person picks the grid. */
-export function useStorageView() {
-  const view = useSyncExternalStore(subscribe, () => current);
-  const setView = useCallback((next: StorageView) => {
-    current = next;
-    try {
-      localStorage.setItem(KEY, next);
-    } catch {
-      // The choice lasts for this page only.
-    }
-    for (const listener of listeners) listener();
-  }, []);
+/** `[view, setView]` for one section. */
+export function useStorageView(section: StorageSection) {
+  const view = useSyncExternalStore(subscribe, () => current[section]);
+  const setView = useCallback(
+    (next: StorageView) => {
+      current[section] = next;
+      try {
+        localStorage.setItem(KEY(section), next);
+      } catch {
+        // The choice lasts for this page only.
+      }
+      for (const listener of listeners) listener();
+    },
+    [section],
+  );
   return [view, setView] as const;
 }

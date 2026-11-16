@@ -13,7 +13,7 @@
 //   ├─ crm ─ companies(q) · people(q) · deals(q) · company(id) · person(id) · deal(id) · stages
 //   │        · timeline(kind, id) · contracts(where) · find(q)                  (ADR 0036)
 //   ├─ preview ─ (kind, file, version)   a file's preview bytes; outside `storage` so a list's
-//   │                                    refetch never refetches them (ADR 0039)
+//   │                                    refetch never refetches them (ADR 0040)
 //   └─ local ─ pending(threadId) · failures       (client-only state, never fetched)
 //
 // Switching organization or account clears the whole cache (see `session.ts`), so keys do not
@@ -160,7 +160,7 @@ export const keys = {
   /** People, companies and deals whose name starts with `q`, for pickers. */
   crmFind: (q: string) => [...crm, "find", { q }] as const,
   /**
-   * A file's preview (ADR 0039): `image`, `thumbnail` or `text`, by the URL it is read through
+   * A file's preview (ADR 0040): `image`, `thumbnail` or `text`, by the URL it is read through
    * and the file's `updatedAt`, so a new version is a new key.
    */
   storagePreview: (kind: "image" | "thumbnail" | "text", url: string, version: string) =>

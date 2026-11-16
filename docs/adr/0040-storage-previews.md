@@ -1,4 +1,4 @@
-# 0039: File previews in Storage
+# 0040: File previews in Storage
 
 Date: 2026-11-16 · Status: accepted · Amends: ADR 0034 (decision 5, "Not in v1: Previews")
 

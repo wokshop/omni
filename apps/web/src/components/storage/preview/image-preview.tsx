@@ -1,5 +1,5 @@
 // An image, fitted to the stage. Its bytes are fetched once and shown as an allow-listed raster
-// `blob:` URL, never under the type it was uploaded with (ADR 0039).
+// `blob:` URL, never under the type it was uploaded with (ADR 0040).
 import { useState } from "react";
 import { useFileImage } from "@/hooks/use-storage-preview.ts";
 import type { PreviewSource } from "@/lib/storage-preview.ts";

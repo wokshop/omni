@@ -1,4 +1,4 @@
-// A PDF, drawn by pdf.js to canvases (ADR 0039): its own script never runs (no eval, no
+// A PDF, drawn by pdf.js to canvases (ADR 0040): its own script never runs (no eval, no
 // annotation or form layer), and it reads the file by `Range`, so a 300-page PDF opens on its
 // first pages' bytes. Only pages near the screen are drawn; the rest hold their height.
 // Loaded on its own chunk with pdf.js, the first time a PDF opens.

@@ -1,4 +1,4 @@
-// A file's preview bytes (ADR 0039), read through the same download route as Download: the start
+// A file's preview bytes (ADR 0040), read through the same download route as Download: the start
 // of a text file, an image re-typed as an allow-listed raster, and grid thumbnails downscaled once
 // in the browser. Object URLs live in the query cache and are revoked when it drops them.
 import { queryOptions, type QueryClient } from "@tanstack/react-query";

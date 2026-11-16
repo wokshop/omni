@@ -68,7 +68,7 @@ export function FileList({ space, folderId }: { space: StorageSpace; folderId?: 
   );
 }
 
-/** Where a file's bytes are: Download, and the preview's read of them (ADR 0039). */
+/** Where a file's bytes are: Download, and the preview's read of them (ADR 0040). */
 const fileUrl = (node: StorageNode) => storageFileUrl(node.id);
 const download = (node: StorageNode) => window.location.assign(fileUrl(node));
 

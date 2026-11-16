@@ -45,12 +45,6 @@ export interface FileTableProps {
   href?: ((node: StorageNode) => string | undefined) | undefined;
   /** What pressing a row without a link does. */
   onAction?: ((node: StorageNode) => void) | undefined;
-  /**
-   * The file open in the preview beside the table, as the table's one selected row: a click or
-   * the arrow keys select a file and its preview follows; Esc clears it. Folders are links, never
-   * selected.
-   */
-  open?: { id: string | undefined; onChange: (id: string | null) => void } | undefined;
   menu: (node: StorageNode) => SettingsRowMenuItem[];
   loadMore?: (() => void) | undefined;
   isLoadingMore?: boolean;
@@ -59,22 +53,7 @@ export interface FileTableProps {
 /** Memoized: the folder page re-renders as the preview opens and the panel resizes. */
 export const FileTable = memo(function FileTable(props: FileTableProps) {
   return (
-    <Table
-      variant="page"
-      rowSize="lg"
-      aria-label={props.label}
-      {...(props.open && {
-        selectionMode: "single" as const,
-        selectionBehavior: "replace" as const,
-        selectedKeys: props.open.id ? [props.open.id] : [],
-        disabledKeys: folderIds(props.nodes),
-        disabledBehavior: "selection" as const,
-        onSelectionChange: (keys) => {
-          const [id] = keys === "all" ? [] : [...keys];
-          props.open?.onChange(id === undefined ? null : String(id));
-        },
-      })}
-    >
+    <Table variant="page" rowSize="lg" aria-label={props.label}>
       <TableHeader>
         <TableColumn isRowHeader>Name</TableColumn>
         <TableColumn className={COLUMN.kind}>Kind</TableColumn>
