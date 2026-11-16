@@ -1,8 +1,7 @@
 // Reply and Forward, floating at the reading column's bottom right over an open thread; Compose,
 // at the list's bottom right while no thread is open (with one open, the list header's pen).
 import { verificationCode } from "@omni/mail-core/verification-code";
-import { useMutation } from "@tanstack/react-query";
-import { type ReactNode, type Ref, useMemo, useRef, useState } from "react";
+import { type ReactNode, type Ref, useMemo, useRef } from "react";
 import {
   IconBellOff,
   IconCheck,
@@ -15,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Menu, MenuItem, MenuLabel, MenuTrigger } from "@/components/ui/menu";
 import { appToast } from "@/components/ui/toast";
 import { useClipboard } from "@/hooks/use-clipboard";
-import { api, call, idempotencyKey } from "@/lib/api.ts";
+import { useUnsubscribe } from "@/hooks/use-mail-actions.ts";
 import type { Thread } from "@/lib/types.ts";
 import { useComposerState } from "./composer-state.tsx";
 
@@ -129,22 +128,14 @@ function Unsubscribe({
   messageId: string;
   option: NonNullable<Thread["messages"][number]["unsubscribe"]>;
 }) {
-  // One per message: a retry of the same press never mails the list twice.
-  const [key] = useState(idempotencyKey);
-  const leave = useMutation({
-    mutationFn: () =>
-      call(
-        api.threads[":id"].unsubscribe.$post({
-          param: { id: threadId },
-          header: { "idempotency-key": key },
-          json: { messageId },
-        }),
-      ),
-    onError: () => appToast.error("Unsubscribe failed"),
-  });
+  const leave = useUnsubscribe();
   const press = () => {
     if (option.url) window.open(option.url, "_blank", "noopener,noreferrer");
-    else leave.mutate();
+    else
+      leave.mutate(
+        { threadId, messageId },
+        { onError: () => appToast.error("Unsubscribe failed") },
+      );
   };
   const done = leave.isSuccess;
   return (
