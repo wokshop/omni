@@ -11,3 +11,7 @@ export const setBadge = (count: number) =>
 
 /** `omni://auth?state=…`, issued once by the shell for this sign-in (`deep_link.rs`). */
 export const signInCallback = () => invoke<string>("sign_in_callback");
+
+export const startDragging = () => getCurrentWindow().startDragging();
+
+export const toggleMaximize = () => getCurrentWindow().toggleMaximize();
