@@ -6,7 +6,6 @@
 import { useLocation } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
 import { IconChevronLeft } from "@/components/icons/central";
-import { TitleBarSpace } from "@/components/shell/desktop-title-bar";
 import { moduleHome, WorkspaceSwitcher } from "@/components/shell/module-switcher";
 import { SearchField, SearchInput } from "@/components/ui/search-field";
 import {
@@ -35,14 +34,12 @@ export function SettingsNav() {
   return (
     <Sidebar closeButton={false}>
       <SidebarContent className="*:shrink-0">
-        {/* In the desktop app it starts after the title bar's group, on the same row. */}
-        <div className="flex min-w-0 items-center">
-          {desktop.isDesktop && <TitleBarSpace inset={8} />}
-          <SidebarItem href={settingsBackHref()} aria-label="Back to the app" className="min-w-0">
-            <IconChevronLeft className="size-icon" />
-            <SidebarLabel>Settings</SidebarLabel>
-          </SidebarItem>
-        </div>
+        {/* In the desktop app the title bar's group takes the first row, as in the app's sidebar. */}
+        {desktop.isDesktop && <div aria-hidden className="h-8" />}
+        <SidebarItem href={settingsBackHref()} aria-label="Back to the app">
+          <IconChevronLeft className="size-icon" />
+          <SidebarLabel>Settings</SidebarLabel>
+        </SidebarItem>
         {/* Its own step in the content's 12px rhythm: as far from Back as from the first group. */}
         <SearchField aria-label="Search settings" value={query} onChange={setQuery}>
           <SearchInput placeholder="Search settings" />
