@@ -71,7 +71,7 @@ const inBackground = () =>
 export const shouldShow = (orgId: string) =>
   currentState() === "on" && (inBackground() || orgId !== currentWorkspaceId());
 
-/** Threads notified about lately: mail arriving and a "customer replied" about it are one. */
+/** Threads notified about lately: new mail and a "customer replied" about it are one notification. */
 const recentThreads = new Map<string, number>();
 const SAME_NEWS_MS = 30_000;
 
@@ -113,7 +113,8 @@ export function createNotifier(orgId: string, open: (notice: Notice) => void) {
     seen = new Set([...(seen ?? []), ...notices.map((n) => n.id)]);
     if (!shouldShow(orgId)) return;
     for (const notice of fresh) {
-      if (!claimThread(notice.threadId)) continue;
+      // Only "customer replied" says the same as the mail arriving; the rest are news of their own.
+      if (notice.kind === "customer_reply" && !claimThread(notice.threadId)) continue;
       showNotification(
         {
           tag: notice.id,

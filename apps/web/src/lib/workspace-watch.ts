@@ -96,8 +96,11 @@ async function announceMail(
     return;
   }
   for (const threadId of threadIds) {
-    // Cached as the reader's own query, so opening it from the notification is instant.
-    const thread = await client.fetchQuery(threadQuery(threadId)).catch(() => undefined);
+    // Read now (a thread read moments ago is cached as read), and cached as the reader's own
+    // query, so opening it from the notification is instant.
+    const thread = await client
+      .fetchQuery({ ...threadQuery(threadId), staleTime: 0 })
+      .catch(() => undefined);
     const latest = thread?.messages.at(-1);
     if (!thread || !latest || thread.read || latest.fromTeam || latest.automated) continue;
     if (!claimThread(threadId)) continue;
