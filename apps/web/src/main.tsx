@@ -2,6 +2,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { routeOutsideLinks } from "./lib/desktop.ts";
 import { createQueryClient } from "./lib/query-client.ts";
 import { resetSession } from "./lib/session.ts";
 import { dropStartupResponses } from "./lib/startup-fetch.ts";
@@ -10,6 +11,7 @@ import { createAppRouter } from "./router.ts";
 import "./styles.css";
 
 initErrorReporting();
+routeOutsideLinks();
 
 let resetting = false;
 const queryClient = createQueryClient(() => {
