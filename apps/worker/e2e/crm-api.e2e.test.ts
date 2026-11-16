@@ -51,6 +51,27 @@ test("crm.changed reaches a teammate's socket, no socket of another workspace, a
   cidSocket.close();
 }, 60_000);
 
+// Catches: a stage replace that returns before its announcement resolves the audience, so the
+// request's database pool closes under it and teammates never hear the pipeline changed.
+test("replacing the stages tells a teammate's socket", async () => {
+  const acme = await stack.company("acme");
+  const owner = await stack.member(acme.id, "owner");
+  const bea = await stack.member(acme.id);
+  const beaSocket = await stack.socket(bea.jar);
+
+  const listed = await stack.api(owner.jar, "GET", "/stages");
+  const stages = listed.body.stages as { id: string; name: string }[];
+  const renamed = stages.map((stage, i) => ({
+    id: stage.id,
+    name: i === 0 ? "Prospect" : stage.name,
+  }));
+  const put = await stack.api(owner.jar, "PUT", "/stages", { stages: renamed });
+  expect(put.status).toBe(200);
+  const event = await beaSocket.waitFor((e) => e.type === "crm.changed");
+  expect(event).toEqual({ type: "crm.changed", kind: "stages", ids: stages.map((s) => s.id) });
+  beaSocket.close();
+}, 60_000);
+
 test("lookup finds a person by an address in any letter case, and nothing from another workspace", async () => {
   const acme = await stack.company("acme-lookup");
   const beta = await stack.company("beta-lookup");

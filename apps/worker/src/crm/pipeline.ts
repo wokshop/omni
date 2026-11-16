@@ -22,7 +22,7 @@ export const pipeline = new Hono<AppEnv>()
   .put("/stages", zValidator("json", crmPutStagesBodySchema), async (c) => {
     const replaced = await memberCrm(c).replaceStages(c.req.valid("json").stages);
     if (replaced.status !== "ok") return refused(c, replaced);
-    announce(
+    await announce(
       c,
       "stages",
       replaced.stages.map((stage) => stage.id),
