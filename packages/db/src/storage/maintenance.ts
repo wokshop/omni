@@ -1,11 +1,12 @@
 // Trusted background work for Storage (ADR 0034 decisions 5 and 7): the purge of old Trash, and
 // the usage counter's read and its daily repair. Callers have already resolved the workspace.
-import { and, eq, exists, inArray, isNotNull, lt, not, or, sql } from "drizzle-orm";
+import { and, eq, exists, inArray, isNotNull, lt, not, or, sql, type SQL } from "drizzle-orm";
 import { PAID_STATUSES } from "../billing.ts";
 import type { Db } from "../client.ts";
 import { isCompany } from "../personal-space.ts";
-import { organizations, subscriptions } from "../schema/auth.ts";
-import { storageNodes, storageUploads, storageUsage } from "../schema/storage.ts";
+import { organizations, subscriptions, users } from "../schema/auth.ts";
+import { userEmails } from "../schema/identity.ts";
+import { storageGrants, storageNodes, storageUploads, storageUsage } from "../schema/storage.ts";
 import { deleteSubtree, lockTree, lockUsage } from "./core.ts";
 import { reservedBytes } from "./uploads.ts";
 
@@ -157,4 +158,31 @@ export async function deleteWorkspaceStorage(db: Db, orgId: string) {
     await tx.delete(storageNodes).where(eq(storageNodes.orgId, orgId));
     await tx.delete(storageUsage).where(eq(storageUsage.orgId, orgId));
   });
+}
+
+/** A SQL condition: the org whose id is `orgId` holds at least one file or folder. */
+export function orgHoldsFiles(orgId: SQL) {
+  return sql`exists (select 1 from ${storageNodes} sn where sn.org_id = ${orgId})`;
+}
+
+/**
+ * The grants addressed to the user of the outer query's `users` row: to their primary address
+ * once verified, or to any sign-in email they verified (ADR 0034). For `exists`/`notExists`.
+ */
+export function grantsForUserRow(db: Db) {
+  return db
+    .select({ one: sql`1` })
+    .from(storageGrants)
+    .where(
+      or(
+        and(eq(users.emailVerified, true), eq(storageGrants.email, sql`lower(${users.email})`)),
+        inArray(
+          storageGrants.email,
+          db
+            .select({ email: sql`lower(${userEmails.email})` })
+            .from(userEmails)
+            .where(eq(userEmails.userId, users.id)),
+        ),
+      ),
+    );
 }

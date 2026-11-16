@@ -38,14 +38,7 @@ const REGISTRARS = [
 ];
 
 /** Files that broke a rule before it existed: `file` may break `rule`. Only ever shrinks. */
-export const DEBT = [
-  // The abandoned sign-up sweep asks whether a person holds files or grants (Storage's tables).
-  { file: "packages/db/src/abandoned-sign-ups.ts", rule: "tables" },
-  // The request context types the link a Storage share route resolved (`storage/http.ts`).
-  { file: "apps/worker/src/context.ts", rule: "worker" },
-  // A Stripe event with a card lifts Storage's cap at once (`storage/billing.ts`).
-  { file: "apps/worker/src/routes/stripe-webhook.ts", rule: "worker" },
-];
+export const DEBT = [];
 
 const SOURCE = /^(packages\/[^/]+\/src|apps\/(worker|mail)\/src)\/.*\.(ts|tsx|mts)$/;
 const TEST = /(\.test\.|\/e2e\/)/;

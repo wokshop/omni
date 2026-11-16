@@ -1,5 +1,5 @@
 import { createAuth, usesOAuthProvider, type Auth, type InvitationMessage } from "@omni/auth";
-import { forUser, isCompany, schema, sessionAccess, type Db } from "@omni/db";
+import { forUser, isCompany, schema, sessionAccess, type Db, type SharedAccess } from "@omni/db";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
@@ -7,7 +7,6 @@ import { openDb } from "./db.ts";
 import { loadConfig, type Config } from "./env.ts";
 import type { Logger } from "./log.ts";
 import { modules } from "./modules.ts";
-import type { SharedAccess } from "./storage/http.ts";
 
 export interface Member {
   /** `members.id`: what `forMember` and every mail table key on. */
