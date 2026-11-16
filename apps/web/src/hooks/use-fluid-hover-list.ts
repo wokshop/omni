@@ -81,6 +81,18 @@ interface Bounds {
   bottom: number;
 }
 
+/** Overlays a row can open: a menu, a listbox, a dialog. */
+const OVERLAY_SELECTOR = "[role='menu'], [role='listbox'], [role='dialog']";
+
+/** Whether the event is the list's own: in its DOM (React also bubbles a portal's events through
+ *  its tree) and not inside an overlay a row opened in place (the sidebar's menus render inline).
+ *  An overlay around the container is the list's home (a menu's own rows), not a nested one. */
+function isOwn(container: HTMLElement | null, target: EventTarget | null) {
+  if (!container || !(target instanceof Element) || !container.contains(target)) return false;
+  const overlay = target.closest(OVERLAY_SELECTOR);
+  return !overlay || overlay.contains(container);
+}
+
 /** Touch screens fire mouse events on a tap; a tap is not a hover. */
 function canHover() {
   return typeof window !== "undefined" && window.matchMedia("(hover: hover)").matches;
@@ -346,6 +358,8 @@ export function useFluidHoverList({
   const onMouseMoveCapture = useCallback(
     (event: React.MouseEvent) => {
       if (!canHover()) return;
+      // A pointer over a row's open menu is not over the list.
+      if (!isOwn(containerRef.current, event.target)) return;
       pointerRef.current = { x: event.clientX, y: event.clientY };
       scheduleRefresh();
     },
@@ -388,6 +402,8 @@ export function useFluidHoverList({
       const container = containerRef.current;
       const target = event.target as Element | null;
       if (!container || !target?.isConnected || !pointerRef.current) return;
+      // A click in a row's open menu is the menu's, not a gap's.
+      if (!isOwn(container, target)) return;
       if (target.closest(itemSelector) || target.closest(CONTROL_SELECTOR)) return;
       const { element, picked } = litRef.current;
       if (!element || !picked || element.matches(SKIP_SELECTOR)) return;
