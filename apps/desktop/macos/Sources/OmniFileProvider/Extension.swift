@@ -50,12 +50,14 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
             do {
                 guard case let .node(orgId, nodeId)? = ItemID(identifier) else { throw NSFileProviderError(.noSuchItem) }
                 let sync = try Sync.load()
-                let (downloaded, etag) = try await sync.client.download(orgId: orgId, id: nodeId, progress: progress)
+                // The item must be the version that was served. The download's ETag is the
+                // stored object's, not the content version, so the node is read on both sides
+                // of the download: if it changed in between, the system asks again.
+                let before = try await sync.client.node(orgId: orgId, id: nodeId)
+                let (downloaded, _) = try await sync.client.download(orgId: orgId, id: nodeId, progress: progress)
                 let url = try Self.keep(downloaded, domain: domain)
-                // The item must be the version that was served. If the file changed on the server
-                // between the download and this lookup, the system asks again.
                 let node = try await sync.client.node(orgId: orgId, id: nodeId)
-                if let etag, etag.trimmingCharacters(in: CharacterSet(charactersIn: "W/\"")) != String(node.contentVersion ?? 0) {
+                if node.contentVersion != before.contentVersion {
                     try? FileManager.default.removeItem(at: url)
                     throw NSFileProviderError(.serverUnreachable)
                 }

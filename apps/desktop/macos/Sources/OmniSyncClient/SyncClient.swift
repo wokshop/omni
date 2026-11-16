@@ -104,7 +104,8 @@ public final class SyncClient: Sendable {
     // MARK: Download
 
     /// A file's bytes, into a temporary file the caller moves, and the `ETag` they were served
-    /// with (the content version). `progress` follows the transfer and cancels it.
+    /// with (the stored object's, not the content version). `progress` follows the transfer and
+    /// cancels it.
     public func download(orgId: String, id: String, progress: Progress) async throws -> (URL, String?) {
         let request = try get("\(orgId)/files/\(id)/content")
         let (url, response) = try await authorized(request) { request in
