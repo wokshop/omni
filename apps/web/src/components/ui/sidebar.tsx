@@ -416,6 +416,8 @@ export function SidebarItem({
             isHovered && "[&_svg:not([class*='text-'])]:text-foreground",
             isFocusVisible && "inset-ring inset-ring-sidebar-ring",
             isDisabled && "opacity-50",
+            // Collapsed, the row is its glyph: a 32px square, the label in its tooltip.
+            isCollapsed && "w-8 justify-center px-0",
             className,
           ),
       )}
