@@ -2171,7 +2171,6 @@ name = "omni-desktop"
 version = "0.0.0"
 dependencies = [
  "omni-sync-types",
- "serde",
  "tauri",
  "tauri-build",
 ]
