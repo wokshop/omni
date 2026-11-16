@@ -103,7 +103,8 @@ const bytes = (text: string) => new TextEncoder().encode(text);
 
 // Catches: a sync token that reaches a workspace the person is not in, or another member's My
 // files in their own workspace, through the feed, the item lookup, a download or a change; and a
-// token that works where it was not meant to (an agent's at the sync API, a sync token at /mcp).
+// token that works where it was not meant to (an agent's at the sync API, a sync token at /mcp);
+// and a workspace pick made for an agent narrowing the desktop's grant.
 test("a sync token reaches the person's own drives and nothing else", async () => {
   const acme = await stack.company(`acme-${randomUUID().slice(0, 6)}`);
   const other = await stack.company(`other-${randomUUID().slice(0, 6)}`);
@@ -114,6 +115,13 @@ test("a sync token reaches the person's own drives and nothing else", async () =
   const shared = await stack.upload(ana.jar, { space: "shared" }, "team.txt", bytes("team"));
   const bos = await stack.upload(bo.jar, { space: "personal" }, "bo.txt", bytes("bo"));
   const theirs = await stack.upload(outsider.jar, { space: "shared" }, "x.txt", bytes("x"));
+  // Earlier in this browser session, she let an agent reach Acme alone. Sync has no such pick.
+  const picked = await fetch(at("/api/oauth/workspace"), {
+    method: "POST",
+    headers: { cookie: ana.jar.header, "content-type": "application/json" },
+    body: JSON.stringify({ workspace: acme.id }),
+  });
+  expect(picked.status).toBe(200);
 
   const token = await connect(ana);
   const drives = await sync(token, "GET", "/drives");

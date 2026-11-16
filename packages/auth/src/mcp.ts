@@ -117,10 +117,12 @@ export function mcpPlugins(env: McpAuthEnv) {
       postLogin: {
         page: new URL("/oauth/consent", env.webAppURL ?? env.baseURL).toString(),
         shouldRedirect: () => false,
-        consentReferenceId: async ({ user, session }) => {
+        consentReferenceId: async ({ user, session, scopes }) => {
           const reference = await oauthWorkspaceReference(env.db, {
             sessionId: session.id,
             userId: user.id,
+            // Desktop sync has no workspace pick: an agent's earlier one must not narrow it.
+            ignorePick: scopes.includes(STORAGE_SYNC_SCOPE),
           });
           if (!reference) {
             throw new APIError("FORBIDDEN", {

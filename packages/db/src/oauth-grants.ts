@@ -42,15 +42,17 @@ export async function chooseOAuthWorkspace(
 /**
  * The reference for a grant made in `sessionId`: its scoped company, else its recorded pick,
  * else every workspace. A pick the user has since lost falls back to nothing: `null`, and the
- * grant is refused.
+ * grant is refused. `ignorePick`: a grant that never offers the pick (desktop sync) reaches what
+ * the session reaches, whatever an agent's consent recorded in it before.
  */
 export async function oauthWorkspaceReference(
   db: Db,
-  input: { sessionId: string; userId: string },
+  input: { sessionId: string; userId: string; ignorePick?: boolean },
 ): Promise<string | null> {
   const access = await sessionAccess(db, input.sessionId);
   if (!access) return null;
   if (access.scopeOrgId) return access.scopeOrgId;
+  if (input.ignorePick) return ALL_WORKSPACES;
   const [choice] = await db
     .select({ orgId: oauthWorkspaceChoices.orgId })
     .from(oauthWorkspaceChoices)
