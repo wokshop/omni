@@ -12,12 +12,12 @@
 // its centre and the label after it line up with the rows below. The glyph is 12px, 3px in.
 import { useLocation, useRouter, useSearch } from "@tanstack/react-router";
 import { cn } from "cn";
-import { useMemo, useRef, type ComponentType, type CSSProperties } from "react";
+import { useMemo, useRef, type ComponentType, type CSSProperties, type ReactNode } from "react";
 import {
   IconCheck,
-  IconChevronsUpDown,
   IconFolderFilled,
   IconHandshakeFilled,
+  IconLogOut,
   IconMailFilled,
   IconSettings,
 } from "@/components/icons/central";
@@ -28,7 +28,7 @@ import { Menu, MenuItem, MenuLabel, MenuSeparator, MenuTrigger } from "@/compone
 import { SidebarItemTrigger } from "@/components/ui/sidebar";
 import { appToast } from "@/components/ui/toast";
 import { useHasCrm } from "@/hooks/use-crm.ts";
-import { useMember } from "@/hooks/use-session.ts";
+import { useMember, useSignOut } from "@/hooks/use-session.ts";
 import { openSettings } from "@/hooks/use-settings-dialog.ts";
 import { ariaKeyShortcuts } from "@/lib/shortcuts.ts";
 import { useOpenWorkspace, useWorkspaces } from "@/hooks/use-workspaces.ts";
@@ -188,6 +188,8 @@ export function ModuleSwitcher() {
               id={module.id}
               textValue={module.label}
               onAction={() => module.id !== current.id && open(module.id)}
+              // 6px in, as above and below the 18px mark: balanced.
+              className="ps-1.5"
             >
               {/* The menu's icon gap after it, which it gives only to its own marks. */}
               <ModuleMark module={module} className="me-(--me-icon)" />
@@ -200,13 +202,34 @@ export function ModuleSwitcher() {
   );
 }
 
-/** The sidebar's top row: the workspace, and its menu: every workspace, then Settings. */
-export function WorkspaceSwitcher() {
-  const { member } = useMember();
+/**
+ * A workspace as the person reads it: a company by its name; their Personal space as their own
+ * ("Rodrigo's Workspace"), from the first word of their name.
+ */
+export function workspaceLabel(workspace: Workspace, userName: string | null | undefined) {
+  if (workspace.kind !== "personal") return workspace.name;
+  const first = userName?.trim().split(/\s+/)[0];
+  return first ? `${first}'s Workspace` : "Personal Workspace";
+}
+
+/**
+ * The sidebar's top row: the workspace's mark and name, hugging them (no chevron), with `end` (the
+ * bell) at the row's far end. Its menu spans the whole row, the links' width or more: every
+ * workspace, then Settings and Log out.
+ */
+export function WorkspaceSwitcher({ end }: { end?: ReactNode }) {
+  const { member, user } = useMember();
   const workspaces = useWorkspaces().data?.workspaces ?? [];
   const openWorkspace = useOpenWorkspace();
+  const signOut = useSignOut();
+  const row = useRef<HTMLDivElement>(null);
+  const rowBox = useMemo(
+    () => ({ getBoundingClientRect: () => row.current?.getBoundingClientRect() ?? new DOMRect() }),
+    [],
+  );
   const active = workspaces.find((w) => w.id === member.orgId);
   if (!active) return null;
+  const label = (workspace: Workspace) => workspaceLabel(workspace, user.name);
 
   const choose = (workspace: Workspace) => {
     if (workspace.id === member.orgId) return;
@@ -216,53 +239,67 @@ export function WorkspaceSwitcher() {
   };
 
   return (
-    <MenuTrigger>
-      {/* A sidebar row like the mailbox switcher: the mark in the nav icons' 15px box, the name
-          10px after it, the chevron at the row's end. */}
-      <SidebarItemTrigger aria-label={`Switch workspace, currently ${active.name}`}>
-        <span className="grid size-icon shrink-0 place-items-center">
-          {openWorkspace.isPending ? (
-            <Loader className="size-icon text-muted-foreground" />
-          ) : (
-            // 18px over the 15px box: the margin centres it on the nav icons' axis.
-            <span className="-m-[1.5px]">
-              <WorkspaceMark workspace={active} size={18} />
-            </span>
-          )}
-        </span>
-        <span className="min-w-0 truncate">{active.name}</span>
-        <IconChevronsUpDown className="ms-auto -me-0.75 size-3.5 shrink-0 text-subtle-foreground group-hover/sidebar-item:text-foreground group-aria-expanded/sidebar-item:text-foreground" />
-      </SidebarItemTrigger>
-      <Menu
-        placement="bottom start"
-        popover={{
-          offset: 4,
-          collisionPadding: 8,
-          className: "min-w-(--anchor-width) max-w-[min(18rem,calc(100vw-16px))]",
-        }}
-      >
-        {workspaces.map((workspace) => (
-          <MenuItem
-            key={workspace.id}
-            id={workspace.id}
-            textValue={workspace.name}
-            onAction={() => choose(workspace)}
-          >
-            <WorkspaceMark workspace={workspace} size={20} />
-            <Label name={workspace.name} current={workspace.id === member.orgId} />
-          </MenuItem>
-        ))}
-        <MenuSeparator />
-        <MenuItem
-          id="settings"
-          textValue="Settings"
-          aria-keyshortcuts={ariaKeyShortcuts("settings")}
-          onAction={() => openSettings()}
+    <div ref={row} className="flex min-w-0 items-center justify-between gap-1">
+      <MenuTrigger>
+        {/* The mark in the nav icons' 15px box and the name 10px after it, as the rows under it;
+            the trigger hugs them. */}
+        <SidebarItemTrigger
+          aria-label={`Switch workspace, currently ${label(active)}`}
+          className="w-auto max-w-full shrink"
         >
-          <IconSettings data-slot="icon" />
-          <MenuLabel>Settings</MenuLabel>
-        </MenuItem>
-      </Menu>
-    </MenuTrigger>
+          <span className="grid size-icon shrink-0 place-items-center">
+            {openWorkspace.isPending ? (
+              <Loader className="size-icon text-muted-foreground" />
+            ) : (
+              // 18px over the 15px box: the margin centres it on the nav icons' axis.
+              <span className="-m-[1.5px]">
+                <WorkspaceMark workspace={active} size={18} />
+              </span>
+            )}
+          </span>
+          <span className="min-w-0 truncate">{label(active)}</span>
+        </SidebarItemTrigger>
+        <Menu
+          placement="bottom start"
+          popover={{
+            anchor: rowBox,
+            offset: 4,
+            collisionPadding: 8,
+            // The row's width at least, wider for a long name.
+            className: "min-w-(--anchor-width) w-max max-w-[min(20rem,calc(100vw-16px))]",
+          }}
+        >
+          {workspaces.map((workspace) => (
+            <MenuItem
+              key={workspace.id}
+              id={workspace.id}
+              textValue={label(workspace)}
+              onAction={() => choose(workspace)}
+              // 6px in, as above and below the 20px mark: balanced (the items' 10px is for 14px
+              // icons).
+              className="ps-1.5"
+            >
+              <WorkspaceMark workspace={workspace} size={20} />
+              <Label name={label(workspace)} current={workspace.id === member.orgId} />
+            </MenuItem>
+          ))}
+          <MenuSeparator />
+          <MenuItem
+            id="settings"
+            textValue="Settings"
+            aria-keyshortcuts={ariaKeyShortcuts("settings")}
+            onAction={() => openSettings()}
+          >
+            <IconSettings data-slot="icon" />
+            <MenuLabel>Settings</MenuLabel>
+          </MenuItem>
+          <MenuItem id="log-out" textValue="Log out" onAction={() => signOut.mutate()}>
+            <IconLogOut data-slot="icon" />
+            <MenuLabel>Log out</MenuLabel>
+          </MenuItem>
+        </Menu>
+      </MenuTrigger>
+      {end}
+    </div>
   );
 }
