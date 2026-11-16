@@ -1,5 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
-import type { HelpdeskRealtimeEvent, SlaTarget } from "@omni/contracts";
+import type { CrmChangedEvent, HelpdeskRealtimeEvent, SlaTarget } from "@omni/contracts";
 import {
   forMember,
   mailboxAudience,
@@ -35,7 +35,7 @@ export type RealtimeEvent =
    */
   | { type: "notification.removed"; threadId: string };
 
-type OutboundEvent = RealtimeEvent | HelpdeskRealtimeEvent;
+type OutboundEvent = RealtimeEvent | HelpdeskRealtimeEvent | CrmChangedEvent;
 
 /** What an app sends: this member is viewing or replying in a conversation, or left it. */
 const presenceMessage = z.object({
@@ -73,6 +73,21 @@ export class Realtime extends DurableObject<Env> {
   /** Sends the event to these members' sockets; returns the members with none open. */
   async broadcast(memberIds: string[], event: OutboundEvent): Promise<string[]> {
     return this.send(memberIds, [event]);
+  }
+
+  /**
+   * Sends the event to every socket of the workspace. Only for what every member may see (a
+   * CRM record, ADR 0036 decision 1): each socket here is a member of this object's org.
+   */
+  async everyone(event: OutboundEvent) {
+    const message = JSON.stringify(event);
+    for (const socket of this.ctx.getWebSockets()) {
+      try {
+        socket.send(message);
+      } catch {
+        // Closing; the runtime drops it.
+      }
+    }
   }
 
   /** Sends the events, in order, to these members' sockets; returns the members with none open. */
