@@ -19,9 +19,10 @@ import { storageErrorToast } from "./storage-errors.ts";
 import { StorageFrame } from "./storage-frame.tsx";
 import { UploadsPanel } from "./uploads-panel.tsx";
 import { VersionsDialog } from "./versions-dialog.tsx";
+import { CommentsDialog } from "./comments-dialog.tsx";
 
 export type FolderDialog = {
-  dialog: "rename" | "move" | "share" | "versions";
+  dialog: "rename" | "move" | "share" | "versions" | "comments";
   node: StorageNode;
 } | null;
 
@@ -199,6 +200,8 @@ function FolderDialogs(props: { dialog: FolderDialog; source: FolderSource; onCl
       return <ShareDialog node={node} onClose={onClose} />;
     case "versions":
       return <VersionsDialog node={node} shareId={source.shareId} onClose={onClose} />;
+    case "comments":
+      return <CommentsDialog node={node} shareId={source.shareId} onClose={onClose} />;
   }
 }
 
