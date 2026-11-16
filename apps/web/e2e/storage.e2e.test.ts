@@ -172,10 +172,12 @@ test("switching workspace mid-upload stops the queue and leaves nothing in eithe
 
   // Settings is in the sidebar's workspace menu.
   await page.getByRole("button", { name: /^Switch workspace/ }).click();
-  await page.getByRole("menuitem", { name: "Settings" }).click();
+  await page.getByRole("menuitem", { name: "Workspace settings" }).click();
   await page.getByRole("button", { name: /^Workspace: Acme Files/ }).click();
-  await page.getByRole("menuitem", { name: "Personal" }).click();
-  await page.getByRole("button", { name: /^Workspace: Personal/ }).waitFor({ timeout: 15_000 });
+  await page.getByRole("menuitem", { name: /(?:'s|^Personal) Workspace$/ }).click();
+  await page
+    .getByRole("button", { name: /^Workspace: .*Workspace\. Choose another$/ })
+    .waitFor({ timeout: 15_000 });
   release();
   // Anything still going would have reached the server by now.
   await page.waitForTimeout(1500);
@@ -191,6 +193,46 @@ test("switching workspace mid-upload stops the queue and leaves nothing in eithe
     .where(and(eq(schema.storageUploads.orgId, acme.orgId), isNull(schema.storageUploads.nodeId)));
   expect(open).toEqual([]);
 }, 120_000);
+
+// Catches: New folder's in-place name losing keys to the list around it (the arrows, Home and End
+// moving through the folders instead of the caret), one name creating two folders (Enter, then the
+// field's blur as it leaves), or Esc creating nothing instead of keeping the name it was given.
+test("New folder is named in place, and each name creates one folder", async () => {
+  const page = await signedIn(`folders-${Date.now()}@gmail.test`, "/files/my");
+  const newFolder = page.getByRole("button", { name: "New folder" }).first();
+  await newFolder.waitFor({ timeout: 15_000 });
+  const field = page.getByRole("textbox", { name: "Folder name" });
+
+  await newFolder.click();
+  await field.waitFor();
+  await page.keyboard.type("not kept");
+  await page.keyboard.press("Escape");
+  await page.getByRole("row", { name: "Untitled folder" }).waitFor();
+
+  // As rows, where the list moves through its rows with the arrows, Home and End.
+  await page.getByRole("radio", { name: "Rows" }).first().click();
+  await newFolder.click();
+  // It opens with its name selected: the first key replaces it.
+  await page.keyboard.type("Plns");
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.type("a");
+  await page.keyboard.press("Home");
+  await page.keyboard.type("Q3 ");
+  await page.keyboard.press("End");
+  await page.keyboard.type(" final");
+  await page.keyboard.press("Enter");
+  await page.getByRole("row", { name: "Q3 Plans final" }).waitFor();
+  // Anything sent twice would have reached the server by now.
+  await page.waitForTimeout(1000);
+
+  const folders = await db
+    .select({ name: schema.storageNodes.name })
+    .from(schema.storageNodes)
+    .where(eq(schema.storageNodes.kind, "folder"));
+  expect(folders.map((f) => f.name).toSorted()).toEqual(["Q3 Plans final", "Untitled folder"]);
+  expect(await field.count()).toBe(0);
+}, 60_000);
 
 /** Signed in as `email` (a magic link, so a new address signs up), on `path`. */
 async function signedIn(email: string, path: string) {
