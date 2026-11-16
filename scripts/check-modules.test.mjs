@@ -157,3 +157,26 @@ test("a module's tables split into a schema folder are still its own", () => {
   });
   assert.deepEqual(problems, ["packages/db/src/crm/tags.ts tables"]);
 });
+
+test("a namespace or dynamic import of the barrel is traced like a named one", () => {
+  const files = {
+    "packages/db/src/index.ts": `export * from "./mail.ts";\nexport * as schema from "./schema/index.ts";`,
+    "packages/db/src/mail.ts": `export * from "./mail/customers.ts";`,
+    "packages/db/src/mail/customers.ts": `export async function recordCustomer() {}`,
+    "apps/worker/src/storage/a.ts": `import * as db from "@omni/db";\ndb.recordCustomer();`,
+    "apps/worker/src/storage/b.ts": `const { recordCustomer } = await import("@omni/db");`,
+    "apps/worker/src/storage/c.ts": `const db = await import("@omni/db");\ndb.recordCustomer();`,
+  };
+  assert.deepEqual(problemsIn(files), [
+    "apps/worker/src/storage/a.ts uses",
+    "apps/worker/src/storage/b.ts uses",
+    "apps/worker/src/storage/c.ts uses",
+  ]);
+});
+
+test("a table read through the barrel's schema under a namespace fails", () => {
+  const problems = problemsIn({
+    "packages/db/src/mail/files.ts": `import * as db from "../index.ts";\ndb.schema.storageNodes;`,
+  });
+  assert.deepEqual(problems, ["packages/db/src/mail/files.ts tables"]);
+});

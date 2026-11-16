@@ -195,7 +195,7 @@ function tablesNamedBy(file, source, tables) {
     }
   }
   for (const alias of aliases) {
-    const access = new RegExp(`(?<![\\w.])${alias}\\.(\\w+)`, "g");
+    const access = new RegExp(`(?<![\\w$])${alias}\\.(\\w+)`, "g");
     for (const [, identifier] of source.matchAll(access)) {
       if (tables.has(identifier)) named.add(identifier);
     }
@@ -213,10 +213,10 @@ const BARRELS = ["packages/db/src/index.ts", "packages/contracts/src/index.ts"];
 function barrelProblems(file, source, owner, origins, modules) {
   if (!owner) return [];
   const foreign = new Set();
-  for (const { specifier, names } of importsOf(source)) {
+  for (const { specifier, bindings } of importsOf(source)) {
     const barrel = resolve(file, specifier);
     if (!BARRELS.includes(barrel)) continue;
-    for (const name of names) {
+    for (const name of namesTaken(source, specifier, bindings)) {
       const origin = origins(barrel).get(name);
       const to = origin && ownerOf(origin, modules);
       if (!to || to.module === owner.module || to.part === "schema") continue;
@@ -224,6 +224,38 @@ function barrelProblems(file, source, owner, origins, modules) {
     }
   }
   return foreign.size ? [{ file, rule: "uses", message: MESSAGES.barrel([...foreign]) }] : [];
+}
+
+/**
+ * The names a file reads from a module: named imports, `ns.<name>` for a namespace import
+ * (`* as ns`), and for a dynamic import, what it destructures or reads from its result.
+ */
+function namesTaken(source, specifier, bindings) {
+  const names = new Set();
+  const members = (local) => {
+    for (const [, name] of source.matchAll(new RegExp(`(?<![\\w$.])${local}\\.(\\w+)`, "g"))) {
+      names.add(name);
+    }
+  };
+  for (const { imported, local } of bindings) {
+    if (imported !== "*") names.add(imported);
+    else if (local) members(local);
+  }
+  if (!bindings.some((b) => b.imported === "*" && !b.local)) return names;
+  const spec = specifier.replaceAll(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+  const call = `await\\s+import\\(\\s*["']${spec}["']\\s*\\)`;
+  for (const [, list] of source.matchAll(new RegExp(`\\{([^}]*)\\}\\s*=\\s*${call}`, "g"))) {
+    for (const part of list.split(",")) {
+      const name = part.split(":")[0].trim();
+      if (name) names.add(name);
+    }
+  }
+  for (const [, local] of source.matchAll(new RegExp(`(\\w+)\\s*=\\s*${call}`, "g")))
+    members(local);
+  for (const [, name] of source.matchAll(new RegExp(`\\(\\s*${call}\\s*\\)\\.(\\w+)`, "g"))) {
+    names.add(name);
+  }
+  return names;
 }
 
 /** Whether `importer` may import `target`, by rules 1, 3 and 4; the rule broken, or null. */
