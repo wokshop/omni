@@ -10,7 +10,7 @@ import { createOrgWithOwner, schema } from "@omni/db";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { chromium, type Browser, type BrowserContext } from "playwright-core";
 import { afterAll, beforeAll, expect, test } from "vitest";
-import { utils, write } from "xlsx";
+import { utils, write, type WorkSheet } from "xlsx";
 import {
   createMailbox,
   createOrg,
@@ -147,9 +147,12 @@ test("an XLSX opens to its visible sheets' cells as the workbook shows them", as
   ]);
   if (pipeline.B2) pipeline.B2.z = '"$"#,##0.00';
   utils.book_append_sheet(book, pipeline, "Pipeline");
-  const accounts = utils.aoa_to_sheet([["Owner"], ["Ana"]], { origin: "B2" });
   // As Excel writes a sheet whose first cell is B2: its used range starts there, not at A1.
-  accounts["!ref"] = "B2:B3";
+  const accounts: WorkSheet = {
+    "!ref": "B2:B3",
+    B2: { t: "s", v: "Owner" },
+    B3: { t: "s", v: "Ana" },
+  };
   utils.book_append_sheet(book, accounts, "Accounts");
   utils.book_append_sheet(book, utils.aoa_to_sheet([["kept out of sight"]]), "Hidden");
   book.Workbook = { Sheets: [{ Hidden: 0 }, { Hidden: 0 }, { Hidden: 1 }] };
