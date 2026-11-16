@@ -1,7 +1,8 @@
-// The top of the sidebar: the module on screen (ADR 0035), Mail or Drive, and its menu, which
-// switches module and, under a separator, workspace (a company or your Personal space). The
-// sidebar shows one module's rows at a time; the module follows the route. Each module has an
-// identity colour (`--module-*`), used on its mark here and nowhere else.
+// The top of the sidebar: the module on screen (ADR 0035), Mail or Drive, whose menu switches
+// module, and at the row's end the workspace's avatar, whose menu switches workspace (a company
+// or your Personal space). The sidebar shows one module's rows at a time; the module follows the
+// route. Each module has an identity colour (`--module-*`), used on its mark here and nowhere
+// else.
 //
 // - Switching module keeps the workspace and the mailbox shown in mail.
 // - Switching workspace keeps the module: Drive opens the same space's top, mail the same list
@@ -12,17 +13,11 @@
 import { useLocation, useRouter, useSearch } from "@tanstack/react-router";
 import { cn } from "cn";
 import type { ComponentType, CSSProperties } from "react";
-import { IconCheck, IconChevronsUpDown, IconFolder, IconMail } from "@/components/icons/central";
+import { IconCheck, IconFolder, IconMail } from "@/components/icons/central";
 import { Avatar } from "@/components/ui/avatar";
 import { Loader } from "@/components/ui/loader";
-import {
-  Menu,
-  MenuItem,
-  MenuLabel,
-  MenuSection,
-  MenuSeparator,
-  MenuTrigger,
-} from "@/components/ui/menu";
+import { Button } from "@/components/ui/button";
+import { Menu, MenuItem, MenuLabel, MenuTrigger } from "@/components/ui/menu";
 import { SidebarItemTrigger } from "@/components/ui/sidebar";
 import { appToast } from "@/components/ui/toast";
 import { useMember } from "@/hooks/use-session.ts";
@@ -84,14 +79,14 @@ function ModuleMark({ module, className }: { module: Module; className?: string 
 }
 
 /** A workspace's square mark: its logo, or its initial on a grey a step under the hover fill. */
-function WorkspaceMark({ workspace }: { workspace: Workspace }) {
+function WorkspaceMark({ workspace, size }: { workspace: Workspace; size: number }) {
   return (
     <Avatar
       isSquare
       src={workspace.logo}
       initials={workspace.name.slice(0, 1).toUpperCase()}
       className="bg-secondary text-foreground outline-0 mix-blend-multiply"
-      style={{ "--avatar-size": "20px" } as CSSProperties}
+      style={{ "--avatar-size": `${size}px` } as CSSProperties}
     />
   );
 }
@@ -107,24 +102,79 @@ function Label({ name, current }: { name: string; current: boolean }) {
   );
 }
 
-/** The groups' names are for assistive tech only: the marks and the separator show them. */
-const HIDDEN_LABEL = "sr-only";
+/**
+ * `open(id)` goes to a module's home, keeping the workspace and the mailbox shown in mail: it
+ * rides along both ways, so coming back to Mail shows the same one. The module menu and `g f`
+ * both open modules through this.
+ */
+export function useOpenModule() {
+  const router = useRouter();
+  const { mailbox } = useSearch({ strict: false }) as { mailbox?: string };
+  return (id: ModuleId) => {
+    const module = id === "files" ? DRIVE : MAIL;
+    void router.navigate({ to: module.home, search: mailbox ? { mailbox } : {} });
+  };
+}
 
 export function ModuleSwitcher() {
-  const router = useRouter();
   const current = useCurrentModule() === "files" ? DRIVE : MAIL;
-  // The mailbox shown in mail rides along both ways, so coming back to Mail keeps it.
-  const { mailbox } = useSearch({ strict: false }) as { mailbox?: string };
+  const open = useOpenModule();
+
+  const openModule = (module: Module) => {
+    if (module.id !== current.id) open(module.id);
+  };
+
+  return (
+    // Two buttons side by side, after Craft: the module (most of the row) and the workspace's
+    // avatar at its end. 6px apart, so a finger's 44px area around the avatar's 32px button
+    // stops at the module's edge; each has its own hover and pressed fill.
+    <div className="flex min-w-0 items-center gap-1.5">
+      <MenuTrigger>
+        <SidebarItemTrigger aria-label={`Switch module, currently ${current.label}`}>
+          <span className="grid size-icon shrink-0 place-items-center">
+            <span className="-m-[1.5px]">
+              <ModuleMark module={current} />
+            </span>
+          </span>
+          <span className="min-w-0 truncate">{current.label}</span>
+        </SidebarItemTrigger>
+        <Menu
+          placement="bottom start"
+          popover={{
+            offset: 4,
+            // The row sits 8px from the window's edge: the menu keeps the same 8px.
+            collisionPadding: 8,
+            className: "min-w-(--anchor-width) max-w-[min(18rem,calc(100vw-16px))]",
+          }}
+        >
+          {MODULES.map((module) => (
+            <MenuItem
+              key={module.id}
+              id={module.id}
+              textValue={module.label}
+              onAction={() => openModule(module)}
+            >
+              {/* The menu's icon gap after it, which it gives only to its own marks. */}
+              <ModuleMark module={module} className="me-(--me-icon)" />
+              <Label name={module.label} current={module.id === current.id} />
+            </MenuItem>
+          ))}
+        </Menu>
+      </MenuTrigger>
+      <WorkspaceSwitcher />
+    </div>
+  );
+}
+
+/** The current workspace's avatar at the module row's end, and the menu of every workspace. */
+function WorkspaceSwitcher() {
   const { member } = useMember();
   const workspaces = useWorkspaces().data?.workspaces ?? [];
   const openWorkspace = useOpenWorkspace();
-  const activeName = workspaces.find((w) => w.id === member.orgId)?.name;
+  const active = workspaces.find((w) => w.id === member.orgId);
+  if (!active) return null;
 
-  const openModule = (module: Module) => {
-    if (module.id === current.id) return;
-    void router.navigate({ to: module.home, search: mailbox ? { mailbox } : {} });
-  };
-  const chooseWorkspace = (workspace: Workspace) => {
+  const choose = (workspace: Workspace) => {
     if (workspace.id === member.orgId) return;
     openWorkspace.mutate(workspace, {
       onError: () => appToast.error("The workspace could not be opened."),
@@ -133,62 +183,31 @@ export function ModuleSwitcher() {
 
   return (
     <MenuTrigger>
-      <SidebarItemTrigger
-        aria-label={`Switch module or workspace, currently ${current.label}${activeName ? ` in ${activeName}` : ""}`}
-      >
-        <span className="grid size-icon shrink-0 place-items-center">
-          {openWorkspace.isPending ? (
-            <Loader className="size-icon text-muted-foreground" />
-          ) : (
-            <span className="-m-[1.5px]">
-              <ModuleMark module={current} />
-            </span>
-          )}
-        </span>
-        <span className="min-w-0 truncate">{current.label}</span>
-        {/* The switcher's mark, as on the mailbox row: same glyph, at the row's end. */}
-        <IconChevronsUpDown className="ms-auto size-3.5 shrink-0 text-subtle-foreground" />
-      </SidebarItemTrigger>
+      {/* A 32px square, the row's height, with the 18px mark (an unread count's size) in its
+          middle: its centre 16px from the row's end, beside the counts' 13px and the mailbox
+          chevron's 15px below it. */}
+      <Button intent="ghost" size="sq-md" aria-label={`Switch workspace, currently ${active.name}`}>
+        {openWorkspace.isPending ? (
+          <Loader className="size-icon text-muted-foreground" />
+        ) : (
+          <WorkspaceMark workspace={active} size={18} />
+        )}
+      </Button>
       <Menu
-        placement="bottom start"
-        popover={{
-          offset: 4,
-          // The row sits 8px from the window's edge: the menu keeps the same 8px.
-          collisionPadding: 8,
-          className: "min-w-(--anchor-width) max-w-[min(18rem,calc(100vw-16px))]",
-        }}
+        placement="bottom end"
+        popover={{ offset: 4, collisionPadding: 8, className: "min-w-56" }}
       >
-        <MenuSection label="Modules" labelClassName={HIDDEN_LABEL}>
-          {MODULES.map((module) => (
-            <MenuItem
-              key={module.id}
-              id={module.id}
-              textValue={module.label}
-              onAction={() => openModule(module)}
-            >
-              {/* In the workspaces' 20px avatar box, so both groups' labels start on one line,
-                  with the menu's icon gap after it (it gives that only to its own marks). */}
-              <span className="me-(--me-icon) grid size-5 shrink-0 place-items-center">
-                <ModuleMark module={module} />
-              </span>
-              <Label name={module.label} current={module.id === current.id} />
-            </MenuItem>
-          ))}
-        </MenuSection>
-        <MenuSeparator />
-        <MenuSection label="Workspaces" labelClassName={HIDDEN_LABEL} className="mt-0">
-          {workspaces.map((workspace) => (
-            <MenuItem
-              key={workspace.id}
-              id={`workspace-${workspace.id}`}
-              textValue={workspace.name}
-              onAction={() => chooseWorkspace(workspace)}
-            >
-              <WorkspaceMark workspace={workspace} />
-              <Label name={workspace.name} current={workspace.id === member.orgId} />
-            </MenuItem>
-          ))}
-        </MenuSection>
+        {workspaces.map((workspace) => (
+          <MenuItem
+            key={workspace.id}
+            id={workspace.id}
+            textValue={workspace.name}
+            onAction={() => choose(workspace)}
+          >
+            <WorkspaceMark workspace={workspace} size={20} />
+            <Label name={workspace.name} current={workspace.id === member.orgId} />
+          </MenuItem>
+        ))}
       </Menu>
     </MenuTrigger>
   );
