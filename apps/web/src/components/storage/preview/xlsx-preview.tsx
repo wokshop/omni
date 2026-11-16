@@ -1,10 +1,10 @@
-// An XLSX, view only (ADR 0043 decision 7): each visible sheet's first rows as a table of text
-// cells, with a tab per sheet when there is more than one. SheetJS reads it in a worker, on its
+// An XLSX, view only (ADR 0043 decision 7): each visible sheet's first rows as a spreadsheet grid
+// of text cells, with a tab per sheet when there is more than one. SheetJS reads it in a worker, on its
 // own chunk.
 import { Tab, TabList, TabPanel, Tabs } from "@/components/ui/tabs";
 import { useFileSheets } from "@/hooks/use-storage-preview.ts";
 import type { PreviewSource } from "@/lib/storage-preview.ts";
-import { SheetTable } from "./sheet-table.tsx";
+import { SheetGrid } from "./sheet-grid.tsx";
 import { NoPreview, StageLoading } from "./shared.tsx";
 
 export default function XlsxPreview(props: { source: PreviewSource; onDownload: () => void }) {
@@ -14,7 +14,7 @@ export default function XlsxPreview(props: { source: PreviewSource; onDownload: 
   }
   if (!sheets.data) return <StageLoading label="Loading spreadsheet" />;
   const [only] = sheets.data;
-  if (sheets.data.length === 1 && only) return <SheetTable rows={only.rows} />;
+  if (sheets.data.length === 1 && only) return <SheetGrid rows={only.rows} />;
   return (
     <Tabs className="min-h-0 w-full flex-1 gap-0">
       <TabList aria-label="Sheets" className="shrink-0 overflow-x-auto px-5">
@@ -26,7 +26,7 @@ export default function XlsxPreview(props: { source: PreviewSource; onDownload: 
       </TabList>
       {sheets.data.map((sheet, i) => (
         <TabPanel key={i} id={String(i)} className="flex min-h-0 flex-col">
-          <SheetTable rows={sheet.rows} />
+          <SheetGrid rows={sheet.rows} />
         </TabPanel>
       ))}
     </Tabs>

@@ -161,10 +161,10 @@ test("an XLSX opens to its visible sheets' cells as the workbook shows them", as
   });
   await page.getByRole("row", { name: /pipeline\.xlsx/ }).click();
 
-  await page.getByRole("cell", { name: "$12,000.50" }).waitFor({ timeout: 15_000 });
+  await page.getByRole("gridcell", { name: "$12,000.50" }).waitFor({ timeout: 15_000 });
   expect(await page.getByRole("tab").allInnerTexts()).toEqual(["Pipeline", "Accounts"]);
   await page.getByRole("tab", { name: "Accounts" }).click();
-  await page.getByRole("cell", { name: "Ana" }).waitFor({ timeout: 5000 });
+  await page.getByRole("gridcell", { name: "Ana" }).waitFor({ timeout: 5000 });
 }, 120_000);
 
 // Catches: files queued in one workspace going up into another after a workspace switch (the
