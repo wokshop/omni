@@ -12,7 +12,6 @@ import {
   type StorageTrashResponse,
   type StorageUsage,
 } from "@omni/contracts";
-import { storagePeakOf } from "@omni/db";
 import { Hono } from "hono";
 import { z } from "zod";
 import { inGoodStanding } from "../billing.ts";
@@ -86,7 +85,7 @@ export const storage = new Hono<AppEnv>()
     // The month's peak as the daily job last recorded it, or what is stored now if that is more.
     const peak =
       overagePeriodStart && allowanceBytes !== null
-        ? Math.max(usedBytes, await storagePeakOf(db, member.orgId, overagePeriodStart))
+        ? Math.max(usedBytes, (await memberStorage(c).peak(overagePeriodStart)) ?? 0)
         : null;
     return c.json({
       usedBytes,
