@@ -8,7 +8,7 @@
 // One page scroll for both sections. Each section is virtualized against it: only the rows and
 // cards near the screen are rendered, however many pages of the folder have loaded, and the
 // next page loads as the end nears.
-import { memo, useEffect, useRef, type ReactNode } from "react";
+import { memo, useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
 import type { Selection } from "react-aria-components";
 import { ListLayout, Virtualizer } from "react-aria-components/Virtualizer";
 import { SkeletonBox } from "skullet/react";
@@ -189,6 +189,7 @@ function Items(props: {
   const items: (StorageNode | DraftItem)[] = handlers
     ? [...drafts.map((draft) => ({ id: draft.key, draft, handlers })), ...props.nodes]
     : props.nodes;
+  const top = useRevealDraft(drafts.find((d) => d.step === "naming")?.key);
   const list = {
     "aria-label": props.label,
     items,
@@ -202,26 +203,30 @@ function Items(props: {
     return (
       // Cards 168px and up, 12px apart, 14px in (`cards-layout.ts`); the cards' own 6px inset
       // puts their squares 20px from the page's edges, like the rows' tiles.
-      <Virtualizer layout={CardsLayout} layoutOptions={CARDS_LAYOUT}>
-        <GridList {...list} layout="grid" className="bg-transparent">
-          {(node) =>
-            "draft" in node ? (
-              <DraftCard draft={node.draft} handlers={node.handlers} />
-            ) : (
-              <FileCard
-                node={node}
-                href={href(node)}
-                url={props.fileUrl(node)}
-                menu={props.menu(node)}
-              />
-            )
-          }
-        </GridList>
-      </Virtualizer>
+      <>
+        {top}
+        <Virtualizer layout={CardsLayout} layoutOptions={CARDS_LAYOUT}>
+          <GridList {...list} layout="grid" className="bg-transparent">
+            {(node) =>
+              "draft" in node ? (
+                <DraftCard draft={node.draft} handlers={node.handlers} />
+              ) : (
+                <FileCard
+                  node={node}
+                  href={href(node)}
+                  url={props.fileUrl(node)}
+                  menu={props.menu(node)}
+                />
+              )
+            }
+          </GridList>
+        </Virtualizer>
+      </>
     );
   }
   return (
     <RowHover>
+      {top}
       <Virtualizer layout={ListLayout} layoutOptions={ROWS_LAYOUT}>
         <GridList
           {...list}
@@ -293,6 +298,20 @@ function RowHover({ children }: { children: ReactNode }) {
       {children}
     </div>
   );
+}
+
+/**
+ * A mark at the top of a section's items, scrolled into view (with the section's label above
+ * it) when a new folder's name starts being typed there. The draft is the first item, and a
+ * virtualized list renders only the items near the screen: scrolled past it, its field would
+ * not be there to take focus.
+ */
+function useRevealDraft(naming: string | undefined) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (naming) ref.current?.scrollIntoView({ block: "nearest" });
+  }, [naming]);
+  return <div ref={ref} aria-hidden className="scroll-mt-12" />;
 }
 
 /** Rows are 48px, as `FileRow` draws them. */
