@@ -3,7 +3,7 @@
 import { and, eq, like } from "drizzle-orm";
 import { afterAll, expect, test } from "vitest";
 import { forMember } from "../src/for-member.ts";
-import { crmContracts, crmEvents } from "../src/schema/index.ts";
+import { crmCompanies, crmContracts, crmDeals, crmEvents } from "../src/schema/index.ts";
 import { addFile, addFolder, setRole } from "./storage-support.ts";
 import { createMember, createOrg, createTestDatabase } from "./support.ts";
 
@@ -200,4 +200,28 @@ test("a company deleted while a contract on it is being made and signed keeps bo
   expect(ok(await crm.listContracts({ companyId: client.id })).contracts).toMatchObject([
     { status: "signed", documentNodeId: file.id },
   ]);
+});
+
+// Catches: a deal's folder call that locks the deal before its company, the opposite of contract
+// writes (company, then deal), so a folder request and a signing on one deal deadlock.
+test("a deal's folder call waits on the company before it holds the deal", async () => {
+  const { crm } = await company("crm-folder-lock-order");
+  const client = ok(await crm.createCompany({ name: "Initech" })).company;
+  const deal = ok(await crm.createDeal({ name: "Rollout", companyId: client.id })).deal;
+
+  let folder: Promise<{ status: string }> | undefined;
+  await db.transaction(async (tx) => {
+    // As a contract write does: the company first.
+    await tx.select().from(crmCompanies).where(eq(crmCompanies.id, client.id)).for("update");
+    folder = crm.dealFolder(deal.id);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    // The folder call is queued behind the company, so the deal is still free.
+    const held = await tx
+      .select()
+      .from(crmDeals)
+      .where(eq(crmDeals.id, deal.id))
+      .for("update", { noWait: true });
+    expect(held).toHaveLength(1);
+  });
+  expect((await folder)?.status).toBe("ok");
 });

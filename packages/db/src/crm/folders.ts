@@ -98,6 +98,11 @@ export function companyFolder(tx: Ex, member: CrmMember, id: string) {
  */
 export async function dealFolder(tx: Ex, member: CrmMember, id: string): Promise<DealFolderResult> {
   const storage = memberStorage(tx as Db, member.id);
+  // Lock order is company, then deal, as contract writes take them (`contracts.ts`), so a folder
+  // request and a signing on the same deal never wait on each other in a cycle.
+  const peek = await loadDeal(tx, member.orgId, id);
+  if (!peek) return NOT_FOUND;
+  if (peek.companyId) await loadCompany(tx, member.orgId, peek.companyId, true);
   const deal = await loadDeal(tx, member.orgId, id, true);
   if (!deal) return NOT_FOUND;
   const { companyId } = deal;
