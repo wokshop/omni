@@ -14,12 +14,6 @@ import type { Session } from "./session.ts";
 import { storageChanged, type StoragePlace } from "./storage.ts";
 import { abortUpload, uploadFile } from "./storage-upload.ts";
 
-export interface UploadTarget {
-  place: StoragePlace;
-  shareId?: string | undefined;
-  replaces?: string | undefined;
-}
-
 export interface UploadItem {
   id: number;
   name: string;
@@ -61,8 +55,6 @@ interface Job extends UploadItem {
   cancelled?: boolean;
   running?: Promise<void>;
   place: StoragePlace;
-  /** The file it becomes a new version of, when it is one. */
-  replaces: string | undefined;
   shareId: string | undefined;
   client: QueryClient;
   onFailed: (name: string, error: unknown) => void;
@@ -95,7 +87,6 @@ async function run(job: Job) {
     await uploadFile({
       file: job.file,
       place: job.place,
-      replaces: job.replaces,
       shareId: job.shareId,
       resumeId: job.uploadId,
       signal: job.controller.signal,
@@ -147,15 +138,11 @@ function pump() {
   if (next) next.running = run(next);
 }
 
-/**
- * Queues `files` for `target`: a place, through a shared link's door when `shareId` is set, or
- * with `replaces` a new version of that file. `onFailed` is told each file that did not make it,
- * with why.
- */
+/** Queues `files` for `target` (a place, through a shared link's door when `shareId` is set). `onFailed` is told each file that did not make it, with why. */
 export function addUploads(
   client: QueryClient,
   files: File[],
-  target: UploadTarget,
+  target: { place: StoragePlace; shareId?: string | undefined },
   onFailed: (name: string, error: unknown) => void,
 ) {
   for (const file of files) {
@@ -167,7 +154,6 @@ export function addUploads(
       status: "queued",
       file,
       place: target.place,
-      replaces: target.replaces,
       shareId: target.shareId,
       identity: identityOf(client, target.shareId),
       client,

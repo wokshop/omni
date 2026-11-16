@@ -17,7 +17,6 @@ const BY_CODE: Partial<Record<ErrorCode, string>> = {
   cycle: "A folder can't move into itself",
   parent_trashed: "Its folder is in Trash",
   invalid_email: "That isn't an email address",
-  locked: "That file is locked",
   rate_limited: "Too many at once. Try again in a minute",
 };
 
@@ -26,7 +25,6 @@ const FINAL = new Set<string>([
   "storage_full",
   "billing_inactive",
   "file_too_large",
-  "locked",
   "identity_changed",
 ]);
 

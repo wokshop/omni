@@ -16,7 +16,6 @@ import { listSharedWith, sharingOperations, type SharedWithMeCursor } from "./st
 import { trashOperations } from "./storage/trash.ts";
 import { treeOperations } from "./storage/tree.ts";
 import { uploadOperations } from "./storage/uploads.ts";
-import { versionOperations } from "./storage/versions.ts";
 
 export {
   STORAGE_MAX_DEPTH,
@@ -42,13 +41,6 @@ export type {
 } from "./storage/tree.ts";
 export type { StorageLockResult } from "./storage/lock.ts";
 export {
-  STORAGE_VERSION_DAYS,
-  type RestoreVersionResult,
-  type StorageContent,
-  type StorageVersion,
-  type VersionsResult,
-} from "./storage/versions.ts";
-export {
   STORAGE_TRASH_DAYS,
   type DeleteForeverResult,
   type RestoreResult,
@@ -61,7 +53,6 @@ export {
   type AbortUploadResult,
   type CompleteUploadResult,
   type OpenUploadResult,
-  type OpenVersionUploadResult,
   type RecordPartResult,
   type StorageFull,
   type StorageUpload,
@@ -82,7 +73,6 @@ export {
   deletedStorageWorkspaces,
   deleteWorkspaceStorage,
   purgeStorageTrash,
-  purgeStorageVersions,
   randomStorageSweepStart,
   recomputeStorageUsage,
   storageUsageOf,
@@ -109,7 +99,6 @@ export function memberStorage(db: Db, memberId: string) {
   return {
     ...treeOperations(db, door),
     ...uploadOperations(db, door),
-    ...versionOperations(db, door),
     ...trashOperations(db, door, memberId),
     ...sharingOperations(db, door),
     ...lockOperations(db, door, memberId),
@@ -138,11 +127,7 @@ export function memberStorage(db: Db, memberId: string) {
 export function userStorage(db: Db, userId: string, scopeOrgId?: string | null) {
   const through = (shareId?: string) => {
     const door = grantDoor(userId, scopeOrgId, shareId);
-    return {
-      ...treeOperations(db, door),
-      ...uploadOperations(db, door),
-      ...versionOperations(db, door),
-    };
+    return { ...treeOperations(db, door), ...uploadOperations(db, door) };
   };
   return {
     ...through(),

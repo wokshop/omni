@@ -6,12 +6,10 @@ import {
   deletedStorageWorkspaces,
   expiredStorageUploads,
   purgeStorageTrash,
-  purgeStorageVersions,
   randomStorageSweepStart,
   recomputeStorageUsage,
   removeStorageUpload,
   STORAGE_TRASH_DAYS,
-  STORAGE_VERSION_DAYS,
   type Db,
 } from "@omni/db";
 import { Effect, Result } from "effect";
@@ -77,23 +75,6 @@ function purgeTrash(db: Db, bucket: R2Bucket, log: Logger, now: Date, keepReadOn
         purgeStorageTrash(db, { before, keepReadOnly }),
       );
       // Never fails: objects it could not delete are logged (`storage.objects_left`).
-      yield* Effect.promise(() => deleteStorageObjects(bucket, r2Keys, log));
-      objects += r2Keys.length;
-      if (!more) break;
-    }
-    return objects;
-  });
-}
-
-/** Versions replaced more than 30 days ago (ADR 0043 decision 1): rows first, as for Trash. */
-function purgeVersions(db: Db, bucket: R2Bucket, log: Logger, now: Date, keepReadOnly: boolean) {
-  return Effect.gen(function* () {
-    const before = new Date(now.getTime() - STORAGE_VERSION_DAYS * DAY_MS);
-    let objects = 0;
-    for (let batch = 0; batch < PURGE_BATCHES; batch++) {
-      const { r2Keys, more } = yield* retried("purge_versions", () =>
-        purgeStorageVersions(db, { before, keepReadOnly }),
-      );
       yield* Effect.promise(() => deleteStorageObjects(bucket, r2Keys, log));
       objects += r2Keys.length;
       if (!more) break;
@@ -230,9 +211,9 @@ export function sweepDeletedWorkspaces(db: Db, bucket: R2Bucket, log: Logger) {
 }
 
 /**
- * The daily job: purge old Trash and old versions, recount every workspace's usage from its
- * files (a drifted counter is wrong for a day at most), and sweep deleted workspaces out of the
- * bucket. They run side by side and each runs even if another fails; the run still fails so the error is
+ * The daily job: purge old Trash, recount every workspace's usage from its files (a drifted
+ * counter is wrong for a day at most), and sweep deleted workspaces out of the bucket. The three
+ * run side by side and each runs even if another fails; the run still fails so the error is
  * visible.
  */
 export function storageDaily(env: Env, now = new Date()) {
@@ -242,10 +223,9 @@ export function storageDaily(env: Env, now = new Date()) {
   return runJob(
     Effect.gen(function* () {
       const db = yield* scopedDb(env);
-      const [purged, versions, recounted, swept] = yield* Effect.all(
+      const [purged, recounted, swept] = yield* Effect.all(
         [
           Effect.result(purgeTrash(db, bucket, log, now, billed)),
-          Effect.result(purgeVersions(db, bucket, log, now, billed)),
           Effect.result(retried("recompute_usage", () => recomputeStorageUsage(db))),
           Effect.result(sweepDeletedWorkspaces(db, bucket, log)),
         ],
@@ -253,12 +233,10 @@ export function storageDaily(env: Env, now = new Date()) {
       );
       log.info("storage.daily", {
         purgedObjects: valueOf(purged),
-        purgedVersions: valueOf(versions),
         usageRepaired: valueOf(recounted),
         swept: valueOf(swept),
       });
-      const failed =
-        failureOf(purged) ?? failureOf(versions) ?? failureOf(recounted) ?? failureOf(swept);
+      const failed = failureOf(purged) ?? failureOf(recounted) ?? failureOf(swept);
       if (failed) return yield* Effect.fail(failed);
     }),
   );
