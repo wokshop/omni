@@ -361,11 +361,16 @@ export async function moveDeals(
 ): Promise<{ status: "ok"; moved: string[] } | NotFound> {
   const target = await stageOf(tx, member.orgId, input.stageId);
   if (!target) return NOT_FOUND;
-  const moved: string[] = [];
+  // Every deal is found and locked before any moves, so a missing id changes nothing.
+  const deals: CrmDeal[] = [];
   for (const id of [...new Set(input.dealIds)].toSorted()) {
     const deal = await loadDeal(tx, member.orgId, id, true);
     if (!deal) return NOT_FOUND;
-    if (await applyMove(tx, member, deal, target)) moved.push(id);
+    deals.push(deal);
+  }
+  const moved: string[] = [];
+  for (const deal of deals) {
+    if (await applyMove(tx, member, deal, target)) moved.push(deal.id);
   }
   return { status: "ok", moved };
 }
