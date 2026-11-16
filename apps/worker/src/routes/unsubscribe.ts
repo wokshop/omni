@@ -6,13 +6,42 @@ import { Hono } from "hono";
 import { z } from "zod";
 import type { AppEnv } from "../context.ts";
 import { apiError } from "../errors.ts";
+import { checkDestination, type ProxyOptions } from "../image-proxy.ts";
 import { limitPerMember } from "../rate-limiter.ts";
 import { zValidator } from "../validator.ts";
 import { enqueueSend, sendResponse, threadMessage } from "./compose.ts";
 import { idempotencyHeader } from "./mail.ts";
 
-/** How long the list's server has to answer the one-click POST. */
+/** How long the list's server has to answer the one-click POST, redirects included. */
 const POST_TIMEOUT_MS = 10_000;
+const MAX_REDIRECTS = 3;
+
+/**
+ * The RFC 8058 POST. The URL comes from mail, so every hop is checked as the image proxy checks
+ * its own (no private networks, standard ports) and redirects are followed by hand. True when the
+ * list accepted it.
+ */
+async function postOneClick(target: string, options: ProxyOptions): Promise<boolean> {
+  const signal = AbortSignal.timeout(POST_TIMEOUT_MS);
+  let url = new URL(target);
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+    if (url.protocol !== "https:" || (await checkDestination(url, options, signal))) return false;
+    const response = await fetch(url, {
+      method: "POST",
+      redirect: "manual",
+      signal,
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: "List-Unsubscribe=One-Click",
+    }).catch(() => null);
+    if (!response) return false;
+    await response.body?.cancel();
+    const location = response.headers.get("location");
+    if (response.status < 300 || response.status >= 400) return response.ok;
+    if (!location) return false;
+    url = new URL(location, url);
+  }
+  return false;
+}
 
 const unsubscribeBody = z.object({
   /** The list message (`messages.id`); the thread's latest when absent. */
@@ -45,13 +74,10 @@ export const unsubscribe = new Hono<AppEnv>().post(
       );
       return c.json({ kind: "mail" as const, ...sendResponse(action) }, 202);
     }
-    const answer = await fetch(method.url, {
-      method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: "List-Unsubscribe=One-Click",
-      signal: AbortSignal.timeout(POST_TIMEOUT_MS),
-    }).catch(() => null);
-    if (!answer?.ok) {
+    const accepted = await postOneClick(method.url, {
+      dohUrl: c.var.config.IMAGE_PROXY_DOH_URL,
+    });
+    if (!accepted) {
       return apiError(c, "bad_gateway", "the list did not accept the unsubscribe");
     }
     return c.json({ kind: "post" as const }, 200);

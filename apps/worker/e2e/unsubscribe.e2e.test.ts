@@ -101,7 +101,7 @@ test("a mailto list is mailed once from the inbox, with the subject it names", a
   });
 });
 
-test("a page-only list is opened by the app, and a one-click list that does not answer fails", async () => {
+test("a page-only list is opened by the app, and a one-click URL on a private address is refused", async () => {
   const page = await newsletter("unsub-page", ["https://lists.example.com/u/cd34"]);
   expect(await shown(page.threadId, page.cookie)).toEqual({
     kind: "link",
@@ -110,8 +110,9 @@ test("a page-only list is opened by the app, and a one-click list that does not 
   const refused = await unsubscribe(page.threadId, page.messageId, page.cookie, "unsubscribe-2");
   expect(refused.status).toBe(422);
 
-  // Nothing listens on port 1: the reader must not be told they left.
-  const dead = await newsletter("unsub-dead", ["https://127.0.0.1:1/u"], true);
+  // Mail chooses the URL: the Worker never posts to a private address (SSRF), and the reader
+  // is not told they left.
+  const dead = await newsletter("unsub-dead", ["https://127.0.0.1/u"], true);
   expect(await shown(dead.threadId, dead.cookie)).toEqual({ kind: "post", url: null });
   const failed = await unsubscribe(dead.threadId, dead.messageId, dead.cookie, "unsubscribe-3");
   expect(failed.status).toBe(502);
