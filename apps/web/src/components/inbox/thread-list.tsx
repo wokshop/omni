@@ -28,6 +28,7 @@ import { ResizeGrip, useStoredWidth } from "@/components/ui/resize-grip";
 import { useOpenCompose } from "@/hooks/use-compose-pane.ts";
 import { useFullScreen } from "@/hooks/use-full-screen.ts";
 import { useThreads } from "@/hooks/use-mail.ts";
+import { useToday } from "@/hooks/use-today.ts";
 import {
   useThreadListShortcuts,
   type ThreadListActions,
@@ -383,9 +384,12 @@ const Rows = memo(function Rows(props: {
   loadMore?: (() => void) | undefined;
   isLoadingMore?: boolean | undefined;
 }) {
+  // Regroups at midnight, and redraws the rows so their times turn into days.
+  const today = useToday();
   const groups = useMemo(
     () => (props.grouped ? groupByDate(props.rows, (row) => row.date ?? "") : undefined),
-    [props.grouped, props.rows],
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- `today` moves the groups on.
+    [props.grouped, props.rows, today],
   );
   const row = (thread: ListRow) => (
     <ThreadRow
@@ -396,7 +400,7 @@ const Rows = memo(function Rows(props: {
       isCurrent={thread.id === props.current}
     />
   );
-  const dependencies = [props.href, props.current, props.closeHref];
+  const dependencies = [props.href, props.current, props.closeHref, today];
   return (
     <Virtualizer layout={ListLayout} layoutOptions={LIST_LAYOUT}>
       <GridList

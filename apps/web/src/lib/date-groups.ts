@@ -3,22 +3,20 @@
 
 const MONTH = new Intl.DateTimeFormat(undefined, { month: "long" });
 const MONTH_YEAR = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" });
-const DAY_MS = 86_400_000;
-
-/** Midnight at the start of `date`'s day, local time. */
-function startOfDay(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+/** Local midnight `days` after `date`'s day, by the calendar: a day across a clock change is
+ *  23 or 25 hours, so counting in fixed milliseconds misplaces mail around it. */
+function midnight(date: Date, days = 0) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
 }
 
 /** The group a date falls in, seen from `now`. Weeks start on Monday. */
 export function dateGroup(iso: string, now = new Date()) {
   const date = new Date(iso);
-  const today = startOfDay(now);
-  if (date >= today) return "Today";
-  if (date >= new Date(today.getTime() - DAY_MS)) return "Yesterday";
-  const weekStart = new Date(today.getTime() - ((today.getDay() + 6) % 7) * DAY_MS);
-  if (date >= weekStart) return "This week";
-  if (date >= new Date(weekStart.getTime() - 7 * DAY_MS)) return "Last week";
+  const sinceMonday = (now.getDay() + 6) % 7;
+  if (date >= midnight(now)) return "Today";
+  if (date >= midnight(now, -1)) return "Yesterday";
+  if (date >= midnight(now, -sinceMonday)) return "This week";
+  if (date >= midnight(now, -sinceMonday - 7)) return "Last week";
   if (date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth()) {
     return "This month";
   }
