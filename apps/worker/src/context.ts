@@ -6,6 +6,7 @@ import { HTTPException } from "hono/http-exception";
 import { openDb } from "./db.ts";
 import { loadConfig, type Config } from "./env.ts";
 import type { Logger } from "./log.ts";
+import type { SharedAccess } from "./routes/storage-http.ts";
 
 export interface Member {
   /** `members.id`: what `forMember` and every mail table key on. */
@@ -26,6 +27,8 @@ export interface AppEnv {
     /** This request's ID (`x-request-id`), on every log line, outbox row and mail-service call. */
     requestId: string;
     log: Logger;
+    /** Set under `/api/storage/shared/:shareId` only: Storage reached by a grant or a link. */
+    shared?: SharedAccess;
   };
 }
 
