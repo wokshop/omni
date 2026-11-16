@@ -71,13 +71,19 @@ function useCreateInbox(person: InboxOwner | undefined) {
 export function NewMailboxDialog(props: {
   domains: OnboardingDomain[];
   person?: InboxOwner;
+  /** The domain to start on, over the sign-in address's. */
+  domainId?: string;
   onClose: () => void;
 }) {
   const { person } = props;
   const create = useCreateInbox(person);
   const signInDomain = person?.email.split("@")[1]?.toLowerCase();
   const [domainId, setDomainId] = useState(
-    (props.domains.find((d) => d.domain.toLowerCase() === signInDomain) ?? props.domains[0]!).id,
+    (
+      props.domains.find((d) => d.id === props.domainId) ??
+      props.domains.find((d) => d.domain.toLowerCase() === signInDomain) ??
+      props.domains[0]!
+    ).id,
   );
   const [localPart, setLocalPart] = useState(person ? localPartOf(person.email) : "");
   const [password, setPassword] = useState("");
@@ -182,14 +188,14 @@ export function useOwnInboxCreation(domainId?: string) {
   const personal = usePersonalWorkspace();
   const domains = useMailboxDomains() ?? [];
   const [isOpen, setOpen] = useState(false);
-  const first = domains.find((d) => d.id === domainId);
   return {
     personal,
     domains,
     open: () => setOpen(true),
     dialog: isOpen && domains.length > 0 && (
       <NewMailboxDialog
-        domains={first ? [first, ...domains.filter((d) => d !== first)] : domains}
+        domains={domains}
+        domainId={domainId}
         person={{ id: member.id, name: user.name, email: user.email, isYou: true }}
         onClose={() => setOpen(false)}
       />
