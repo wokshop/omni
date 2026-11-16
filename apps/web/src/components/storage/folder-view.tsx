@@ -1,7 +1,9 @@
 // A folder's page, whichever door it is opened through (a member's My files or Shared, or a
 // shared link): the folder as a list or a grid, files dropped anywhere on it uploaded here, the
 // upload actions for whoever may write, the dialogs its rows open, and the open file's preview
-// beside it (ADR 0040). The open file is the URL's `?file=`, so Back closes it.
+// beside it (ADR 0040), or instead a file's comments (ADR 0043), narrower. The open file is the
+// URL's `?file=` and the commented one its `?comments=`, so Back closes either; opening one closes
+// the other.
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { SettingsRowMenuItem } from "@/components/settings/kit/settings-row-menu";
@@ -19,7 +21,7 @@ import { storageErrorToast } from "./storage-errors.ts";
 import { StorageFrame } from "./storage-frame.tsx";
 import { UploadsPanel } from "./uploads-panel.tsx";
 import { VersionsDialog } from "./versions-dialog.tsx";
-import { CommentsDialog } from "./comments-dialog.tsx";
+import { CommentsPanel } from "./comments-panel.tsx";
 
 export type FolderDialog = {
   dialog: "rename" | "move" | "share" | "versions" | "comments";
@@ -60,6 +62,8 @@ const PREVIEW_WIDTH = 560;
 const PREVIEW_MIN = 360;
 const PREVIEW_MAX = 4096;
 const FOLDER_MIN = 320;
+// Comments are a column of chat, not a document: a fixed 360px.
+const COMMENTS_WIDTH = 360;
 
 export function FolderView(props: {
   title: ReactNode;
@@ -78,6 +82,7 @@ export function FolderView(props: {
       storageErrorToast(error, `“${name}” was not uploaded`),
     );
   const open = useOpenFile(source.list);
+  const comments = useCommentsPanel(source.list.nodes);
   // New folder shows the folder at once, its name ready to type (Finder's way, not a dialog).
   const folders = useFolderDrafts({
     place: source.place,
@@ -90,7 +95,10 @@ export function FolderView(props: {
     [folders.drafts, folders.finish, folders.onType],
   );
   const menu = useCallback(
-    (node: StorageNode) => source.menu(node, setDialog),
+    (node: StorageNode) =>
+      source.menu(node, (next) =>
+        next?.dialog === "comments" ? comments.select(next.node.id) : setDialog(next),
+      ),
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- the menu builder is the dependency
     [source.menu],
   );
@@ -100,7 +108,7 @@ export function FolderView(props: {
   const [fullScreen, toggleFullScreen] = useFullScreen();
   const phone = useIsMobile();
   const node = open.node;
-  const hideFolder = !!node && (fullScreen || phone);
+  const hideFolder = (!!node && (fullScreen || phone)) || (!!comments.node && phone);
   const split = !!node && !hideFolder;
   const preview = useStoredWidth(
     "omni:file-preview-width",
@@ -119,7 +127,7 @@ export function FolderView(props: {
     >
       <div
         ref={folderRef}
-        className={`flex min-w-0 flex-1 flex-col ${split ? "min-w-80" : ""} ${hideFolder ? "hidden" : ""}`}
+        className={`flex min-w-0 flex-1 flex-col ${split || comments.node ? "min-w-80" : ""} ${hideFolder ? "hidden" : ""}`}
       >
         <StorageFrame
           title={props.title}
@@ -181,6 +189,18 @@ export function FolderView(props: {
           />
         </div>
       )}
+      {comments.node && (
+        <div
+          style={phone ? undefined : { width: COMMENTS_WIDTH }}
+          className={`flex min-w-0 ${phone ? "flex-1" : "shrink"}`}
+        >
+          <CommentsPanel
+            node={comments.node}
+            shareId={source.shareId}
+            onClose={() => comments.select(null)}
+          />
+        </div>
+      )}
       <FolderDialogs dialog={dialog} source={source} onClose={close} />
     </div>
   );
@@ -201,7 +221,8 @@ function FolderDialogs(props: { dialog: FolderDialog; source: FolderSource; onCl
     case "versions":
       return <VersionsDialog node={node} shareId={source.shareId} onClose={onClose} />;
     case "comments":
-      return <CommentsDialog node={node} shareId={source.shareId} onClose={onClose} />;
+      // A panel beside the folder, not a dialog (see `useCommentsPanel`).
+      return null;
   }
 }
 
@@ -230,7 +251,11 @@ function useOpenFile(list: FolderSource["list"]): OpenFile {
     (id: string | null, replace = false) =>
       void navigate({
         to: ".",
-        search: ((prev: Record<string, unknown>) => ({ ...prev, file: id ?? undefined })) as never,
+        search: ((prev: Record<string, unknown>) => ({
+          ...prev,
+          file: id ?? undefined,
+          comments: undefined,
+        })) as never,
         replace,
       }),
     [navigate],
@@ -246,6 +271,26 @@ function useOpenFile(list: FolderSource["list"]): OpenFile {
       select,
     };
   }, [nodes, file, select]);
+}
+
+/** The URL's commented file (a file of this folder), and the way to open or close its comments. */
+function useCommentsPanel(nodes: StorageNode[]) {
+  const { comments } = useSearch({ strict: false }) as { comments?: string };
+  const navigate = useNavigate();
+  const select = useCallback(
+    (id: string | null) =>
+      void navigate({
+        to: ".",
+        search: ((prev: Record<string, unknown>) => ({
+          ...prev,
+          file: undefined,
+          comments: id ?? undefined,
+        })) as never,
+      }),
+    [navigate],
+  );
+  const node = comments ? nodes.find((n) => n.id === comments && n.kind === "file") : undefined;
+  return { node, select };
 }
 
 /** Keys inside these belong to them: fields, media controls and open menus. */
