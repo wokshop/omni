@@ -37,7 +37,7 @@ import { useBilling } from "@/hooks/use-billing.ts";
 import { useHasCrm } from "@/hooks/use-crm.ts";
 import { useOnboarding } from "@/hooks/use-onboarding";
 import { useMember, useSignOut } from "@/hooks/use-session.ts";
-import { openSettings } from "@/hooks/use-settings-dialog.ts";
+import { useOpenSettings } from "@/hooks/use-settings.ts";
 import { ariaKeyShortcuts } from "@/lib/shortcuts.ts";
 import { useOpenWorkspace, useWorkspaces } from "@/hooks/use-workspaces.ts";
 import type { Workspace } from "@/lib/types.ts";
@@ -89,6 +89,11 @@ export function moduleOf(pathname: string): ModuleId {
   if (under(pathname, "/files")) return "files";
   if (under(pathname, "/crm")) return "crm";
   return "mail";
+}
+
+/** Where a module's paths start: Back from settings lands here after a workspace switch. */
+export function moduleHome(pathname: string) {
+  return BY_ID[moduleOf(pathname)].home;
 }
 
 export function useCurrentModule() {
@@ -225,9 +230,20 @@ export function workspaceLabel(workspace: Workspace, userName: string | null | u
  * The sidebar's top row: the workspace's mark and name, hugging them (no chevron), with `end` (the
  * bell) at the row's far end. Its menu, the sidebar's width: every workspace (the current one
  * checked) and New workspace; account, workspace and connection settings; a company's Invite
- * members and Upgrade for those who manage it; Log out.
+ * members and Upgrade for those who manage it; Log out. With `workspacesOnly` (settings' nav), only
+ * the workspaces and New workspace, and `onChoose` decides what choosing one does.
  */
-export function WorkspaceSwitcher({ end }: { end?: ReactNode }) {
+export function WorkspaceSwitcher({
+  end,
+  workspacesOnly = false,
+  onChoose,
+  pending = false,
+}: {
+  end?: ReactNode;
+  workspacesOnly?: boolean;
+  onChoose?: (workspace: Workspace) => void;
+  pending?: boolean;
+}) {
   const { member, user } = useMember();
   const workspaces = useWorkspaces().data?.workspaces ?? [];
   const openWorkspace = useOpenWorkspace();
@@ -252,6 +268,7 @@ export function WorkspaceSwitcher({ end }: { end?: ReactNode }) {
     (plan.readOnly || !plan.subscription || plan.subscription.status === "trialing");
 
   const choose = (workspace: Workspace) => {
+    if (onChoose) return onChoose(workspace);
     if (workspace.id === member.orgId) return;
     openWorkspace.mutate(workspace, {
       onError: () => appToast.error("The workspace could not be opened."),
@@ -270,7 +287,7 @@ export function WorkspaceSwitcher({ end }: { end?: ReactNode }) {
           className="w-auto max-w-full shrink pe-2.25"
         >
           <span className="grid size-icon shrink-0 place-items-center">
-            {openWorkspace.isPending ? (
+            {openWorkspace.isPending || pending ? (
               <Loader className="size-icon text-muted-foreground" />
             ) : (
               // 18px over the 15px box: the margin centres it on the nav icons' axis.
@@ -315,57 +332,58 @@ export function WorkspaceSwitcher({ end }: { end?: ReactNode }) {
               <MenuLabel>New workspace</MenuLabel>
             </MenuItem>
           )}
-          <MenuSeparator />
-          <MenuItem
-            id="account"
-            textValue="Account settings"
-            onAction={() => openSettings("profile")}
-          >
-            <IconUserRound data-slot="icon" />
-            <MenuLabel>Account settings</MenuLabel>
-          </MenuItem>
-          <MenuItem
-            id="workspace"
-            textValue="Workspace settings"
-            aria-keyshortcuts={ariaKeyShortcuts("settings")}
-            onAction={() => openSettings("general")}
-          >
-            <IconSettings data-slot="icon" />
-            <MenuLabel>Workspace settings</MenuLabel>
-          </MenuItem>
-          <MenuItem
-            id="connections"
-            textValue="Connections"
-            onAction={() => openSettings("accounts")}
-          >
-            <IconConnections data-slot="icon" />
-            <MenuLabel>Connections</MenuLabel>
-          </MenuItem>
-          {(team || upgrade) && <MenuSeparator />}
-          {team && (
-            <MenuItem
-              id="invite"
-              textValue="Invite members"
-              onAction={() => openSettings("people")}
-            >
-              <IconUserAdd data-slot="icon" />
-              <MenuLabel>Invite members</MenuLabel>
-            </MenuItem>
+          {!workspacesOnly && (
+            <SettingsItems team={team} upgrade={upgrade} onLogOut={() => signOut.mutate()} />
           )}
-          {upgrade && (
-            <MenuItem id="upgrade" textValue="Upgrade" onAction={() => openSettings("billing")}>
-              <IconUpgrade data-slot="icon" />
-              <MenuLabel>Upgrade</MenuLabel>
-            </MenuItem>
-          )}
-          <MenuSeparator />
-          <MenuItem id="log-out" textValue="Log out" onAction={() => signOut.mutate()}>
-            <IconLogOut data-slot="icon" />
-            <MenuLabel>Log out</MenuLabel>
-          </MenuItem>
         </Menu>
       </MenuTrigger>
       {end}
     </div>
+  );
+}
+
+/** The workspace menu's way into settings, a company's Invite and Upgrade, and Log out. */
+function SettingsItems(props: { team: boolean; upgrade: boolean; onLogOut: () => void }) {
+  const { team, upgrade } = props;
+  const openSettings = useOpenSettings();
+  return (
+    <>
+      <MenuSeparator />
+      <MenuItem id="account" textValue="Account settings" onAction={() => openSettings("profile")}>
+        <IconUserRound data-slot="icon" />
+        <MenuLabel>Account settings</MenuLabel>
+      </MenuItem>
+      <MenuItem
+        id="workspace"
+        textValue="Workspace settings"
+        aria-keyshortcuts={ariaKeyShortcuts("settings")}
+        onAction={() => openSettings("general")}
+      >
+        <IconSettings data-slot="icon" />
+        <MenuLabel>Workspace settings</MenuLabel>
+      </MenuItem>
+      <MenuItem id="connections" textValue="Connections" onAction={() => openSettings("accounts")}>
+        <IconConnections data-slot="icon" />
+        <MenuLabel>Connections</MenuLabel>
+      </MenuItem>
+      {(team || upgrade) && <MenuSeparator />}
+      {team && (
+        <MenuItem id="invite" textValue="Invite members" onAction={() => openSettings("people")}>
+          <IconUserAdd data-slot="icon" />
+          <MenuLabel>Invite members</MenuLabel>
+        </MenuItem>
+      )}
+      {upgrade && (
+        <MenuItem id="upgrade" textValue="Upgrade" onAction={() => openSettings("billing")}>
+          <IconUpgrade data-slot="icon" />
+          <MenuLabel>Upgrade</MenuLabel>
+        </MenuItem>
+      )}
+      <MenuSeparator />
+      <MenuItem id="log-out" textValue="Log out" onAction={props.onLogOut}>
+        <IconLogOut data-slot="icon" />
+        <MenuLabel>Log out</MenuLabel>
+      </MenuItem>
+    </>
   );
 }
