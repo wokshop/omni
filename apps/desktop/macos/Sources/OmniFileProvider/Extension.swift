@@ -145,6 +145,7 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
 
     private static func item(_ identifier: NSFileProviderItemIdentifier) async throws -> Item {
         guard let id = ItemID(identifier) else { throw NSFileProviderError(.noSuchItem) }
+        if id == .root { return Item(rootNamed: "Omni") }
         let sync = try Sync.load()
         switch id {
         case .root, .workingSet, .trash:
