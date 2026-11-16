@@ -120,7 +120,8 @@ function WorkspaceMark({ workspace, size }: { workspace: Workspace; size: number
  *  name's line, 10px in from the row's end (as the settings workspace chooser does). */
 function Label({ name, current }: { name: string; current: boolean }) {
   return (
-    <MenuLabel className="flex min-w-0 items-center justify-between gap-3">
+    // To the item's end (past the grid's empty columns), so the check sits at the far edge.
+    <MenuLabel className="col-[2/-1] flex min-w-0 items-center justify-between gap-3">
       <span className="truncate">{name}</span>
       {current && <IconCheck className="size-3.5 shrink-0 text-foreground" />}
     </MenuLabel>
@@ -188,8 +189,8 @@ export function ModuleSwitcher() {
               id={module.id}
               textValue={module.label}
               onAction={() => module.id !== current.id && open(module.id)}
-              // 6px in, as above and below the 18px mark: balanced.
-              className="ps-1.5"
+              // 6px in, as above and below the 18px mark: balanced; the check 10px from the end.
+              className="ps-1.5 pe-2.5"
             >
               {/* The menu's icon gap after it, which it gives only to its own marks. */}
               <ModuleMark module={module} className="me-(--me-icon)" />
@@ -265,8 +266,8 @@ export function WorkspaceSwitcher({ end }: { end?: ReactNode }) {
             anchor: rowBox,
             offset: 4,
             collisionPadding: 8,
-            // 288px: past the sidebar's edge, never narrower than the row, within the window.
-            className: "w-72 min-w-(--anchor-width) max-w-[calc(100vw-16px)]",
+            // The sidebar's width: a touch past the links, never narrower than the row.
+            className: "w-60 min-w-(--anchor-width) max-w-[calc(100vw-16px)]",
           }}
         >
           {workspaces.map((workspace) => (
@@ -276,8 +277,8 @@ export function WorkspaceSwitcher({ end }: { end?: ReactNode }) {
               textValue={label(workspace)}
               onAction={() => choose(workspace)}
               // 6px in, as above and below the 20px mark: balanced (the items' 10px is for 14px
-              // icons).
-              className="ps-1.5"
+              // icons). The name runs to the end, the check 10px from it.
+              className="ps-1.5 pe-2.5"
             >
               <WorkspaceMark workspace={workspace} size={20} />
               <Label name={label(workspace)} current={workspace.id === member.orgId} />
