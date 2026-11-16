@@ -16,9 +16,9 @@ import type { ComponentType, CSSProperties } from "react";
 import {
   IconCheck,
   IconChevronsUpDown,
-  IconFolder,
-  IconHandshake,
-  IconMail,
+  IconFolderFilled,
+  IconHandshakeFilled,
+  IconMailFilled,
   IconSettings,
 } from "@/components/icons/central";
 import { Avatar } from "@/components/ui/avatar";
@@ -49,7 +49,7 @@ interface Module {
 const MAIL: Module = {
   id: "mail",
   label: "Mail",
-  icon: IconMail,
+  icon: IconMailFilled,
   home: "/inbox",
   fill: "bg-module-mail",
 };
@@ -57,7 +57,7 @@ const MAIL: Module = {
 const DRIVE: Module = {
   id: "files",
   label: "Drive",
-  icon: IconFolder,
+  icon: IconFolderFilled,
   home: "/files/my",
   fill: "bg-module-drive",
 };
@@ -65,7 +65,7 @@ const DRIVE: Module = {
 const CRM: Module = {
   id: "crm",
   label: "CRM",
-  icon: IconHandshake,
+  icon: IconHandshakeFilled,
   home: "/crm/companies",
   fill: "bg-module-crm",
 };
