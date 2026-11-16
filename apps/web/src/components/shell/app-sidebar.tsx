@@ -18,7 +18,7 @@ import { HelpdeskItems } from "./helpdesk-nav";
 import { MailboxSwitcher } from "./mailbox-switcher";
 import { ModuleSwitcher, useCurrentModule, WorkspaceSwitcher } from "./module-switcher";
 import { CountBadge } from "./count-badge";
-import { TitleBarRow } from "./desktop-title-bar";
+import { TitleBarRow, useTitleBar } from "./title-bar";
 import { NotificationsButton } from "./notifications";
 import {
   Sidebar,
@@ -32,7 +32,6 @@ import {
   SidebarSection,
 } from "@/components/ui/sidebar";
 import { useConnectivity } from "@/hooks/use-connectivity.ts";
-import { desktop } from "@/lib/desktop.ts";
 import { useCounts } from "@/hooks/use-mail.ts";
 import { useMember } from "@/hooks/use-session.ts";
 import { useWorkspaceSlug, useWorkspaces } from "@/hooks/use-workspaces.ts";
@@ -86,6 +85,7 @@ const folders: NavItem[] = [
 // (`PageNav`).
 export function AppSidebar() {
   const module = useCurrentModule();
+  const titleBar = useTitleBar();
   // The links carry the URL's mailbox as it is, not the one found in the workspace list: right
   // after a switch that list is still loading, and a link built from it would drop the mailbox.
   const { mailbox } = useSearch({ strict: false }) as { mailbox?: string };
@@ -97,10 +97,10 @@ export function AppSidebar() {
         {/* First, in the list the hover highlight runs through, centred on the page headers'
             middle (24px down: the sidebar's 8px padding and half the 32px row), so it sits on
             the same line as their titles. */}
-        {/* The workspace, hugging its mark and name, and notifications at the row's end. In the
-            desktop app the title bar holds both. */}
+        {/* The title bar holds the workspace and notifications; on a phone, the sheet's first row
+            does: the workspace, hugging its mark and name, and notifications at its end. */}
         <TitleBarRow />
-        {!desktop.isDesktop && <WorkspaceSwitcher end={<NotificationsButton />} />}
+        {!titleBar && <WorkspaceSwitcher end={<NotificationsButton />} />}
         {module === "files" ? (
           <StorageNav mailbox={mailbox} />
         ) : module === "crm" ? (
