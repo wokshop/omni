@@ -2,21 +2,26 @@
 // module's content pane has its own boundary, so a crash there keeps the sidebar and title bar;
 // a part that loads on its own chunk (a preview, a chart) falls back in place. Every boundary
 // starts over when the location changes.
-import { CatchBoundary, isNotFound, useLocation } from "@tanstack/react-router";
+import { CatchBoundary, isNotFound, useLocation, useRouter } from "@tanstack/react-router";
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { classify, reportFailure } from "@/lib/failure.ts";
 import { ErrorScreen } from "./error-screen.tsx";
 
-/** The content pane under the shell: the error screen in place of the module's page. */
+/**
+ * The content pane under the shell: the error screen in place of the module's page. It catches
+ * like a route's own boundary, through the router's `defaultOnCatch` (report, stale-build reload).
+ */
 export function ModuleBoundary(props: { children: ReactNode }) {
+  const router = useRouter();
   const href = useLocation({ select: (location) => location.href });
   return (
     <CatchBoundary
       getResetKey={() => href}
       errorComponent={ErrorScreen}
-      onCatch={(error) => {
+      onCatch={(error, info) => {
         // A route's not-found belongs to the router's not-found handling, above this.
         if (isNotFound(error)) throw error;
+        router.options.defaultOnCatch?.(error, info);
       }}
     >
       {props.children}
@@ -24,7 +29,10 @@ export function ModuleBoundary(props: { children: ReactNode }) {
   );
 }
 
-/** A part of a page that may fail on its own: `fallback` in its place, the page unaffected. */
+/**
+ * A part of a page that may fail on its own: `fallback` in its place, the page unaffected. Outside
+ * the router's boundaries, so it reports what it catches itself.
+ */
 export function Contain(props: { fallback: ReactNode; children: ReactNode }) {
   const href = useLocation({ select: (location) => location.href });
   return (

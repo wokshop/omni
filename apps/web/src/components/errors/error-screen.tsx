@@ -1,21 +1,19 @@
 // What a page shows in place of content that failed (ADR 0046): the failure's kind picks the
 // figure, the title and the way out, as an empty state draws them. The same screen fills the whole
 // window (the root route, where the shell itself may be what failed) or a module's pane (the shell
-// stays). Each failure is reported once; a stale build reloads instead, unless it just did.
+// stays). Reporting and the stale-build reload happen where the error is caught (the router's
+// `defaultOnCatch`); this only draws the page, and a stale build that could not reload gets Reload.
 import { useQueryErrorResetBoundary } from "@tanstack/react-query";
 import { useRouter } from "@tanstack/react-router";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { EmptyState } from "@/components/empty/empty-state";
 import { Button, buttonStyles } from "@/components/ui/button";
 import { Link } from "@/components/ui/link";
-import { classify, reloadForUpdate, reportFailure, type Failure } from "@/lib/failure.ts";
+import { classify } from "@/lib/failure.ts";
 
 export function ErrorScreen(props: { error: unknown; reset: () => void }) {
   const failure = useMemo(() => classify(props.error), [props.error]);
-  useReportOnce(failure);
-  const reloading = useReloadForUpdate(failure.kind === "stale_build");
   const retry = useRetry(props.reset);
-  if (reloading) return null;
   switch (failure.kind) {
     case "not_found":
       return <NotFoundState />;
@@ -97,32 +95,4 @@ function useRetry(reset: () => void): Retry {
       });
     },
   };
-}
-
-// StrictMode runs effects twice, and a boundary may render the same error again after a reset.
-const reported = new WeakSet<object>();
-
-function useReportOnce(failure: Failure) {
-  useEffect(() => {
-    const cause = failure.cause;
-    if (typeof cause === "object" && cause !== null) {
-      if (reported.has(cause)) return;
-      reported.add(cause);
-    }
-    reportFailure(failure);
-  }, [failure]);
-}
-
-// Once per page load: a second stale-build screen while the first reload is underway stays blank.
-let reloadStarted = false;
-
-/** True while a reload for the deployed build is underway; false shows the page. */
-function useReloadForUpdate(stale: boolean) {
-  const [reloading, setReloading] = useState(stale);
-  useEffect(() => {
-    if (!stale || reloadStarted) return;
-    reloadStarted = reloadForUpdate();
-    if (!reloadStarted) setReloading(false);
-  }, [stale]);
-  return reloading;
 }
