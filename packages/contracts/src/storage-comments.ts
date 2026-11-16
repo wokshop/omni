@@ -72,12 +72,20 @@ export const storageCommentsResponseSchema = z.object({
 });
 
 /**
- * `POST /files/:id/comments`: starts a thread at `anchor` (the whole file when absent), or with
- * `parentId` replies to that comment's thread, which opens it again if it was resolved. A reply
- * has no anchor. Answers `201 { comment }`.
+ * `POST /files/:id/comments`: starts a thread at `anchor` (the whole file when absent) on the
+ * content the author was looking at, `contentVersion` (the file's current one when absent), or
+ * with `parentId` replies to that comment's thread, which opens it again if it was resolved. A
+ * reply has no anchor. Answers `201 { comment }`; a `contentVersion` the file has not reached
+ * answers `409 version_conflict`.
  */
 export const storageAddCommentBodySchema = z.union([
-  z.object({ body, anchor: storageCommentAnchorSchema.optional() }).strict(),
+  z
+    .object({
+      body,
+      anchor: storageCommentAnchorSchema.optional(),
+      contentVersion: z.number().int().nonnegative().optional(),
+    })
+    .strict(),
   z.object({ body, parentId: id }).strict(),
 ]);
 

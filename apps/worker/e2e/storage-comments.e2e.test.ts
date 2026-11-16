@@ -179,6 +179,18 @@ test("threads stay one level deep, follow resolve and reply, and keep the conten
   expect([now.contentVersion, now.comments[0]!.contentVersion]).toEqual([2, 1]);
   const later = await post(ben.jar, { body: "Whole file looks good" });
   expect(later).toMatchObject({ contentVersion: 2, anchor: { kind: "file" } });
+  // Ben read version 1 before Ana saved: his anchor stays on the lines he saw.
+  const stale = await post(ben.jar, {
+    body: "Line 1 typo",
+    anchor: { kind: "lines", start: 1, end: 1 },
+    contentVersion: 1,
+  });
+  expect(stale.contentVersion).toBe(1);
+  const ahead = await stack.api(ben.jar, "POST", `/files/${file.id}/comments`, {
+    body: "From the future",
+    contentVersion: 3,
+  });
+  expect([ahead.status, ahead.body.code]).toEqual([409, "VERSION_CONFLICT"]);
 
   // Bad anchors and a reply carrying one never reach the database.
   const invalid = [
@@ -194,5 +206,6 @@ test("threads stay one level deep, follow resolve and reply, and keep the conten
   expect((await stack.api(ana.jar, "DELETE", at(root.id))).status).toBe(204);
   expect((await list(ana.jar, file.id)).comments.map((comment) => comment.body)).toEqual([
     "Whole file looks good",
+    "Line 1 typo",
   ]);
 });

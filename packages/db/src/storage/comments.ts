@@ -42,6 +42,10 @@ export type CommentsResult =
   | NotFound
   | Forbidden;
 export type CommentResult = { status: "ok"; comment: StorageComment } | NotFound | Forbidden;
+export type AddCommentResult =
+  | CommentResult
+  /** The content version named is one the file has not reached. */
+  | { status: "version_conflict" };
 export type DeleteCommentResult = { status: "ok" } | NotFound | Forbidden;
 
 const NOT_FOUND = { status: "not_found" } as const;
@@ -141,16 +145,26 @@ export function commentOperations(db: Db, door: Door) {
     },
 
     /**
-     * Starts a thread on the file's current content, at `anchor` (the whole file when none), or
-     * replies to the thread `parentId` belongs to. A reply to a resolved thread opens it again.
+     * Starts a thread at `anchor` (the whole file when none) on the content the author viewed,
+     * `contentVersion`, or the current content when none: an anchor read off version 1 stays on
+     * version 1 when someone saved version 2 meanwhile. Or replies to the thread `parentId`
+     * belongs to. A reply to a resolved thread opens it again.
      */
     addComment(
       nodeId: string,
-      input: { body: string; anchor?: StorageCommentAnchor; parentId?: string },
-    ): Promise<CommentResult> {
-      return db.transaction(async (tx): Promise<CommentResult> => {
+      input: {
+        body: string;
+        anchor?: StorageCommentAnchor;
+        contentVersion?: number;
+        parentId?: string;
+      },
+    ): Promise<AddCommentResult> {
+      return db.transaction(async (tx): Promise<AddCommentResult> => {
         const found = await commentable(tx, door, nodeId);
         if (found.status !== "ok") return found;
+        const current = found.node.contentVersion;
+        const viewed = input.parentId ? current : (input.contentVersion ?? current);
+        if (viewed > current) return { status: "version_conflict" };
         const authorMemberId = await door.actor(tx, found.node.orgId);
         if (!authorMemberId) return FORBIDDEN;
         let rootId: string | null = null;
@@ -169,7 +183,7 @@ export function commentOperations(db: Db, door: Door) {
             orgId: found.node.orgId,
             nodeId,
             parentId: rootId,
-            contentVersion: found.node.contentVersion,
+            contentVersion: viewed,
             anchor: rootId ? null : (input.anchor ?? { kind: "file" }),
             body: input.body,
             authorMemberId,

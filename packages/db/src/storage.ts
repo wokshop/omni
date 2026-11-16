@@ -54,6 +54,7 @@ export {
 } from "./storage/sync.ts";
 export type { StorageLockResult } from "./storage/lock.ts";
 export type {
+  AddCommentResult,
   CommentResult,
   CommentsResult,
   DeleteCommentResult,
