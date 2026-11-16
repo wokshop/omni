@@ -93,6 +93,9 @@ export async function upsertMessage(db: Db, input: NewMessage & { attachments?: 
           folderId: sql`coalesce(excluded.folder_id, ${messages.folderId})`,
           imapUid: sql`coalesce(excluded.imap_uid, ${messages.imapUid})`,
           r2Key: sql`coalesce(excluded.r2_key, ${messages.r2Key})`,
+          // Messages stored before these were kept pick them up on a re-sync.
+          listUnsubscribe: sql`excluded.list_unsubscribe`,
+          listUnsubscribeOneClick: sql`excluded.list_unsubscribe_one_click`,
           updatedAt: new Date(),
         },
       })

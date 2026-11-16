@@ -397,6 +397,8 @@ export class PgMailStore implements MailStore {
         cleanText,
         forwarded,
         remoteImageCount,
+        listUnsubscribe: message.signals.listUnsubscribe,
+        listUnsubscribeOneClick: message.signals.listUnsubscribeOneClick,
         // Bounces and auto-replies never reopen a conversation or start an SLA (ADR 0021).
         automated: parsed.message.automated !== null,
         // Cleared once the Worker accepts `message.created`; until then the sweep re-sends it.
