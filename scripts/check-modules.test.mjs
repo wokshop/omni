@@ -123,3 +123,27 @@ test("debt hides its own problem and is reported once it no longer fails", () =>
   assert.deepEqual(problems, []);
   assert.deepEqual(stale, [{ file: "packages/db/src/gone.ts", rule: "tables" }]);
 });
+
+test("a module cannot reach another undeclared module through the @omni/db barrel", () => {
+  const files = {
+    "packages/db/src/index.ts": `export * from "./storage.ts";\nexport * from "./member-mail.ts";\nexport * as schema from "./schema/index.ts";`,
+    "packages/db/src/storage.ts": `export { readTree } from "./storage/tree.ts";`,
+    "packages/db/src/storage/tree.ts": `export function readTree() {}`,
+    "packages/db/src/member-mail.ts": `export async function grantFor() {}`,
+    "packages/db/src/storage/lookup.ts": `import { grantFor, schema } from "../index.ts";`,
+    "apps/worker/src/crm/files.ts": `import { readTree, grantFor } from "@omni/db";`,
+  };
+  assert.deepEqual(problemsIn(files), ["packages/db/src/storage/lookup.ts uses"]);
+});
+
+test("a table read through any name the schema is bound to fails", () => {
+  const problems = problemsIn({
+    "packages/db/src/crm/lookup.ts": `import { schema as s } from "../index.ts";\ndb.select().from(s.storageNodes);`,
+    "apps/worker/src/crm/routes.ts": `import * as tables from "@omni/db/schema";\ntables.storageNodes;`,
+    "apps/worker/src/routes/mail.ts": `const s = { storageNodes: 1 };\ns.storageNodes;`,
+  });
+  assert.deepEqual(problems, [
+    "packages/db/src/crm/lookup.ts tables",
+    "apps/worker/src/crm/routes.ts tables",
+  ]);
+});
