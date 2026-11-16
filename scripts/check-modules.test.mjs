@@ -147,3 +147,11 @@ test("a table read through any name the schema is bound to fails", () => {
     "apps/worker/src/crm/routes.ts tables",
   ]);
 });
+
+test("a module's tables split into a schema folder are still its own", () => {
+  const problems = problemsIn({
+    "packages/db/src/schema/mail/helpdesk.ts": `export const tags = pgTable("tags", {});`,
+    "packages/db/src/crm/tags.ts": `import { tags } from "../schema/mail/helpdesk.ts";`,
+  });
+  assert.deepEqual(problems, ["packages/db/src/crm/tags.ts tables"]);
+});
