@@ -4,6 +4,7 @@ import { and, eq } from "drizzle-orm";
 import { afterAll, expect, test } from "vitest";
 import { addLocation, reconcileFolder, setLocationFlags } from "../src/mail/mail-sync.ts";
 import { forMember } from "../src/for-member.ts";
+import { threadActionTargets } from "../src/mail/member-mail.ts";
 import { mailboxes, messageLocations, threadState } from "../src/schema/index.ts";
 import { createThread, upsertFolder, upsertMessage } from "../src/mail/writers.ts";
 import { createMailbox, createMember, createOrg, createTestDatabase, grant } from "./support.ts";
@@ -147,4 +148,17 @@ test("another personal mailbox keeps read as read: \\Seen never marks it done", 
   await flag([uid], SEEN);
   expect(await stateOf(threadId)).toEqual({ read: true, doneThrough: null, snoozedUntil: null });
   expect(await inbox()).toContain(threadId);
+});
+
+test("the copies Done marks read stop at the done watermark: a reply indexed after it stays unread", async () => {
+  const { deliver } = await account("eva@gmail-done.test", "gmail");
+  const seen = new Date("2026-11-01T09:00:00Z");
+  const first = await deliver(null, seen, []);
+  // Arrives between the Done write and the lookup of what to mark read.
+  const late = await deliver(first.threadId, new Date("2026-11-01T09:05:00Z"), []);
+
+  const upTo = await threadActionTargets(db, member.id, first.threadId, seen);
+  expect(upTo?.targets.map((t) => t.uids)).toEqual([[first.uid]]);
+  const newest = await threadActionTargets(db, member.id, first.threadId, "newest");
+  expect(newest?.targets.map((t) => t.uids)).toEqual([[late.uid]]);
 });

@@ -97,7 +97,9 @@ export async function setTriage(
     writer.db,
     writer.memberId,
     threadId,
-    kind === "mark_unread" ? "newest" : undefined,
+    // Read only what Done covers: a reply indexed since `setThreadState` stays unread in Gmail,
+    // so it reopens the thread instead of being swept into Done unseen.
+    kind === "mark_unread" ? "newest" : (state.doneThrough ?? undefined),
   );
   const actionIds =
     found?.mailboxProvider === "gmail" ? await enqueueFlag(writer, found, kind, key) : [];

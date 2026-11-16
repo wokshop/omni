@@ -2,7 +2,7 @@
 // query inner-joins `mailbox_access` for this member and `members` for the row's org, so a
 // missing grant or a grant that crosses orgs finds nothing.
 import type { MessageTarget } from "@omni/contracts";
-import { and, asc, desc, eq, exists, isNotNull, sql, type AnyColumn } from "drizzle-orm";
+import { and, asc, desc, eq, exists, isNotNull, lte, sql, type AnyColumn } from "drizzle-orm";
 import type { Db } from "../client.ts";
 import {
   attachments,
@@ -66,8 +66,11 @@ export async function threadActionTargets(
   db: Db,
   memberId: string,
   threadId: string,
-  /** `newest`: only the copies of the thread's newest message. */
-  only?: "newest",
+  /**
+   * `newest`: only the copies of the thread's newest message. A date: only messages sent up to
+   * it, so mail that arrived after the caller looked is left alone.
+   */
+  only?: "newest" | Date,
 ) {
   const [thread] = await db
     .select({
@@ -104,6 +107,7 @@ export async function threadActionTargets(
         eq(messages.threadId, thread.id),
         isNotNull(mailboxFolders.uidvalidity),
         only === "newest" ? eq(messages.sentAt, thread.lastMessageAt) : undefined,
+        only instanceof Date ? lte(messages.sentAt, only) : undefined,
       ),
     )
     .orderBy(asc(mailboxFolders.path), asc(messageLocations.imapUid));
