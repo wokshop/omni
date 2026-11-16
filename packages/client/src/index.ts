@@ -6,3 +6,5 @@ export * from "./realtime.ts";
 // The Worker's error answers in either shape (ADR 0038): codes, categories and `toApiError`.
 export * from "@omni/contracts/errors";
 export * from "@omni/contracts/headers";
+// What the desktop shell's Drive sync commands answer (Tauri IPC, not HTTP).
+export type { DesktopSyncStatus, DesktopWorkspaceSync } from "@omni/contracts";

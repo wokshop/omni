@@ -7,6 +7,7 @@ import {
   IconClock3,
   IconMailOpen,
   IconCreditCard,
+  IconFolder,
   IconForward,
   IconHandshake,
   IconInbox,
@@ -23,6 +24,7 @@ import { useMember } from "@/hooks/use-session.ts";
 import type { SettingsPageId } from "@/hooks/use-settings.ts";
 import { usePersonalWorkspace } from "@/hooks/use-workspaces.ts";
 import { useBilling } from "@/hooks/use-billing.ts";
+import { canSyncDrive } from "@/hooks/use-desktop-sync.ts";
 import { SHORTCUT_IDS, SHORTCUTS } from "@/lib/shortcuts.ts";
 import { isManager } from "./workspace-pages";
 
@@ -81,6 +83,17 @@ export function useAccountPages(): PageDefinition[] {
         icon: glyph(IconForward),
         terms: ["crm", "attio", "hubspot", "bcc", "forwarding address", "copy"],
       },
+      // Only in the desktop app with a sync provider: it switches this computer's Omni folder.
+      ...(canSyncDrive
+        ? [
+            {
+              id: "sync" as const,
+              title: "Drive sync",
+              icon: glyph(IconFolder),
+              terms: ["finder", "files", "folder", "drive", "storage", "this mac", "offline"],
+            },
+          ]
+        : []),
       {
         id: "shortcuts",
         title: "Shortcuts",

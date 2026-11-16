@@ -60,6 +60,8 @@ export const keys = {
   signInEmails: () => [...root, "sign-in-emails"] as const,
   /** The company a scoped sign-in may ask to join (ADR 0024). */
   join: () => [...root, "join"] as const,
+  /** Drive sync on this computer, as the desktop shell reports it (ADR 0043). */
+  desktopSync: () => [...root, "desktop-sync"] as const,
   /** An agent asking to connect over OAuth (ADR 0029). */
   oauthClients: () => [...root, "oauth-clients"] as const,
 
