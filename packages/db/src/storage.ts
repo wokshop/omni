@@ -73,6 +73,15 @@ export {
   recomputeStorageUsage,
   storageUsageOf,
 } from "./storage/maintenance.ts";
+export {
+  noteSubscriptionPaymentMethod,
+  raiseStoragePeak,
+  setStorageOverage,
+  storageBilledWorkspaces,
+  storageOverageOf,
+  storagePeakOf,
+  type StorageBilledWorkspace,
+} from "./storage/billing.ts";
 export type { StorageUploadPart } from "./schema/storage.ts";
 
 /**
