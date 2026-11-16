@@ -12,7 +12,7 @@
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
-use tauri::{AppHandle, Manager, Runtime, WindowEvent};
+use tauri::{AppHandle, Manager, Runtime};
 use tauri_plugin_updater::{Update, UpdaterExt};
 use url::Url;
 
@@ -47,14 +47,6 @@ pub fn start<R: Runtime>(app: &AppHandle<R>) {
         return;
     }
     app.manage(Pending::default());
-    if let Some(window) = app.get_webview_window("main") {
-        let app = app.clone();
-        window.on_window_event(move |event| {
-            if let WindowEvent::CloseRequested { .. } = event {
-                install_if_idle(&app);
-            }
-        });
-    }
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(FIRST_CHECK).await;
@@ -107,8 +99,8 @@ async fn check<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
 
 /// Installs a downloaded update now if the window is closed: the restart quits the app (the
 /// exit installs it, `install_pending`) and relaunches it hidden. With the window open, the
-/// update waits for it to close.
-fn install_if_idle<R: Runtime>(app: &AppHandle<R>) {
+/// update waits for it to close (`window.rs` calls this once it has hidden the window).
+pub fn install_if_idle<R: Runtime>(app: &AppHandle<R>) {
     let pending = app.try_state::<Pending>().is_some_and(|pending| {
         pending
             .0
