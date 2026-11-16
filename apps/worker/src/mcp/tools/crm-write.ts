@@ -134,7 +134,8 @@ async function writePerson(
     const added = await crm.addPerson({
       name: input.name,
       address: input.email,
-      companyId: input.company_id ?? undefined,
+      // Null is no company; left out, the company comes from the email's domain.
+      companyId: input.company_id,
       jobTitle: input.job_title,
       phone: input.phone,
     });

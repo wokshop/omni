@@ -1173,8 +1173,9 @@ describe("the CRM", () => {
     expect(none.text).toContain("Personal space");
   });
 
-  // Catches: a write the agent is told succeeded but that the CRM does not hold, or a fetch that
-  // drops the threads the person can open with that address.
+  // Catches: a write the agent is told succeeded but that the CRM does not hold, a fetch that
+  // drops the threads the person can open with that address, and `company_id: null` read as
+  // omitted, which files the person under their domain's company anyway.
   test("crm_write adds a person that crm_fetch then reads, with their thread", async () => {
     const org = await createOrg(db, "crmwrite");
     const member = await createMember(db, org.id, "ivy@crmwrite.test");
@@ -1237,5 +1238,15 @@ describe("the CRM", () => {
     expect(company.data.companies[0]!.contracts).toEqual([
       expect.objectContaining({ id: ours.contract.id, status: "draft" }),
     ]);
+
+    // An explicit null is no company, not "work it out from the domain": Lena's BigCo is there,
+    // and a colleague added with company_id null stays out of it.
+    const loose = await tool<{ result: string; person: Row }>(access_token, "crm_write", {
+      person: { name: "Max Ortiz", email: "max@bigco.test", company_id: null },
+    });
+    expect(loose.isError).toBe(false);
+    const max = await crm.person(loose.data.person.id);
+    if (max.status !== "ok") throw new Error(max.status);
+    expect(max.person.companyId).toBeNull();
   });
 });
