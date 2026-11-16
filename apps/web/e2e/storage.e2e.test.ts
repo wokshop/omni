@@ -136,7 +136,8 @@ test("a link open to anyone downloads its file, byte for byte, for someone signe
 
 // Catches: the XLSX preview failing on the app's real CSP (its reader in a worker the policy
 // blocks, as SheetJS's or fflate's own blob workers would be), a sheet's cells showing raw values
-// instead of the text the workbook displays, or a hidden sheet getting a tab.
+// instead of the text the workbook displays, a hidden sheet getting a tab, or a sheet whose used
+// range starts past A1 shifted up and left (its B3 shown at A1).
 test("an XLSX opens to its visible sheets' cells as the workbook shows them", async () => {
   const page = await signedIn(`xlsx-${Date.now()}@gmail.test`, "/files/my");
   const book = utils.book_new();
@@ -146,7 +147,10 @@ test("an XLSX opens to its visible sheets' cells as the workbook shows them", as
   ]);
   if (pipeline.B2) pipeline.B2.z = '"$"#,##0.00';
   utils.book_append_sheet(book, pipeline, "Pipeline");
-  utils.book_append_sheet(book, utils.aoa_to_sheet([["Owner"], ["Ana"]]), "Accounts");
+  const accounts = utils.aoa_to_sheet([["Owner"], ["Ana"]], { origin: "B2" });
+  // As Excel writes a sheet whose first cell is B2: its used range starts there, not at A1.
+  accounts["!ref"] = "B2:B3";
+  utils.book_append_sheet(book, accounts, "Accounts");
   utils.book_append_sheet(book, utils.aoa_to_sheet([["kept out of sight"]]), "Hidden");
   book.Workbook = { Sheets: [{ Hidden: 0 }, { Hidden: 0 }, { Hidden: 1 }] };
   const buffer = write(book, { type: "buffer", bookType: "xlsx" }) as Buffer;
@@ -164,7 +168,11 @@ test("an XLSX opens to its visible sheets' cells as the workbook shows them", as
   await page.getByRole("gridcell", { name: "$12,000.50" }).waitFor({ timeout: 15_000 });
   expect(await page.getByRole("tab").allInnerTexts()).toEqual(["Pipeline", "Accounts"]);
   await page.getByRole("tab", { name: "Accounts" }).click();
-  await page.getByRole("gridcell", { name: "Ana" }).waitFor({ timeout: 5000 });
+  const ana = page.getByRole("gridcell", { name: "Ana" });
+  await ana.waitFor({ timeout: 5000 });
+  // B3: the grid's first column is the row numbers, so B is its third; its first row the letters.
+  expect(await ana.getAttribute("aria-colindex")).toBe("3");
+  expect(await ana.locator("..").getAttribute("aria-rowindex")).toBe("4");
 }, 120_000);
 
 // Catches: files queued in one workspace going up into another after a workspace switch (the
