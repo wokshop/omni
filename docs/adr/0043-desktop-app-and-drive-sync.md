@@ -21,14 +21,15 @@ with the Drive module. Nothing desktop exists in the repo. The full design is
    passkeys cannot match the relying party, and relative `/api` URLs break; fixing each would
    fork the web app's data layer. The remote origin gets a minimal capability and no filesystem.
 3. **Drive on the computer is the operating system's own mechanism**: a File Provider replicated
-   extension on macOS (Swift), the Cloud Files API on Windows (Rust), one domain per workspace.
-   A mirrored folder with a file watcher was offered and declined.
+   extension on macOS (Swift), the Cloud Files API on Windows (Rust). One "Omni" folder with a
+   folder per synced workspace inside it. A mirrored folder with a file watcher was offered and declined.
 4. **Storage gains a sync protocol**, additive: a per-workspace revision on every node,
    tombstones, a change feed, replacing a file's bytes in place guarded by its content version,
    and a `storage.changed` realtime event. Conflicts are decided by version on the server and
    resolved by keeping both files.
 5. **Sync authenticates with OAuth, not the session**: the provider from ADR 0029, a first-party
-   "Omni Desktop" client and a `storage:sync` scope, tokens in the system keychain.
+   "Omni Desktop" client and a `storage:sync` scope, tokens in the system keychain. One grant
+   covers all of the person's workspaces, so sync routes name the workspace in the path.
 6. **Swift and Rust types are generated from `@omni/contracts`**; no response shape is written
    by hand in a second language.
 
