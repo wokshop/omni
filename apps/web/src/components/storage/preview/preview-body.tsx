@@ -1,10 +1,10 @@
-// The stage: the file through the renderer its kind calls for (ADR 0040). PDF, code and CSV
-// renderers load on their own chunks (pdf.js, Shiki and Papa Parse stay off the app's entry), and
-// each is keyed by the file, so stepping to the next file starts it fresh. A renderer that fails
-// (its chunk, or the file) leaves the file's tile and Download in its place.
+// The stage: the file through the renderer its kind calls for (ADR 0040). PDF, code, CSV and XLSX
+// renderers load on their own chunks (pdf.js, Shiki, Papa Parse and SheetJS stay off the app's
+// entry), and each is keyed by the file, so stepping to the next file starts it fresh. A renderer
+// that fails (its chunk, or the file) leaves the file's tile and Download in its place.
 import { lazy, Suspense } from "react";
 import { Contain } from "@/components/errors/error-boundary.tsx";
-import { fileType, IMAGE_PREVIEW_MAX_BYTES } from "@/lib/file-kind.ts";
+import { fileType, IMAGE_PREVIEW_MAX_BYTES, SHEET_PREVIEW_MAX_BYTES } from "@/lib/file-kind.ts";
 import type { StorageNode } from "@/lib/storage.ts";
 import { ImagePreview } from "./image-preview.tsx";
 import { AudioPreview, VideoPreview } from "./media-preview.tsx";
@@ -13,6 +13,7 @@ import { NoPreview, StageLoading } from "./shared.tsx";
 const PdfPreview = lazy(() => import("./pdf-preview.tsx"));
 const CodePreview = lazy(() => import("./code-preview.tsx"));
 const CsvPreview = lazy(() => import("./csv-preview.tsx"));
+const XlsxPreview = lazy(() => import("./xlsx-preview.tsx"));
 
 export function PreviewBody(props: { node: StorageNode; url: string; onDownload: () => void }) {
   const { node, url, onDownload } = props;
@@ -74,6 +75,16 @@ export function PreviewBody(props: { node: StorageNode; url: string; onDownload:
             <CsvPreview key={node.id} source={source} onDownload={onDownload} />
           </Suspense>
         </Contain>
+      );
+    case "sheet":
+      return node.size <= SHEET_PREVIEW_MAX_BYTES ? (
+        <Contain fallback={none}>
+          <Suspense fallback={<StageLoading label="Loading spreadsheet" />}>
+            <XlsxPreview key={node.id} source={source} onDownload={onDownload} />
+          </Suspense>
+        </Contain>
+      ) : (
+        none
       );
     default:
       return none;
