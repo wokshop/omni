@@ -1,12 +1,11 @@
 // A file's comments (ADR 0043 decisions 4 and 5), by the member's door or a shared link's: the
-// chat, and adding, editing, resolving and deleting. Comments are not the file's content: a
+// threads, and adding, editing, resolving and deleting. Comments are not the file's content: a
 // change refetches this file's comments only, never the folder lists.
 import { mutationOptions, queryOptions, type QueryClient } from "@tanstack/react-query";
 import type { Api } from "@omni/client";
 import type { InferRequestType, InferResponseType } from "hono/client";
 import { api, call } from "./api.ts";
 import { keys } from "./query-keys.ts";
-import { parseReply, quoteText, type Reply } from "./reply.ts";
 
 export type StorageComments = InferResponseType<
   Api["storage"]["files"][":id"]["comments"]["$get"],
@@ -19,11 +18,10 @@ type ChangeBody = InferRequestType<
   Api["storage"]["files"][":id"]["comments"][":commentId"]["$patch"]
 >["json"];
 
-/** A comment as the chat shows it: its words, and the message it answers, if any. */
-export interface StorageChatLine {
-  comment: StorageComment;
-  body: string;
-  reply: Reply | undefined;
+/** A thread: its first comment and the replies under it, oldest first. */
+export interface StorageThread {
+  root: StorageComment;
+  replies: StorageComment[];
 }
 
 const sharedDoor = () => api.storage.shared[":shareId"].files[":id"].comments;
@@ -38,23 +36,17 @@ export const storageCommentsQuery = (id: string, shareId?: string) =>
         : call(memberDoor().$get({ param: { id } }, { init: { signal } })),
   });
 
-/**
- * The comments as one chat, oldest first. A reply carries the passage it answers in its body (as
- * the inbox's notes do); a reply made under a thread (`parentId`) quotes that thread's first
- * message instead.
- */
-export function chatOf(comments: StorageComment[]): StorageChatLine[] {
-  const byId = new Map(comments.map((comment) => [comment.id, comment]));
+/** The comments grouped into threads, oldest first; `resolved` picks one side. */
+export function threadsOf(comments: StorageComment[], resolved: boolean): StorageThread[] {
   const sorted = comments.toSorted((a, b) => a.createdAt.localeCompare(b.createdAt));
-  return sorted.map((comment) => {
-    const { reply, body } = parseReply(comment.body);
-    const parent = comment.parentId ? byId.get(comment.parentId) : undefined;
-    const quoted = parent && {
-      from: commentAuthor(parent),
-      text: quoteText(parseReply(parent.body).body),
-    };
-    return { comment, body, reply: reply ?? quoted };
-  });
+  const threads = new Map<string, StorageThread>();
+  for (const comment of sorted) {
+    if (comment.parentId === null) threads.set(comment.id, { root: comment, replies: [] });
+  }
+  for (const comment of sorted) {
+    if (comment.parentId !== null) threads.get(comment.parentId)?.replies.push(comment);
+  }
+  return [...threads.values()].filter((thread) => !!thread.root.resolvedAt === resolved);
 }
 
 export const commentAuthor = (comment: StorageComment) => comment.authorName ?? "Former member";
