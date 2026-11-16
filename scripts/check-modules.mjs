@@ -122,11 +122,13 @@ function bindingsOf(clause) {
  * Where each name a barrel exports is defined: name → file, following `export *`,
  * `export { a as b } from` and `export * as x from` through the files given.
  */
-export function exportOrigins(files, entry, seen = new Set()) {
+export function exportOrigins(files, entry, done = new Map(), active = new Set()) {
+  if (done.has(entry)) return done.get(entry);
   const origins = new Map();
   const source = files.get(entry);
-  if (!source || seen.has(entry)) return origins;
-  seen.add(entry);
+  // Only a file on the current path is a cycle; one already read keeps its finished map.
+  if (!source || active.has(entry)) return origins;
+  active.add(entry);
   const DECLARED =
     /^export\s+(?:declare\s+)?(?:default\s+)?(?:async\s+)?(?:function\*?|const|let|var|class|type|interface|enum)\s+(\w+)/gm;
   for (const [, name] of source.matchAll(DECLARED)) origins.set(name, entry);
@@ -136,12 +138,17 @@ export function exportOrigins(files, entry, seen = new Set()) {
     if (!target) continue;
     for (const { imported, local } of bindingsOf(clause)) {
       if (imported !== "*") {
-        const inner = exportOrigins(files, target, seen).get(imported);
+        const inner = exportOrigins(files, target, done, active).get(imported);
         origins.set(local, inner ?? target);
       } else if (local) origins.set(local, target);
-      else for (const [name, file] of exportOrigins(files, target, seen)) origins.set(name, file);
+      else {
+        for (const [name, file] of exportOrigins(files, target, done, active))
+          origins.set(name, file);
+      }
     }
   }
+  active.delete(entry);
+  done.set(entry, origins);
   return origins;
 }
 

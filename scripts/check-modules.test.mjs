@@ -180,3 +180,13 @@ test("a table read through the barrel's schema under a namespace fails", () => {
   });
   assert.deepEqual(problems, ["packages/db/src/mail/files.ts tables"]);
 });
+
+test("a file re-exported twice by a surface keeps every name it exports", () => {
+  const files = {
+    "packages/db/src/index.ts": `export * from "./mail.ts";`,
+    "packages/db/src/mail.ts": `export type { InboxAuditAction } from "./mail/inbox-admin.ts";\nexport * from "./mail/inbox-admin.ts";`,
+    "packages/db/src/mail/inbox-admin.ts": `export type InboxAuditAction = string;\nexport async function recordInboxEvent() {}`,
+    "apps/worker/src/storage/audit.ts": `import { recordInboxEvent } from "@omni/db";`,
+  };
+  assert.deepEqual(problemsIn(files), ["apps/worker/src/storage/audit.ts uses"]);
+});
