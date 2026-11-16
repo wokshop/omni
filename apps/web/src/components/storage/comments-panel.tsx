@@ -164,6 +164,8 @@ export function CommentsPanel(props: {
           textarea={textarea}
           replyTo={replyTo}
           onClearReply={() => setReplyTo(null)}
+          // Only the reply that went: one picked while it was on its way stays on the box.
+          onSent={(sent) => setReplyTo((current) => (current === sent ? null : current))}
           contentVersion={comments.data?.contentVersion}
         />
       </div>
@@ -307,6 +309,7 @@ function Composer(props: {
   textarea: React.RefObject<HTMLTextAreaElement | null>;
   replyTo: ReplyTo | null;
   onClearReply: () => void;
+  onSent: (sent: ReplyTo | null) => void;
   contentVersion: number | undefined;
 }) {
   const { door, replyTo, contentVersion } = props;
@@ -326,9 +329,10 @@ function Composer(props: {
     add.mutate(
       { ...withShare(door), body: json },
       {
+        // Clears what was sent, not what was typed while it was on its way.
         onSuccess: () => {
-          setText("");
-          props.onClearReply();
+          setText((current) => (current.trim() === body ? "" : current));
+          props.onSent(replyTo);
         },
         onError: (error) => storageErrorToast(error, "It was not sent"),
         onSettled: () => {
