@@ -43,6 +43,19 @@ export function setConversation(socket: WebSocket, presence: object | null) {
   socket.serializeAttachment(Object.keys(next).length > 0 ? next : null);
 }
 
+/**
+ * Each socket's latest presence message. The access check awaits Postgres, and the object takes
+ * the socket's next message meanwhile, so a check that finishes after a newer message (a `left`,
+ * another file, the socket closing) is dropped instead of undoing it. Memory only: a hibernated
+ * object has no check in flight.
+ */
+const latest = new WeakMap<WebSocket, number>();
+const nextTurn = (socket: WebSocket) => {
+  const turn = (latest.get(socket) ?? 0) + 1;
+  latest.set(socket, turn);
+  return turn;
+};
+
 const editingOf = (socket: WebSocket) => attachmentOf(socket)?.file ?? null;
 
 const event = (nodeId: string, memberId: string, state: "editing" | "left") =>
@@ -83,6 +96,7 @@ function stillEditing(
 
 /** Takes the socket off the file it edits; the others hear `left` unless another tab still edits. */
 export function leaveFile(ctx: DurableObjectState, socket: WebSocket, memberId: string) {
+  nextTurn(socket);
   const at = editingOf(socket);
   if (!at) return;
   socket.serializeAttachment(withoutFile(socket));
@@ -109,9 +123,9 @@ export async function onFilePresence(
   memberId: string,
   message: FilePresenceMessage,
 ) {
-  const current = editingOf(socket);
+  const turn = nextTurn(socket);
   if (message.state === "left") {
-    if (current?.nodeId === message.nodeId) leaveFile(ctx, socket, memberId);
+    if (editingOf(socket)?.nodeId === message.nodeId) leaveFile(ctx, socket, memberId);
     return;
   }
   const { db, close } = openDb(env, 1);
@@ -121,7 +135,8 @@ export async function onFilePresence(
   } finally {
     await close({ timeout: 0 });
   }
-  if (found.status !== "ok" || found.file.trashedAt) return;
+  if (latest.get(socket) !== turn || found.status !== "ok" || found.file.trashedAt) return;
+  const current = editingOf(socket);
   // A claim the member cannot make is dropped whole: it does not take them off their file.
   if (current && current.nodeId !== message.nodeId) leaveFile(ctx, socket, memberId);
   const at: Editing = {

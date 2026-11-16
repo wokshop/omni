@@ -82,3 +82,26 @@ test("editing presence reaches those who see the file, survives hibernation, and
   expect(boHears.received).toHaveLength(3);
   boHears.socket.close();
 });
+
+// Catches: an `editing` whose access check finishes after the app already sent `left` (closed
+// the editor), which would show the member editing a file they have closed until they reconnect.
+test("a left sent while the editing check is still running wins", async () => {
+  const org = await stack.company(`presence-race-${randomUUID().slice(0, 8)}`);
+  const ana = await stack.member(org.id);
+  const bo = await stack.member(org.id);
+  const doc = await stack.upload(ana.jar, { space: "shared" }, "doc.md", bytes("# Doc"));
+  const [anaHears, boHears] = [await connect(ana.jar), await connect(bo.jar)];
+
+  anaHears.editing(doc.id, "editing");
+  anaHears.editing(doc.id, "left");
+  await quiet();
+  expect(boHears.received).toEqual([]);
+
+  // A later heartbeat still lands as usual.
+  anaHears.editing(doc.id, "editing");
+  expect(await boHears.next(1)).toEqual([
+    { type: "file.presence", nodeId: doc.id, memberId: ana.id, state: "editing" },
+  ]);
+  anaHears.socket.close();
+  boHears.socket.close();
+});
