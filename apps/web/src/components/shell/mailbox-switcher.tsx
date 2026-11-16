@@ -192,9 +192,9 @@ export function MailboxSwitcher() {
           {pending ? (
             <Loader className="size-icon text-muted-foreground" />
           ) : single ? (
-            // One face, 16px over the 15px box: the margin centres it on the nav icons' axis.
-            <span className="-m-[0.5px]">
-              <FaceAvatar face={single} size={16} />
+            // One face, 18px over the 15px box: the margin centres it on the nav icons' axis.
+            <span className="-m-[1.5px]">
+              <FaceAvatar face={single} size={18} />
             </span>
           ) : (
             // Several, 20px over the 15px box, centred on the same axis.

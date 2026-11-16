@@ -250,7 +250,7 @@ export function List(
           {/* 10px each side, the same as the 28px controls' inset from the top; 20px before a
               title that starts the header, as the reading column's subject has. */}
           <header
-            className={`flex h-12 shrink-0 items-center gap-2 pe-2.5 ${pageNav ? "ps-2.5" : "ps-5"}`}
+            className={`@container/list-head flex h-12 shrink-0 items-center gap-2 pe-2.5 ${pageNav ? "ps-2.5" : "ps-5"}`}
           >
             <PageNav />
             {/* 14px. Centred as laid out, with no nudge: its capitals sit on the icons' centre
