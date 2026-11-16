@@ -93,9 +93,6 @@ export async function upsertMessage(db: Db, input: NewMessage & { attachments?: 
           folderId: sql`coalesce(excluded.folder_id, ${messages.folderId})`,
           imapUid: sql`coalesce(excluded.imap_uid, ${messages.imapUid})`,
           r2Key: sql`coalesce(excluded.r2_key, ${messages.r2Key})`,
-          // Messages stored before these were kept pick them up on a re-sync.
-          listUnsubscribe: sql`excluded.list_unsubscribe`,
-          listUnsubscribeOneClick: sql`excluded.list_unsubscribe_one_click`,
           updatedAt: new Date(),
         },
       })
@@ -120,6 +117,30 @@ export async function upsertMessage(db: Db, input: NewMessage & { attachments?: 
     await addParticipants(tx, [{ ...message, threadId }]);
     return { id, threadId, inserted };
   });
+}
+
+/**
+ * A stored message's List-Unsubscribe, from its headers as parsed again by a sync. Messages
+ * indexed before these columns existed pick them up on a re-sync; an unchanged row is not
+ * written.
+ */
+export async function refreshListUnsubscribe(
+  db: Db,
+  messageId: string,
+  input: { listUnsubscribe: string[]; listUnsubscribeOneClick: boolean },
+) {
+  await db
+    .update(messages)
+    .set({ ...input, updatedAt: new Date() })
+    .where(
+      and(
+        eq(messages.id, messageId),
+        or(
+          sql`${messages.listUnsubscribe} is distinct from ${sql.param(input.listUnsubscribe, messages.listUnsubscribe)}`,
+          sql`${messages.listUnsubscribeOneClick} is distinct from ${input.listUnsubscribeOneClick}`,
+        ),
+      ),
+    );
 }
 
 /** Saves a folder's sync position, creating the folder on first sight. */

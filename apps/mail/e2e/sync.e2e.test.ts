@@ -479,7 +479,9 @@ describe("sync into Postgres against GreenMail", () => {
 
   it("re-syncs a folder from scratch when its UIDVALIDITY changes, without duplicate rows", async () => {
     const { box } = await seedMailbox(db);
-    const kept = raw({ subject: "kept receipt", id: "<kept-receipt@outside.test>" });
+    const kept =
+      "List-Unsubscribe: <mailto:leave@outside.test>\r\n" +
+      raw({ subject: "kept receipt", id: "<kept-receipt@outside.test>" });
     await otherClient(box, async (client) => {
       await client.mailboxCreate("Receipts");
       await client.append("Receipts", kept, []);
@@ -491,6 +493,11 @@ describe("sync into Postgres against GreenMail", () => {
     await connection.syncAll();
     expect(await stored(db, box.id, "Receipts")).toHaveLength(2);
     const oldValidity = (await store.getSyncPosition(box.id, "Receipts"))?.uidValidity;
+    // As if indexed before List-Unsubscribe was stored: the re-sync must fill it in.
+    await db
+      .update(schema.messages)
+      .set({ listUnsubscribe: [] })
+      .where(eq(schema.messages.messageIdHeader, "<kept-receipt@outside.test>"));
 
     // GreenMail derives UIDVALIDITY from the clock in seconds; let it tick so the new one differs.
     await new Promise((resolve) => setTimeout(resolve, 1_100));
@@ -509,6 +516,9 @@ describe("sync into Postgres against GreenMail", () => {
     // The kept message is the same row; the reset re-linked it instead of re-inserting.
     const rows = await messageRows(db, box.id);
     expect(rows.filter((r) => r.subject === "kept receipt")).toHaveLength(1);
+    expect(rows.find((r) => r.subject === "kept receipt")?.listUnsubscribe).toEqual([
+      "mailto:leave@outside.test",
+    ]);
     const position = await store.getSyncPosition(box.id, "Receipts");
     expect(position?.uidValidity).not.toBe(oldValidity);
   });
