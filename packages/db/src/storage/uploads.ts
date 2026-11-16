@@ -116,7 +116,14 @@ export function uploadOperations(db: Db, door: Door) {
      */
     async openUpload(
       place: StoragePlace,
-      file: { name: string; size: number; mimeType?: string | null; limitBytes: number | null },
+      file: {
+        name: string;
+        size: number;
+        mimeType?: string | null;
+        limitBytes: number | null;
+        /** Hex SHA-256 the client computed while reading the file; kept on the file. */
+        sha256?: string | null;
+      },
     ): Promise<OpenUploadResult> {
       const name = cleanName(file.name);
       if (!name) return { status: "invalid_name" };
@@ -149,6 +156,7 @@ export function uploadOperations(db: Db, door: Door) {
             name,
             size: file.size,
             mimeType: file.mimeType ?? null,
+            sha256: file.sha256 ?? null,
             r2Key: storageObjectKey(orgId, id),
             expiresAt: new Date(Date.now() + STORAGE_UPLOAD_TTL_MS),
           })
@@ -249,6 +257,7 @@ export function uploadOperations(db: Db, door: Door) {
           size: upload.size,
           mimeType: upload.mimeType,
           r2Key: upload.r2Key,
+          contentSha256: upload.sha256,
           createdByMemberId: upload.memberId,
         });
         await addUsage(tx, upload.orgId, upload.size);

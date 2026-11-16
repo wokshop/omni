@@ -8,6 +8,7 @@ import {
   check,
   foreignKey,
   index,
+  integer,
   jsonb,
   pgEnum,
   pgTable,
@@ -85,6 +86,15 @@ export const storageNodes = pgTable(
       .$onUpdate(() => new Date()),
     /** Set on the node that was moved to Trash; everything inside it is in Trash with it. */
     trashedAt: timestamptz("trashed_at"),
+    /**
+     * The workspace's sync revision (ADR 0043) at the last change to the row, from
+     * `storage_sync_state` in the same transaction. 0 for a row last changed before sync existed.
+     */
+    revision: bigint("revision", { mode: "number" }).notNull().default(0),
+    /** Goes up each time a file's bytes are replaced in place; constant for a folder. */
+    contentVersion: integer("content_version").notNull().default(1),
+    /** Hex SHA-256 of the bytes, as the client that uploaded them sent it; null when unknown. */
+    contentSha256: text("content_sha256"),
   },
   (t) => [
     // Target for composite foreign keys that pin a row to its node's org.
@@ -128,6 +138,63 @@ export const storageNodes = pgTable(
     index("storage_nodes_trash_idx")
       .on(t.orgId, t.trashedAt)
       .where(sql`${t.trashedAt} is not null`),
+    // A drive's change feed, in revision order, and its current revision.
+    index("storage_nodes_sync_idx").on(
+      t.orgId,
+      t.space,
+      sql`coalesce(${t.ownerMemberId}, '')`,
+      t.revision,
+      t.id,
+    ),
+  ],
+);
+
+/**
+ * A workspace's sync counter (ADR 0043). Every change to a node takes the next revision from
+ * here in its own transaction; the row stays locked until it commits, so revisions commit in
+ * order and a change feed read up to one never skips an earlier one.
+ */
+export const storageSyncState = pgTable("storage_sync_state", {
+  orgId: text("org_id")
+    .primaryKey()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  /** The last revision handed out. */
+  revision: bigint("revision", { mode: "number" }).notNull().default(0),
+  /**
+   * Tombstones below this revision have been swept: a cursor below it may have missed a
+   * deletion, so the feed answers `cursor_expired` and the client lists the drive again.
+   */
+  cursorFloor: bigint("cursor_floor", { mode: "number" }).notNull().default(0),
+});
+
+/**
+ * A node that left a drive for good: deleted forever, purged from Trash, or moved to another
+ * drive (the other space, or another member's My files in a hand-over). The change feed reports
+ * it as a deletion. Swept after `STORAGE_TOMBSTONE_DAYS`.
+ */
+export const storageTombstones = pgTable(
+  "storage_tombstones",
+  {
+    id: id(),
+    orgId: orgId(),
+    /** No foreign key: the node may be gone. */
+    nodeId: text("node_id").notNull(),
+    /** The drive it left. */
+    space: storageSpace("space").notNull(),
+    ownerMemberId: text("owner_member_id").references(() => members.id, { onDelete: "cascade" }),
+    revision: bigint("revision", { mode: "number" }).notNull(),
+    createdAt: timestamptz("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("storage_tombstones_sync_idx").on(
+      t.orgId,
+      t.space,
+      sql`coalesce(${t.ownerMemberId}, '')`,
+      t.revision,
+      t.nodeId,
+    ),
+    index("storage_tombstones_created_at_idx").on(t.createdAt),
+    index("storage_tombstones_owner_member_id_idx").on(t.ownerMemberId),
   ],
 );
 
@@ -275,6 +342,8 @@ export const storageUploads = pgTable(
     r2UploadId: text("r2_upload_id"),
     parts: jsonb("parts").$type<StorageUploadPart[]>().notNull().default([]),
     nodeId: text("node_id"),
+    /** Hex SHA-256 the client computed while reading the file; null when it sent none. */
+    sha256: text("sha256"),
     expiresAt: timestamptz("expires_at").notNull(),
     createdAt: timestamptz("created_at").notNull().defaultNow(),
   },
