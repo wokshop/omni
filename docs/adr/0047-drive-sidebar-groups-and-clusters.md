@@ -10,11 +10,12 @@ meant reading two similar trees, and there was no way to find a file by name.
 
 ## Decision 1: main links, then two groups
 
-Top to bottom: Upload, Search, Shared with me, Trash, each glyph on a grey tile with a hairline
-edge so they read as the first tier; then, under a Folders section label (mail's), a **Team** group (a company's
+Top to bottom: Upload, Search, Shared with me, Trash; then, under a Folders section label (mail's),
+a **Team** group (a company's
 Shared; a Personal space has none) and a **Personal** group (My files). The spaces are named Team
 and Personal everywhere the app shows them (sidebar, breadcrumbs, the Move dialog). A group's row
-links to its space and starts open; the chevron closes it.
+links to its space and starts open, its glyph on a grey tile with a hairline edge so it stands
+out from the folders under it; the chevron closes it.
 
 Upload, an action in a sidebar of places, is there because it was asked for: it uploads into the
 folder on screen, or Personal's top anywhere else.

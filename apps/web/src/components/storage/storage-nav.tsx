@@ -1,7 +1,7 @@
 // Storage's sidebar (ADR 0034 decision 8), shown alone while Files is open (ADR 0035), after
-// Skiff Drive's: Upload and the places (Search, Shared with me, Trash), each glyph on a tile so
-// they stand out from the folders; then, under Folders (mail's section label), two groups: Team
-// (a company's Shared: a Personal space has none) and Personal (My files).
+// Skiff Drive's: Upload and the places (Search, Shared with me, Trash); then, under Folders (mail's
+// section label), two groups, each glyph on a tile so they stand out from their folders: Team (a
+// company's Shared: a Personal space has none) and Personal (My files).
 import type { ReactNode } from "react";
 import { IconFolderShared, IconUpload, IconUserRound, IconUsers } from "@/components/icons/central";
 import { IconSearch, IconTrash } from "@/components/icons/sidebar";
@@ -24,18 +24,26 @@ import { useWorkspacePaths } from "@/hooks/use-workspaces.ts";
 export const SPACE_LABEL = { personal: "Personal", shared: "Team" } as const;
 export const SPACE_PATH = { personal: "/files/my", shared: "/files/shared" } as const;
 export const SPACE_ICON = {
-  personal: <IconUserRound className="size-icon" />,
-  shared: <IconUsers className="size-icon" />,
+  personal: (
+    <GroupMark>
+      <IconUserRound className="size-3" />
+    </GroupMark>
+  ),
+  shared: (
+    <GroupMark>
+      <IconUsers className="size-3" />
+    </GroupMark>
+  ),
 } as const;
 
 type Row = { label: string; path: string; icon: ReactNode; company?: boolean };
 
 /**
  * A place's glyph on a grey tile with a hairline edge: the module switcher's mark, quieter, so the
- * places read as the sidebar's first tier. 18px, pulled 1.5px into the gap on each side, so its
+ * groups stand out from the folders under them. 18px, pulled 1.5px into the gap on each side, so its
  * labels start where the 15px glyphs' rows do.
  */
-function PlaceMark({ children }: { children: ReactNode }) {
+function GroupMark({ children }: { children: ReactNode }) {
   return (
     <span
       aria-hidden
@@ -50,29 +58,17 @@ const PLACES: Row[] = [
   {
     label: "Search",
     path: "/files/search",
-    icon: (
-      <PlaceMark>
-        <IconSearch className="size-3" />
-      </PlaceMark>
-    ),
+    icon: <IconSearch />,
   },
   {
     label: "Shared with me",
     path: "/files/shared-with-me",
-    icon: (
-      <PlaceMark>
-        <IconFolderShared className="size-3" />
-      </PlaceMark>
-    ),
+    icon: <IconFolderShared className="size-icon" />,
   },
   {
     label: "Trash",
     path: "/files/trash",
-    icon: (
-      <PlaceMark>
-        <IconTrash className="size-3" />
-      </PlaceMark>
-    ),
+    icon: <IconTrash />,
   },
 ];
 
@@ -144,9 +140,7 @@ function UploadRow() {
       }}
     >
       <SidebarItemTrigger>
-        <PlaceMark>
-          <IconUpload className="size-3" />
-        </PlaceMark>
+        <IconUpload />
         <SidebarLabel>Upload</SidebarLabel>
       </SidebarItemTrigger>
     </FileTrigger>
