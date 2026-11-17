@@ -8,7 +8,7 @@
 //   │        · thread(id) ─ conversation · search(q) · action(id) · tags(mailbox)
 //   │        · assignees(mailbox) · conversations(filter) · conversation-counts
 //   │        · notifications ─ { unread } · sla(mailbox)
-//   ├─ storage ─ list(place) · trash · usage · sharing(id) · versions(id) · comments(id) · shared-with-me · link(share, node)
+//   ├─ storage ─ list(place) · trash · usage · node(id) · sharing(id) · versions(id) · comments(id) · signatures(id) · signing(id) · shared-with-me · link(share, node)
 //   │                                                                  (ADR 0034)
 //   ├─ crm ─ companies(q) · people(q) · deals(q) · company(id) · person(id) · deal(id) · stages
 //   │        · timeline(kind, id) · contracts(where) · find(q)                  (ADR 0036)
@@ -144,10 +144,16 @@ export const keys = {
     [...storage(), "list", place] as const,
   storageTrash: () => [...storage(), "trash"] as const,
   storageUsage: () => [...storage(), "usage"] as const,
+  /** Where a node is now: its folder and space. */
+  storageNode: (nodeId: string) => [...storage(), "node", nodeId] as const,
   /** Who a file or folder is shared with, and its link. */
   storageSharing: (nodeId: string) => [...storage(), "sharing", nodeId] as const,
   storageVersions: (nodeId: string) => [...storage(), "versions", nodeId] as const,
   storageComments: (nodeId: string) => [...storage(), "comments", nodeId] as const,
+  /** A file's signature requests (ADR 0043 decision 6). */
+  storageSignatures: (nodeId: string) => [...storage(), "signatures", nodeId] as const,
+  /** A request the signed-in person was asked to sign. */
+  signing: (requestId: string) => [...storage(), "signing", requestId] as const,
   storageSharedWithMe: () => [...storage(), "shared-with-me"] as const,
   /** What a link opens: the shared node, or a folder inside it. */
   storageLink: (shareId: string, nodeId: string | undefined) =>
@@ -173,8 +179,11 @@ export const keys = {
    * A file's preview (ADR 0040): `image`, `thumbnail`, `text` or `sheets`, by the URL it is read
    * through and the file's `updatedAt`, so a new version is a new key.
    */
-  storagePreview: (kind: "image" | "thumbnail" | "text" | "sheets", url: string, version: string) =>
-    [...preview, kind, url, version] as const,
+  storagePreview: (
+    kind: "image" | "thumbnail" | "pdf-thumbnail" | "text" | "sheets",
+    url: string,
+    version: string,
+  ) => [...preview, kind, url, version] as const,
 
   /** App-only state, never fetched (`query-client.ts` keeps it forever). */
   local: () => local,
