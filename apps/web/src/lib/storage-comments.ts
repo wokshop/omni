@@ -107,14 +107,13 @@ export const deleteCommentMutation = (client: QueryClient) =>
   });
 
 /**
- * Where a file is now, for a notification about it: it may have moved since. Null when the reader
- * no longer reaches it.
+ * Where a file is now, for a notification about it: it may have moved since, so it is always
+ * asked afresh (`staleTime: 0`).
  */
-export async function filePlace(id: string) {
-  try {
-    const { node } = await call(api.storage.nodes[":id"].$get({ param: { id } }));
-    return { space: node.space, folderId: node.parentId };
-  } catch {
-    return null;
-  }
-}
+export const storageNodeQuery = (id: string) =>
+  queryOptions({
+    queryKey: keys.storageNode(id),
+    queryFn: ({ signal }) =>
+      call(api.storage.nodes[":id"].$get({ param: { id } }, { init: { signal } })),
+    staleTime: 0,
+  });

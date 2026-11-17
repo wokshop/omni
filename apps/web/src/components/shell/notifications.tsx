@@ -36,7 +36,7 @@ import {
   useNotificationsPanel,
 } from "@/hooks/use-notifications-panel.ts";
 import { useOpenSettings } from "@/hooks/use-settings.ts";
-import { filePlace } from "@/lib/storage-comments.ts";
+import { useFilePlace } from "@/hooks/use-storage.ts";
 import {
   actorName,
   commentTarget,
@@ -229,6 +229,7 @@ function NotificationList({ unread }: { unread: boolean }) {
   const router = useRouter();
   const workspace = useWorkspaceSlug();
   const openSettings = useOpenSettings();
+  const filePlace = useFilePlace();
   const hover = useFluidHoverList({
     itemSelector: "[role='row']",
     highlightedSelector: "[data-focus-visible]",
