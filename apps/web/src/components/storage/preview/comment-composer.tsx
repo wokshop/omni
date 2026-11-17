@@ -17,6 +17,8 @@ export function CommentComposer(props: {
   shareId?: string | undefined;
   /** A box drawn on a PDF page; the whole file when null. */
   draft: PdfBox | null;
+  /** The file's content the box was drawn on; the API's 409 if it was replaced since. */
+  contentVersion?: number | undefined;
   onClearDraft: () => void;
   onSent: () => void;
 }) {
@@ -32,7 +34,13 @@ export function CommentComposer(props: {
       {
         id: props.fileId,
         ...(props.shareId ? { shareId: props.shareId } : {}),
-        body: { body, ...(draft ? { anchor: { kind: "pdf" as const, ...draft } } : {}) },
+        body: {
+          body,
+          ...(draft ? { anchor: { kind: "pdf" as const, ...draft } } : {}),
+          ...(draft && props.contentVersion !== undefined
+            ? { contentVersion: props.contentVersion }
+            : {}),
+        },
       },
       {
         onSuccess: () => {

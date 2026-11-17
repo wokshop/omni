@@ -58,6 +58,8 @@ export function PreviewPanel(props: {
   const { node } = props;
   const tools = usePreviewTools(node, props.shareId);
   const shown = tools.shown;
+  // An older version on the stage downloads that version, not the current content.
+  const download = shown ? () => window.location.assign(shown.url) : props.onDownload;
   return (
     <section aria-label={node.name} className="flex min-w-0 flex-1 flex-col bg-background">
       {/* One row with the folder's header beside it: the same height and bottom line, 10px from
@@ -84,7 +86,7 @@ export function PreviewPanel(props: {
           >
             <IconChevronRight />
           </Action>
-          <Action label="Download" onPress={props.onDownload}>
+          <Action label="Download" onPress={download}>
             <IconDownload />
           </Action>
           <SettingsRowMenu label={`Actions for ${node.name}`} items={props.menu} />
@@ -107,7 +109,7 @@ export function PreviewPanel(props: {
             key={shown?.key ?? "current"}
             node={shown?.node ?? node}
             url={shown?.url ?? props.url}
-            onDownload={props.onDownload}
+            onDownload={download}
           />
         </PdfMarksContext>
         <PreviewRail {...tools.rail} />
@@ -196,6 +198,8 @@ function usePreviewTools(node: StorageNode, shareId: string | undefined) {
   const [composing, setComposing] = useState(false);
   const [drawing, setDrawing] = useState(false);
   const [draft, setDraft] = useState<PdfBox | null>(null);
+  // The content the box was drawn on, so a replacement before Send can't take the comment.
+  const [draftVersion, setDraftVersion] = useState<number | undefined>(undefined);
   if (fileId !== node.id) {
     setFileId(node.id);
     setShownKey("current");
@@ -241,6 +245,7 @@ function usePreviewTools(node: StorageNode, shareId: string | undefined) {
           drawing,
           onDraw: (box) => {
             setDraft(box);
+            setDraftVersion(data.contentVersion);
             setDrawing(false);
             // After the drag's own click, which would count as a press outside and close it.
             setTimeout(() => setComposing(true));
@@ -260,6 +265,7 @@ function usePreviewTools(node: StorageNode, shareId: string | undefined) {
           fileId={node.id}
           shareId={shareId}
           draft={draft}
+          contentVersion={draftVersion}
           onClearDraft={() => setDraft(null)}
           onSent={() => {
             setComposing(false);
