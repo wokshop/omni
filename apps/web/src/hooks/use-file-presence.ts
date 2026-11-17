@@ -1,16 +1,14 @@
-// "Ana is editing" (ADR 0043 decision 3): who else has a Drive file open in their editor, and
-// telling them you do.
 import { useEffect, useSyncExternalStore } from "react";
 import { FILE_REPEAT_MS, filePresenceStore, type FileEditor } from "../lib/file-presence.ts";
 import { onRealtimeOpen, sendRealtime } from "../lib/realtime.ts";
 
 /** Members editing the file, oldest first. Includes you when another of your tabs edits it. */
-export function useFileEditors(nodeId: string): readonly FileEditor[] {
+export function useFileEditors(nodeId: string) {
   return useSyncExternalStore(
     filePresenceStore.subscribe,
     () => filePresenceStore.get(nodeId),
     () => filePresenceStore.get(nodeId),
-  );
+  ) satisfies readonly FileEditor[];
 }
 
 /**

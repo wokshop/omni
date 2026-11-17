@@ -1,5 +1,3 @@
-// Finding records: by words for pickers and agents, and by a thread's addresses for the
-// conversation sidebar. Archived records are never found here; they stay readable by id.
 import { domainOf, isWebmailDomain, parseAddress } from "@omni/mail-core/addresses";
 import { and, asc, eq, inArray, isNull, or, sql, type AnyColumn } from "drizzle-orm";
 import {
@@ -32,7 +30,6 @@ export interface CrmSearchResult {
   deals: CrmDeal[];
 }
 
-/** The word starts the name or one of its words. */
 const nameStarts = (name: AnyColumn, word: string) =>
   sql`(lower(${name}) like ${likePrefix(word)} or lower(${name}) like ${`% ${likePrefix(word)}`})`;
 
@@ -46,11 +43,11 @@ const anyDomainStarts = (word: string) =>
  * People, companies and deals where every word starts the name, one of its words, an address
  * (people) or a domain (companies). Up to `limit` of each, by name.
  */
-export async function searchCrm(
+export const searchCrm: (
   ex: Ex,
   member: CrmMember,
   input: { q: string; limit?: number },
-): Promise<CrmSearchResult> {
+) => Promise<CrmSearchResult> = async (ex, member, input) => {
   const words = wordsOf(input.q);
   if (words.length === 0) return { status: "ok", people: [], companies: [], deals: [] };
   const limit = Math.min(Math.max(Math.trunc(input.limit ?? SEARCH_LIMIT), 1), 50);
@@ -92,7 +89,7 @@ export async function searchCrm(
     .orderBy(sql`lower(${crmDeals.name})`, asc(crmDeals.id))
     .limit(limit);
   return { status: "ok", people: await withAddresses(ex, people), companies, deals };
-}
+};
 
 export interface CrmLookupResult {
   status: "ok";
@@ -109,11 +106,11 @@ export interface CrmLookupResult {
  * `LOOKUP_MAX_ADDRESSES` addresses in any letter case; the rest are ignored. A won deal is the
  * running project, so it is shown beside the open ones; delivered and lost deals are not.
  */
-export async function lookupCrm(
+export const lookupCrm: (
   ex: Ex,
   member: CrmMember,
   input: { addresses: string[] },
-): Promise<CrmLookupResult> {
+) => Promise<CrmLookupResult> = async (ex, member, input) => {
   const addresses = [
     ...new Set(input.addresses.map((raw) => parseAddress(raw)).filter((a) => a !== null)),
   ].slice(0, LOOKUP_MAX_ADDRESSES);
@@ -197,4 +194,4 @@ export async function lookupCrm(
           .orderBy(asc(crmDeals.name), asc(crmDeals.id))
       : [];
   return { status: "ok", people: await withAddresses(ex, people), companies, deals };
-}
+};

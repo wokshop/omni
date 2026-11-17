@@ -1,6 +1,3 @@
-// Sign-in emails (ADR 0014): every address a person may sign in with. The primary is
-// `users.email`; the others are verified rows in `user_emails`. An address belongs to at most one
-// person, primary or not, so a sign-in, a Google link or an invitation to it always means them.
 import { normalizeAddress } from "@omni/mail-core/addresses";
 import { and, eq, sql, TransactionRollbackError } from "drizzle-orm";
 import type { Db } from "./client.ts";
@@ -57,7 +54,10 @@ export interface SignInEmail {
 }
 
 /** The primary first, then the extra addresses in the order they were added. */
-export async function listSignInEmails(db: Db, userId: string): Promise<SignInEmail[]> {
+export const listSignInEmails: (db: Db, userId: string) => Promise<SignInEmail[]> = async (
+  db,
+  userId,
+) => {
   const [user] = await db
     .select({ email: users.email, verified: users.emailVerified })
     .from(users)
@@ -72,23 +72,21 @@ export async function listSignInEmails(db: Db, userId: string): Promise<SignInEm
     { email: user.email, primary: true, verified: user.verified },
     ...extra.map((row) => ({ email: row.email, primary: false, verified: true })),
   ];
-}
+};
 
 export type StartSignInEmailResult =
   | { status: "sent"; token: string; email: string; expiresAt: Date }
-  /** Already one of this user's addresses. */
   | { status: "yours" }
-  /** Someone else's. The caller answers as if it were sent, so nobody learns who has an account. */
   | { status: "taken" };
 
 /**
  * Starts adding `email` to `userId`: a single-use token, stored hashed, to be mailed to the
  * address. Nothing is added until the link comes back to the same user (`verifySignInEmail`).
  */
-export async function startSignInEmail(
+export const startSignInEmail: (
   db: Db,
   input: { userId: string; email: string },
-): Promise<StartSignInEmailResult> {
+) => Promise<StartSignInEmailResult> = async (db, input) => {
   const email = normalizeAddress(input.email);
   const owner = await findEmailOwner(db, email);
   if (owner?.userId === input.userId) return { status: "yours" };
@@ -102,24 +100,18 @@ export async function startSignInEmail(
     expiresAt,
   });
   return { status: "sent", token, email, expiresAt };
-}
+};
 
 export type VerifySignInEmailResult =
   | { status: "verified"; email: string }
-  /** Unknown, used or expired. */
   | { status: "invalid" }
-  /** Issued to another user: left unused so its owner can still open it. */
   | { status: "wrong_user" }
-  /** Someone else claimed the address after the link was sent. */
   | { status: "taken" };
 
 /** Consumes a token for `userId` and adds its address. Single-use, under a lock on the address. */
-export async function verifySignInEmail(
-  db: Db,
-  input: { userId: string; token: string },
-): Promise<VerifySignInEmailResult> {
+export async function verifySignInEmail(db: Db, input: { userId: string; token: string }) {
   const identifier = TOKEN_PREFIX + (await sha256Hex(input.token));
-  return db.transaction(async (tx) => {
+  return db.transaction<VerifySignInEmailResult>(async (tx) => {
     const [pending] = await tx
       .select({ id: verifications.id, value: verifications.value })
       .from(verifications)
@@ -130,7 +122,6 @@ export async function verifySignInEmail(
     if (userId !== input.userId) return { status: "wrong_user" as const };
     await tx.delete(verifications).where(eq(verifications.id, pending.id));
 
-    // Two people verifying the same address at once queue here; the unique index backs it up.
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${"sign-in-email:" + email}))`);
     const owner = await findEmailOwner(tx, email);
     if (owner?.userId === userId) return { status: "verified" as const, email };
@@ -143,15 +134,10 @@ export async function verifySignInEmail(
 export type RemoveSignInEmailResult =
   | { status: "removed" }
   | { status: "not_found" }
-  /** The primary cannot be removed: make another address primary first. */
   | { status: "primary" }
-  /** It is the last verified address. */
   | { status: "last_verified" };
 
-export async function removeSignInEmail(
-  db: Db,
-  input: { userId: string; email: string },
-): Promise<RemoveSignInEmailResult> {
+export async function removeSignInEmail(db: Db, input: { userId: string; email: string }) {
   const email = normalizeAddress(input.email);
   return db
     .transaction(async (tx) => {
@@ -173,7 +159,6 @@ export async function removeSignInEmail(
           .from(userEmails)
           .where(eq(userEmails.userId, input.userId))
           .limit(1);
-        // Rolls the delete back: someone must always be able to get a sign-in link.
         if (!left) tx.rollback();
       }
       return { status: "removed" as const };
@@ -183,7 +168,7 @@ export async function removeSignInEmail(
         return { status: "last_verified" as const };
       }
       throw error;
-    });
+    }) satisfies Promise<RemoveSignInEmailResult>;
 }
 
 export type SetPrimarySignInEmailResult = { status: "primary" } | { status: "not_found" };
@@ -192,12 +177,9 @@ export type SetPrimarySignInEmailResult = { status: "primary" } | { status: "not
  * Makes a verified extra address the primary (`users.email`). The old primary becomes an extra
  * address if it was verified, and is dropped if it never was.
  */
-export async function setPrimarySignInEmail(
-  db: Db,
-  input: { userId: string; email: string },
-): Promise<SetPrimarySignInEmailResult> {
+export async function setPrimarySignInEmail(db: Db, input: { userId: string; email: string }) {
   const email = normalizeAddress(input.email);
-  return db.transaction(async (tx) => {
+  return db.transaction<SetPrimarySignInEmailResult>(async (tx) => {
     const [user] = await tx
       .select({ email: users.email, verified: users.emailVerified })
       .from(users)
@@ -210,7 +192,6 @@ export async function setPrimarySignInEmail(
       .from(userEmails)
       .where(and(eq(userEmails.userId, input.userId), eq(sql`lower(${userEmails.email})`, email)));
     if (!extra) return { status: "not_found" as const };
-    // Free the address in `user_emails` before `users.email` takes it.
     if (user.verified) {
       await tx
         .update(userEmails)

@@ -20,9 +20,6 @@ import {
 } from "@/components/icons/sidebar";
 import type { ShortcutId } from "@/lib/shortcuts.ts";
 
-// The command menu's places, one list per module, with the same names, icons and paths as the
-// module's own sidebar. Paths are workspace-relative (`workspaceHref` adds the slug).
-
 export interface Page {
   id: string;
   title: string;
@@ -55,7 +52,7 @@ export const MAIL_PAGES: Page[] = [
 ];
 
 /** Drive's places; Shared (the team's drive) only in a company workspace, as its nav has it. */
-export function drivePages(company: boolean): Page[] {
+export const drivePages: (company: boolean) => Page[] = (company) => {
   return [
     {
       id: "my-files",
@@ -75,7 +72,7 @@ export function drivePages(company: boolean): Page[] {
     },
     { id: "drive-trash", title: "Trash", icon: <IconTrash />, href: "/files/trash" },
   ];
-}
+};
 
 export const CRM_PAGES: Page[] = [
   { id: "companies", title: "Companies", icon: <IconBuildings />, href: "/crm/companies" },

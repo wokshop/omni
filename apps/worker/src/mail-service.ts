@@ -15,7 +15,7 @@ export interface MailServiceScope {
  * Tells the mail service the outbox has work. Best effort: the action is already in
  * `mail_actions` and the mail service polls it, so a lost ping only delays the action.
  */
-export async function pingMailService(scope: MailServiceScope): Promise<boolean> {
+export async function pingMailService(scope: MailServiceScope) {
   const { config, requestId } = scope;
   const log = scope.log.child({ component: "mail-service" });
   const url = new URL(MAIL_PING_PATH, config.MAIL_SERVICE_URL);
@@ -28,7 +28,6 @@ export async function pingMailService(scope: MailServiceScope): Promise<boolean>
       body: "",
       requestId,
     });
-    // A nudge, not a delivery: a stalled one is cut short so it never holds up the AI job.
     const response = await fetch(url, {
       method: "POST",
       headers,
@@ -65,7 +64,7 @@ export async function callMailService<S extends z.ZodType>(
   path: string,
   body: unknown,
   result: S,
-): Promise<z.output<S>> {
+) {
   const { config, requestId } = scope;
   const log = scope.log.child({ component: "mail-service", path });
   const started = Date.now();
@@ -85,7 +84,6 @@ export async function callMailService<S extends z.ZodType>(
       method: "POST",
       headers: { ...headers, "content-type": "application/json" },
       body: text,
-      // Purelymail calls inside can take a few seconds each.
       signal: AbortSignal.timeout(60_000),
     });
   } catch (error) {
@@ -113,5 +111,5 @@ export async function callMailService<S extends z.ZodType>(
       502,
       "Omni's mail service answered unexpectedly. Try again in a minute.",
     );
-  return parsed.data;
+  return parsed.data satisfies z.output<S>;
 }

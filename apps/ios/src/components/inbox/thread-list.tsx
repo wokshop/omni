@@ -28,7 +28,6 @@ export function ThreadList({ page, mailboxId, mailboxes, you, onOpenThread }: Th
       </EmptyState>
     );
   }
-  // Across every mailbox, a thread from a shared inbox says which one.
   const shared = new Map(
     mailboxId
       ? []
@@ -36,7 +35,6 @@ export function ThreadList({ page, mailboxId, mailboxes, you, onOpenThread }: Th
   );
   return (
     <FlatList
-      // Under the native header, which grows and shrinks its large title as the list scrolls.
       contentInsetAdjustmentBehavior="automatic"
       data={inbox.data}
       keyExtractor={(thread) => thread.id}
@@ -71,7 +69,6 @@ function Separator() {
 
 const styles = StyleSheet.create({
   fill: { flexGrow: 1 },
-  // Inset past the avatar, so rows read as one list rather than boxes.
   separator: {
     height: StyleSheet.hairlineWidth,
     backgroundColor: colors.border,

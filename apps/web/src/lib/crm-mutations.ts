@@ -1,5 +1,3 @@
-// The CRM's changes. Each refetches the CRM when it settles (`crmChanged`); moving a deal between
-// stages patches every cached deals list at once and puts it back if the request fails.
 import { mutationOptions, type InfiniteData, type QueryClient } from "@tanstack/react-query";
 import type { Api } from "@omni/client";
 import type { InferRequestType } from "hono/client";
@@ -183,7 +181,7 @@ export const putStagesMutation = (client: QueryClient) =>
  * The moves a contract can make from `status` (docs/spec/crm.md "API"): draft → sent → signed →
  * ended; draft may go straight to signed, and sent back to draft. Signing needs a file.
  */
-export function nextStatuses(status: CrmContractStatus): CrmContractStatus[] {
+export const nextStatuses: (status: CrmContractStatus) => CrmContractStatus[] = (status) => {
   switch (status) {
     case "draft":
       return ["sent", "signed"];
@@ -194,4 +192,4 @@ export function nextStatuses(status: CrmContractStatus): CrmContractStatus[] {
     case "ended":
       return [];
   }
-}
+};

@@ -1,9 +1,3 @@
-// Settings pages, ported from transitive's settings kit (`components/settings/kit`) onto our
-// tokens: a page is a title over sections; a section is a muted title over groups; a group is a
-// raised card of rows divided by hairlines.
-//
-// Geometry: a section's title sits on the rows' text axis (16px in). It gets 32px from the group
-// above and 8px to its own, so it reads as the label of what follows.
 import { IconInfo } from "@/components/icons/central";
 import { cn } from "cn";
 import type { ReactNode } from "react";
@@ -12,7 +6,7 @@ import { Button } from "@ui-sdk/react/button";
 import { SettingsIllustration } from "./settings-illustrations";
 
 /** The anchor of a section, from its title; settings search names sections by it. */
-export function settingsSectionId(title: string): string {
+export function settingsSectionId(title: string) {
   return `settings-${title
     .toLowerCase()
     .replaceAll(/[^a-z0-9]+/gu, "-")

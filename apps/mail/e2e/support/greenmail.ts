@@ -1,6 +1,3 @@
-// Helpers for the local GreenMail from `pnpm stack:up`. Auth is disabled there: any user logs in.
-// Other sessions and suites share this server, so tests never purge it: each one uses fresh
-// addresses instead.
 import { randomUUID } from "node:crypto";
 import { ImapFlow } from "imapflow";
 import { createTransport } from "nodemailer";
@@ -17,7 +14,7 @@ export const GREENMAIL_PASSWORD = "unused";
 export const logger = createLogger(process.env.E2E_LOG_LEVEL === "debug" ? "debug" : "error");
 
 /** A fresh address per test, so folders and UIDs never leak between tests. */
-export function mailbox(kind: MailboxConfig["kind"] = "personal"): MailboxConfig {
+export const mailbox: (kind?: MailboxConfig["kind"]) => MailboxConfig = (kind = "personal") => {
   const address = `t-${randomUUID().slice(0, 8)}@omni.test`;
   return {
     id: randomUUID(),
@@ -29,7 +26,7 @@ export function mailbox(kind: MailboxConfig["kind"] = "personal"): MailboxConfig
     imap: { host, port: imapPort, secure: false },
     smtp: { host, port: smtpPort, secure: false },
   };
-}
+};
 
 /** Delivers a message over SMTP, as an outside sender would. */
 export async function deliver(
@@ -43,7 +40,7 @@ export async function deliver(
     from?: string;
     cc?: string[];
   } = {},
-): Promise<void> {
+) {
   const transport = createTransport({ host, port: smtpPort, secure: false });
   try {
     await transport.sendMail({
@@ -64,10 +61,7 @@ export async function deliver(
 }
 
 /** A second IMAP client, standing in for Apple Mail. */
-export async function otherClient<T>(
-  box: MailboxConfig,
-  task: (client: ImapFlow) => Promise<T>,
-): Promise<T> {
+export async function otherClient<T>(box: MailboxConfig, task: (client: ImapFlow) => Promise<T>) {
   const client = new ImapFlow({
     host,
     port: imapPort,
@@ -84,10 +78,10 @@ export async function otherClient<T>(
 }
 
 /** Polls until `check` returns a value, or fails after `timeoutMs`. */
-export async function waitFor<T>(
+export const waitFor: <T>(
   check: () => T | undefined | false | Promise<T | undefined | false>,
-  timeoutMs = 10_000,
-): Promise<T> {
+  timeoutMs?: number,
+) => Promise<T> = async (check, timeoutMs = 10_000) => {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     const value = await check();
@@ -95,4 +89,4 @@ export async function waitFor<T>(
     if (Date.now() > deadline) throw new Error(`timed out after ${timeoutMs}ms`);
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
-}
+};

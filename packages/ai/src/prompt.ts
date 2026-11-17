@@ -1,6 +1,3 @@
-// Prompts. Email text is untrusted data: it goes in the user turn inside one <email_data> block,
-// the system prompt says so, and nothing inside the block can close it early or fake a field.
-
 import { truncateToTokens } from "./policy.ts";
 import { MAX_TAG_QUESTIONS, MAX_TEAMMATE_QUESTIONS } from "./questions.ts";
 import type { TriageInput } from "./types.ts";
@@ -36,7 +33,7 @@ This inbox is a shared support inbox worked by a team; "the reader" is that team
 - assignee: the teammate, listed after the email by role, whose role covers what the customer asks for; none when no role clearly does or there are no teammates.`;
 
 /** Neutralizes anything in untrusted text that could close or reopen the data block. */
-export function escapeUntrusted(text: string): string {
+export function escapeUntrusted(text: string) {
   return (
     text
       // oxlint-disable-next-line no-control-regex
@@ -45,21 +42,20 @@ export function escapeUntrusted(text: string): string {
   );
 }
 
-/** Header-like fields stay on one line so they can't forge another field. */
-function field(text: string): string {
+function field(text: string) {
   return escapeUntrusted(text).replace(/\s+/g, " ").trim().slice(0, 300);
 }
 
 /** A tag's name as the model sees it and answers with: one line, escaped. */
-export function tagLabel(name: string): string {
+export function tagLabel(name: string) {
   return field(name);
 }
 
-function block(lines: string[]): string {
+function block(lines: string[]) {
   return `<${DATA_TAG}>\n${lines.join("\n")}\n</${DATA_TAG}>`;
 }
 
-export function triagePrompt(input: TriageInput, maxInputTokens: number): string {
+export function triagePrompt(input: TriageInput, maxInputTokens: number) {
   const sender = input.latestFromUs
     ? "the reader"
     : input.from.name

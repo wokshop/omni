@@ -10,10 +10,6 @@ import { createTestBucket } from "./support/objects.ts";
 const run = promisify(execFile);
 const child = fileURLToPath(new URL("./support/first-sync-child.ts", import.meta.url));
 
-/**
- * The smallest machine `docs/self-hosting.md` says the mail service runs on, and the heap V8
- * gives itself there (a quarter of the memory, doubled on 64-bit).
- */
 const MACHINE_MB = 512;
 const HEAP_MB = MACHINE_MB / 2;
 const MESSAGES = 120;
@@ -31,10 +27,6 @@ afterAll(async () => {
 });
 
 describe("first sync on the smallest supported machine", () => {
-  // The bug: sanitizing HTML mail allocates far more than the mail's size, and on a 256 MB
-  // machine a Google account's first sync left no memory for the page cache. The process
-  // refaulted its own code from disk and stored about one message a minute, for hours, with
-  // /health timing out. Anything that grows the import past the documented machine fails here.
   it("imports a newsletter-heavy INBOX within that machine's memory", async () => {
     const { box } = await seedMailbox(database.db);
     await otherClient(box, async (client) => {
@@ -49,15 +41,12 @@ describe("first sync on the smallest supported machine", () => {
 
     expect(result.messages).toBe(MESSAGES);
     expect(await stored(database.db, box.id, "INBOX")).toHaveLength(MESSAGES);
-    // Headroom for the kernel, the page cache and a second mailbox importing next to this one.
     expect(result.peakRssMb).toBeLessThan(MACHINE_MB * 0.75);
-    // Thrashing took a minute a message; a healthy import takes well under a second.
     expect(result.seconds / MESSAGES).toBeLessThan(0.5);
-  }, 180_000);
+  });
 });
 
-/** An 80 KB marketing mail: nested tables, inline styles, tracked links and remote images. */
-function newsletter(i: number): Buffer {
+const newsletter: (i: number) => Buffer = (i) => {
   const rows: string[] = [];
   for (let size = 0, r = 0; size < 80 * 1024; r++) {
     const row = `<tr><td style="padding:12px 24px;font-family:Helvetica,Arial,sans-serif;font-size:14px;line-height:20px;color:#333333" class="text"><table border="0" cellpadding="0" cellspacing="0" width="100%"><tbody><tr><td valign="top"><a href="https://click.brand.test/t/${i}/${r}?utm_source=nl&amp;utm_medium=email" target="_blank" style="color:#0a66c2;text-decoration:none"><img src="https://img.brand.test/${i}/${r}.png" width="560" height="120" alt="Item ${r}" style="display:block;border:0"></a><p style="margin:8px 0">Offer ${r} of issue ${i}: lorem ipsum dolor sit amet, consectetur adipiscing elit.</p></td></tr></tbody></table></td></tr>\r\n`;
@@ -89,4 +78,4 @@ function newsletter(i: number): Buffer {
       "",
     ].join("\r\n"),
   );
-}
+};

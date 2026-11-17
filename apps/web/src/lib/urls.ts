@@ -1,5 +1,3 @@
-// URLs the UI puts straight into the DOM (iframe `src`, download links), built from the typed
-// client so a renamed route is a type error here. All are same-origin and use the session cookie.
 import { api } from "./api.ts";
 import { withWorkspace } from "./current-workspace.ts";
 
@@ -21,7 +19,7 @@ export function messageHtmlUrl(threadId: string, messageId: string) {
  * so a picture on another site (a Google account's photo) goes through the image proxy, which
  * also keeps that site from seeing the reader. `data:` and same-origin pictures pass as they are.
  */
-export function pictureUrl(src: string | null | undefined): string | null {
+export function pictureUrl(src: string | null | undefined) {
   if (!src) return null;
   if (!/^https?:\/\//i.test(src) || new URL(src).origin === window.location.origin) return src;
   return api["image-proxy"].$url({ query: { url: src } }).toString();
@@ -36,7 +34,6 @@ export function attachmentUrl(threadId: string, attachmentId: string) {
 
 /** A stored file's bytes (ADR 0034): always a download, never rendered on our origin. */
 export function storageFileUrl(fileId: string) {
-  // Downloads and previews load it themselves, with no header: the URL names the workspace.
   return withWorkspace(api.storage.files[":id"].content.$url({ param: { id: fileId } }).toString());
 }
 

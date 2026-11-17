@@ -1,6 +1,3 @@
-// Which workspaces an agent's OAuth grant reaches (ADR 0029). The consent screen records the
-// person's pick for the session; the grant's reference is that workspace's id, or `ALL_WORKSPACES`.
-// A session scoped to a company (ADR 0024) can only grant that company.
 import { and, eq, sql } from "drizzle-orm";
 import { uuidv7 } from "uuidv7";
 import type { Db } from "./client.ts";
@@ -24,7 +21,7 @@ export const ALL_WORKSPACES = "all";
 export async function chooseOAuthWorkspace(
   db: Db,
   input: { sessionId: string; userId: string; orgId: string | null },
-): Promise<boolean> {
+) {
   const access = await sessionAccess(db, input.sessionId);
   if (!access) return false;
   if (access.scopeOrgId && input.orgId !== access.scopeOrgId) return false;
@@ -48,7 +45,7 @@ export async function chooseOAuthWorkspace(
 export async function oauthWorkspaceReference(
   db: Db,
   input: { sessionId: string; userId: string; ignorePick?: boolean },
-): Promise<string | null> {
+) {
   const access = await sessionAccess(db, input.sessionId);
   if (!access) return null;
   if (access.scopeOrgId) return access.scopeOrgId;
@@ -70,7 +67,6 @@ async function isMember(db: Db, userId: string, orgId: string) {
   return row !== undefined;
 }
 
-/** How long an expired signing key still verifies tokens: Better Auth's JWKS grace period. */
 const SIGNING_KEY_GRACE = "30 days";
 
 /**

@@ -1,14 +1,9 @@
-// One file's upload (ADR 0034 decision 5), by the member's door or a shared link's: open it, send its parts (each `partSize` bytes but the
-// last, a few at once), then complete it. The server lists the parts it already has, so a retry
-// passes the upload's id and sends only what is missing; an upload that is gone starts over.
 import { ERROR_FORMAT_HEADER, ERROR_FORMAT_VERSION, toApiError } from "@omni/client";
 import { api, ApiError, call } from "./api.ts";
 import type { StorageNode, StoragePlace } from "./storage.ts";
 import { workspaceHeaders } from "./current-workspace.ts";
 
-/** Parts on their way at once. */
 const PARALLEL_PARTS = 3;
-/** Tries per part before the upload fails (the person can still retry: it resumes). */
 const PART_TRIES = 3;
 
 export interface UploadRequest {
@@ -40,7 +35,7 @@ export interface UploadRequest {
 }
 
 /** Uploads `file` and answers the file it became. Rejects with `ApiError`, or `AbortError`. */
-export async function uploadFile(request: UploadRequest): Promise<StorageNode> {
+export async function uploadFile(request: UploadRequest) {
   const { file, signal } = request;
   const door = uploadDoor(request.shareId);
   await request.confirm();
@@ -58,11 +53,10 @@ export async function uploadFile(request: UploadRequest): Promise<StorageNode> {
     );
     const report = () => request.onProgress([...stored.values()].reduce((sum, n) => sum + n, 0));
     report();
-    // One part failing stops the others: the upload has failed, and a retry resumes it.
     const parts = new AbortController();
     const stop = () => parts.abort();
     signal.addEventListener("abort", stop);
-    const next = async (): Promise<void> => {
+    const next = async () => {
       const n = missing.shift();
       if (n === undefined) return;
       const start = (n - 1) * upload.partSize;
@@ -89,7 +83,7 @@ export async function uploadFile(request: UploadRequest): Promise<StorageNode> {
   signal.throwIfAborted();
   request.guard();
   const { node } = await door.complete(upload.id, request.ifContentVersion);
-  return node;
+  return node satisfies StorageNode;
 }
 
 /** Frees what an unfinished upload holds (its parts, and its room against the limit). */
@@ -99,7 +93,6 @@ export async function abortUpload(uploadId: string, shareId?: string) {
     .catch(() => {});
 }
 
-/** What opening an upload sends. */
 const openBody = (file: File, place: StoragePlace) => ({
   name: file.name,
   size: file.size,
@@ -107,23 +100,17 @@ const openBody = (file: File, place: StoragePlace) => ({
   ...place,
 });
 
-/** What opening a new version sends: the file keeps its own name and place. */
 const versionBody = (file: File, ifContentVersion: number | undefined) => ({
   size: file.size,
   mimeType: file.type || null,
   ...(ifContentVersion === undefined ? {} : { ifContentVersion }),
 });
 
-/**
- * Complete's `?ifContentVersion=`. The route reads it by hand rather than by a validator, so the
- * typed client does not know it; it sends any `query` it is given.
- */
-const guarded = <T extends object>(args: T, ifContentVersion: number | undefined): T =>
-  ifContentVersion === undefined
+const guarded = <T extends object>(args: T, ifContentVersion: number | undefined) =>
+  (ifContentVersion === undefined
     ? args
-    : ({ ...args, query: { ifContentVersion: String(ifContentVersion) } } as T);
+    : ({ ...args, query: { ifContentVersion: String(ifContentVersion) } } as T)) satisfies T;
 
-/** The upload routes of the member's door, or of a shared link's (the same shapes under it). */
 function uploadDoor(shareId: string | undefined) {
   if (!shareId) {
     const uploads = api.storage.uploads;
@@ -170,7 +157,6 @@ function uploadDoor(shareId: string | undefined) {
 
 type UploadDoor = ReturnType<typeof uploadDoor>;
 
-/** The earlier upload with the parts it has, or null when it is gone (expired, aborted). */
 async function resumable(door: UploadDoor, uploadId: string | undefined) {
   if (!uploadId) return null;
   try {
@@ -191,7 +177,6 @@ async function sendPart(
     try {
       return await putPart(url, part, signal, onSent);
     } catch (error) {
-      // An answer that says no (402, 404, 409...) will say it again; no answer, or a 5xx, may not.
       const retryable = error instanceof ApiError && (error.status === 0 || error.status >= 500);
       if (!retryable || attempt === PART_TRIES) throw error;
       onSent(0);
@@ -201,7 +186,6 @@ async function sendPart(
   }
 }
 
-/** One part's raw bytes. XMLHttpRequest, because `fetch` cannot report how much it has sent. */
 function putPart(url: string, part: Blob, signal: AbortSignal, onSent: (bytes: number) => void) {
   return new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -212,7 +196,6 @@ function putPart(url: string, part: Blob, signal: AbortSignal, onSent: (bytes: n
     };
     xhr.open("PUT", url);
     xhr.setRequestHeader(ERROR_FORMAT_HEADER, ERROR_FORMAT_VERSION);
-    // The tab's workspace, as every API call names it (ADR 0043).
     for (const [name, value] of Object.entries(workspaceHeaders()))
       xhr.setRequestHeader(name, value);
     xhr.responseType = "json";

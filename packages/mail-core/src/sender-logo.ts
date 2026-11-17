@@ -1,34 +1,30 @@
-// What picture stands for a sender: a webmail address's own Gravatar, anyone else's company
-// logo. The Worker fetches the candidates; the web app samples the logo's edge for the tile
-// behind it. Pure; imported as `@omni/mail-core/sender-logo`.
 import { domainOf, isWebmailDomain, normalizeAddress } from "./addresses.ts";
 
 /** Where a sender's picture comes from: their own face, or their company's mark. */
 export type LogoSource = { kind: "gravatar"; address: string } | { kind: "domain"; domain: string };
 
 /** A webmail address says nothing about a company, so only its owner's Gravatar fits. */
-export function logoSource(address: string): LogoSource | null {
+export const logoSource: (address: string) => LogoSource | null = (address) => {
   const domain = domainOf(address);
   if (!domain || !domain.includes(".")) return null;
   if (isWebmailDomain(domain)) return { kind: "gravatar", address: normalizeAddress(address) };
   return domainLogoSource(domain);
-}
+};
 
 /** A company's mark from one of its domains; none for a webmail domain. */
-export function domainLogoSource(domain: string): LogoSource | null {
+export const domainLogoSource: (domain: string) => LogoSource | null = (domain) => {
   const host = domain.trim().toLowerCase();
   if (!host.includes(".") || isWebmailDomain(host)) return null;
   return { kind: "domain", domain: registrableDomain(host) };
-}
+};
 
-/** Two-letter second levels under a country code: `acme.co.uk`, `acme.com.br`. */
 const SECOND_LEVELS = new Set(["co", "com", "net", "org", "gov", "ac", "edu", "ne", "or", "go"]);
 
 /**
  * The domain a company's site lives on: `mail.acme.co.uk` → `acme.co.uk`. Mail comes from
  * subdomains (`bounce.`, `em.`, `notifications.`) that serve no site and carry no icon.
  */
-export function registrableDomain(domain: string): string {
+export function registrableDomain(domain: string) {
   const labels = domain.toLowerCase().replace(/\.$/, "").split(".");
   const keep =
     labels.length > 2 && labels.at(-1)!.length === 2 && SECOND_LEVELS.has(labels.at(-2)!) ? 3 : 2;
@@ -46,7 +42,7 @@ export interface IconLink {
  * `sizes` is 180px (what iOS asks for); SVG and Safari's mask icon are left out, since the image
  * proxy serves rasters only.
  */
-export function iconLinks(html: string, pageUrl: string): IconLink[] {
+export function iconLinks(html: string, pageUrl: string) {
   const links: IconLink[] = [];
   for (const [tag] of html.matchAll(/<link\b[^>]*>/gi)) {
     const rel = attribute(tag, "rel")?.toLowerCase() ?? "";
@@ -68,10 +64,10 @@ export function iconLinks(html: string, pageUrl: string): IconLink[] {
     const size = declared || (rel.includes("apple-touch-icon") ? 180 : 0);
     links.push({ url: url.toString(), size });
   }
-  return links.toSorted((a, b) => b.size - a.size);
+  return links.toSorted((a, b) => b.size - a.size) satisfies IconLink[];
 }
 
-function attribute(tag: string, name: string): string | null {
+function attribute(tag: string, name: string) {
   const match = tag.match(new RegExp(`\\s${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, "i"));
   return match ? (match[1] ?? match[2] ?? match[3] ?? "").trim() : null;
 }
@@ -88,7 +84,7 @@ function decodeEntities(value: string) {
  * conventional paths. `fallback` is an icon service URL with `{domain}` in it, tried before the
  * 16px `/favicon.ico`.
  */
-export function logoCandidates(domain: string, links: IconLink[], fallback?: string): string[] {
+export function logoCandidates(domain: string, links: IconLink[], fallback?: string) {
   const origin = `https://${domain}`;
   const urls = [
     ...links.map((l) => l.url),
@@ -96,14 +92,14 @@ export function logoCandidates(domain: string, links: IconLink[], fallback?: str
     ...(fallback ? [fallback.replaceAll("{domain}", encodeURIComponent(domain))] : []),
     `${origin}/favicon.ico`,
   ];
-  return [...new Set(urls)];
+  return [...new Set(urls)] satisfies string[];
 }
 
 /**
  * An image's width in pixels from its header, or null when the format is unknown. For an ICO,
  * the widest image inside it (a favicon.ico often holds 16, 32 and 48).
  */
-export function imageWidth(bytes: Uint8Array): number | null {
+export function imageWidth(bytes: Uint8Array) {
   const u16le = (at: number) => bytes[at]! | (bytes[at + 1]! << 8);
   const u16be = (at: number) => (bytes[at]! << 8) | bytes[at + 1]!;
   const u32be = (at: number) => ((bytes[at]! << 24) >>> 0) + (bytes[at + 1]! << 16) + u16be(at + 2);
@@ -123,7 +119,6 @@ function icoWidth(bytes: Uint8Array, u16le: (at: number) => number) {
   const count = u16le(4);
   let widest = 0;
   for (let i = 0; i < count && 6 + i * 16 < bytes.length; i++) {
-    // A width byte of 0 means 256.
     widest = Math.max(widest, bytes[6 + i * 16] || 256);
   }
   return widest || null;
@@ -143,7 +138,6 @@ function jpegWidth(bytes: Uint8Array, u16be: (at: number) => number) {
   let at = 2;
   while (at + 9 < bytes.length && bytes[at] === 0xff) {
     const marker = bytes[at + 1]!;
-    // Start-of-frame markers (C0–CF, except DHT C4, JPG C8 and DAC CC) carry the size.
     if (marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker)) {
       return u16be(at + 7);
     }
@@ -154,11 +148,8 @@ function jpegWidth(bytes: Uint8Array, u16be: (at: number) => number) {
 
 /** What surrounds the mark at the icon's edge, which decides how the avatar draws it. */
 export type LogoEdge =
-  /** A see-through edge: the mark sits on a plain light tile. */
   | { kind: "transparent" }
-  /** One flat colour: the tile takes it, so the scaled-down icon seems to fill the avatar. */
   | { kind: "solid"; color: string }
-  /** A picture to the edge (a photo, a gradient): it fills the avatar uncropped. */
   | { kind: "busy" };
 
 /**
@@ -178,7 +169,6 @@ export function logoEdge(rgba: Uint8ClampedArray | Uint8Array, width: number, he
   const far = opaque.filter((p) =>
     [0, 1, 2].some((c) => Math.abs(rgba[p * 4 + c]! - mean[c]!) > 24),
   );
-  // A few stray pixels (anti-aliased corners, a mark touching the edge) still read as one colour.
   if (far.length > opaque.length * 0.1) return { kind: "busy" } satisfies LogoEdge;
   const hex = mean.map((v) => Math.round(v).toString(16).padStart(2, "0")).join("");
   return { kind: "solid", color: `#${hex}` } satisfies LogoEdge;

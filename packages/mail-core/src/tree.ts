@@ -1,7 +1,3 @@
-// A light HTML tree (parse5, the parser jsdom uses) for the read-only passes over mail HTML.
-// jsdom builds a full DOM and re-parses every `style` attribute through cssstyle, which made
-// it about 20x slower than parse5 on a 2 MB newsletter. Every walk here is iterative: mail
-// nests deep enough to overflow the stack of a recursive one.
 import { type DefaultTreeAdapterTypes, parse, parseFragment, serialize } from "parse5";
 
 export type Element = DefaultTreeAdapterTypes.Element;
@@ -12,7 +8,7 @@ type ChildNode = DefaultTreeAdapterTypes.ChildNode;
 export const MAX_HTML_DEPTH = 256;
 
 /** The `<body>` of `html` parsed as a full document. */
-export function parseBody(html: string): Element {
+export const parseBody: (html: string) => Element = (html) => {
   const doc = parse(html);
   const htmlElement = doc.childNodes.find(isElement);
   const body = htmlElement?.childNodes.find(
@@ -20,14 +16,14 @@ export function parseBody(html: string): Element {
   );
   if (!body) throw new Error("parse5 always creates a body");
   return body;
-}
+};
 
 /** `html` parsed in body context, so `<style>` from `<head>` stays in the tree. */
-export function parseBodyFragment(html: string): DefaultTreeAdapterTypes.DocumentFragment {
-  return parseFragment(html);
-}
+export const parseBodyFragment: (html: string) => DefaultTreeAdapterTypes.DocumentFragment = (
+  html,
+) => parseFragment(html);
 
-export function innerHtml(node: ParentNode): string {
+export function innerHtml(node: ParentNode) {
   return serialize(node);
 }
 
@@ -35,31 +31,31 @@ export function isElement(node: ChildNode | DefaultTreeAdapterTypes.Node): node 
   return "tagName" in node;
 }
 
-export function attribute(element: Element, name: string): string | null {
+export function attribute(element: Element, name: string) {
   return element.attrs.find((attr) => attr.name === name)?.value ?? null;
 }
 
-export function hasClass(element: Element, name: string): boolean {
+export function hasClass(element: Element, name: string) {
   return (attribute(element, "class") ?? "").split(/[\t\n\f\r ]+/).includes(name);
 }
 
 /** Every element under `root`, in document order. */
-export function* elements(root: ParentNode): Generator<Element> {
+export const elements: (root: ParentNode) => Generator<Element> = function* (root) {
   const stack: ChildNode[] = root.childNodes.toReversed();
   for (let node = stack.pop(); node; node = stack.pop()) {
     if (!isElement(node)) continue;
     yield node;
     for (const child of node.childNodes.toReversed()) stack.push(child);
   }
-}
+};
 
-export function remove(node: ChildNode): void {
+export function remove(node: ChildNode) {
   const siblings = node.parentNode?.childNodes;
   const index = siblings?.indexOf(node) ?? -1;
   if (siblings && index !== -1) siblings.splice(index, 1);
 }
 
-export function textContent(root: ParentNode): string {
+export function textContent(root: ParentNode) {
   const parts: string[] = [];
   const stack: ChildNode[] = root.childNodes.toReversed();
   for (let node = stack.pop(); node; node = stack.pop()) {
@@ -73,7 +69,7 @@ export function textContent(root: ParentNode): string {
  * Replaces the children of every element at `maxDepth` with their text, so nothing below it
  * is rendered as markup. Returns whether anything was flattened.
  */
-export function capDepth(root: ParentNode, maxDepth = MAX_HTML_DEPTH): boolean {
+export function capDepth(root: ParentNode, maxDepth = MAX_HTML_DEPTH) {
   let flattened = false;
   const stack: [Element, number][] = root.childNodes
     .filter(isElement)

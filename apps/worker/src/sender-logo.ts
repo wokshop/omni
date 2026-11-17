@@ -1,7 +1,3 @@
-// A sender's picture for avatars: their company's logo, or for a webmail address their Gravatar.
-// Every fetch goes through the image proxy's checks (no private addresses, rasters only, bounded
-// size), and each result, a miss included, is cached by domain or address hash so a list of
-// threads costs one lookup per sender a week.
 import {
   iconLinks,
   imageWidth,
@@ -18,12 +14,9 @@ import {
 
 const FOUND_SECONDS = 7 * 24 * 60 * 60;
 const MISSING_SECONDS = 24 * 60 * 60;
-/** Wide enough to stay sharp in a 40px avatar on a 2x screen, wherever it is drawn smaller. */
 const SHARP_WIDTH = 64;
-/** Candidates tried, and the time they may take, before the best one so far is kept. */
 const MAX_TRIES = 5;
 const BUDGET_MS = 7_000;
-/** The icons are linked from `<head>`, near the top of the page. */
 const PAGE_BYTES = 256 * 1024;
 
 export interface LogoOptions extends ProxyOptions {
@@ -34,10 +27,10 @@ export interface LogoOptions extends ProxyOptions {
 }
 
 /** The logo for `source` through the Cache API: an image, a 404 when it has none, or why not. */
-export async function senderLogo(
+export const senderLogo: (
   source: LogoSource,
   options: LogoOptions,
-): Promise<Response | ProxyFailure> {
+) => Promise<Response | ProxyFailure> = async (source, options) => {
   const key =
     source.kind === "domain"
       ? `domain/${source.domain}`
@@ -59,11 +52,10 @@ export async function senderLogo(
         headers: { ...imageHeaders(image.type), "content-length": String(image.bytes.byteLength) },
       })
     : new Response(null, { status: 404 });
-  // The Cache API skips `private` responses; the stored copy is public, readers get private.
   const seconds = image ? FOUND_SECONDS : MISSING_SECONDS;
   await cache.put(cacheKey, withCacheControl(response.clone(), seconds, "public"));
   return withCacheControl(response, seconds, "private");
-}
+};
 
 interface Image {
   bytes: Uint8Array;
@@ -71,13 +63,18 @@ interface Image {
   width: number;
 }
 
-async function gravatar(hash: string, options: LogoOptions): Promise<Image | null> {
+const gravatar: (hash: string, options: LogoOptions) => Promise<Image | null> = async (
+  hash,
+  options,
+) => {
   if (options.gravatar === "off") return null;
   return fetchCandidate(options.gravatar.replaceAll("{hash}", hash), options);
-}
+};
 
-/** The first sharp icon among the candidates, or the widest one found in the time allowed. */
-async function domainLogo(domain: string, options: LogoOptions): Promise<Image | null> {
+const domainLogo: (domain: string, options: LogoOptions) => Promise<Image | null> = async (
+  domain,
+  options,
+) => {
   const deadline = Date.now() + BUDGET_MS;
   const page = await fetchPage(`https://${domain}/`, options);
   const links = page ? iconLinks(page.html, page.url) : [];
@@ -90,18 +87,20 @@ async function domainLogo(domain: string, options: LogoOptions): Promise<Image |
     if (image && image.width > (best?.width ?? 0)) best = image;
   }
   return best;
-}
+};
 
-async function fetchCandidate(url: string, options: ProxyOptions): Promise<Image | null> {
+const fetchCandidate: (url: string, options: ProxyOptions) => Promise<Image | null> = async (
+  url,
+  options,
+) => {
   const response = await fetchImage(url, options);
   if (!(response instanceof Response)) return null;
   const bytes = new Uint8Array(await response.arrayBuffer());
   const width = imageWidth(bytes);
   if (!width) return null;
   return { bytes, type: response.headers.get("content-type")!, width };
-}
+};
 
-/** A site's home page, its first bytes only, after the same per-hop checks as the proxy. */
 async function fetchPage(target: string, options: ProxyOptions) {
   let url = new URL(target);
   const signal = AbortSignal.timeout(4_000);
@@ -125,9 +124,7 @@ async function fetchPage(target: string, options: ProxyOptions) {
       }
       return { html: await readHead(response), url: url.toString() };
     }
-  } catch {
-    // Unreachable, timed out or refused: the conventional paths are still worth trying.
-  }
+  } catch {}
   return null;
 }
 

@@ -1,5 +1,3 @@
-// Workspace setup progress (resumable onboarding) and the workspace switcher's read: every org a
-// user belongs to, with its setup step and the mailboxes that user's member there can open.
 import { and, asc, eq, sql, type SQL } from "drizzle-orm";
 import type { Db } from "./client.ts";
 import { isCompany } from "./personal-space.ts";
@@ -11,10 +9,6 @@ export type SetupStep = (typeof setupStep.enumValues)[number];
 /** Setup steps in order: `created → domain_added → dns_verified → mailboxes_created → invites_sent → complete`. */
 export const SETUP_STEPS = setupStep.enumValues;
 
-/**
- * The step of an org with no `org_setup` row: one made by the `org:create` CLI or before setup
- * was tracked. With a mailbox it is in use, so `complete`; without one it still needs setup.
- */
 function stepWithoutRow(orgId: SQL | string) {
   return sql`(case when ${orgHasMailbox(orgId)} then 'complete' else 'created' end)::setup_step`;
 }
@@ -24,12 +18,12 @@ function currentStep(orgId: string) {
 }
 
 /** Where `orgId`'s setup stands. */
-export async function orgSetupStep(db: Db, orgId: string): Promise<SetupStep> {
+export async function orgSetupStep(db: Db, orgId: string) {
   const [row] = await db
     .select({ step: sql<SetupStep>`${currentStep(orgId)}` })
     .from(organizations)
     .where(eq(organizations.id, orgId));
-  return row?.step ?? "created";
+  return (row?.step ?? "created") satisfies SetupStep;
 }
 
 /**
@@ -43,7 +37,7 @@ export async function advanceOrgSetup(
   orgId: string,
   step: SetupStep,
   options: { onlyFrom?: SetupStep } = {},
-): Promise<SetupStep> {
+) {
   const current = currentStep(orgId);
   await db.execute(sql`
     insert into ${orgSetup} (org_id, step)
@@ -51,7 +45,7 @@ export async function advanceOrgSetup(
     ${options.onlyFrom ? sql`where ${current} >= ${options.onlyFrom}::setup_step` : sql``}
     on conflict (org_id) do update
       set step = greatest(${orgSetup.step}, excluded.step), updated_at = now()`);
-  return orgSetupStep(db, orgId);
+  return orgSetupStep(db, orgId) satisfies Promise<SetupStep>;
 }
 
 export interface Workspace {
@@ -78,7 +72,7 @@ export async function listUserWorkspaces(
   db: Db,
   userId: string,
   options: { includePersonal?: boolean } = {},
-): Promise<Workspace[]> {
+) {
   const [orgs, boxes] = await Promise.all([
     db
       .select({
@@ -109,5 +103,5 @@ export async function listUserWorkspaces(
     mailboxes: boxes
       .filter((box) => box.orgId === org.id)
       .map(({ id, address, kind }) => ({ id, address, kind })),
-  }));
+  })) satisfies Workspace[];
 }

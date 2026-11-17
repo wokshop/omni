@@ -1,6 +1,3 @@
-// Undo send against the real consumer: a reply waits in the outbox for the member's undo window,
-// a cancel inside it means the mail never leaves, and a send left alone goes out once the window
-// passes. Real Worker (workerd), real mail service polling its outbox, real GreenMail and Postgres.
 import { randomBytes, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -63,7 +60,6 @@ beforeAll(async () => {
       IMAGE_PROXY_URL: "/api/image-proxy",
       ATTACHMENT_URL: "/api/attachments",
       SYNC_INTERVAL_MS: 60 * 60_000,
-      // The Worker's ping comes before the window ends; the poll is what claims the held send.
       OUTBOX_INTERVAL_MS: 500,
       MAILBOX_CONCURRENCY: 2,
     },
@@ -92,7 +88,6 @@ async function waitUntil<T>(check: () => Promise<T | false | undefined> | T, tim
   }
 }
 
-/** Subjects in a GreenMail INBOX (users are created on first delivery; the password is the address). */
 async function inboxSubjects(address: string) {
   const client = new ImapFlow({
     host: greenmail.host,
@@ -178,31 +173,25 @@ test("a cancelled send never leaves; one left alone goes out after the undo wind
 
   const kept = await reply("It ships Tuesday.");
   expect(kept.status).toBe(202);
-  const { actionId } = (await kept.json()) as { actionId: string };
-  // Held for the window: the outbox poll runs every 500ms but must not claim it yet.
-  await new Promise((resolve) => setTimeout(resolve, 1_000));
-  const [waiting] = await db
-    .select()
-    .from(schema.mailActions)
-    .where(eq(schema.mailActions.id, actionId));
-  expect(waiting?.status).toBe("pending");
+  const { actionId, undoUntil } = (await kept.json()) as { actionId: string; undoUntil: string };
 
-  await waitUntil(async () => {
+  const sent = await waitUntil(async () => {
     const [row] = await db
       .select()
       .from(schema.mailActions)
       .where(eq(schema.mailActions.id, actionId));
-    return row?.status === "done";
+    return row?.status === "done" && row;
   });
+  expect(sent.runAfter.toISOString()).toBe(undoUntil);
+  expect(sent.smtpAcceptedAt?.getTime()).toBeGreaterThanOrEqual(new Date(undoUntil).getTime());
   const subjects = await waitUntil(async () => {
     const found = await inboxSubjects(customer);
     return found.length ? found : false;
   });
-  // Only the send left alone reached the customer.
   expect(subjects).toEqual(["Re: Order"]);
   const [gone] = await db
     .select()
     .from(schema.mailActions)
     .where(eq(schema.mailActions.id, held.actionId));
   expect(gone).toBeUndefined();
-}, 60_000);
+});

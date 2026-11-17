@@ -1,7 +1,3 @@
-// Mail a machine sent in answer to ours: vacation and out-of-office replies, delivery
-// failures, read receipts, system notices. The helpdesk must not reopen a conversation or
-// start an SLA because of one, so each message is classified from its headers alone.
-
 /**
  * `bounce`: a delivery report (failed or delayed delivery).
  * `auto-reply`: an automatic answer to a message (out of office, vacation, read receipt).
@@ -30,17 +26,16 @@ export type HeaderLookup = (name: string) => string | null;
  * `X-Auto-Response-Suppress` is deliberately not a signal: Outlook sets it on meeting
  * invites and other mail a person sends.
  */
-export function automatedKind(
+export const automatedKind: (
   header: HeaderLookup,
   fromAddress: string | null,
-): AutomatedKind | null {
+) => AutomatedKind | null = (header, fromAddress) => {
   const contentType = header("content-type")?.toLowerCase() ?? "";
   if (contentType.startsWith("multipart/report")) {
     const reportType = /report-type\s*=\s*"?([\w-]+)/.exec(contentType)?.[1];
     if (reportType === "delivery-status") return "bounce";
     if (reportType === "disposition-notification") return "auto-reply";
   }
-  // Exim names the failed addresses; mailer-daemon is the sender name every MTA uses.
   if (header("x-failed-recipients") !== null) return "bounce";
   if (fromAddress?.toLowerCase().startsWith("mailer-daemon@")) return "bounce";
 
@@ -54,7 +49,7 @@ export function automatedKind(
   }
   if (autoSubmitted !== "" && autoSubmitted !== "no") return "auto-generated";
   return null;
-}
+};
 
 /** Top-level headers `automatedKind` reads, so a parser that keeps only some still keeps these. */
 export const AUTOMATED_HEADERS = [
@@ -68,7 +63,6 @@ export const AUTOMATED_HEADERS = [
   "x-autoresponder",
 ] as const;
 
-// A header line in a returned copy: "Message-ID: <id@host>" (any case, any folding).
 const RETURNED_MESSAGE_ID = /^message-id:[ \t]*(?:\r?\n[ \t]+)?(<[^<>\s]+>)/im;
 
 /**
@@ -76,7 +70,7 @@ const RETURNED_MESSAGE_ID = /^message-id:[ \t]*(?:\r?\n[ \t]+)?(<[^<>\s]+>)/im;
  * original's headers, most reliable first: the `text/rfc822-headers` or `message/rfc822`
  * part (RFC 3462), then the body, where Exim and qmail paste a copy.
  */
-export function bouncedMessageId(sources: readonly string[]): string | null {
+export function bouncedMessageId(sources: readonly string[]) {
   for (const source of sources) {
     const match = RETURNED_MESSAGE_ID.exec(source);
     if (match?.[1] !== undefined) return match[1];
