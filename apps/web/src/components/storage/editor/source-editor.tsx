@@ -1,7 +1,7 @@
 // Text and code files edited as text (ADR 0043): CodeMirror, saving exactly what was typed. Its
 // own chunk, loaded when such a file is edited.
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
-import { EditorState } from "@codemirror/state";
+import { Compartment, EditorState } from "@codemirror/state";
 import {
   drawSelection,
   EditorView,
@@ -32,6 +32,9 @@ const theme = EditorView.theme({
   ".cm-activeLine": { backgroundColor: "var(--secondary)" },
 });
 
+/** The editor's accessible name, which follows the file's name. */
+const label = new Compartment();
+
 export default function SourceEditor(props: EditorProps) {
   const host = useRef<HTMLDivElement>(null);
   const { onReady, onChange, name, text } = props;
@@ -40,9 +43,10 @@ export default function SourceEditor(props: EditorProps) {
   useEffect(() => {
     latest.current = onChange;
   });
+  const view = useRef<EditorView | null>(null);
   useEffect(() => {
     if (!host.current) return;
-    const view = new EditorView({
+    const made = new EditorView({
       parent: host.current,
       state: EditorState.create({
         doc: text,
@@ -53,7 +57,7 @@ export default function SourceEditor(props: EditorProps) {
           highlightActiveLine(),
           EditorState.tabSize.of(2),
           keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
-          EditorView.contentAttributes.of({ "aria-label": name }),
+          label.of(EditorView.contentAttributes.of({ "aria-label": name })),
           EditorView.updateListener.of((update) => {
             if (update.docChanged) latest.current();
           }),
@@ -61,9 +65,20 @@ export default function SourceEditor(props: EditorProps) {
         ],
       }),
     });
-    view.focus();
-    onReady(() => view.state.doc.toString());
-    return () => view.destroy();
-  }, [text, name, onReady]);
+    made.focus();
+    onReady(() => made.state.doc.toString());
+    view.current = made;
+    return () => {
+      view.current = null;
+      made.destroy();
+    };
+    // Made once per text: a rename relabels it below, and never drops what is typed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [text, onReady]);
+  useEffect(() => {
+    view.current?.dispatch({
+      effects: label.reconfigure(EditorView.contentAttributes.of({ "aria-label": name })),
+    });
+  }, [name]);
   return <div ref={host} className="min-h-0 flex-1" />;
 }

@@ -1,11 +1,14 @@
 // A Markdown file as a page (ADR 0043): Tiptap edits headings, lists, checklists, quotes, code
-// and links, and saves the page back as Markdown. Its own chunk, loaded when a .md file is edited.
+// and links, and saves the page back as Markdown. A file with more than that (a table, an image,
+// HTML) edits as text instead, so a save never drops what the page cannot show. Its own chunk,
+// loaded when a .md file is edited.
 import { TaskItem, TaskList } from "@tiptap/extension-list";
 import { Markdown } from "@tiptap/markdown";
-import { EditorContent, useEditor } from "@tiptap/react";
+import { Editor, EditorContent, useEditor } from "@tiptap/react";
 import { StarterKit } from "@tiptap/starter-kit";
 import { useEffect, useMemo } from "react";
 import type { EditorProps } from "./document-editor.tsx";
+import SourceEditor from "./source-editor.tsx";
 import "./rich-editor.css";
 
 /**
@@ -20,7 +23,28 @@ const EXTENSIONS = [
   Markdown,
 ];
 
+/**
+ * The letters and digits of a Markdown text, in order, leaving out list numbers. Markdown the page
+ * writes back differently (`*` for `-`, renumbered lists, escapes) keeps them; anything it drops
+ * (a table's cells, an image's address, HTML) loses some.
+ */
+const words = (markdown: string) =>
+  markdown.replace(/^\s*\d+[.)]\s/gm, "").replace(/[^\p{L}\p{N}]+/gu, "");
+
+/** Whether the page keeps every word of `markdown` when it saves it back. */
+function roundTrips(markdown: string) {
+  const editor = new Editor({ extensions: EXTENSIONS, content: markdown, contentType: "markdown" });
+  const back = editor.getMarkdown();
+  editor.destroy();
+  return words(back) === words(markdown);
+}
+
 export default function RichEditor(props: EditorProps) {
+  const page = useMemo(() => roundTrips(props.text), [props.text]);
+  return page ? <Page {...props} /> : <SourceEditor {...props} />;
+}
+
+function Page(props: EditorProps) {
   const { onReady, onChange, name } = props;
   const editorProps = useMemo(
     () => ({ attributes: { class: "document-page", "aria-label": name } }),

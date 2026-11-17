@@ -60,9 +60,12 @@ export function useEditSession(node: StorageNode, url: string, shareId: string |
   const base = useRef<number | undefined>(undefined);
   /** Changes since the editor opened, so a save does not clear a change typed while it ran. */
   const changes = useRef(0);
+  /** Which editing session this is: a save that ends after it closed changes nothing of the next. */
+  const session = useRef(0);
 
   // Another file: not editing it.
   useEffect(() => {
+    session.current += 1;
     setEditing(false);
     setDirty(false);
     setConflict(null);
@@ -90,6 +93,7 @@ export function useEditSession(node: StorageNode, url: string, shareId: string |
     const text = read.current?.();
     if (text === undefined) return false;
     const at = changes.current;
+    const mine = session.current;
     setSaving(true);
     try {
       const saved = await uploadFile({
@@ -105,13 +109,19 @@ export function useEditSession(node: StorageNode, url: string, shareId: string |
         guard: () => {},
         confirm: async () => {},
       });
-      base.current = saved.contentVersion;
       void storageChanged(client);
+      if (session.current !== mine) return false;
+      base.current = saved.contentVersion;
       // Typed while it saved: still unsaved, and not done.
       if (changes.current !== at) return false;
       setDirty(false);
       return true;
     } catch (error) {
+      // An earlier session's file: it was not saved, and nothing of this session changes.
+      if (session.current !== mine) {
+        storageErrorToast(error, `“${node.name}” was not saved`);
+        return false;
+      }
       const now = Number((error instanceof ApiError && error.details?.contentVersion) ?? NaN);
       if (error instanceof ApiError && error.code === "version_conflict" && Number.isFinite(now)) {
         setConflict(now);
@@ -132,6 +142,7 @@ export function useEditSession(node: StorageNode, url: string, shareId: string |
     /** A move away from the file while it has unsaved changes, held until the person picks. */
     leaving,
     start: () => {
+      session.current += 1;
       base.current = node.contentVersion;
       changes.current = 0;
       setOpened(`${node.updatedAt}#${Date.now()}`);
