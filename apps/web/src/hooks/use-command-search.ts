@@ -44,7 +44,11 @@ export interface CommandHits {
 /** Every array named `field` in the cached answers under `prefix`, infinite lists included. */
 function cached<T>(client: QueryClient, prefix: readonly unknown[], field: string): T[] {
   const out: T[] = [];
-  for (const [, data] of client.getQueriesData<unknown>({ queryKey: prefix })) {
+  // An invalidated answer may hold what has since gone (a folder's files after it went to Trash)
+  // until it is fetched again; the server's search covers what it leaves out meanwhile.
+  for (const query of client.getQueryCache().findAll({ queryKey: prefix })) {
+    if (query.state.isInvalidated) continue;
+    const data: unknown = query.state.data;
     const pages =
       data && typeof data === "object" && "pages" in data && Array.isArray(data.pages)
         ? data.pages
@@ -81,13 +85,17 @@ function pick<T extends { id: string }>(
   return out;
 }
 
-/** A number that changes whenever a query in the cache gets new data, so hits read it again. */
+/** A number that changes whenever a query in the cache gets new data or goes stale, so hits read it again. */
 function useCacheVersion(client: QueryClient) {
   const [version, setVersion] = useState(0);
   useEffect(
     () =>
       client.getQueryCache().subscribe((event) => {
-        if (event.type === "updated" && event.action.type === "success") setVersion((v) => v + 1);
+        if (
+          event.type === "updated" &&
+          (event.action.type === "success" || event.action.type === "invalidate")
+        )
+          setVersion((v) => v + 1);
       }),
     [client],
   );
