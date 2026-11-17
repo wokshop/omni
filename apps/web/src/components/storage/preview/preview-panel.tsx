@@ -111,7 +111,10 @@ export function PreviewPanel(props: {
           <Action label="Download" onPress={props.onDownload}>
             <IconDownload />
           </Action>
-          <SettingsRowMenu label={`Actions for ${node.name}`} items={props.menu} />
+          {/* Moving, renaming or trashing the file would drop what is not saved: save first. */}
+          {!session.dirty && (
+            <SettingsRowMenu label={`Actions for ${node.name}`} items={props.menu} />
+          )}
           <Action
             label={props.fullScreen ? "Side by side" : "Full screen"}
             onPress={props.onFullScreen}
