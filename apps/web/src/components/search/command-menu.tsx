@@ -37,6 +37,8 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
+  CommandEmpty,
+  CommandScopes,
   CommandShortcut,
 } from "@/components/ui/command";
 import { Loader } from "@/components/ui/loader";
@@ -113,6 +115,15 @@ const COMMAND_ICONS: Partial<Record<ShortcutId, ReactNode>> = {
 };
 const COMMANDS = COMMAND_IDS.filter((id) => id in COMMAND_ICONS);
 
+type Scope = "all" | "threads" | "commands";
+// All holds everything, threads once there's a query; each other pill narrows to its own kind
+// and lists all of it, as transitive's do. Pages count as commands.
+const SCOPES = [
+  { id: "all", label: "All" },
+  { id: "threads", label: "Threads" },
+  { id: "commands", label: "Commands" },
+] as const satisfies readonly { id: Scope; label: string }[];
+
 const FOOTER = [
   { keys: "↑↓", label: "Navigate" },
   { keys: "↵", label: "Open" },
@@ -164,7 +175,11 @@ function MenuPanel({ seed, onClose }: { seed?: SearchSeed | undefined; onClose: 
   const [q, setQ] = useState(seed?.q ?? "");
   const mailbox = seed?.mailbox;
   const [searching, setSearching] = useState(false);
+  const [scope, setScope] = useState<Scope>("all");
+  const input = useRef<HTMLInputElement>(null);
   const query = q.trim();
+  const showCommands = scope !== "threads";
+  const showThreads = scope === "threads" || (scope === "all" && !!query);
 
   // A command runs once the menu is gone: run now, the closing modal would take focus back from
   // whatever the command focuses (the reply composer).
@@ -179,6 +194,10 @@ function MenuPanel({ seed, onClose }: { seed?: SearchSeed | undefined; onClose: 
   const runCommand = (id: ShortcutId) => {
     afterClose.current = () => runShortcut(id);
     onClose();
+  };
+  const openThread = (threadId: string) => {
+    onClose();
+    void navigate({ to: "/$workspace/mail/inbox/$threadId", params: { workspace, threadId } });
   };
   const openPage = (page: Page) => {
     onClose();
@@ -209,13 +228,23 @@ function MenuPanel({ seed, onClose }: { seed?: SearchSeed | undefined; onClose: 
   return (
     <Command label="Search and commands" loop filter={filter} vimBindings={false}>
       <CommandInput
+        ref={input}
         autoFocus
         value={q}
         onValueChange={setQ}
         placeholder="Search mail and commands…"
       />
+      <CommandScopes
+        scopes={SCOPES}
+        value={scope}
+        onChange={(next) => {
+          setScope(next);
+          input.current?.focus();
+        }}
+      />
       <CommandList>
-        {query && (
+        <CommandEmpty>No results found.</CommandEmpty>
+        {query && scope !== "commands" && (
           <CommandGroup>
             <CommandItem value={SMART} onSelect={() => void smartSearch()}>
               {searching ? <Loader /> : <IconSearch />}
@@ -225,62 +254,67 @@ function MenuPanel({ seed, onClose }: { seed?: SearchSeed | undefined; onClose: 
             </CommandItem>
           </CommandGroup>
         )}
-        <CommandGroup heading="Go to">
-          {PAGES.map((page) => (
-            <CommandItem
-              key={page.id}
-              value={`page:${page.id}`}
-              keywords={[page.title]}
-              onSelect={() => openPage(page)}
-            >
-              {page.icon}
-              <span className="min-w-0 truncate">{page.title}</span>
-              {page.shortcut && <CommandShortcut keys={keysOf(page.shortcut)} />}
-            </CommandItem>
-          ))}
-        </CommandGroup>
-        <CommandGroup heading="Commands">
-          {COMMANDS.filter((id) => available.has(id)).map((id) => (
-            <CommandItem
-              key={id}
-              value={`command:${id}`}
-              keywords={[SHORTCUTS[id].label]}
-              onSelect={() => runCommand(id)}
-            >
-              {COMMAND_ICONS[id]}
-              <span className="min-w-0 truncate">{SHORTCUTS[id].label}</span>
-              <CommandShortcut keys={keysOf(id)} />
-            </CommandItem>
-          ))}
-        </CommandGroup>
-        {/* Threads only once there's something to match them against. */}
-        {query && (
-          <CommandGroup heading="Threads">
-            {threads.map((thread) => {
-              const sender = senderLabel(thread);
-              return (
-                <CommandItem
-                  key={thread.id}
-                  value={`thread:${thread.id}`}
-                  keywords={[thread.subject, sender]}
-                  onSelect={() => {
-                    onClose();
-                    void navigate({
-                      to: "/$workspace/mail/inbox/$threadId",
-                      params: { workspace, threadId: thread.id },
-                    });
-                  }}
-                >
-                  <IconEmail />
-                  <span className="min-w-0 truncate">{thread.subject || "(no subject)"}</span>
-                  <CommandDetail>{sender}</CommandDetail>
-                </CommandItem>
-              );
-            })}
+        {showCommands && (
+          <CommandGroup heading="Go to">
+            {PAGES.map((page) => (
+              <CommandItem
+                key={page.id}
+                value={`page:${page.id}`}
+                keywords={[page.title]}
+                onSelect={() => openPage(page)}
+              >
+                {page.icon}
+                <span className="min-w-0 truncate">{page.title}</span>
+                {page.shortcut && <CommandShortcut keys={keysOf(page.shortcut)} />}
+              </CommandItem>
+            ))}
           </CommandGroup>
         )}
+        {showCommands && (
+          <CommandGroup heading="Commands">
+            {COMMANDS.filter((id) => available.has(id)).map((id) => (
+              <CommandItem
+                key={id}
+                value={`command:${id}`}
+                keywords={[SHORTCUTS[id].label]}
+                onSelect={() => runCommand(id)}
+              >
+                {COMMAND_ICONS[id]}
+                <span className="min-w-0 truncate">{SHORTCUTS[id].label}</span>
+                <CommandShortcut keys={keysOf(id)} />
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        )}
+        {showThreads && <ThreadGroup threads={threads} onOpen={openThread} />}
       </CommandList>
       <CommandFooter hints={FOOTER} />
     </Command>
+  );
+}
+
+/** Inbox threads, matched on subject and sender; each opens in the inbox. */
+function ThreadGroup(props: {
+  threads: ReturnType<typeof useThreads>["threads"];
+  onOpen: (threadId: string) => void;
+}) {
+  return (
+    <CommandGroup heading="Threads">
+      {props.threads.map((thread) => {
+        const sender = senderLabel(thread);
+        return (
+          <CommandItem
+            key={thread.id}
+            value={`thread:${thread.id}`}
+            keywords={[thread.subject, sender]}
+            onSelect={() => props.onOpen(thread.id)}
+          >
+            <IconEmail />
+            <span className="min-w-0 truncate">{thread.subject || "(no subject)"}</span>
+            <CommandDetail>{sender}</CommandDetail>
+          </CommandItem>
+        );
+      })}
+    </CommandGroup>
   );
 }

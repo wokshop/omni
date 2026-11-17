@@ -6,6 +6,8 @@
 import { Command as CommandPrimitive } from "cmdk";
 import { cn } from "cn";
 import type { ReactNode } from "react";
+import { ToggleButton } from "react-aria-components/ToggleButton";
+import { ToggleButtonGroup } from "react-aria-components/ToggleButtonGroup";
 import { Dialog, type DialogProps } from "./dialog";
 import { FluidHoverHighlight } from "./fluid-hover-highlight";
 import { Keyboard } from "./keyboard";
@@ -69,6 +71,45 @@ export function CommandInput({
   );
 }
 
+/**
+ * The pills under the field that scope what the menu searches (transitive's filter pills). The
+ * field keeps the keyboard: `onChange` is the caller's cue to focus it again.
+ */
+export function CommandScopes<T extends string>({
+  scopes,
+  value,
+  onChange,
+}: {
+  scopes: readonly { id: T; label: string }[];
+  value: T;
+  onChange: (scope: T) => void;
+}) {
+  return (
+    <ToggleButtonGroup
+      aria-label="Search in"
+      selectionMode="single"
+      disallowEmptySelection
+      selectedKeys={[value]}
+      onSelectionChange={(keys) => {
+        const [next] = keys;
+        if (next !== undefined) onChange(next as T);
+      }}
+      data-slot="command-scopes"
+      className="flex min-h-11 items-center gap-1 overflow-x-auto overflow-y-clip px-3 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+    >
+      {scopes.map((scope) => (
+        <ToggleButton
+          key={scope.id}
+          id={scope.id}
+          className="flex h-7 shrink-0 cursor-default items-center rounded-full px-2.5 text-sm text-muted-foreground outline-hidden transition-colors hover:bg-hover hover:text-foreground focus-visible:bg-hover focus-visible:text-foreground selected:bg-hover selected:text-foreground"
+        >
+          {scope.label}
+        </ToggleButton>
+      ))}
+    </ToggleButtonGroup>
+  );
+}
+
 export function CommandList({
   className,
   children,
@@ -83,7 +124,7 @@ export function CommandList({
       data-slot="command-list"
       {...hover.containerProps}
       className={cn(
-        "relative h-[min(360px,50vh)] scroll-py-2 overflow-x-hidden overflow-y-auto px-2 pt-1.5 pb-2 outline-hidden [&_[cmdk-group]+[cmdk-group]]:mt-1.5",
+        "relative h-[min(360px,50vh)] scroll-py-2 overflow-x-hidden overflow-y-auto px-2 pt-0 pb-2 outline-hidden [&_[cmdk-group]+[cmdk-group]]:mt-1.5",
         className,
       )}
       {...props}
