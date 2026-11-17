@@ -23,6 +23,8 @@ export async function firstPage(
     httpHeaders: headers,
     worker,
     disableAutoFetch: true,
+    // Without this, pdf.js streams the whole file alongside its range reads.
+    disableStream: true,
     rangeChunkSize: 256 * 1024,
   });
   const abort = () => void task.destroy();
