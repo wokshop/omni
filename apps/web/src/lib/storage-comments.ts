@@ -105,3 +105,16 @@ export const deleteCommentMutation = (client: QueryClient) =>
     },
     onSuccess: (_answer, { id }) => refetch(client, id),
   });
+
+/**
+ * Where a file is now, for a notification about it: it may have moved since. Null when the reader
+ * no longer reaches it.
+ */
+export async function filePlace(id: string) {
+  try {
+    const { node } = await call(api.storage.nodes[":id"].$get({ param: { id } }));
+    return { space: node.space, folderId: node.parentId };
+  } catch {
+    return null;
+  }
+}
