@@ -51,7 +51,8 @@ export function FolderArt(props: {
   return (
     <div
       aria-hidden
-      className={`relative aspect-square overflow-hidden rounded-lg border bg-surface ${empty ? "border-dashed" : "shadow-raised"}`}
+      // Empty: no fill, and a dashed edge a step stronger than the solid one so the dashes read.
+      className={`relative aspect-square overflow-hidden rounded-lg border ${empty ? "border-dashed border-muted-foreground/40" : "bg-surface shadow-raised"}`}
     >
       <span ref={anchor} className="absolute inset-0" />
       {fileUrl &&
