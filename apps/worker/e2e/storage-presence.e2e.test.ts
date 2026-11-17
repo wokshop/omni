@@ -133,16 +133,20 @@ test("a left sent while the editing check is still running wins", async () => {
     await tx.execute(sql`lock table storage_nodes in access exclusive mode`);
     await held.promise;
   });
-  anaHears.editing(doc.id, "editing");
-  const check = await stuckCheck();
-  anaHears.editing(doc.id, "left");
-  anaHears.append(doc.id, 1, seed);
-  expect(await anaHears.answer(doc.id, 1)).toMatchObject({
-    type: "doc.refused",
-    reason: "editing",
-  });
-  held.resolve();
-  await locked;
+  let check: number;
+  try {
+    anaHears.editing(doc.id, "editing");
+    check = await stuckCheck();
+    anaHears.editing(doc.id, "left");
+    anaHears.append(doc.id, 1, seed);
+    expect(await anaHears.answer(doc.id, 1)).toMatchObject({
+      type: "doc.refused",
+      reason: "editing",
+    });
+  } finally {
+    held.resolve();
+    await locked;
+  }
   await expect.poll(() => backendAlive(check)).toBe(false);
 
   // Had the check outlived the left, Ana would be editing again and this append would land.
