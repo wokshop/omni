@@ -22,6 +22,7 @@ import { GridList, GridListItem } from "@/components/ui/grid-list";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipTrigger } from "@/components/ui/tooltip";
 import { useFluidHoverList } from "@/hooks/use-fluid-hover-list";
+import { usePrefetchFolder } from "@/hooks/use-storage.ts";
 import type { FolderDraft } from "@/hooks/use-folder-drafts.ts";
 import { useStorageView, type StorageSection, type StorageView } from "@/hooks/use-storage-view.ts";
 import { fileType } from "@/lib/file-kind.ts";
@@ -260,11 +261,13 @@ function FileRow(props: {
 }) {
   const { node } = props;
   const type = node.kind === "file" ? fileType(node.name, node.mimeType) : null;
+  const prefetch = usePrefetchFolder();
   return (
     <GridListItem
       id={node.id}
       href={props.href}
       textValue={node.name}
+      onHoverStart={() => prefetch(node)}
       // The open file keeps the accent fill, as the open thread's row does. 48px: a 32px tile,
       // 8px above and below.
       className="mx-2.5 h-12 gap-3 rounded-lg ps-2 pe-1 selected:bg-accent"

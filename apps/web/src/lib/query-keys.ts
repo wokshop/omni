@@ -142,9 +142,13 @@ export const keys = {
   /** One folder's contents: a space's root, or a folder by id. */
   storageList: (place: { space: string } | { parentId: string }) =>
     [...storage(), "list", place] as const,
+  /** Every folder's contents. */
+  storageLists: () => [...storage(), "list"] as const,
   storageTrash: () => [...storage(), "trash"] as const,
   /** Drive's Search for one query. */
   storageSearch: (q: string) => [...storage(), "search", q] as const,
+  /** Every Search's answers. */
+  storageSearches: () => [...storage(), "search"] as const,
   storageIcons: (space: string) => [...storage(), "icons", space] as const,
   storageUsage: () => [...storage(), "usage"] as const,
   /** Where a node is now: its folder and space. */
