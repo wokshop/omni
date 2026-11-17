@@ -8,6 +8,7 @@ import {
   createContext,
   use,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type CSSProperties,
@@ -135,12 +136,26 @@ function Pin(props: { pin: PdfPin; selected: boolean; onSelect: (() => void) | u
 
 /**
  * The comment bar beside the box: up and to the right of it, moved left where the page runs out
- * and under the box where it sits near the page's top; kept 8px inside the page where it fits.
+ * and under the box when there is not room for it above; kept 8px inside the page where it fits.
  * Always its full width, so a small image still gets a bar to type in.
  */
 function AtBox(props: { box: PdfBox; children: ReactNode }) {
   const { box } = props;
-  const below = box.y < 0.12;
+  const ref = useRef<HTMLDivElement>(null);
+  // Over the box while the bar, as tall as it is now (it grows as the text wraps), fits above it
+  // on the page; under it otherwise.
+  const [below, setBelow] = useState(box.y < 0.12);
+  useLayoutEffect(() => {
+    const bar = ref.current;
+    const page = bar?.parentElement;
+    if (!bar || !page) return;
+    const place = () => setBelow(box.y * page.clientHeight < bar.offsetHeight + 16);
+    place();
+    const observer = new ResizeObserver(place);
+    observer.observe(bar);
+    observer.observe(page);
+    return () => observer.disconnect();
+  }, [box.y]);
   const style: CSSProperties = {
     left: `clamp(8px, calc(${(box.x + box.width) * 100}% + 8px), calc(100% - min(20rem, 100% - 16px) - 8px))`,
     ...(below
@@ -149,6 +164,7 @@ function AtBox(props: { box: PdfBox; children: ReactNode }) {
   };
   return (
     <div
+      ref={ref}
       style={style}
       className="pointer-events-auto absolute z-20 w-80 rounded-[12px] shadow-(--shadow-overlay)"
     >
