@@ -147,18 +147,12 @@ export const keys = {
   storageTrash: () => [...storage(), "trash"] as const,
   /** Drive's Search for one query. */
   storageSearch: (q: string) => [...storage(), "search", q] as const,
-  /** Every Search's answers. */
-  storageSearches: () => [...storage(), "search"] as const,
   storageIcons: (space: string) => [...storage(), "icons", space] as const,
-  /** Both drives' cluster glyphs. */
-  storageIconMaps: () => [...storage(), "icons"] as const,
   storageUsage: () => [...storage(), "usage"] as const,
   /** Where a node is now: its folder and space. */
   storageNode: (nodeId: string) => [...storage(), "node", nodeId] as const,
   /** Who a file or folder is shared with, and its link. */
   storageSharing: (nodeId: string) => [...storage(), "sharing", nodeId] as const,
-  /** Every node's sharing. */
-  storageSharings: () => [...storage(), "sharing"] as const,
   storageVersions: (nodeId: string) => [...storage(), "versions", nodeId] as const,
   storageComments: (nodeId: string) => [...storage(), "comments", nodeId] as const,
   /** A file's signature requests (ADR 0043 decision 6). */
@@ -169,8 +163,6 @@ export const keys = {
   /** What a link opens: the shared node, or a folder inside it. */
   storageLink: (shareId: string, nodeId: string | undefined) =>
     [...storage(), "link", shareId, nodeId ?? null] as const,
-  /** Every shared link's views. */
-  storageLinks: () => [...storage(), "link"] as const,
 
   /** The CRM (ADR 0036): every list, record, timeline and the stages. */
   crm: () => crm(),

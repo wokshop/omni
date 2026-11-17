@@ -88,18 +88,23 @@ const within = (data: ListData | undefined, id: string) =>
 const touching = (client: QueryClient, id: string) =>
   lists(client).flatMap(([key, data]) => (shows(data, id) || within(data, id) ? [key] : []));
 
+/** Where a listing sits in a Storage key: `["omni", <workspace>, "storage", "list", place]`. */
+const BRANCH = keys.storageLists().length - 1;
+
 /**
- * Asked again, in the background: the change already shows. Every Search, shared link's view
- * and sharing panel too, by their prefixes.
+ * Asked again, in the background: the change already shows. The folder lists the change touched,
+ * and everything in Storage that is not a folder list (Search, Trash, usage, a shared link's
+ * view, sharing, Shared with me, the cluster glyphs): each of those may name the node, and only
+ * the ones on screen refetch. Folder lists it did not touch are left alone; refetching all of
+ * those is what made every change reload every folder card on screen.
  */
-const refresh = (client: QueryClient, queryKeys: QueryKey[]) =>
+const refresh = (client: QueryClient, touched: QueryKey[]) =>
   Promise.all([
-    ...queryKeys.map((queryKey) => client.invalidateQueries({ queryKey, exact: true })),
-    client.invalidateQueries({ queryKey: keys.storageSearches() }),
-    // A shared link's view of the same folders sits under its own keys.
-    client.invalidateQueries({ queryKey: keys.storageLinks() }),
-    // Who has access is inherited from the folders above: a move changes it beneath the node.
-    client.invalidateQueries({ queryKey: keys.storageSharings() }),
+    ...touched.map((queryKey) => client.invalidateQueries({ queryKey, exact: true })),
+    client.invalidateQueries({
+      queryKey: keys.storage(),
+      predicate: (query) => query.queryKey[BRANCH] !== "list",
+    }),
   ]);
 
 /**
@@ -129,9 +134,7 @@ export async function storageNodeChanged(client: QueryClient, node: StorageNode)
       : withFolder(without(data, node.id), node);
     if (next !== data) client.setQueryData<ListData>(key, next);
   }
-  void refresh(client, [...touched, keys.storageNode(node.id), keys.storageTrash()]);
-  // A cluster moved between drives takes its glyph along: each drive's map is read by space.
-  if (node.kind === "folder") void client.invalidateQueries({ queryKey: keys.storageIconMaps() });
+  void refresh(client, touched);
 }
 
 /**
@@ -173,10 +176,8 @@ export async function storageNodeRemoved(client: QueryClient, id: string) {
   for (const [key, data] of showing) {
     if (data) client.setQueryData<ListData>(key, without(data, id));
   }
-  void refresh(client, [
-    ...showing.map(([key]) => key),
-    keys.storageNode(id),
-    keys.storageTrash(),
-    keys.storageUsage(),
-  ]);
+  void refresh(
+    client,
+    showing.map(([key]) => key),
+  );
 }
