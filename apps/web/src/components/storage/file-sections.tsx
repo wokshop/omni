@@ -31,6 +31,7 @@ import { FileCard, FileCardBones, KEEP_IN_MENU } from "./file-card.tsx";
 import { DraftCard, DraftRow, type DraftHandlers } from "./folder-draft.tsx";
 import { FileTile, TypeBadge } from "./file-glyph.tsx";
 import { DAY } from "./file-table.tsx";
+import { DROP_TARGET, useNodeDragAndDrop, type NodeDrag } from "./node-drag.tsx";
 
 export interface FileSectionsProps {
   label: string;
@@ -45,6 +46,8 @@ export interface FileSectionsProps {
   drafts?: Drafts | undefined;
   /** Folder cards show a few of their files; off through a shared link's door. */
   peek?: boolean | undefined;
+  /** Dragging items onto folders (`node-drag.tsx`); off without it. */
+  drag?: NodeDrag | undefined;
 }
 
 /** New folders not yet in the list, and their fields' handlers. */
@@ -73,6 +76,7 @@ export const FileSections = memo(function FileSections(props: FileSectionsProps)
               fileUrl={props.fileUrl}
               menu={props.menu}
               peek={props.peek}
+              drag={props.drag}
             />
           )}
         </Section>
@@ -87,6 +91,7 @@ export const FileSections = memo(function FileSections(props: FileSectionsProps)
               href={props.href}
               fileUrl={props.fileUrl}
               menu={props.menu}
+              drag={props.drag}
               selection={{
                 selectionMode: "single",
                 selectionBehavior: "replace",
@@ -186,6 +191,7 @@ function Items(props: {
   menu: (node: StorageNode) => SettingsRowMenuItem[];
   selection?: SelectionProps;
   peek?: boolean | undefined;
+  drag?: NodeDrag | undefined;
 }) {
   const href = (node: StorageNode) => (node.kind === "folder" ? props.href(node) : undefined);
   const drafts = props.drafts?.list ?? [];
@@ -194,9 +200,11 @@ function Items(props: {
     ? [...drafts.map((draft) => ({ id: draft.key, draft, handlers })), ...props.nodes]
     : props.nodes;
   const top = useRevealDraft(drafts.find((d) => d.step === "naming")?.key);
+  const { dragAndDropHooks } = useNodeDragAndDrop(props.nodes, props.drag);
   const list = {
     "aria-label": props.label,
     items,
+    dragAndDropHooks,
     ...props.selection,
     // While a name is typed, arrows and Home/End stay in its field rather than the list's.
     ...(drafts.some((d) => d.step === "naming")
@@ -267,7 +275,7 @@ function FileRow(props: {
       textValue={node.name}
       // The open file keeps the accent fill, as the open thread's row does. 48px: a 32px tile,
       // 8px above and below.
-      className="mx-2.5 h-12 gap-3 rounded-lg ps-2 pe-1 selected:bg-accent"
+      className={`mx-2.5 h-12 gap-3 rounded-lg ps-2 pe-1 selected:bg-accent ${DROP_TARGET}`}
     >
       <FileTile kind={type?.kind ?? "folder"} />
       <span className="min-w-0 flex-1 truncate text-foreground">{node.name}</span>
