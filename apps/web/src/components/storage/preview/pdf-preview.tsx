@@ -1,6 +1,7 @@
 // A PDF, drawn by pdf.js to canvases (ADR 0040): its own script never runs (no eval, no
 // annotation or form layer), and it reads the file by `Range`, so a 300-page PDF opens on its
-// first pages' bytes. Only pages near the screen are drawn; the rest hold their height.
+// first pages' bytes. Only pages near the screen are drawn; the rest hold their height. Box
+// comments sit over each page (`pdf-marks.tsx`).
 // Loaded on its own chunk with pdf.js, the first time a PDF opens.
 import "react-pdf/dist/Page/TextLayer.css";
 import { useEffect, useRef, useState, type RefObject } from "react";
@@ -9,6 +10,7 @@ import { Document, Page, pdfjs } from "react-pdf";
 // oxlint-disable-next-line import/default
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { SkeletonBox } from "skullet/react";
+import { PageMarks } from "./pdf-marks.tsx";
 import { NoPreview, StageLoading } from "./shared.tsx";
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
@@ -88,6 +90,7 @@ function LazyPage(props: {
           loading={<SkeletonBox width={props.width} height={props.height} radius={0} />}
         />
       )}
+      <PageMarks page={props.number} />
     </div>
   );
 }

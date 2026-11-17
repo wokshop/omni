@@ -27,6 +27,12 @@ import {
   uploadsStore,
   type UploadTarget,
 } from "../lib/storage-uploads.ts";
+import {
+  addCommentMutation,
+  deleteCommentMutation,
+  resolveCommentMutation,
+  storageCommentsQuery,
+} from "../lib/storage-comments.ts";
 import { restoreVersionMutation, storageVersionsQuery } from "../lib/storage-versions.ts";
 import { useSession } from "./use-session.ts";
 import { useCurrentWorkspace } from "./use-workspaces.ts";
@@ -154,4 +160,19 @@ export function useStorageLink(
   });
   const nodes = useMemo(() => query.data?.pages.flatMap((page) => page.nodes) ?? [], [query.data]);
   return { ...query, nodes, item: query.data?.pages[0]?.item };
+}
+
+/** A file's comments, oldest first (a member, an Editor or a Commenter only). */
+export function useStorageComments(nodeId: string, shareId?: string) {
+  return useQuery(storageCommentsQuery(nodeId, shareId));
+}
+
+/** Add a thread or reply, resolve a thread, delete a comment of one's own. */
+export function useCommentActions() {
+  const client = useQueryClient();
+  return {
+    add: useMutation(addCommentMutation(client)),
+    resolve: useMutation(resolveCommentMutation(client)),
+    remove: useMutation(deleteCommentMutation(client)),
+  };
 }

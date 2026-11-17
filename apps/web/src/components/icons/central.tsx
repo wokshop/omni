@@ -101,5 +101,7 @@ export { IconFolder1 as IconFolderFilled } from "central-icons-filled/IconFolder
 export { IconHandshake as IconHandshakeFilled } from "central-icons-filled/IconHandshake";
 export { IconArrowUpCircle as IconUpgrade } from "central-icons-outlined/IconArrowUpCircle";
 export { IconConnectors1 as IconConnections } from "central-icons-outlined/IconConnectors1";
+export { IconChatBubbleSimple as IconComment } from "central-icons-outlined/IconChatBubbleSimple";
+export { IconFormSquare as IconCommentArea } from "central-icons-outlined/IconFormSquare";
 // Filled: the current choice's mark in a menu, in the brand colour.
 export { IconCircleCheck as IconCircleCheckFilled } from "central-icons-filled/IconCircleCheck";
