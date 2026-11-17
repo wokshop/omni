@@ -9,7 +9,7 @@
 // Mail has no per-keystroke server search: its search judges relevance with a model and is rate
 // limited, so it stays the menu's "Smart search" row.
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { crmCompaniesQuery, crmDealsQuery, crmFindQuery, crmPeopleQuery } from "../lib/crm.ts";
 import type { CrmCompany, CrmDeal, CrmPerson } from "../lib/crm.ts";
 import { threadsQuery } from "../lib/mail-queries.ts";
@@ -52,21 +52,40 @@ function cached<T>(client: QueryClient, prefix: readonly unknown[], field: strin
   return out;
 }
 
-/** The first `LIMIT` of `items` whose text holds `needle`, one per id, in order. */
+/**
+ * The first `LIMIT` of the cached `items` whose text holds `needle`, then the server's `found`,
+ * one per id, in order. The server's are kept as it matched them (the CRM matches each word on
+ * its own, so "an sm" finds Ann Smith), not filtered again.
+ */
 function pick<T extends { id: string }>(
   items: Iterable<T>,
+  found: readonly T[] | undefined,
   needle: string,
   text: (item: T) => string,
 ): T[] {
   const seen = new Set<string>();
   const out: T[] = [];
-  for (const item of items) {
-    if (out.length >= LIMIT) break;
-    if (seen.has(item.id) || !text(item).toLowerCase().includes(needle)) continue;
+  const add = (item: T) => {
+    if (out.length >= LIMIT || seen.has(item.id)) return;
     seen.add(item.id);
     out.push(item);
-  }
+  };
+  for (const item of items) if (text(item).toLowerCase().includes(needle)) add(item);
+  for (const item of found ?? []) add(item);
   return out;
+}
+
+/** A number that changes whenever a query in the cache gets new data, so hits read it again. */
+function useCacheVersion(client: QueryClient) {
+  const [version, setVersion] = useState(0);
+  useEffect(
+    () =>
+      client.getQueryCache().subscribe((event) => {
+        if (event.type === "updated" && event.action.type === "success") setVersion((v) => v + 1);
+      }),
+    [client],
+  );
+  return version;
 }
 
 const personText = (p: CrmPerson) => [p.name, ...p.addresses.map((a) => a.address)].join(" ");
@@ -90,9 +109,54 @@ export function useWarmCommandSearch(company: boolean) {
   }, [client, company]);
 }
 
+/**
+ * A server answer, split: the one for this very text is kept as the server matched it; an older
+ * one (still on screen while the next loads) counts only where its names hold the text.
+ */
+function split<T>(query: { data?: T | undefined; isPlaceholderData: boolean }, fresh: boolean) {
+  return fresh && !query.isPlaceholderData
+    ? { found: query.data, stale: undefined }
+    : { found: undefined, stale: query.data };
+}
+
+type CrmFound = { companies: CrmCompany[]; people: CrmPerson[]; deals: CrmDeal[] };
+
+function crmHits(
+  client: QueryClient,
+  needle: string,
+  answer: { found?: CrmFound | undefined; stale?: CrmFound | undefined },
+) {
+  const crmKey = keys.crm();
+  const { found, stale } = answer;
+  return {
+    companies: pick(
+      [
+        ...cached<CrmCompany>(client, [...crmKey, "companies"], "companies"),
+        ...(stale?.companies ?? []),
+      ],
+      found?.companies,
+      needle,
+      (c) => c.name,
+    ),
+    people: pick(
+      [...cached<CrmPerson>(client, [...crmKey, "people"], "people"), ...(stale?.people ?? [])],
+      found?.people,
+      needle,
+      personText,
+    ),
+    deals: pick(
+      [...cached<CrmDeal>(client, keys.crmDealLists(), "deals"), ...(stale?.deals ?? [])],
+      found?.deals,
+      needle,
+      (d) => d.name,
+    ),
+  };
+}
+
 /** Records named like `text`: local ones at once, the server's merged in as they arrive. */
 export function useCommandSearch(text: string, company: boolean): CommandHits {
   const client = useQueryClient();
+  const version = useCacheVersion(client);
   const needle = text.trim().toLowerCase();
   const settled = useDebouncedValue(needle, SERVER_DELAY_MS);
   const files = useQuery({ ...storageSearchQuery(settled), placeholderData: (prev) => prev });
@@ -103,55 +167,34 @@ export function useCommandSearch(text: string, company: boolean): CommandHits {
   });
 
   return useMemo(() => {
-    const none = { files: [], companies: [], people: [], deals: [], threads: [] };
-    if (!needle) return { ...none, searching: false };
-    const storage = keys.storage();
-    const crmKey = keys.crm();
-    const found = crm.data;
+    void version; // read again whenever the cache gets new data
+    if (!needle) {
+      return { files: [], companies: [], people: [], deals: [], threads: [], searching: false };
+    }
+    const fresh = settled === needle;
+    const drive = split(files, fresh);
     return {
       // The server's own answers come after the cache's, so what showed first stays put.
       files: pick(
         [
-          ...cached<StorageNode>(client, [...storage, "list"], "nodes"),
+          ...cached<StorageNode>(client, [...keys.storage(), "list"], "nodes"),
           ...cached<StorageNode>(client, keys.storageSharedWithMe(), "nodes"),
-          ...(files.data?.nodes ?? []),
+          ...(drive.stale?.nodes ?? []),
         ],
+        drive.found?.nodes,
         needle,
         (n) => n.name,
       ),
-      companies: company
-        ? pick(
-            [
-              ...cached<CrmCompany>(client, [...crmKey, "companies"], "companies"),
-              ...(found?.companies ?? []),
-            ],
-            needle,
-            (c) => c.name,
-          )
-        : [],
-      people: company
-        ? pick(
-            [
-              ...cached<CrmPerson>(client, [...crmKey, "people"], "people"),
-              ...(found?.people ?? []),
-            ],
-            needle,
-            personText,
-          )
-        : [],
-      deals: company
-        ? pick(
-            [...cached<CrmDeal>(client, keys.crmDealLists(), "deals"), ...(found?.deals ?? [])],
-            needle,
-            (d) => d.name,
-          )
-        : [],
+      ...(company
+        ? crmHits(client, needle, split(crm, fresh))
+        : { companies: [], people: [], deals: [] }),
       threads: pick(
         cached<ThreadSummary>(client, keys.threadLists(), "threads"),
+        undefined,
         needle,
         threadText,
       ),
-      searching: settled !== needle || files.isFetching || crm.isFetching,
+      searching: !fresh || files.isFetching || crm.isFetching,
     };
-  }, [client, needle, settled, company, files.data, files.isFetching, crm.data, crm.isFetching]);
+  }, [version, client, needle, settled, company, files, crm]);
 }

@@ -1,6 +1,7 @@
 // The command menu's records: Drive's files and folders, the CRM's companies, people and deals,
 // and mail, found by name (`useCommandSearch`). Rows match on their names, as cmdk's filter keeps
 // only rows whose keywords fit what was typed.
+import { Skeleton, SkeletonBox } from "skullet/react";
 import { IconBuildings, IconHandshake, IconUserRound } from "@/components/icons/central";
 import { IconEmail } from "@/components/icons/sidebar";
 import { FileGlyph } from "@/components/storage/file-glyph.tsx";
@@ -151,5 +152,24 @@ export function MessageGroup(props: {
         );
       })}
     </CommandGroup>
+  );
+}
+
+/** What the list shows while the server looks for names nothing on hand matched. */
+export function ResultBones() {
+  return (
+    <Skeleton
+      loading
+      label="Searching"
+      skeleton={
+        <div className="flex flex-col gap-1 px-2">
+          {Array.from({ length: 3 }, (_, i) => (
+            <SkeletonBox key={i} width="100%" height={36} radius="var(--radius-lg)" />
+          ))}
+        </div>
+      }
+    >
+      {null}
+    </Skeleton>
   );
 }

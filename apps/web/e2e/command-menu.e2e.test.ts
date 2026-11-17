@@ -100,8 +100,13 @@ test("⌘K opens the command menu anywhere, finds a thread and marks it done", a
 
   await page.keyboard.press("Control+k");
   await page.keyboard.type("mark done");
+  // Leaving the page before Done's request is sent would cancel it, so wait for its answer.
+  const done = page.waitForResponse(
+    (res) => res.request().method() === "POST" && /\/threads\/[^/]+\/done$/.test(res.url()),
+  );
   await page.keyboard.press("Enter");
   await menu.waitFor({ state: "hidden" });
+  await done;
   await page.goto(new URL("/menu/mail/inbox", origin).toString());
   await page.getByRole("main").waitFor();
   await expect.poll(() => page.getByText("Quarterly freight rates").count()).toBe(0);

@@ -47,7 +47,7 @@ import { COMMAND_IDS, keyLabel, SHORTCUTS, type ShortcutId } from "@/lib/shortcu
 import type { StorageNode } from "@/lib/storage.ts";
 import { workspaceHref } from "@/lib/workspaces.ts";
 import { CRM_PAGES, drivePages, MAIL_PAGES, type Page } from "./command-pages";
-import { RecordGroups } from "./command-results.tsx";
+import { RecordGroups, ResultBones } from "./command-results.tsx";
 
 // The command menu: a centred cmdk modal over the dimmed app (transitive's workspace search as
 // the reference). "/" or ⌘K opens it from anywhere in a workspace; ⌘K closes it again. Its pills
@@ -120,8 +120,11 @@ const filter = (value: string, search: string, keywords?: string[]) =>
 export function CommandMenu() {
   const [open, setOpen] = useState(false);
   const [seed, setSeed] = useState<SearchSeed | undefined>();
+  // Each opening mounts a fresh panel, even one made while the last is still animating out.
+  const [opening, setOpening] = useState(0);
   const show = (next?: SearchSeed) => {
     setSeed(next);
+    setOpening((n) => n + 1);
     setOpen(true);
   };
   useShortcut("search", () => show());
@@ -135,7 +138,7 @@ export function CommandMenu() {
 
   return (
     <CommandDialog label="Search and commands" isOpen={open} onOpenChange={setOpen}>
-      <MenuPanel seed={seed} onClose={() => setOpen(false)} />
+      <MenuPanel key={opening} seed={seed} onClose={() => setOpen(false)} />
     </CommandDialog>
   );
 }
@@ -252,7 +255,7 @@ function MenuPanel({ seed, onClose }: { seed?: SearchSeed | undefined; onClose: 
         }}
       />
       <CommandList>
-        <CommandEmpty>{hits.searching ? <Loader /> : "No results found."}</CommandEmpty>
+        <CommandEmpty>{hits.searching ? <ResultBones /> : "No results found."}</CommandEmpty>
         {show.mail && <PageGroup heading="Mail" pages={MAIL_PAGES} onOpen={openPage} />}
         {show.files && <PageGroup heading="Drive" pages={drivePages(company)} onOpen={openPage} />}
         {show.crm && company && <PageGroup heading="CRM" pages={CRM_PAGES} onOpen={openPage} />}
