@@ -97,7 +97,7 @@ test("files and folders move by dragging them onto folders on the page and in th
     .toEqual(["Drafts", "Photos", "forest.png"]);
   expect(await names(page, { space: "personal" })).toEqual(["Projects"]);
   expect(await names(page, { parent: photos })).toEqual(["sunset.png"]);
-}, 120_000);
+});
 
 // Catches: the sidebar's folders not taking a keyboard drag (React Aria moves focus between drop
 // targets, so a target that cannot take focus is skipped), leaving the page-to-sidebar move to
@@ -131,7 +131,7 @@ test("a file moves to a sidebar folder with the keyboard", async () => {
   expect(await sidebar.evaluate((el) => el === document.activeElement)).toBe(true);
   await page.keyboard.press("Enter");
   await expect.poll(() => names(page, { parent: archive })).toEqual(["notes.txt"]);
-}, 120_000);
+});
 
 /** Drags with the mouse, as a person does: pressed, moved past the threshold, held, let go. */
 async function drag(page: Page, from: Locator, to: Locator) {
