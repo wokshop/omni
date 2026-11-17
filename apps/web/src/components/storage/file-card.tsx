@@ -87,8 +87,6 @@ function Thumbnail(props: { node: StorageNode; url: string; of: { raster: string
           className="size-8 text-muted-foreground"
         />
       )}
-      {/* A PDF's page lies on PDF red, once it has drawn. */}
-      {props.of === "pdf" && shown && <span aria-hidden className="absolute inset-0 bg-danger" />}
       {thumb.data && (
         <img
           src={thumb.data.url}
@@ -97,8 +95,9 @@ function Thumbnail(props: { node: StorageNode; url: string; of: { raster: string
           draggable={false}
           onLoad={() => setShown(true)}
           // A photo fills the square. A PDF's page is a sheet laid on it: its top-left corner in
-          // from the square's, the rest running off the right and bottom edges.
-          className={`absolute ${props.of === "pdf" ? "start-[12%] top-[12%] w-full max-w-none rounded-ss-sm border-s border-t border-foreground/10" : "inset-0 size-full object-cover"} transition-opacity duration-200 ease-out motion-reduce:transition-none ${shown ? "opacity-100" : "opacity-0"}`}
+          // from the square's, the rest running off the right and bottom edges. Hovering the card
+          // lifts the sheet toward that corner, a touch larger.
+          className={`absolute ${props.of === "pdf" ? "start-[12%] top-[12%] w-full max-w-none origin-top-left rounded-ss-sm border-s border-t border-foreground/10 group-hover:-translate-x-[4%] group-hover:-translate-y-[4%] group-hover:scale-[1.04]" : "inset-0 size-full object-cover"} transition-[opacity,translate,scale] duration-200 ease-out motion-reduce:transition-none ${shown ? "opacity-100" : "opacity-0"}`}
         />
       )}
     </>
