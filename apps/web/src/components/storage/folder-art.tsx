@@ -14,19 +14,19 @@ import { FileGlyph } from "./file-glyph.tsx";
 type Spot = readonly [left: number, top: number, width: number, height: number];
 
 // Where each card sits (percent of the square), by how many there are, the front card first.
-// Spread so cards overlap only at their edges and every card's middle, where its glyph sits,
-// stays in view; the stack as a whole sits a touch above the square's middle.
+// Close enough to read as one stack, each card overlapping its neighbours by about a quarter,
+// while every card's middle, where its glyph sits, stays mostly in view.
 const EMPTY: Spot = [27, 22, 46, 50];
 const STACK: readonly (readonly Spot[])[] = [
   [EMPTY],
   [
-    [42, 42, 42, 40],
-    [18, 16, 44, 44],
+    [40, 40, 40, 40],
+    [20, 18, 42, 42],
   ],
   [
-    [29, 47, 42, 38],
-    [10, 13, 40, 37],
-    [50, 19, 40, 37],
+    [30, 41, 40, 38],
+    [16, 18, 40, 37],
+    [44, 16, 40, 37],
   ],
 ];
 
