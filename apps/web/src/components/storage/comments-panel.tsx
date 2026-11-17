@@ -1,14 +1,14 @@
 // A file's comments (ADR 0043 decisions 4 and 5) beside its folder, where the preview opens, and
 // narrower. Drawn as the notifications panel draws its events, not as a chat: a 48px top bar
 // ("Comments", the file's name, Close), Open and Resolved tabs, and full-width rows ruled like the
-// notification rows, one per comment. A row is who wrote it (a 28px squircle, the name, where it
-// points, the time) and what they wrote; the replies to it follow as plain lines in the same row,
-// and Reply opens a field at its end. Resolve (✓, on hover) moves the row to Resolved and Reopen
-// brings it back; a reply reopens it too (the API's rule). The box at the bottom leaves a new
-// comment on the version on screen.
+// notification rows, one per thread. Inside a row the thread reads as Notion draws a discussion:
+// every message on the same level, a thin line joining their squircles, where it points quoted
+// in the first, and Reply's field at the end. Resolve (✓, on hover) moves the row to Resolved and
+// Reopen brings it back; a reply reopens it too (the API's rule). The box at the bottom leaves a
+// new comment on the version on screen.
 //
-// Geometry: rows 20px all round, the text 12px past the squircle; replies 12px apart, 16px under
-// the comment; the box 8px from the panel's sides so its text starts on the rows' edge.
+// Geometry: rows 20px from the sides and 16px from their rules; text 12px past the squircle;
+// messages 20px apart; the box 8px from the panel's sides so its text starts on the rows' edge.
 import { useLayoutEffect, useRef, useState, type Key, type ReactNode } from "react";
 import { Skeleton } from "skullet/react";
 import {
@@ -20,13 +20,7 @@ import {
   IconX,
 } from "@/components/icons/central";
 import { ChatBox } from "@/components/chat/chat-box";
-import {
-  ChatEdit,
-  ChatFace,
-  ChatMenu,
-  ChatText,
-  menuButtonClass,
-} from "@/components/chat/chat-message";
+import { ChatEdit, ChatMenu, ChatText, menuButtonClass } from "@/components/chat/chat-message";
 import { messageTime } from "@/components/conversation/message.tsx";
 import { CountBadge } from "@/components/shell/count-badge";
 import { Avatar } from "@/components/ui/avatar";
@@ -42,6 +36,7 @@ import {
   useDeleteComment,
   useStorageComments,
 } from "@/hooks/use-storage.ts";
+import { useSession } from "@/hooks/use-session.ts";
 import type { StorageNode } from "@/lib/storage.ts";
 import {
   commentAuthor,
@@ -215,16 +210,20 @@ export function CommentsPanel(props: {
   );
 }
 
-/** Where it points and the earlier version it was left on, as quiet words after the name. */
-function tagsOf(comment: StorageComment, earlier: boolean) {
+/** Where it points and the earlier version it was left on, quoted at the top of the thread. */
+function quoteOf(comment: StorageComment, earlier: boolean) {
   return [anchorLabel(comment.anchor), earlier && "Earlier version"].filter(Boolean).join(" · ");
 }
 
-/** A squircle: 28px with 6px corners, as on a notification row. */
+/** A 24px squircle, as tall as the name's line beside it. */
 const AVATAR =
-  "shrink-0 bg-accent text-foreground outline-0 [--avatar-radius:var(--radius-lg)] [--avatar-size:--spacing(7)]";
+  "shrink-0 bg-accent text-foreground outline-0 [--avatar-radius:var(--radius-md)] [--avatar-size:--spacing(6)]";
 
-/** One comment, the replies under it, and Reply's field when it is open. */
+/**
+ * One thread as Notion draws a discussion: every message on the same level (a 24px squircle, the
+ * name and time, the text under the name), a thin line joining the squircles down the thread,
+ * and Reply's field at its end, behind the replier's own squircle.
+ */
 function CommentRow(props: {
   door: Door;
   thread: StorageThread;
@@ -233,8 +232,9 @@ function CommentRow(props: {
   onReplying: (on: boolean) => void;
 }) {
   const { door, thread } = props;
-  const { root, replies } = thread;
-  const name = commentAuthor(root);
+  const { root } = thread;
+  const messages = [root, ...thread.replies];
+  const me = useSession().data?.user.name ?? "";
   const change = useChangeComment();
   const resolve = (resolved: boolean) =>
     change.mutate(
@@ -242,64 +242,70 @@ function CommentRow(props: {
       { onError: (error) => storageErrorToast(error, "It was not changed") },
     );
   const resolved = !!root.resolvedAt;
+  const onReply = () => props.onReplying(true);
   return (
-    <li className="flex gap-3 border-b p-5" aria-label={`Comment from ${name}`}>
-      <Avatar isSquare initials={name.slice(0, 1).toUpperCase()} className={AVATAR} />
-      <div className="flex min-w-0 flex-1 flex-col gap-4">
-        <Line
-          door={door}
-          comment={root}
-          tags={tagsOf(root, props.earlier)}
-          actions={
-            <TooltipTrigger delay={400}>
-              <Button
-                intent="ghost"
-                size="sq-2xs"
-                aria-label={resolved ? "Reopen" : "Resolve"}
-                // Shown on hover or focus, as the ⋯ beside it (always on touch screens).
-                className={menuButtonClass({})}
-                onPress={() => resolve(!resolved)}
-              >
-                {resolved ? <IconRestore /> : <IconCheck />}
-              </Button>
-              <Tooltip>{resolved ? "Reopen" : "Resolve"}</Tooltip>
-            </TooltipTrigger>
-          }
-          onReply={() => props.onReplying(true)}
-        />
-        {replies.map((reply) => (
-          <Line
-            key={reply.id}
+    <li className="border-b px-5 py-4" aria-label={`Comment from ${commentAuthor(root)}`}>
+      <ol>
+        {messages.map((comment, index) => (
+          <Message
+            key={comment.id}
             door={door}
-            comment={reply}
-            face
-            onReply={() => props.onReplying(true)}
+            comment={comment}
+            joined={index < messages.length - 1 || props.replying}
+            {...(index === 0 && {
+              quote: quoteOf(root, props.earlier),
+              actions: (
+                <TooltipTrigger delay={400}>
+                  <Button
+                    intent="ghost"
+                    size="sq-2xs"
+                    aria-label={resolved ? "Reopen" : "Resolve"}
+                    // Shown on hover or focus, as the ⋯ beside it (always on touch screens).
+                    className={menuButtonClass({})}
+                    onPress={() => resolve(!resolved)}
+                  >
+                    {resolved ? <IconRestore /> : <IconCheck />}
+                  </Button>
+                  <Tooltip>{resolved ? "Reopen" : "Resolve"}</Tooltip>
+                </TooltipTrigger>
+              ),
+            })}
+            onReply={onReply}
           />
         ))}
         {props.replying && (
-          <CommentBox
-            door={door}
-            label="Reply"
-            sendLabel="Send reply"
-            extra={{ parentId: root.id }}
-            autoFocus
-            onCancel={() => props.onReplying(false)}
-          />
+          <li className="flex gap-3">
+            {/* Centred on the box's one row. */}
+            <span className="pt-2">
+              <Avatar isSquare initials={me.slice(0, 1).toUpperCase()} className={AVATAR} />
+            </span>
+            <div className="min-w-0 flex-1">
+              <CommentBox
+                door={door}
+                label="Reply"
+                sendLabel="Send reply"
+                extra={{ parentId: root.id }}
+                autoFocus
+                onCancel={() => props.onReplying(false)}
+              />
+            </div>
+          </li>
         )}
-      </div>
+      </ol>
     </li>
   );
 }
 
 /**
- * Who wrote it, where it points and when, its actions at the end; then what they wrote. A reply
- * wears an 18px face before its name, the comment the row's squircle.
+ * One message of a thread: the squircle, and under it the line down to the next one when
+ * `joined`; beside it who wrote it and when with its actions at the end, the thread's quote on
+ * the first, then what they wrote.
  */
-function Line(props: {
+function Message(props: {
   door: Door;
   comment: StorageComment;
-  tags?: string;
-  face?: boolean;
+  joined: boolean;
+  quote?: string;
   actions?: ReactNode;
   onReply: () => void;
 }) {
@@ -310,68 +316,75 @@ function Line(props: {
   const name = commentAuthor(comment);
   const target = { ...withShare(door), commentId: comment.id };
   return (
-    <div className="group/item flex flex-col gap-1">
-      <span className="flex min-w-0 items-center gap-2">
-        {props.face && <ChatFace name={name} />}
-        <span className="min-w-0 truncate text-sm text-foreground">{name}</span>
-        {props.tags && (
-          <span className="shrink-0 text-xs text-subtle-foreground">{props.tags}</span>
-        )}
-        <time
-          dateTime={comment.createdAt}
-          className="shrink-0 text-xs text-subtle-foreground tabular-nums"
-        >
-          {messageTime(comment.createdAt)}
-          {comment.editedAt && " · edited"}
-        </time>
-        <span className="ms-auto flex shrink-0 items-center gap-0.5">
-          {props.actions}
-          {!editing && (
-            <ChatMenu label="Comment actions">
-              <MenuItem textValue="Reply" onAction={props.onReply}>
-                <IconReply data-slot="icon" />
-                <MenuLabel>Reply</MenuLabel>
-              </MenuItem>
-              {comment.mine && (
-                <>
-                  <MenuItem textValue="Edit" onAction={() => setEditing(true)}>
-                    <IconPencil data-slot="icon" />
-                    <MenuLabel>Edit</MenuLabel>
-                  </MenuItem>
-                  <MenuItem
-                    intent="danger"
-                    textValue="Delete"
-                    onAction={() =>
-                      remove.mutate(target, {
-                        onError: (error) => storageErrorToast(error, "It was not deleted"),
-                      })
-                    }
-                  >
-                    <IconTrash data-slot="icon" />
-                    <MenuLabel>Delete</MenuLabel>
-                  </MenuItem>
-                </>
-              )}
-            </ChatMenu>
-          )}
-        </span>
+    <li className="group/item flex gap-3">
+      <span className="flex shrink-0 flex-col items-center">
+        <Avatar isSquare initials={name.slice(0, 1).toUpperCase()} className={AVATAR} />
+        {props.joined && <span aria-hidden className="my-1.5 w-px flex-1 bg-border" />}
       </span>
-      {editing ? (
-        <ChatEdit
-          label="Edit comment"
-          text={comment.body}
-          onDone={() => setEditing(false)}
-          onSave={(body) =>
-            change.mutate(
-              { ...target, change: { body } },
-              { onError: (error) => storageErrorToast(error, "It was not saved") },
-            )
-          }
-        />
-      ) : (
-        <ChatText>{comment.body}</ChatText>
-      )}
-    </div>
+      <div className={`flex min-w-0 flex-1 flex-col gap-1 ${props.joined ? "pb-5" : ""}`}>
+        <span className="flex h-6 min-w-0 items-center gap-2">
+          <span className="min-w-0 truncate text-sm font-medium text-foreground">{name}</span>
+          <time
+            dateTime={comment.createdAt}
+            className="shrink-0 text-xs text-subtle-foreground tabular-nums"
+          >
+            {messageTime(comment.createdAt)}
+            {comment.editedAt && " · edited"}
+          </time>
+          <span className="ms-auto flex shrink-0 items-center gap-0.5">
+            {props.actions}
+            {!editing && (
+              <ChatMenu label="Comment actions">
+                <MenuItem textValue="Reply" onAction={props.onReply}>
+                  <IconReply data-slot="icon" />
+                  <MenuLabel>Reply</MenuLabel>
+                </MenuItem>
+                {comment.mine && (
+                  <>
+                    <MenuItem textValue="Edit" onAction={() => setEditing(true)}>
+                      <IconPencil data-slot="icon" />
+                      <MenuLabel>Edit</MenuLabel>
+                    </MenuItem>
+                    <MenuItem
+                      intent="danger"
+                      textValue="Delete"
+                      onAction={() =>
+                        remove.mutate(target, {
+                          onError: (error) => storageErrorToast(error, "It was not deleted"),
+                        })
+                      }
+                    >
+                      <IconTrash data-slot="icon" />
+                      <MenuLabel>Delete</MenuLabel>
+                    </MenuItem>
+                  </>
+                )}
+              </ChatMenu>
+            )}
+          </span>
+        </span>
+        {props.quote && (
+          <p className="truncate border-s-2 border-border ps-2 text-sm/5 text-muted-foreground">
+            {props.quote}
+          </p>
+        )}
+        {editing ? (
+          <ChatEdit
+            label="Edit comment"
+            text={comment.body}
+            onDone={() => setEditing(false)}
+            onSave={(body) =>
+              change.mutate(
+                { ...target, change: { body } },
+                { onError: (error) => storageErrorToast(error, "It was not saved") },
+              )
+            }
+          />
+        ) : (
+          <ChatText>{comment.body}</ChatText>
+        )}
+      </div>
+    </li>
   );
 }
 
