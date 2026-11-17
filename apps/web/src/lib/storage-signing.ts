@@ -26,6 +26,14 @@ export const storageSignaturesQuery = (nodeId: string) =>
     queryKey: keys.storageSignatures(nodeId),
     queryFn: ({ signal }) =>
       call(memberDoor().$get({ param: { id: nodeId } }, { init: { signal } })),
+    // Signers sign elsewhere and no realtime event says so: ask again while one is still to
+    // come (every 15 s), then until the signed copy is there (every 2 s).
+    refetchInterval: (query) => {
+      const requests = query.state.data?.requests ?? [];
+      if (requests.some((r) => r.status === "completed" && !r.sealedSha256)) return 2000;
+      if (requests.some((r) => r.status === "sent")) return 15_000;
+      return false;
+    },
   });
 
 /** `mutate({ id, signers })` sends the file: it is locked and each signer gets a mail. */
