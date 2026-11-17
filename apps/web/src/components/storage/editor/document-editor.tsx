@@ -3,6 +3,7 @@
 // version the editor opened (decision 3): if someone saved since, the person keeps theirs or
 // takes the newer one. While it is open, the others who see the file hear "editing".
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useBlocker } from "@tanstack/react-router";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { SkeletonBox } from "skullet/react";
 import { Button } from "@/components/ui/button";
@@ -75,6 +76,13 @@ export function useEditSession(node: StorageNode, url: string, shareId: string |
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
 
+  // Leaving the file, the folder or the page in the app with unsaved changes asks first.
+  const leaving = useBlocker({
+    shouldBlockFn: () => dirty,
+    enableBeforeUnload: false,
+    withResolver: true,
+  });
+
   // Shared links have no socket: presence is for members.
   useReportEditing(editing && !shareId ? node : undefined);
 
@@ -98,8 +106,10 @@ export function useEditSession(node: StorageNode, url: string, shareId: string |
         confirm: async () => {},
       });
       base.current = saved.contentVersion;
-      if (changes.current === at) setDirty(false);
       void storageChanged(client);
+      // Typed while it saved: still unsaved, and not done.
+      if (changes.current !== at) return false;
+      setDirty(false);
       return true;
     } catch (error) {
       const now = Number((error instanceof ApiError && error.details?.contentVersion) ?? NaN);
@@ -119,6 +129,8 @@ export function useEditSession(node: StorageNode, url: string, shareId: string |
     dirty,
     saving,
     conflict,
+    /** A move away from the file while it has unsaved changes, held until the person picks. */
+    leaving,
     start: () => {
       base.current = node.contentVersion;
       changes.current = 0;
@@ -203,7 +215,38 @@ export function DocumentEditor(props: { session: EditSession; onDownload: () => 
         />
       </Suspense>
       <ConflictDialog session={session} />
+      <LeaveDialog session={session} />
     </div>
+  );
+}
+
+/** Leaving with unsaved changes: save them first, drop them, or stay. */
+function LeaveDialog(props: { session: EditSession }) {
+  const { session } = props;
+  const { leaving } = session;
+  if (leaving.status !== "blocked") return null;
+  return (
+    <Dialog role="alertdialog" size="sm" isOpen onOpenChange={(open) => !open && leaving.reset()}>
+      <DialogHeader className="pe-0">
+        <DialogTitle>Save your changes?</DialogTitle>
+      </DialogHeader>
+      <DialogFooter>
+        <Button intent="plain" onPress={leaving.reset}>
+          Cancel
+        </Button>
+        <Button intent="outline" onPress={leaving.proceed}>
+          Don’t save
+        </Button>
+        <Button
+          isPending={session.saving}
+          onPress={() =>
+            void session.save().then((saved) => (saved ? leaving.proceed : leaving.reset)())
+          }
+        >
+          Save
+        </Button>
+      </DialogFooter>
+    </Dialog>
   );
 }
 

@@ -247,10 +247,12 @@ function useOpenFile(list: FolderSource["list"]): OpenFile {
   }, [nodes, file, select]);
 }
 
-/** Keys inside these belong to them: fields, media controls and open menus. */
+/** Keys inside these belong to them: fields, editors, media controls and open menus. */
 function isControl(target: EventTarget) {
   return (
     target instanceof Element &&
-    !!target.closest("input, textarea, select, video, audio, [role=menu], [role=slider]")
+    !!target.closest(
+      "input, textarea, select, [contenteditable=true], video, audio, [role=menu], [role=slider]",
+    )
   );
 }
