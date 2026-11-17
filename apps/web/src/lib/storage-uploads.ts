@@ -155,14 +155,14 @@ async function run(job: Job) {
 }
 
 /**
- * The file in its folder's cached list at once, through the member's door; a link's door, whose
- * lists are its own, refetches all of Storage. Usage grows, and a new version joins the file's.
+ * A new file shows in its folder's cached list at once, and usage grows. A new version of a file
+ * changes what hangs off it (its versions, its comments' content version, its signatures), and a
+ * link's door has lists of its own: both refetch all of Storage.
  */
 async function uploaded(job: Job, node: StorageNode) {
-  if (job.shareId) return storageChanged(job.client);
+  if (job.shareId || job.replaces) return storageChanged(job.client);
   await storageNodeChanged(job.client, node);
   void job.client.invalidateQueries({ queryKey: keys.storageUsage() });
-  if (job.replaces) void job.client.invalidateQueries({ queryKey: keys.storageVersions(node.id) });
 }
 
 /** Starts the next queued file, unless one is on its way. */
