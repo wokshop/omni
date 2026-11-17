@@ -39,7 +39,7 @@ export function SidebarGroup(props: { space: StorageSpace; search: string }) {
 
 function Clusters(props: { space: StorageSpace; search: string }) {
   const root = useStorageList({ space: props.space });
-  const icons = useFolderIcons(props.space);
+  const { icons } = useFolderIcons(props.space);
   if (root.isPending) return <SidebarTreeBones depth={1} />;
   return folders(root.nodes).map((node) => (
     <Cluster key={node.id} node={node} icon={icons[node.id]} search={props.search} />

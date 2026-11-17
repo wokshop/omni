@@ -80,8 +80,11 @@ const FOLDER = "folder";
 /** Picks a top-level folder's sidebar glyph, the folder first. */
 export function FolderIconDialog(props: { node: StorageNode; onClose: () => void }) {
   const change = useChangeNode();
-  const current = useFolderIcons(props.node.space)[props.node.id];
-  const [picked, setPicked] = useState<string>(known(current) ? current : FOLDER);
+  const saved = useFolderIcons(props.node.space);
+  const current = saved.icons[props.node.id];
+  // Null until the member picks one: until then the saved glyph shows, once it has loaded.
+  const [choice, setChoice] = useState<string | null>(null);
+  const picked = choice ?? (known(current) ? current : FOLDER);
   const save = () =>
     change.mutate(
       { id: props.node.id, icon: picked === FOLDER ? null : (picked as FolderIconKey) },
@@ -104,7 +107,7 @@ export function FolderIconDialog(props: { node: StorageNode; onClose: () => void
           selectedKeys={[picked]}
           onSelectionChange={(keys) => {
             const [key] = [...keys];
-            if (key !== undefined) setPicked(String(key));
+            if (key !== undefined) setChoice(String(key));
           }}
           className="flex-wrap"
         >
@@ -120,7 +123,12 @@ export function FolderIconDialog(props: { node: StorageNode; onClose: () => void
       </DialogBody>
       <DialogFooter>
         <DialogClose>Cancel</DialogClose>
-        <Button isPending={change.isPending} onPress={save}>
+        {/* Saving before the glyph loads would clear it. */}
+        <Button
+          isPending={change.isPending}
+          isDisabled={choice === null && !saved.isLoaded}
+          onPress={save}
+        >
           Save
         </Button>
       </DialogFooter>

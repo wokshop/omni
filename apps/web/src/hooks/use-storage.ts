@@ -64,8 +64,9 @@ export function useStorageSearch(q: string) {
 }
 
 /** A drive's cluster glyphs by folder id; empty until they load, or if they fail to. */
-export function useFolderIcons(space: StorageSpace): Record<string, string> {
-  return useQuery(storageFolderIconsQuery(space)).data?.icons ?? {};
+export function useFolderIcons(space: StorageSpace) {
+  const query = useQuery(storageFolderIconsQuery(space));
+  return { icons: query.data?.icons ?? {}, isLoaded: query.isSuccess };
 }
 
 /** True in a company workspace: only those have Shared (a Personal space has My files alone). */
