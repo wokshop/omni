@@ -311,6 +311,7 @@ const NOTIFICATION_KINDS: Record<NotificationKind, true> = {
   sla_breached: true,
   note: true,
   member_joined: true,
+  comment: true,
 };
 
 const isId = (value: unknown): value is string => typeof value === "string" && value.length > 0;
