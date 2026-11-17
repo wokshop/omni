@@ -142,27 +142,24 @@ export function CommentsPanel(props: {
           <Tab id="resolved">Resolved</Tab>
         </TabList>
       </Tabs>
-      <div ref={scroller} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto">
-        <Skeleton
-          id="storage-comments"
-          data={comments.data}
-          sample={SAMPLE}
-          label="Loading comments"
-        >
-          {(state) => {
-            const threads = threadsOf(state.comments, view === "resolved");
-            if (threads.length === 0) {
-              return (
-                <EmptyState
-                  figure="dish"
-                  title={view === "resolved" ? "No resolved comments" : "No comments"}
-                  className="h-full p-5 pb-16"
-                />
-              );
-            }
-            return (
+      {/* Nothing in this tab: the app's empty state, in the middle of the panel. */}
+      {comments.data && threadsOf(comments.data.comments, view === "resolved").length === 0 ? (
+        <EmptyState
+          figure="dish"
+          title={view === "resolved" ? "No resolved comments" : "No comments"}
+          className="min-h-0 p-5 pb-24"
+        />
+      ) : (
+        <div ref={scroller} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto">
+          <Skeleton
+            id="storage-comments"
+            data={comments.data}
+            sample={SAMPLE}
+            label="Loading comments"
+          >
+            {(state) => (
               <ul>
-                {threads.map((thread) => (
+                {threadsOf(state.comments, view === "resolved").map((thread) => (
                   <CommentRow
                     key={thread.root.id}
                     door={door}
@@ -172,10 +169,10 @@ export function CommentsPanel(props: {
                   />
                 ))}
               </ul>
-            );
-          }}
-        </Skeleton>
-      </div>
+            )}
+          </Skeleton>
+        </div>
+      )}
     </section>
   );
 }
