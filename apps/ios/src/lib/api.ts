@@ -1,11 +1,18 @@
 // The app's one API and auth client, from `@omni/client` like the web app's. Native requests
 // carry the session the auth client keeps in the Keychain (SecureStore) as a `Cookie` header.
 import { expoClient } from "@better-auth/expo/client";
-import { createApi, createAuth, toApiError, type ApiErrorInfo } from "@omni/client";
+import {
+  WORKSPACE_HEADER,
+  createApi,
+  createAuth,
+  toApiError,
+  type ApiErrorInfo,
+} from "@omni/client";
 import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
 import { DetailedError, parseResponse, type ClientResponse } from "hono/client";
 import { config } from "./config.ts";
+import { currentWorkspaceId } from "./workspace-id.ts";
 
 /** Where the auth client keeps the session: `<prefix>_cookie` in SecureStore. */
 export const STORAGE_PREFIX = "omni";
@@ -17,9 +24,16 @@ export const auth = createAuth({
   ],
 });
 
-/** Typed Hono RPC calls with the session attached. Prefer `call()` to unwrap them. */
+/**
+ * Typed Hono RPC calls with the session attached, naming the app's workspace. Prefer `call()` to
+ * unwrap them.
+ */
 export const api = createApi({
   baseUrl: config.apiUrl,
+  headers: (): Record<string, string> => {
+    const workspace = currentWorkspaceId();
+    return workspace ? { [WORKSPACE_HEADER]: workspace } : {};
+  },
   fetch: async (input, init) => {
     // In a browser (Expo's web target) the session is a first-party cookie, as for the web app.
     if (Platform.OS === "web") return fetch(input, { ...init, credentials: "include" });

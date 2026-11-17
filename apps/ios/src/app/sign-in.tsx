@@ -18,7 +18,7 @@ export default function SignIn() {
   const [email, setEmail] = useState("");
   const link = useMutation({ mutationFn: requestSignInLink });
 
-  if (session.data) return <Redirect href="/" />;
+  if (session.data) return <Redirect href="/mail" />;
 
   const sentTo = link.isSuccess ? link.variables : undefined;
   return (

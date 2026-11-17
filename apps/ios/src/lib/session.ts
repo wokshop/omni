@@ -7,6 +7,7 @@ import * as SecureStore from "expo-secure-store";
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import { STORAGE_PREFIX, auth } from "./api.ts";
 import { queryClient } from "./query-client.ts";
+import { storeWorkspaceId } from "./workspace-id.ts";
 
 // The same storage object the auth client wraps, so both share one view of the stored cookie.
 const storage = storageAdapter(SecureStore);
@@ -41,6 +42,7 @@ export async function signOut() {
   // Nothing of this person's mail outlives their session on this phone.
   await queryClient.cancelQueries();
   queryClient.clear();
+  storeWorkspaceId(null);
 }
 
 type SessionState = ReturnType<typeof auth.useSession.get>;
@@ -64,6 +66,7 @@ export function useClearCacheOnUserChange() {
     if (last.current !== null && last.current !== userId) {
       void queryClient.cancelQueries();
       queryClient.clear();
+      storeWorkspaceId(null);
     }
     last.current = userId;
   }, [userId]);
