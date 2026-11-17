@@ -3,7 +3,12 @@
 // section label), two groups, each glyph on a tile so they stand out from their folders: Team (a
 // company's Shared: a Personal space has none) and Personal (My files).
 import type { ReactNode } from "react";
-import { IconFolderShared, IconUpload, IconUserRound, IconUsers } from "@/components/icons/central";
+import {
+  IconFolderShared,
+  IconUpload,
+  IconUserRoundFilled,
+  IconUsersFilled,
+} from "@/components/icons/central";
 import { IconSearch, IconTrash } from "@/components/icons/sidebar";
 import { FileTrigger } from "@/components/ui/file-trigger";
 import {
@@ -26,12 +31,12 @@ export const SPACE_PATH = { personal: "/files/my", shared: "/files/shared" } as 
 export const SPACE_ICON = {
   personal: (
     <GroupMark>
-      <IconUserRound className="size-3" />
+      <IconUserRoundFilled className="size-3.5 text-tooltip" />
     </GroupMark>
   ),
   shared: (
     <GroupMark>
-      <IconUsers className="size-3" />
+      <IconUsersFilled className="size-3.5 text-tooltip" />
     </GroupMark>
   ),
 } as const;
@@ -39,15 +44,15 @@ export const SPACE_ICON = {
 type Row = { label: string; path: string; icon: ReactNode; company?: boolean };
 
 /**
- * A place's glyph on a grey tile with a hairline edge: the module switcher's mark, quieter, so the
- * groups stand out from the folders under them. 18px, pulled 1.5px into the gap on each side, so its
- * labels start where the 15px glyphs' rows do.
+ * A group's filled glyph, in coal, on a grey tile: the module switcher's mark, quieter, so the
+ * groups stand out from the folders under them. 20px, pulled 2.5px into the gap on each side, so
+ * its label starts where the 15px glyphs' rows do.
  */
 function GroupMark({ children }: { children: ReactNode }) {
   return (
     <span
       aria-hidden
-      className="-mx-[1.5px] grid size-4.5 shrink-0 place-items-center rounded-[5px] border border-sidebar-border bg-secondary"
+      className="-mx-[2.5px] grid size-5 shrink-0 place-items-center rounded-md bg-secondary"
     >
       {children}
     </span>
