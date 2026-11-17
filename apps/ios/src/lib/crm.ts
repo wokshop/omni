@@ -1,5 +1,3 @@
-// The CRM (ADR 0036, ADR 0039) on the phone: a company workspace's companies, people and deals,
-// and each record. The web's queries are `apps/web/src/lib/crm.ts`. A Personal space has none.
 import type { Api } from "@omni/client";
 import {
   infiniteQueryOptions,

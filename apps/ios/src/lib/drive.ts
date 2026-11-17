@@ -1,5 +1,3 @@
-// Drive (storage, ADR 0034) on the phone: browse My files, a company's Shared, what was shared
-// with you, and Trash; open a file. The web's queries are `apps/web/src/lib/storage*.ts`.
 import { infiniteQueryOptions, useInfiniteQuery } from "@tanstack/react-query";
 import { WORKSPACE_HEADER, type Api } from "@omni/client";
 import type { InferResponseType } from "hono/client";
