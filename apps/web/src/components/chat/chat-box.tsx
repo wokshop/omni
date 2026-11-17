@@ -58,17 +58,25 @@ export function ChatBox(props: {
   leading?: ReactNode;
   /** Dotted with no fill: what it adds is hidden from someone (a shared inbox's notes). */
   dashed?: boolean;
+  /**
+   * One 32px row, as tall as a menu row: for a box inside a list (a comment thread), not under a
+   * whole conversation.
+   */
+  compact?: boolean;
   /** For a picker the box drives (the mention list). */
   textareaProps?: { "aria-expanded"?: boolean; "aria-haspopup"?: "listbox" };
 }) {
   // One row until the text wraps; then the text takes the box and the buttons sit under it.
   const stacked = useWraps(props.textareaRef, props.value);
   const lead = props.leading !== undefined;
+  const compact = props.compact === true;
   return (
     // 12px corners: a banner 8px inside keeps 4px, concentric.
     <div
       ref={props.boxRef}
-      className={`relative flex flex-col rounded-[12px] border focus-within:border-ring/70 ${
+      className={`relative flex flex-col border focus-within:border-ring/70 ${
+        compact ? "rounded-[8px]" : "rounded-[12px]"
+      } ${
         props.dashed ? "border-dashed border-muted-foreground/40" : "border-input bg-background"
       }`}
     >
@@ -96,18 +104,24 @@ export function ChatBox(props: {
         // A 44px row: 12px above and below a 20px line. The text ends 42px in (past Send, its
         // 8px edge and 6px more) and, with a leading button, starts 42px in too. Stacked, the
         // bottom inset makes room for the button row (16px gap, 28px button, 8px edge).
-        className={`max-h-[40vh] min-h-0 resize-none pe-[42px] py-3 text-sm/5 sm:pe-[42px] sm:py-3 sm:text-sm/5 ${
-          lead ? "ps-[42px] sm:ps-[42px]" : "ps-3 sm:ps-3"
-        } ${stacked ? "pb-13 sm:pb-13" : ""}`}
+        // Compact, a 32px row: 6px above and below the line, Send 20px with 6px edges, the text
+        // 10px in and ending 32px in; stacked, 10px gap over Send.
+        className={`max-h-[40vh] min-h-0 resize-none text-sm/5 sm:text-sm/5 ${
+          compact
+            ? `ps-2.5 pe-8 py-1.5 sm:ps-2.5 sm:pe-8 sm:py-1.5 ${stacked ? "pb-9 sm:pb-9" : ""}`
+            : `pe-[42px] py-3 sm:pe-[42px] sm:py-3 ${
+                lead ? "ps-[42px] sm:ps-[42px]" : "ps-3 sm:ps-3"
+              } ${stacked ? "pb-13 sm:pb-13" : ""}`
+        }`}
       />
       {/* The buttons keep one spot, 8px from the bottom corners, one row or stacked. */}
       {lead && (
         <div className="absolute bottom-2 left-2 flex items-center gap-1">{props.leading}</div>
       )}
-      <div className="absolute right-2 bottom-2">
+      <div className={`absolute ${compact ? "right-1.5 bottom-1.5" : "right-2 bottom-2"}`}>
         <TooltipTrigger delay={400}>
           <Button
-            size="sq-sm"
+            size={compact ? "sq-2xs" : "sq-sm"}
             aria-label={props.sendLabel}
             isDisabled={!props.canSend}
             onPress={props.onSend}

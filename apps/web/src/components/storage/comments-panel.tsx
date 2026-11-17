@@ -2,13 +2,13 @@
 // narrower. Drawn as the notifications panel draws its events, not as a chat: a 48px top bar
 // ("Comments", the file's name, Close), Open and Resolved tabs, and full-width rows ruled like the
 // notification rows, one per thread. Inside a row the thread reads as Notion draws a discussion:
-// every message on the same level, a thin line joining their squircles, where it points quoted
-// in the first, and Reply's field at the end. Resolve (✓, on hover) moves the row to Resolved and
-// Reopen brings it back; a reply reopens it too (the API's rule). The box at the bottom leaves a
-// new comment on the version on screen.
+// every message on the same level, a thin line joining their squircles, and Reply's field at
+// the end. Resolve (✓, on hover) moves the row to Resolved and Reopen brings it back; a reply
+// reopens it too (the API's rule). A new thread starts in the document itself, from its toolbar,
+// so the panel has no box of its own.
 //
 // Geometry: rows 20px from the sides and 16px from their rules; text 12px past the squircle;
-// messages 20px apart; the box 8px from the panel's sides so its text starts on the rows' edge.
+// messages 20px apart.
 import { useLayoutEffect, useRef, useState, type Key, type ReactNode } from "react";
 import { Skeleton } from "skullet/react";
 import {
@@ -42,7 +42,6 @@ import {
   commentAuthor,
   threadsOf,
   type StorageComment,
-  type StorageCommentAnchor,
   type StorageComments,
   type StorageThread,
 } from "@/lib/storage-comments.ts";
@@ -66,33 +65,6 @@ const SAMPLE: StorageComments = {
     },
   ],
 };
-
-/** A spreadsheet column's letters: 1 is A, 27 is AA. */
-function columnName(column: number) {
-  let name = "";
-  for (let n = column; n > 0; n = Math.floor((n - 1) / 26)) {
-    name = String.fromCharCode(65 + ((n - 1) % 26)) + name;
-  }
-  return name;
-}
-
-/** Where a comment points, as a short label; null for the whole file. */
-function anchorLabel(anchor: StorageCommentAnchor | null) {
-  switch (anchor?.kind) {
-    case "pdf":
-      return `Page ${anchor.page}`;
-    case "lines":
-      return anchor.start === anchor.end
-        ? `Line ${anchor.start}`
-        : `Lines ${anchor.start}–${anchor.end}`;
-    case "cell": {
-      const cell = `${columnName(anchor.column)}${anchor.row}`;
-      return anchor.sheet ? `${anchor.sheet} ${cell}` : cell;
-    }
-    default:
-      return null;
-  }
-}
 
 interface Door {
   id: string;
@@ -183,7 +155,6 @@ export function CommentsPanel(props: {
                   key={thread.root.id}
                   door={door}
                   thread={thread}
-                  earlier={thread.root.contentVersion < state.contentVersion}
                   replying={replying === thread.root.id}
                   onReplying={(on) => setReplying(on ? thread.root.id : null)}
                 />
@@ -192,27 +163,8 @@ export function CommentsPanel(props: {
           )}
         </Skeleton>
       </div>
-      <div className="shrink-0 px-2 py-2">
-        <CommentBox
-          door={door}
-          label="Comment"
-          sendLabel="Add comment"
-          // The version on screen: a comment left on it stays on it if someone saves meanwhile.
-          extra={
-            comments.data?.contentVersion === undefined
-              ? {}
-              : { contentVersion: comments.data.contentVersion }
-          }
-          onSent={() => setView("open")}
-        />
-      </div>
     </section>
   );
-}
-
-/** Where it points and the earlier version it was left on, quoted at the top of the thread. */
-function quoteOf(comment: StorageComment, earlier: boolean) {
-  return [anchorLabel(comment.anchor), earlier && "Earlier version"].filter(Boolean).join(" · ");
 }
 
 /** A 24px squircle, as tall as the name's line beside it. */
@@ -227,7 +179,6 @@ const AVATAR =
 function CommentRow(props: {
   door: Door;
   thread: StorageThread;
-  earlier: boolean;
   replying: boolean;
   onReplying: (on: boolean) => void;
 }) {
@@ -253,7 +204,6 @@ function CommentRow(props: {
             comment={comment}
             joined={index < messages.length - 1 || props.replying}
             {...(index === 0 && {
-              quote: quoteOf(root, props.earlier),
               actions: (
                 <TooltipTrigger delay={400}>
                   <Button
@@ -275,19 +225,12 @@ function CommentRow(props: {
         ))}
         {props.replying && (
           <li className="flex gap-3">
-            {/* Centred on the box's one row. */}
-            <span className="pt-2">
+            {/* Centred on the box's one 32px row. */}
+            <span className="pt-1">
               <Avatar isSquare initials={me.slice(0, 1).toUpperCase()} className={AVATAR} />
             </span>
             <div className="min-w-0 flex-1">
-              <CommentBox
-                door={door}
-                label="Reply"
-                sendLabel="Send reply"
-                extra={{ parentId: root.id }}
-                autoFocus
-                onCancel={() => props.onReplying(false)}
-              />
+              <ReplyBox door={door} parentId={root.id} onCancel={() => props.onReplying(false)} />
             </div>
           </li>
         )}
@@ -298,14 +241,12 @@ function CommentRow(props: {
 
 /**
  * One message of a thread: the squircle, and under it the line down to the next one when
- * `joined`; beside it who wrote it and when with its actions at the end, the thread's quote on
- * the first, then what they wrote.
+ * `joined`; beside it who wrote it and when with its actions at the end, then what they wrote.
  */
 function Message(props: {
   door: Door;
   comment: StorageComment;
   joined: boolean;
-  quote?: string;
   actions?: ReactNode;
   onReply: () => void;
 }) {
@@ -363,11 +304,6 @@ function Message(props: {
             )}
           </span>
         </span>
-        {props.quote && (
-          <p className="truncate border-s-2 border-border ps-2 text-sm/5 text-muted-foreground">
-            {props.quote}
-          </p>
-        )}
         {editing ? (
           <ChatEdit
             label="Edit comment"
@@ -388,19 +324,9 @@ function Message(props: {
   );
 }
 
-/**
- * The app's chat box: a new comment, or with `parentId` in `extra` a reply. Esc closes a reply's
- * field. What was typed while one was on its way stays when it lands.
- */
-function CommentBox(props: {
-  door: Door;
-  label: string;
-  sendLabel: string;
-  extra: { parentId: string } | { contentVersion?: number };
-  autoFocus?: boolean;
-  onCancel?: () => void;
-  onSent?: () => void;
-}) {
+/** The app's chat box, one compact row, for a reply. Esc closes it. What was typed while one was
+ * on its way stays when it lands. */
+function ReplyBox(props: { door: Door; parentId: string; onCancel: () => void }) {
   const textarea = useRef<HTMLTextAreaElement>(null);
   const [text, setText] = useState("");
   const add = useAddComment();
@@ -408,19 +334,16 @@ function CommentBox(props: {
   // from the first keypress; `isPending` reaches the render only a tick later.
   const sending = useRef(false);
   useLayoutEffect(() => {
-    if (props.autoFocus) textarea.current?.focus();
-  }, [props.autoFocus]);
+    textarea.current?.focus();
+  }, []);
   const send = () => {
     const body = text.trim();
     if (!body || sending.current) return;
     sending.current = true;
     add.mutate(
-      { ...withShare(props.door), body: { body, ...props.extra } },
+      { ...withShare(props.door), body: { body, parentId: props.parentId } },
       {
-        onSuccess: () => {
-          setText((current) => (current.trim() === body ? "" : current));
-          props.onSent?.();
-        },
+        onSuccess: () => setText((current) => (current.trim() === body ? "" : current)),
         onError: (error) => storageErrorToast(error, "It was not sent"),
         onSettled: () => {
           sending.current = false;
@@ -430,16 +353,17 @@ function CommentBox(props: {
   };
   return (
     <ChatBox
+      compact
       textareaRef={textarea}
-      label={props.label}
-      placeholder={props.label}
-      sendLabel={props.sendLabel}
+      label="Reply"
+      placeholder="Reply"
+      sendLabel="Send reply"
       canSend={text.trim().length > 0 && !add.isPending}
       onSend={send}
       value={text}
       onChange={(next) => setText(next)}
       onKeyDown={(event) => {
-        if (event.key === "Escape" && props.onCancel) {
+        if (event.key === "Escape") {
           event.preventDefault();
           props.onCancel();
         }
