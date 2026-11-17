@@ -169,7 +169,6 @@ public struct StorageNode: Codable, Equatable {
     public let contentVersion: Int?
     public let createdAt: String
     public let createdByMemberId: String?
-    public let icon: String?
     public let id: String
     public let kind: Kind
     public let lockedAt: String?
@@ -189,7 +188,6 @@ public struct StorageNode: Codable, Equatable {
         case contentVersion = "contentVersion"
         case createdAt = "createdAt"
         case createdByMemberId = "createdByMemberId"
-        case icon = "icon"
         case id = "id"
         case kind = "kind"
         case lockedAt = "lockedAt"
@@ -205,12 +203,11 @@ public struct StorageNode: Codable, Equatable {
         case updatedAt = "updatedAt"
     }
 
-    public init(contentSha256: String?, contentVersion: Int?, createdAt: String, createdByMemberId: String?, icon: String?, id: String, kind: Kind, lockedAt: String?, mimeType: String?, name: String, orgId: String, ownerMemberId: String?, parentId: String?, revision: Int?, size: Int, space: Space, trashedAt: String?, updatedAt: String) {
+    public init(contentSha256: String?, contentVersion: Int?, createdAt: String, createdByMemberId: String?, id: String, kind: Kind, lockedAt: String?, mimeType: String?, name: String, orgId: String, ownerMemberId: String?, parentId: String?, revision: Int?, size: Int, space: Space, trashedAt: String?, updatedAt: String) {
         self.contentSha256 = contentSha256
         self.contentVersion = contentVersion
         self.createdAt = createdAt
         self.createdByMemberId = createdByMemberId
-        self.icon = icon
         self.id = id
         self.kind = kind
         self.lockedAt = lockedAt
@@ -250,7 +247,6 @@ public extension StorageNode {
         contentVersion: Int?? = nil,
         createdAt: String? = nil,
         createdByMemberId: String?? = nil,
-        icon: String?? = nil,
         id: String? = nil,
         kind: Kind? = nil,
         lockedAt: String?? = nil,
@@ -270,7 +266,6 @@ public extension StorageNode {
             contentVersion: contentVersion ?? self.contentVersion,
             createdAt: createdAt ?? self.createdAt,
             createdByMemberId: createdByMemberId ?? self.createdByMemberId,
-            icon: icon ?? self.icon,
             id: id ?? self.id,
             kind: kind ?? self.kind,
             lockedAt: lockedAt ?? self.lockedAt,

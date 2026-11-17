@@ -11,6 +11,7 @@ import {
   storageUsageQuery,
   trashNodeMutation,
   type StoragePlace,
+  type StorageSpace,
 } from "../lib/storage.ts";
 import {
   putPersonMutation,
@@ -33,7 +34,7 @@ import {
   deleteCommentMutation,
   storageCommentsQuery,
 } from "../lib/storage-comments.ts";
-import { storageSearchQuery } from "../lib/storage-find.ts";
+import { storageFolderIconsQuery, storageSearchQuery } from "../lib/storage-find.ts";
 import { restoreVersionMutation, storageVersionsQuery } from "../lib/storage-versions.ts";
 import { useSession } from "./use-session.ts";
 import { useCurrentWorkspace } from "./use-workspaces.ts";
@@ -59,6 +60,11 @@ export function useStorageTrash() {
 export function useStorageSearch(q: string) {
   const query = useQuery({ ...storageSearchQuery(q), placeholderData: (previous) => previous });
   return { ...query, nodes: query.data?.nodes ?? [] };
+}
+
+/** A drive's cluster glyphs by folder id; empty until they load, or if they fail to. */
+export function useFolderIcons(space: StorageSpace): Record<string, string> {
+  return useQuery(storageFolderIconsQuery(space)).data?.icons ?? {};
 }
 
 /** True in a company workspace: only those have Shared (a Personal space has My files alone). */

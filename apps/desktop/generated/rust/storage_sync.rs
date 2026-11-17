@@ -38,9 +38,6 @@ pub struct StorageNode {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub created_by_member_id: Option<String>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub icon: Option<String>,
-
     pub id: String,
 
     pub kind: Kind,

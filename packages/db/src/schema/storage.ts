@@ -98,8 +98,6 @@ export const storageNodes = pgTable(
     contentVersion: integer("content_version").notNull().default(1),
     /** Hex SHA-256 of the bytes, as the client that uploaded them sent it; null when unknown. */
     contentSha256: text("content_sha256"),
-    /** A folder's chosen glyph in Drive's sidebar (`STORAGE_FOLDER_ICONS`); null is the folder. */
-    icon: text("icon"),
   },
   (t) => [
     // Target for composite foreign keys that pin a row to its node's org.
@@ -291,6 +289,27 @@ export const storageLocks = pgTable(
   (t) => [
     foreignKey({
       name: "storage_locks_node_org_fk",
+      columns: [t.nodeId, t.orgId],
+      foreignColumns: [storageNodes.id, storageNodes.orgId],
+    }).onDelete("cascade"),
+  ],
+);
+
+/**
+ * A cluster's chosen glyph in Drive's sidebar (`STORAGE_FOLDER_ICONS`, ADR 0047); no row is the
+ * folder glyph. Its own table, not a column on `storage_nodes`, so no query that reads or writes
+ * nodes depends on it. Deleting the node takes the glyph with it.
+ */
+export const storageFolderIcons = pgTable(
+  "storage_folder_icons",
+  {
+    nodeId: text("node_id").primaryKey(),
+    orgId: orgId(),
+    icon: text("icon").notNull(),
+  },
+  (t) => [
+    foreignKey({
+      name: "storage_folder_icons_node_org_fk",
       columns: [t.nodeId, t.orgId],
       foreignColumns: [storageNodes.id, storageNodes.orgId],
     }).onDelete("cascade"),

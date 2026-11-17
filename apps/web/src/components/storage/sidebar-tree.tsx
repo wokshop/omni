@@ -5,7 +5,7 @@
 import { SidebarTreeBones, SidebarTreeRow } from "@/components/shell/sidebar-tree-row";
 import { SidebarSection } from "@/components/ui/sidebar";
 import { useSidebarExpanded } from "@/hooks/use-sidebar-expanded.ts";
-import { useStorageList } from "@/hooks/use-storage.ts";
+import { useFolderIcons, useStorageList } from "@/hooks/use-storage.ts";
 import type { StorageNode, StorageSpace } from "@/lib/storage.ts";
 import { FolderIcon } from "./folder-icons.tsx";
 import { SPACE_ICON, SPACE_LABEL, SPACE_PATH } from "./storage-nav.tsx";
@@ -39,17 +39,24 @@ export function SidebarGroup(props: { space: StorageSpace; search: string }) {
 
 function Clusters(props: { space: StorageSpace; search: string }) {
   const root = useStorageList({ space: props.space });
+  const icons = useFolderIcons(props.space);
   if (root.isPending) return <SidebarTreeBones depth={1} />;
   return folders(root.nodes).map((node) => (
-    <Cluster key={node.id} node={node} search={props.search} />
+    <Cluster key={node.id} node={node} icon={icons[node.id]} search={props.search} />
   ));
 }
 
-function Cluster(props: { node: StorageNode; search: string }) {
+function Cluster(props: { node: StorageNode; icon: string | undefined; search: string }) {
   const open = useSidebarExpanded("drive", props.node.id);
   return (
     <>
-      <FolderRow node={props.node} depth={1} search={props.search} expand={open} />
+      <FolderRow
+        node={props.node}
+        icon={props.icon}
+        depth={1}
+        search={props.search}
+        expand={open}
+      />
       {open.value && <ClusterFolders node={props.node} search={props.search} />}
     </>
   );
@@ -65,6 +72,8 @@ function ClusterFolders(props: { node: StorageNode; search: string }) {
 
 function FolderRow(props: {
   node: StorageNode;
+  /** A cluster's chosen glyph; a folder inside one has none. */
+  icon?: string | undefined;
   depth: number;
   search: string;
   expand?: { value: boolean; toggle: () => void };
@@ -77,8 +86,7 @@ function FolderRow(props: {
       href={inWorkspace(href + props.search)}
       isCurrent={pathname === href}
       depth={props.depth}
-      // A cluster shows its chosen glyph; a folder inside it, the folder.
-      icon={<FolderIcon icon={props.depth === 1 ? node.icon : null} className="size-icon" />}
+      icon={<FolderIcon icon={props.icon} className="size-icon" />}
       label={node.name}
       {...(props.expand ? { expand: props.expand } : {})}
       // Opening a cluster's page opens it in the tree too; only the chevron closes it.

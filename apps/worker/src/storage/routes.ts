@@ -7,8 +7,10 @@
 import {
   storageListQuerySchema,
   storagePageQuerySchema,
+  storageFolderIconsQuerySchema,
   storageSearchQuerySchema,
   type StorageFindResponse,
+  type StorageFolderIconsResponse,
   type StorageListResponse,
   type StorageNodeResponse,
   type StorageTrashResponse,
@@ -121,6 +123,12 @@ export const storage = new Hono<AppEnv>()
   .get("/search", zValidator("query", storageSearchQuerySchema), async (c) => {
     const nodes = await memberStorage(c).search(c.req.valid("query").q);
     return c.json({ nodes: nodes.map(wireNode) } satisfies StorageFindResponse);
+  })
+
+  /** The sidebar's cluster glyphs: a drive's top-level folders that have one, by folder id. */
+  .get("/icons", zValidator("query", storageFolderIconsQuerySchema), async (c) => {
+    const icons = await memberStorage(c).folderIcons(c.req.valid("query").space);
+    return c.json({ icons } satisfies StorageFolderIconsResponse);
   })
 
   .route("/", storageSharing)

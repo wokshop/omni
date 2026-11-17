@@ -325,22 +325,6 @@ export function treeOperations(db: Db, door: Door) {
     },
 
     /**
-     * Sets a folder's sidebar glyph (`STORAGE_FOLDER_ICONS`), or clears it with null. Not a sync
-     * change and not an edit: the revision and "Modified" stay.
-     */
-    async setIcon(nodeId: string, icon: string | null): Promise<NodeResult> {
-      const found = await reach(db, door, nodeId);
-      if (!found || inTrash(found.chain) || found.node.kind !== "folder") return NOT_FOUND;
-      if (!found.access.change) return FORBIDDEN;
-      const [row] = await db
-        .update(storageNodes)
-        .set({ icon, updatedAt: keepUpdatedAt })
-        .where(eq(storageNodes.id, nodeId))
-        .returning();
-      return row ? { status: "ok", node: toNode(row) } : NOT_FOUND;
-    },
-
-    /**
      * Moves a node into a folder or to a root of the same workspace. A name taken there gets a
      * number. A member may cross between My files and Shared; a grantee stays in one drive.
      */

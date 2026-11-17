@@ -1,4 +1,5 @@
-// Drive's Search at the member door: what reaches across a member's drives at once.
+// Drive's Search and the sidebar's cluster glyphs at the member door: what reaches across a
+// member's drives.
 import { afterAll, expect, test } from "vitest";
 import { forMember } from "../src/for-member.ts";
 import { addFile, addFolder } from "./storage-support.ts";
@@ -43,4 +44,34 @@ test("Search matches % and _ as themselves", async () => {
 
   expect(names(await mine.search("%"))).toEqual(["100% done.txt"]);
   expect(names(await mine.search("a_b"))).toEqual(["a_b.txt"]);
+});
+
+// Catches: the glyph query keyed on the workspace alone, so Ana's sidebar shows Ben's private
+// cluster glyphs (or Ben's folder ids); a glyph set on a nested folder; and a cluster in Trash
+// keeping its glyph in the list.
+test("Cluster glyphs are the member's own top-level folders only", async () => {
+  const org = await createOrg(db, "icons");
+  const ana = await createMember(db, org.id, "ana");
+  const ben = await createMember(db, org.id, "ben");
+  const mine = forMember(db, ana.id).storage;
+  const bens = forMember(db, ben.id).storage;
+
+  const design = await addFolder(mine, { space: "personal" }, "Design");
+  const old = await addFolder(mine, { space: "personal" }, "Old");
+  const inner = await addFolder(mine, { parentId: design.id }, "Drafts");
+  const team = await addFolder(mine, { space: "shared" }, "Team");
+  const benPrivate = await addFolder(bens, { space: "personal" }, "Ben");
+
+  expect((await mine.setIcon(design.id, "rocket")).status).toBe("ok");
+  expect((await mine.setIcon(old.id, "archive")).status).toBe("ok");
+  expect((await mine.setIcon(team.id, "star")).status).toBe("ok");
+  expect((await bens.setIcon(benPrivate.id, "lock")).status).toBe("ok");
+  expect((await mine.setIcon(inner.id, "heart")).status).toBe("not_found");
+  expect((await mine.setIcon(benPrivate.id, "heart")).status).toBe("not_found");
+  expect((await mine.trash(old.id)).status).toBe("ok");
+
+  expect(await mine.folderIcons("personal")).toEqual({ [design.id]: "rocket" });
+  expect(await mine.folderIcons("shared")).toEqual({ [team.id]: "star" });
+  expect((await mine.setIcon(design.id, null)).status).toBe("ok");
+  expect(await mine.folderIcons("personal")).toEqual({});
 });

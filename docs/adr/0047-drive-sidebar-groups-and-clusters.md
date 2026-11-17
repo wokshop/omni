@@ -27,9 +27,14 @@ There is no cluster object in the schema: a cluster is a folder, so it moves, sh
 like one, and a real cluster type can still come later without migrating data.
 
 A cluster can take a glyph in place of the folder, picked from a fixed set
-(`STORAGE_FOLDER_ICONS`) with **Change icon** in a top-level folder's menu. It is stored on the
-node (`storage_nodes.icon`, nullable, additive) and set with `PATCH /nodes/:id { icon }` (null
-clears it). Setting it is neither an edit nor a sync change: "Modified" and the revision stay.
+(`STORAGE_FOLDER_ICONS`) with **Change icon** in a top-level folder's menu. It lives in its own
+table, `storage_folder_icons` (one row per folder that has a glyph), not in a column on
+`storage_nodes`: every node query selects and inserts all of that table's columns, so a column
+would break all of Drive whenever the Worker deployed before its migration ran (nothing waits for
+migrations, ADR 0019). The sidebar reads glyphs with `GET /icons?space=`, and before the table
+exists that request fails alone and clusters show the folder. A member sets one with
+`PATCH /nodes/:id { icon }` (null clears it); a grantee cannot. Setting it is neither an edit nor
+a sync change: "Modified" and the revision stay.
 Nested folders always show the folder; a glyph a client doesn't know shows the folder too.
 
 ## Decision 3: Search across both drives

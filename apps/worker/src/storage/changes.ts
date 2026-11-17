@@ -16,7 +16,7 @@ import { ApiFailure } from "../errors.ts";
 import { announceDrives } from "./announce.ts";
 import { deleteStorageObjects, wireNode } from "./core.ts";
 import { zValidator } from "../validator.ts";
-import { placeOf, refused, writeDoor } from "./http.ts";
+import { memberStorage, placeOf, refused, writeDoor } from "./http.ts";
 import { storageComments } from "./comments.ts";
 import { storageUploads } from "./uploads.ts";
 import { storageVersions } from "./versions.ts";
@@ -49,8 +49,10 @@ export const storageChanges = new Hono<AppEnv>()
     const guard = guardOf(c);
     const id = c.req.param("id");
     const { files } = writeDoor(c);
+    // A cluster's glyph belongs to the member's sidebar, so a grantee cannot set one.
     if ("icon" in body) {
-      const set = await files.setIcon(id, body.icon);
+      if (c.var.shared) return refused(c, "forbidden");
+      const set = await memberStorage(c).setIcon(id, body.icon);
       if (set.status !== "ok") return refused(c, set.status);
       announceDrives(c, [set.node]);
       return c.json({ node: wireNode(set.node) } satisfies StorageNodeResponse);

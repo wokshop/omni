@@ -81,11 +81,6 @@ export const storageNodeSchema = z.object({
   contentVersion: z.number().int().nonnegative().optional(),
   /** Hex sha256 of the bytes, as the uploading client sent it; null when it sent none. */
   contentSha256: z.string().nullable().optional(),
-  /**
-   * A folder's chosen sidebar glyph; null for the folder glyph and every file. A string, not the
-   * enum, so a client older than a new glyph still reads the node. Absent from an older Worker.
-   */
-  icon: z.string().nullable().optional(),
 });
 
 /** A node as its reader sees it. `path` runs from the highest folder they can open to the node. */
@@ -153,6 +148,15 @@ export const storageSearchQuerySchema = z.object({ q: z.string().trim().min(1).m
  * and, in a company, Shared. Not paged.
  */
 export const storageFindResponseSchema = z.object({ nodes: z.array(storageNodeSchema) });
+
+/**
+ * Drive's `GET /icons?space=`: the chosen glyphs of a drive's top-level folders, by folder id. A
+ * folder without one is absent. Strings, not the enum, so an older client still reads a new glyph.
+ */
+export const storageFolderIconsQuerySchema = z.object({ space: storageSpaceSchema });
+export const storageFolderIconsResponseSchema = z.object({
+  icons: z.record(z.string(), z.string()),
+});
 
 const sha256 = z.string().regex(/^[0-9a-f]{64}$/);
 
@@ -426,7 +430,11 @@ export const storageSigningListResponseSchema = z.object({
   items: z.array(storageSigningItemSchema),
 });
 
-export const storageSigningItemResponseSchema = z.object({ item: storageSigningItemSchema });
+/** One request, with the consent sentence a signer accepts (`STORAGE_SIGNING_CONSENT`). */
+export const storageSigningItemResponseSchema = z.object({
+  item: storageSigningItemSchema,
+  consent: z.object({ version: z.string(), text: z.string() }),
+});
 
 /** `POST /signing/:id/code` answers when the code mailed stops working. */
 export const storageSigningCodeResponseSchema = z.object({ expiresAt: isoDate });
@@ -628,6 +636,7 @@ export type StorageListResponse = z.infer<typeof storageListResponseSchema>;
 export type StorageNodeResponse = z.infer<typeof storageNodeResponseSchema>;
 export type StorageTrashResponse = z.infer<typeof storageTrashResponseSchema>;
 export type StorageFindResponse = z.infer<typeof storageFindResponseSchema>;
+export type StorageFolderIconsResponse = z.infer<typeof storageFolderIconsResponseSchema>;
 export type StorageCreateFolderBody = z.infer<typeof storageCreateFolderBodySchema>;
 export type StorageChangeNodeBody = z.infer<typeof storageChangeNodeBodySchema>;
 export type StorageOpenUploadBody = z.infer<typeof storageOpenUploadBodySchema>;
