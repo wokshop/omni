@@ -150,6 +150,8 @@ export const keys = {
   /** Every Search's answers. */
   storageSearches: () => [...storage(), "search"] as const,
   storageIcons: (space: string) => [...storage(), "icons", space] as const,
+  /** Both drives' cluster glyphs. */
+  storageIconMaps: () => [...storage(), "icons"] as const,
   storageUsage: () => [...storage(), "usage"] as const,
   /** Where a node is now: its folder and space. */
   storageNode: (nodeId: string) => [...storage(), "node", nodeId] as const,

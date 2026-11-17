@@ -123,6 +123,8 @@ export async function storageNodeChanged(client: QueryClient, node: StorageNode)
     if (next !== data) client.setQueryData<ListData>(key, next);
   }
   void refresh(client, [...touched, keys.storageNode(node.id), keys.storageTrash()]);
+  // A cluster moved between drives takes its glyph along: each drive's map is read by space.
+  if (node.kind === "folder") void client.invalidateQueries({ queryKey: keys.storageIconMaps() });
 }
 
 /**
