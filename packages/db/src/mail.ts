@@ -1,5 +1,3 @@
-// Mail (ADR 0035): the module's surface. Everything outside `mail/` reaches mail code through this
-// file; `for-member.ts` spreads its member and user doors into `forMember` and `forUser`.
 export {
   memberMail,
   userMail,
@@ -11,6 +9,7 @@ export {
   CONVERSATION_VIEWS,
   type ConversationView,
   type ConversationCursor,
+  type ThreadCursor,
   SLA_AT_RISK_MINUTES,
   type Participant,
   type MemberQueries,
@@ -36,6 +35,7 @@ export * from "./mail/inbox-admin.ts";
 export * from "./mail/compose.ts";
 export * from "./mail/library.ts";
 export * from "./mail/customers.ts";
+export * from "./mail/arrivals.ts";
 export * from "./mail/drafts.ts";
 export * from "./mail/conversations.ts";
 export * from "./mail/handoff.ts";
@@ -45,3 +45,18 @@ export * from "./mail/sla.ts";
 export * from "./mail/forwarding.ts";
 export * from "./mail/dead-letters.ts";
 export * from "./mail/for-platform.ts";
+export {
+  indexParticipants,
+  participantsOf,
+  PARTICIPANT_BATCH,
+  PARTICIPANT_SETTLE_MS,
+} from "./mail/thread-participants.ts";
+export { THREADS_WITH_MAX, type ThreadsWithOptions, type ThreadWith } from "./mail/threads-with.ts";
+export {
+  CRM_SHARING_LEVELS,
+  SHARED_ACTIVITY_MAX,
+  type CrmSharingLevel,
+  type CrmSharingResult,
+  type SharedActivity,
+  type SharedActivityOptions,
+} from "./mail/crm-sharing.ts";

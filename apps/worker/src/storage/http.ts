@@ -1,5 +1,3 @@
-// What Storage's route files share: the doors a request goes through, the API's error answers,
-// cursors and the one way a file is served.
 import type { ErrorCode, StorageNodeView, StorageSpace } from "@omni/contracts";
 import {
   forMember,
@@ -25,10 +23,12 @@ const FAILURES = {
   cycle: ["cycle", "a folder cannot move into itself"],
   parent_trashed: ["parent_trashed", "the folder it was in is in Trash: restore that one"],
   not_trashed: ["not_trashed", "only what is in Trash is deleted for good"],
+  locked: ["locked", "a locked file cannot be changed, moved, trashed or deleted"],
   full: ["storage_full", "this workspace's storage is full"],
   incomplete: ["upload_incomplete", "the upload is missing parts"],
   too_large: ["invalid_part", "the part does not fit the upload"],
   invalid_email: ["invalid_email", "that is not an email address"],
+  version_conflict: ["version_conflict", "it changed since you read it"],
 } as const satisfies Record<string, readonly [ErrorCode, string]>;
 
 /** The API's error answer for a result `@omni/db` refused, with a code the client can act on. */
@@ -37,7 +37,14 @@ export function refused(c: Context<AppEnv>, status: keyof typeof FAILURES) {
   return apiError(c, code, message);
 }
 
-export const memberStorage = (c: Context<AppEnv>) => forMember(c.var.db, c.var.member.id).storage;
+/** A checked save based on content the file no longer has: its `contentVersion` now. */
+export const staleSave = (c: Context<AppEnv>, contentVersion: number) =>
+  apiError(c, "version_conflict", "the file changed since this was based on it", {
+    details: { contentVersion },
+  });
+
+export const memberStorage: (c: Context<AppEnv>) => MemberStorage = (c) =>
+  forMember(c.var.db, c.var.member.id).storage;
 
 export type { SharedAccess } from "@omni/db";
 
@@ -46,15 +53,15 @@ export type { SharedAccess } from "@omni/db";
  * that opened the link and the shared node's workspace, anywhere else the member's own. The
  * routes that change files are written once against this and mounted in both places.
  */
-export function writeDoor(c: Context<AppEnv>): {
+export const writeDoor: (c: Context<AppEnv>) => {
   files: MemberStorage | SharedStorage;
   orgId: string;
-} {
+} = (c) => {
   const shared = c.var.shared;
   if (!shared) return { files: memberStorage(c), orgId: c.var.member.orgId };
   if (!shared.writer) throw new HTTPException(403, { message: "you cannot change this" });
   return { files: shared.writer, orgId: shared.root.node.orgId };
-}
+};
 
 /** A cursor travels as base64url JSON: opaque to the client, checked on the way back in. */
 export function encodeCursor(cursor: unknown) {
@@ -83,10 +90,12 @@ export const listCursor = z.object({
   id: z.string().min(1),
 });
 
-export const wireView = (view: NodeViewRow): StorageNodeView => ({
-  ...view,
-  node: wireNode(view.node),
-});
+export const wireView = ({ node, role, path }: NodeViewRow) =>
+  ({
+    node: wireNode(node),
+    role,
+    path,
+  }) satisfies StorageNodeView;
 
 /**
  * The file's bytes, always as a download (see `fileResponse`): the one way a file leaves, for a
@@ -100,13 +109,14 @@ export async function download(c: Context<AppEnv>, found: FileResult) {
     { range: c.req.header("range"), ifRange: c.req.header("if-range") },
   );
   if (response) return response;
-  // The row is the truth and its bytes are gone: someone must know.
   c.var.log.error("storage.object_missing", { orgId: found.file.orgId, nodeId: found.file.id });
   return refused(c, "not_found");
 }
 
 /** A request's `parentId` or `space` (the schemas require exactly one) as a place. */
-export function placeOf(input: { parentId?: string; space?: StorageSpace }): StoragePlace {
+export const placeOf: (input: { parentId?: string; space?: StorageSpace }) => StoragePlace = (
+  input,
+) => {
   if (input.parentId !== undefined) return { parentId: input.parentId };
   return { space: input.space ?? "personal" };
-}
+};

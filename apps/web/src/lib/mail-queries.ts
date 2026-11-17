@@ -1,5 +1,3 @@
-// Read queries for mail, as `queryOptions` so loaders (prefetch) and hooks (subscribe) share one
-// definition. Each passes the query's abort signal, so a cancelled query cancels its request.
 import { infiniteQueryOptions, queryOptions } from "@tanstack/react-query";
 import { api, call } from "./api.ts";
 import { prunePending } from "./pending.ts";
@@ -18,7 +16,6 @@ export const mailboxesQuery = () =>
     queryKey: keys.mailboxes(),
     queryFn: ({ signal }) => call(api.mailboxes.$get(undefined, { init: { signal } })),
     select: (data) => data.mailboxes,
-    // Mailboxes change only when someone runs `mailbox:add`.
     staleTime: 5 * 60_000,
   });
 
@@ -37,20 +34,19 @@ export const allMailboxesQuery = () =>
   });
 
 /**
- * Unread threads per mailbox and lane (inbox view), for badges, in every workspace the user
- * belongs to (each row carries its `orgId`).
+ * Unread threads per mailbox and lane (inbox view), for badges, in the active workspace (ADR 0014,
+ * amended: workspace isolation).
  */
 export const countsQuery = () =>
   queryOptions({
     queryKey: keys.counts(),
-    queryFn: ({ signal }) =>
-      call(api.counts.$get({ query: { scope: "all" } }, { init: { signal } })),
+    queryFn: ({ signal }) => call(api.counts.$get({ query: {} }, { init: { signal } })),
   });
 
 /**
  * One thread list, newest first, paged by an opaque cursor kept in the cache (not the URL).
- * Without a mailbox it spans every workspace the user belongs to ("All mailboxes", ADR 0014);
- * each row carries its `orgId`, and opening or acting on it needs no workspace switch.
+ * Without a mailbox it is "All mailboxes": every mailbox of the active workspace the member can
+ * open, never another workspace's (ADR 0014, amended: workspace isolation).
  */
 export const threadsQuery = (filter: ThreadFilter) =>
   infiniteQueryOptions({
@@ -60,7 +56,6 @@ export const threadsQuery = (filter: ThreadFilter) =>
         api.threads.$get(
           {
             query: {
-              scope: "all",
               view: filter.view,
               ...(filter.mailbox ? { mailboxId: filter.mailbox } : {}),
               ...(filter.lane ? { lane: filter.lane } : {}),
@@ -91,10 +86,9 @@ export const threadQuery = (threadId: string) =>
     },
   });
 
-/** The most the API returns: a query by meaning ("otp") can match a lot of mail. */
 const SEARCH_LIMIT = 50;
 
-/** Search across every workspace the user belongs to (ADR 0014); each hit carries its `orgId`. */
+/** Search the active workspace's mail (ADR 0014, amended: workspace isolation). */
 export const searchQuery = (q: string, mailbox?: string) =>
   queryOptions({
     queryKey: keys.search(q, mailbox),
@@ -103,7 +97,6 @@ export const searchQuery = (q: string, mailbox?: string) =>
         api.search.$get(
           {
             query: {
-              scope: "all",
               q,
               limit: String(SEARCH_LIMIT),
               ...(mailbox ? { mailboxId: mailbox } : {}),

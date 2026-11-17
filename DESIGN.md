@@ -44,6 +44,11 @@ it. It holds no values: colors, sizes, and radii live in code, so they cannot dr
   another Central glyph. Where a glyph comes in sizes (`Small`, `Medium`, `Large`), use `Medium`,
   always: it matches the rest of the set. Central's licence forbids sharing its glyphs publicly, so
   Omni's web app stays closed source.
+- **File types a brand owns show its mark.** PDF, Word, Excel and PowerPoint files show their
+  brand's icon from svgl (`@ridemountainpig/svgl-react`), in its own colours, wherever a file's
+  type is drawn: `FileGlyph` and `FileTile` for files, `AttachmentGlyph` for attachment chips
+  (`components/storage/file-glyph.tsx`). Every other type stays a Central glyph. Add a brand mark
+  there, never at the call site.
 - **Menus.** Every menu item leads with an icon (14px, muted, the label after it); a menu
   without icons is not allowed. A person, workspace or mailbox leads with its avatar instead.
   `SettingsRowMenu` requires an `icon` per item, so a missing one fails the type check.
@@ -62,6 +67,9 @@ it. It holds no values: colors, sizes, and radii live in code, so they cannot dr
 - **Optical alignment.** Center things where they look centered, not where the math puts them
   (a card sits slightly above the true middle; an icon aligns to the text's cap height). When you
   nudge for optics, leave a short comment saying so.
+- **Surfaces.** Lists, card grids, sections, sidebar trees, detail panels and page headers follow
+  the `surface-patterns` skill (`.claude/skills/surface-patterns`): two type sizes per surface,
+  the gap scale, floating rows, one card, and the layout traps it lists.
 - **Tactility.** Depth, press and motion follow the `tactile-design` skill
   (`.claude/skills/tactile-design`), layered on the Figma look without restyling it: cards keep
   their border and add the crisp `--shadow-raised` drop; buttons get their depth from a darker

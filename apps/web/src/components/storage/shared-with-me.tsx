@@ -1,5 +1,3 @@
-// What others shared with the signed-in person (ADR 0034 decision 4), in any workspace, newest
-// first: each row opens its link page.
 import { TableLoadMoreItem } from "react-aria-components/Table";
 import { Skeleton } from "skullet/react";
 import { EmptyState } from "@/components/empty/empty-state";
@@ -16,13 +14,14 @@ import {
 import { useSharedWithMe } from "@/hooks/use-storage.ts";
 import { COLUMN, DAY, FileTableBones, Muted, NameCell } from "./file-table.tsx";
 import { StorageFrame } from "./storage-frame.tsx";
+import { UploadsPanel } from "./uploads-panel.tsx";
 
-const ROLE = { viewer: "Viewer", editor: "Editor" } as const;
+const ROLE = { viewer: "Viewer", commenter: "Commenter", editor: "Editor" } as const;
 
 export function SharedWithMe() {
   const shared = useSharedWithMe();
   return (
-    <StorageFrame title={<Heading className="truncate">Shared with me</Heading>}>
+    <StorageFrame title={<Heading className="truncate text-md">Shared with me</Heading>}>
       <div className="min-h-0 flex-1 overflow-y-auto">
         {shared.isPending ? (
           <Skeleton loading label="Loading shared files" skeleton={<FileTableBones />}>
@@ -41,7 +40,7 @@ export function SharedWithMe() {
             />
           </div>
         ) : (
-          <Table variant="page" aria-label="Shared with me">
+          <Table variant="page" rowSize="lg" aria-label="Shared with me">
             <TableHeader>
               <TableColumn isRowHeader>Name</TableColumn>
               <TableColumn className="w-48 max-md:hidden">Workspace</TableColumn>
@@ -57,7 +56,11 @@ export function SharedWithMe() {
                   {...(item.shareId ? { href: `/s/${encodeURIComponent(item.shareId)}` } : {})}
                 >
                   <TableCell>
-                    <NameCell kind={item.node.kind} name={item.node.name} />
+                    <NameCell
+                      kind={item.node.kind}
+                      name={item.node.name}
+                      mimeType={item.node.mimeType}
+                    />
                   </TableCell>
                   <TableCell className="max-md:hidden">
                     <span className="block truncate text-muted-foreground">{item.orgName}</span>
@@ -78,6 +81,7 @@ export function SharedWithMe() {
           </Table>
         )}
       </div>
+      <UploadsPanel />
     </StorageFrame>
   );
 }

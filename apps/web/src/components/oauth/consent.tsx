@@ -1,14 +1,14 @@
-// An agent asking to connect to Omni (ADR 0029), from Rodrigo's reference: one centered block on
-// an empty page. Who is asking, which workspace the connection reaches (every workspace unless
-// one is picked), what it may do, and Cancel or Confirm.
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import {
   IconArrowRotateClockwise,
   IconInbox,
+  IconKey,
   IconMail,
   IconPencil,
+  IconUserAdd,
   IconUserRound,
+  IconUsers,
 } from "@/components/icons/central";
 import { WorkspaceAvatar } from "@/components/settings/workspace-pages";
 import { Button } from "@/components/ui/button";
@@ -20,12 +20,10 @@ import { appToast } from "@/components/ui/toast";
 import { useWorkspaces } from "@/hooks/use-workspaces.ts";
 import { answerConsent, oauthClientQuery } from "@/lib/oauth-consent.ts";
 
-/** The value of the picker's first option: the grant reaches every workspace. */
 const ALL = "all";
 
 type Icon = typeof IconMail;
 
-/** What each scope lets the agent do, in the order shown. OIDC scopes share one line. */
 const SCOPE_LINES: { scopes: string[]; icon: Icon; label: string }[] = [
   {
     scopes: ["openid", "profile", "email"],
@@ -35,6 +33,8 @@ const SCOPE_LINES: { scopes: string[]; icon: Icon; label: string }[] = [
   { scopes: ["mail:read"], icon: IconMail, label: "Read your mail" },
   { scopes: ["mail:triage"], icon: IconInbox, label: "Sort and file your mail" },
   { scopes: ["mail:draft"], icon: IconPencil, label: "Write drafts for you to send" },
+  { scopes: ["crm:read"], icon: IconUsers, label: "Read your CRM" },
+  { scopes: ["crm:write"], icon: IconUserAdd, label: "Add and change CRM records" },
   {
     scopes: ["offline_access"],
     icon: IconArrowRotateClockwise,
@@ -48,10 +48,17 @@ export function Consent({ clientId, scope }: { clientId: string; scope: string }
   const [workspace, setWorkspace] = useState(ALL);
   const answer = useMutation({
     mutationFn: answerConsent,
+    meta: { handlesError: true },
     onError: () => appToast.error("The request expired. Start the connection again."),
   });
-  const requested = new Set(scope.split(" "));
-  const lines = SCOPE_LINES.filter((line) => line.scopes.some((s) => requested.has(s)));
+  const requested = new Set(scope.split(" ").filter(Boolean));
+  const known = new Set(SCOPE_LINES.flatMap((line) => line.scopes));
+  const lines = [
+    ...SCOPE_LINES.filter((line) => line.scopes.some((s) => requested.has(s))),
+    ...[...requested]
+      .filter((s) => !known.has(s))
+      .map((s) => ({ scopes: [s], icon: IconKey, label: s })),
+  ];
   const name = client.data?.client_name ?? "An app";
   const chosen = workspaces.find((w) => w.id === workspace);
   const decide = (accept: boolean) =>
@@ -59,7 +66,6 @@ export function Consent({ clientId, scope }: { clientId: string; scope: string }
 
   return (
     <main className="flex min-h-dvh items-center justify-center bg-background px-4">
-      {/* The bottom padding lifts the block a little above center, where it looks centered. */}
       <div className="flex w-95 flex-col gap-8 pb-12">
         <div className="flex flex-col items-center gap-1 text-center">
           <Heading className="font-semibold">{name} access request</Heading>

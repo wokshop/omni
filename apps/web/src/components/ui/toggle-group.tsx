@@ -29,6 +29,11 @@ const useToggleGroupContext = () => use(ToggleGroupContext);
 export interface ToggleGroupProps extends ToggleButtonGroupProps {
   size?: ToggleSize;
   isCircle?: boolean;
+  /**
+   * Icons only, with no track: the chosen option keeps a faint border and its icon at full ink,
+   * the others are dimmed. For a quiet switch beside a section's header.
+   */
+  bare?: boolean;
 }
 
 export function ToggleGroup({
@@ -36,6 +41,7 @@ export function ToggleGroup({
   orientation = "horizontal",
   selectionMode = "single",
   isCircle,
+  bare,
   className,
   ...props
 }: ToggleGroupProps) {
@@ -48,12 +54,14 @@ export function ToggleGroup({
         className={cx(
           [
             "[--toggle-group-radius:var(--radius-lg)] [--toggle-gutter:--spacing(0.5)]",
-            // A segmented control: accent track, the selected option a background-colored chip.
             "[--toggle-foreground:var(--color-foreground)] [--toggle-selected-bg:var(--color-background)] [--toggle-selected-foreground:var(--color-foreground)]",
             "[--toggle-focused-bg:transparent] [--toggle-focused-foreground:var(--color-foreground)]",
             "[--toggle-hover-bg:transparent] [--toggle-hover-foreground:var(--color-foreground)]",
             "[--btn-icon:var(--color-muted-foreground)] [--btn-icon-active:var(--color-foreground)]",
-            "inline-flex overflow-hidden bg-accent p-(--toggle-gutter)",
+            "inline-flex overflow-hidden p-(--toggle-gutter)",
+            bare
+              ? "[--toggle-selected-bg:transparent] *:data-[slot=toggle-group-item]:selected:inset-ring *:data-[slot=toggle-group-item]:selected:inset-ring-border"
+              : "bg-accent",
             orientation === "horizontal" ? "flex-row" : "flex-col",
             selectionMode === "single" ? "gap-(--toggle-gutter)" : "gap-0",
             isCircle ? "rounded-full" : "rounded-(--toggle-group-radius)",
@@ -99,7 +107,6 @@ const toggleGroupItemStyles = tv({
         "*:[svg]:-mx-px *:[svg]:size-3.5 sm:*:[svg]:size-3",
         "*:data-[slot=loader]:-mx-px *:data-[slot=loader]:size-3.5 sm:*:data-[slot=loader]:size-3",
       ],
-      // 24px items + 2px gutters: a 28px control, the buttons' sm.
       sm: ["h-6 gap-x-1.5 px-2.5 text-sm", "*:[svg]:size-3.5", "*:data-[slot=loader]:size-3.5"],
       md: [
         "min-h-10 gap-x-2 px-3.5 py-2 sm:min-h-9 sm:px-3 sm:py-1.5 sm:text-sm/6",
@@ -111,7 +118,6 @@ const toggleGroupItemStyles = tv({
         "*:[svg]:size-5 sm:*:[svg]:size-4.5",
         "*:data-[slot=loader]:size-5 sm:*:data-[slot=loader]:size-4.5",
       ],
-      // 24px items + 2px gutters: a 28px control.
       "sq-xs": "size-6 *:data-[slot=loader]:size-icon *:[svg]:size-icon",
       "sq-sm":
         "touch-target size-9 *:data-[slot=loader]:size-4.5 sm:size-8 sm:*:data-[slot=loader]:size-4 *:[svg]:size-4.5 sm:*:[svg]:size-4",

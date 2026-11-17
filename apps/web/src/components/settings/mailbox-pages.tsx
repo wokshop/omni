@@ -1,20 +1,12 @@
-// Settings pages about the workspace's mailboxes, one question each:
-// - Inboxes: what you can open here, its unread threads, and each inbox's threads by lane. Facts
-//   only.
-// - Shared: every shared mailbox and who sees it; owners and admins add one and choose its people
-//   (ADR 0008).
-// A teammate's personal inbox is on People (owners and admins): whether it exists and syncs,
-// never its mail (ADR 0017). Its create dialog is `NewMailboxDialog`, here.
 import { IconPlus, IconUserMinus } from "@/components/icons/central";
 import { lazy, useState } from "react";
 import { Skeleton, SkeletonSuspense } from "skullet/react";
+import { Contain } from "@/components/errors/error-boundary";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { ChartConfig } from "@/components/ui/chart";
 import { Label } from "@/components/ui/field";
-import { Input, InputGroup } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
-import { TextField } from "@/components/ui/text-field";
 import { appToast } from "@/components/ui/toast";
 import { useCounts, useMailboxes } from "@/hooks/use-mail.ts";
 import {
@@ -24,17 +16,9 @@ import {
   useWorkspaceMailboxes,
 } from "@/hooks/use-mailbox-members.ts";
 import { useOnboarding } from "@/hooks/use-onboarding.ts";
-import { useCreateSharedInbox, useIssueInbox } from "@/hooks/use-workspace-admin.ts";
 import { useMembers } from "@/hooks/use-organization.ts";
 import { useMember } from "@/hooks/use-session.ts";
-import { parseServer } from "@/lib/onboarding.ts";
-import {
-  LANES,
-  type Lane,
-  type Mailbox,
-  type OnboardingDomain,
-  type OrgMailbox,
-} from "@/lib/types.ts";
+import { LANES, type Lane, type Mailbox, type OrgMailbox } from "@/lib/types.ts";
 import { PersonAvatar } from "./account-pages";
 import { SettingsAddRow } from "./kit/settings-add-row";
 import {
@@ -54,13 +38,12 @@ import {
 } from "./kit/settings-stacked-dialog";
 import { SettingsValueRow } from "./kit/settings-value-row";
 import { isManager } from "./workspace-pages";
+import { NewMailboxDialog, useOwnInboxCreation } from "./new-mailbox-dialog";
 
-// The chart library is most of a megabyte: it loads when a chart is first drawn, not with the app.
 const SettingsChart = lazy(() =>
   import("./kit/settings-chart").then((module) => ({ default: module.SettingsChart })),
 );
 
-// The sidebar's names for the lanes, plus the rest.
 const LANE_LABELS: Record<Lane, string> = {
   needs_reply: "Needs reply",
   waiting_on_them: "Awaiting reply",
@@ -73,7 +56,6 @@ const LANE_CHART: ChartConfig = Object.fromEntries(
   LANES.map((lane, i) => [lane, { label: LANE_LABELS[lane], color: `chart-${i + 1}` }]),
 );
 
-/** What a mailbox is called in a list: its local part, capitalised. */
 function mailboxName(mailbox: { address: string }) {
   const local = mailbox.address.split("@")[0] ?? mailbox.address;
   return local.charAt(0).toUpperCase() + local.slice(1);
@@ -98,7 +80,6 @@ function MailboxStatusBadge({ mailbox }: { mailbox: Pick<Mailbox, "status"> }) {
 const people = (count: number) => `${count} ${count === 1 ? "person" : "people"}`;
 const threads = (count: number) => `${count} ${count === 1 ? "thread" : "threads"}`;
 
-// Skeleton stand-ins, the shape of what loads, drawn before the first load.
 type AccessList = NonNullable<ReturnType<typeof useMailboxMembers>["data"]>["members"];
 const SAMPLE_ADDRESSES = ["you@example.com", "hello@example.com", "billing@example.com"];
 const SAMPLE_MAILBOXES = SAMPLE_ADDRESSES.map((address, i) => ({
@@ -135,7 +116,6 @@ const SAMPLE_ACCESS = SAMPLE_PEOPLE.map((p) => ({
   image: null,
 })) as unknown as AccessList;
 
-/** The mailboxes the signed-in member can open in the active workspace. */
 function useOwnMailboxes() {
   const { member } = useMember();
   const mailboxes = useMailboxes();
@@ -159,7 +139,7 @@ export function useMailboxDomains() {
 export function InboxesPage() {
   const mine = useOwnMailboxes();
   const counts = useCounts();
-  // Each of your mailboxes beside its counts; undefined until both load.
+  const own = useOwnInboxCreation();
   const rows =
     mine && counts.data
       ? mine.map((mailbox) => ({
@@ -184,10 +164,26 @@ export function InboxesPage() {
             list.length === 0 ? (
               <SettingsEmptyState
                 title="No mailboxes"
-                description="An owner or admin can create your inbox or add you to a shared one."
+                description={
+                  own.personal
+                    ? undefined
+                    : "An owner or admin can create your inbox or add you to a shared one."
+                }
+                action={
+                  own.personal &&
+                  own.domains.length > 0 && (
+                    <Button size="sm" intent="outline" onPress={own.open}>
+                      <IconPlus data-slot="icon" />
+                      Create an inbox
+                    </Button>
+                  )
+                }
               />
             ) : (
               <SettingsGroup>
+                {own.personal && own.domains.length > 0 && (
+                  <SettingsAddRow label="Create an inbox" onPress={own.open} />
+                )}
                 {list.map(({ mailbox, row }) => (
                   <OwnMailboxRow key={mailbox.id} mailbox={mailbox} unread={row?.unread ?? 0} />
                 ))}
@@ -195,6 +191,7 @@ export function InboxesPage() {
             )
           }
         </Skeleton>
+        {own.dialog}
       </SettingsSection>
 
       <SettingsSection
@@ -209,19 +206,20 @@ export function InboxesPage() {
                 description="Nothing waits in any inbox right now."
               />
             ) : (
-              // The chart and its lanes in one group: the rows are the chart's legend.
               <SettingsGroup>
-                <SkeletonSuspense skeleton={<div className="h-62" />}>
-                  <SettingsChart
-                    label="Threads in each inbox by lane"
-                    config={LANE_CHART}
-                    dataKey="mailbox"
-                    data={list.map(({ mailbox, row }) => ({
-                      mailbox: mailboxName(mailbox),
-                      ...row.lanes,
-                    }))}
-                  />
-                </SkeletonSuspense>
+                <Contain fallback={null}>
+                  <SkeletonSuspense skeleton={<div className="h-62" />}>
+                    <SettingsChart
+                      label="Threads in each inbox by lane"
+                      config={LANE_CHART}
+                      dataKey="mailbox"
+                      data={list.map(({ mailbox, row }) => ({
+                        mailbox: mailboxName(mailbox),
+                        ...row.lanes,
+                      }))}
+                    />
+                  </SkeletonSuspense>
+                </Contain>
                 {LANES.map((lane, i) => {
                   const total = list.reduce((sum, { row }) => sum + row.lanes[lane], 0);
                   return (
@@ -242,10 +240,6 @@ export function InboxesPage() {
   );
 }
 
-/**
- * A mailbox you can open: who else sees it, as a fact (changing that is on Shared), and how many
- * of its inbox's threads are unread, when any are.
- */
 function OwnMailboxRow({ mailbox, unread }: { mailbox: Mailbox; unread: number }) {
   const shared = mailbox.kind === "shared";
   const count = useMailboxMembers(mailbox.id, shared).data?.members.length;
@@ -261,12 +255,10 @@ function OwnMailboxRow({ mailbox, unread }: { mailbox: Mailbox; unread: number }
   );
 }
 
-/** One shared mailbox as this page lists it, from whichever list the viewer may read. */
 interface SharedRow {
   id: string;
   address: string;
   status: Mailbox["status"];
-  /** Known up front for managers (the workspace list); members count it per row. */
   people?: number;
 }
 
@@ -278,7 +270,6 @@ export function SharedMailboxesPage() {
   const domains = useMailboxDomains();
   const [openId, setOpenId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
-  // Owners and admins see every shared mailbox; members, the ones they are on.
   const shared: SharedRow[] | undefined = canManage
     ? all.data?.inboxes.filter((mailbox) => mailbox.kind === "shared")
     : mine?.filter((mailbox) => mailbox.kind === "shared");
@@ -336,7 +327,6 @@ export function SharedMailboxesPage() {
   );
 }
 
-/** A shared mailbox: who can see it, as a count. The whole row opens that list over settings. */
 function SharedMailboxRow({ mailbox, onOpen }: { mailbox: SharedRow; onOpen: () => void }) {
   const counted = useMailboxMembers(mailbox.id, mailbox.people === undefined);
   const count = mailbox.people ?? counted.data?.members.length;
@@ -351,7 +341,6 @@ function SharedMailboxRow({ mailbox, onOpen }: { mailbox: SharedRow; onOpen: () 
   );
 }
 
-/** What a stacked dialog over the access list is doing, if anything. */
 type AccessDialog = { kind: "add" } | { kind: "remove"; memberId: string; name: string };
 
 function MailboxAccessDialog(props: {
@@ -511,133 +500,5 @@ export function PersonSelect(props: {
         )}
       </SelectContent>
     </Select>
-  );
-}
-
-/** The local part people get by default: theirs, as they sign in. */
-const localPartOf = (email: string) => email.split("@")[0] ?? "";
-
-/** The person a new personal inbox is for, as People lists them. */
-export interface InboxOwner {
-  id: string;
-  name: string;
-  email: string;
-  /** The signed-in member, making their own. */
-  isYou: boolean;
-}
-
-/**
- * Creates a mailbox on one of the workspace's domains (the setup route, ADR 0017): a shared one,
- * or `person`'s personal inbox that only they will see. A personal inbox starts as their sign-in
- * address when its domain is one of these. On the workspace's own mail host it needs the
- * mailbox's existing password and servers, as in setup.
- */
-export function NewMailboxDialog(props: {
-  domains: OnboardingDomain[];
-  person?: InboxOwner;
-  onClose: () => void;
-}) {
-  const { person } = props;
-  const { member } = useMember();
-  const issue = useIssueInbox();
-  const createShared = useCreateSharedInbox();
-  const create = person ? issue : createShared;
-  const signInDomain = person?.email.split("@")[1]?.toLowerCase();
-  const [domainId, setDomainId] = useState(
-    (props.domains.find((d) => d.domain.toLowerCase() === signInDomain) ?? props.domains[0]!).id,
-  );
-  const [localPart, setLocalPart] = useState(person ? localPartOf(person.email) : "");
-  const [password, setPassword] = useState("");
-  const [imap, setImap] = useState("");
-  const [smtp, setSmtp] = useState("");
-  const domain = props.domains.find((d) => d.id === domainId) ?? props.domains[0]!;
-  const ownHost = domain.provider === "imap";
-  const servers = ownHost ? { imap: parseServer(imap, 993), smtp: parseServer(smtp, 465) } : null;
-  const ready =
-    localPart.trim() !== "" && (!servers || (!!password && !!servers.imap && !!servers.smtp));
-
-  return (
-    <SettingsFormDialog
-      isOpen
-      onOpenChange={(open) => !open && props.onClose()}
-      title={
-        !person ? "Add a shared mailbox" : person.isYou ? "Create your inbox" : "Create an inbox"
-      }
-      description={
-        !person
-          ? "You can choose who sees it next."
-          : person.isYou
-            ? "Only you will see it."
-            : `Only ${person.name} will see it. You won't.`
-      }
-      action={person ? "Create" : "Add"}
-      disabled={!ready}
-      saving={create.isPending}
-      onSubmit={() => {
-        const placement = {
-          domainId: domain.id,
-          localPart: localPart.trim(),
-          ...(ownHost && servers?.imap && servers.smtp
-            ? { password, servers: { imap: servers.imap, smtp: servers.smtp } }
-            : {}),
-        };
-        const done = {
-          onSuccess: (made: { address: string }) => {
-            props.onClose();
-            appToast.success(
-              !person
-                ? `Added ${made.address}`
-                : person.isYou
-                  ? `Created ${made.address}`
-                  : `Created ${made.address} for ${person.name}`,
-            );
-          },
-          onError: (error: Error) =>
-            appToast.error(error.message || "The mailbox was not created."),
-        };
-        // A shared one starts with you on it; you choose who else sees it next.
-        if (person) issue.mutate({ ...placement, memberId: person.id }, done);
-        else createShared.mutate({ ...placement, memberIds: [member.id] }, done);
-      }}
-    >
-      {props.domains.length > 1 && (
-        <Select value={domainId} onChange={(next) => next && setDomainId(String(next))}>
-          <Label>Domain</Label>
-          <SelectTrigger />
-          <SelectContent items={props.domains}>
-            {(d) => (
-              <SelectItem id={d.id} textValue={d.domain}>
-                {d.domain}
-              </SelectItem>
-            )}
-          </SelectContent>
-        </Select>
-      )}
-      <TextField isRequired autoFocus value={localPart} onChange={setLocalPart}>
-        <Label>Address</Label>
-        <InputGroup className="[--input-gutter-end:--spacing(4)]">
-          <Input placeholder={person ? "name" : "hello"} autoComplete="off" />
-          <span data-slot="text" className="text-sm text-muted-foreground">
-            @{domain.domain}
-          </span>
-        </InputGroup>
-      </TextField>
-      {ownHost && (
-        <>
-          <TextField type="password" isRequired value={password} onChange={setPassword}>
-            <Label>Password</Label>
-            <Input autoComplete="off" />
-          </TextField>
-          <TextField isRequired value={imap} onChange={setImap}>
-            <Label>IMAP server</Label>
-            <Input placeholder={`imap.${domain.domain}:993`} autoComplete="off" />
-          </TextField>
-          <TextField isRequired value={smtp} onChange={setSmtp}>
-            <Label>SMTP server</Label>
-            <Input placeholder={`smtp.${domain.domain}:465`} autoComplete="off" />
-          </TextField>
-        </>
-      )}
-    </SettingsFormDialog>
   );
 }

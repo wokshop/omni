@@ -1,5 +1,3 @@
-// Trash (ADR 0034 decision 5), for members only: a grant or a link opens nothing in it. A node
-// can be restored for 30 days, then the daily purge deletes it; "Delete forever" does so at once.
 import { and, desc, eq, isNotNull, lt, or, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
 import { storageNodes } from "../schema/storage.ts";
@@ -8,13 +6,26 @@ import {
   deleteSubtree,
   driveOf,
   freeName,
+  holdsLocked,
+  isInside,
   lockTree,
   orgOfNode,
   pageSize,
   toNode,
+  type Drive,
   type StorageNode,
 } from "./core.ts";
-import { reach, retryNameRace, type Forbidden, type NodeResult, type NotFound } from "./tree.ts";
+import { nextRevision } from "./revision.ts";
+import {
+  keepUpdatedAt,
+  LOCKED,
+  reach,
+  retryNameRace,
+  type Forbidden,
+  type Locked,
+  type NodeResult,
+  type NotFound,
+} from "./tree.ts";
 
 /** Days a trashed node can still be restored. */
 export const STORAGE_TRASH_DAYS = 30;
@@ -24,17 +35,13 @@ export interface StorageTrashCursor {
   id: string;
 }
 
-export type RestoreResult =
-  | NodeResult
-  /** The folder it was in is in Trash too: restore that one. */
-  | { status: "parent_trashed" };
+export type RestoreResult = NodeResult | { status: "parent_trashed" };
 
 export type DeleteForeverResult =
-  /** The rows are gone and the bytes subtracted; the caller now deletes these objects. */
-  | { status: "ok"; r2Keys: string[] }
+  | { status: "ok"; r2Keys: string[]; drive: Drive }
   | NotFound
   | Forbidden
-  /** Only what is in Trash is deleted for good. */
+  | Locked
   | { status: "not_trashed" };
 
 const NOT_FOUND = { status: "not_found" } as const;
@@ -42,10 +49,6 @@ const FORBIDDEN = { status: "forbidden" } as const;
 
 export function trashOperations(db: Db, door: Door, memberId: string) {
   return {
-    /**
-     * What the member may restore, newest first: their own trashed My files and, in Shared, what
-     * they uploaded, or everything for an owner or admin.
-     */
     async listTrash(page: { cursor?: StorageTrashCursor | null; limit?: number } = {}) {
       const member = await loadMember(db, memberId);
       if (!member) return { nodes: [] as StorageNode[], nextCursor: null };
@@ -87,47 +90,51 @@ export function trashOperations(db: Db, door: Door, memberId: string) {
       return { nodes: nodes.map(toNode), nextCursor };
     },
 
-    /** Puts a trashed node back where it was. A name taken meanwhile gets a number. */
-    restore(nodeId: string): Promise<RestoreResult> {
+    restore(nodeId: string) {
       return retryNameRace(() =>
-        db.transaction(async (tx): Promise<RestoreResult> => {
-          // Under the tree lock, like a permanent delete: a restore that slipped in after the
-          // delete had seen the node in Trash would report success for a file about to go.
+        db.transaction(async (tx) => {
           const orgId = await orgOfNode(tx, nodeId);
-          if (!orgId) return NOT_FOUND;
+          if (!orgId) return NOT_FOUND satisfies RestoreResult;
           await lockTree(tx, orgId);
           const found = await reach(tx, door, nodeId);
-          if (!found || !found.node.trashedAt) return NOT_FOUND;
-          if (!found.access.remove) return FORBIDDEN;
+          if (!found || !found.node.trashedAt) return NOT_FOUND satisfies RestoreResult;
+          if (!found.access.remove) return FORBIDDEN satisfies RestoreResult;
           if (found.chain.slice(1).some((row) => row.trashedAt)) {
-            return { status: "parent_trashed" };
+            return { status: "parent_trashed" } satisfies RestoreResult;
           }
           const { node } = found;
+          const revision = await nextRevision(tx, orgId);
+          await tx
+            .update(storageNodes)
+            .set({ revision, updatedAt: keepUpdatedAt })
+            .where(isInside(nodeId));
           const [row] = await tx
             .update(storageNodes)
             .set({
+              revision,
               trashedAt: null,
               name: freeName(driveOf(node), node.parentId, node.name, node.kind, node.id),
             })
             .where(sql`${storageNodes.id} = ${nodeId} and ${storageNodes.trashedAt} is not null`)
             .returning();
-          return row ? { status: "ok", node: toNode(row) } : NOT_FOUND;
+          return (row ? { status: "ok", node: toNode(row) } : NOT_FOUND) satisfies RestoreResult;
         }),
-      );
+      ) satisfies Promise<RestoreResult>;
     },
 
-    /** Deletes a trashed node and everything inside it, rows first. */
-    deleteForever(nodeId: string): Promise<DeleteForeverResult> {
-      return db.transaction(async (tx): Promise<DeleteForeverResult> => {
+    deleteForever(nodeId: string) {
+      return db.transaction<DeleteForeverResult>(async (tx) => {
         const orgId = await orgOfNode(tx, nodeId);
-        if (!orgId) return NOT_FOUND;
+        if (!orgId) return NOT_FOUND satisfies DeleteForeverResult;
         await lockTree(tx, orgId);
         const found = await reach(tx, door, nodeId);
-        if (!found) return NOT_FOUND;
-        if (!found.node.trashedAt) return { status: "not_trashed" };
-        if (!found.access.remove || !(await door.removesWhole(tx, found.node))) return FORBIDDEN;
+        if (!found) return NOT_FOUND satisfies DeleteForeverResult;
+        if (await holdsLocked(tx, nodeId)) return LOCKED satisfies DeleteForeverResult;
+        if (!found.node.trashedAt) return { status: "not_trashed" } satisfies DeleteForeverResult;
+        if (!found.access.remove || !(await door.removesWhole(tx, found.node)))
+          return FORBIDDEN satisfies DeleteForeverResult;
         const { r2Keys } = await deleteSubtree(tx, orgId, nodeId);
-        return { status: "ok", r2Keys };
+        return { status: "ok", r2Keys, drive: driveOf(found.node) } satisfies DeleteForeverResult;
       });
     },
   };

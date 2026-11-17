@@ -1,6 +1,3 @@
-// Member-facing mail routes. Reads go only through `forMember` and the member-scoped helpers in
-// `@omni/db`; changes that must reach IMAP/SMTP are written to the outbox and the mail service
-// is pinged. The Worker never holds mail credentials.
 import {
   enqueueAction,
   forMember,
@@ -13,6 +10,7 @@ import {
   type MemberQueries,
 } from "@omni/db";
 import { addedParticipants, messageDisplay } from "@omni/mail-core/display";
+import { unsubscribeMethod } from "@omni/mail-core/unsubscribe";
 import { Hono, type Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
@@ -25,7 +23,9 @@ import {
   archiveThread,
   enqueuePerFolder as queuePerFolder,
   markRead,
+  setTriage,
   type ThreadWriter,
+  type TriagePatch,
 } from "../thread-writes.ts";
 import { zValidator } from "../validator.ts";
 
@@ -52,27 +52,18 @@ const cursorParam = z
   })
   .optional();
 
-/**
- * `workspace` (default): the active organization's member. `all`: every organization the user
- * belongs to, each row read as their member there (ADR 0014).
- */
 const scopeParam = z.enum(["workspace", "all"]).default("workspace");
 
-/** The read path for `scope`. */
-function reader(c: Context<AppEnv>, scope: z.infer<typeof scopeParam>) {
-  return scope === "all"
-    ? forUser(c.var.db, c.var.user.id, c.var.user.scopeOrgId)
-    : forMember(c.var.db, c.var.member.id);
+function reader(c: Context<AppEnv>) {
+  return forMember(c.var.db, c.var.member.id);
 }
 
 const listQuery = z.object({
   scope: scopeParam,
   mailboxId: z.string().min(1).optional(),
   lane: z.enum(LANES).optional(),
-  /** `inbox`, `later`, `done`, `archive` or `all`; see `ThreadView` in `@omni/db`. */
   view: z
     .enum([...THREAD_VIEWS, "queue"])
-    // Deprecated: `queue` is Later's old name, still sent by tabs open from before ADR 0027.
     .transform((view) => (view === "queue" ? "later" : view))
     .default("inbox"),
   cursor: cursorParam,
@@ -88,7 +79,6 @@ const searchQuery = z.object({
 
 const stateBody = z.object({ read: z.boolean() });
 
-/** The thread's `lastMessageAt` as the client showed it: done covers what the member saw. */
 const doneBody = z.object({ through: z.iso.datetime() });
 
 const deferBody = z.object({ until: z.iso.datetime() });
@@ -136,8 +126,12 @@ export function enqueue(
 }
 
 /** Who a route's thread writes act as: this request's member. */
-export function writerOf(c: Context<AppEnv>): ThreadWriter {
-  return { db: c.var.db, memberId: c.var.member.id, requestId: c.var.requestId };
+export function writerOf(c: Context<AppEnv>) {
+  return {
+    db: c.var.db,
+    memberId: c.var.member.id,
+    requestId: c.var.requestId,
+  } satisfies ThreadWriter;
 }
 
 /**
@@ -155,14 +149,15 @@ export async function enqueuePerFolder(
   return actionIds;
 }
 
-/**
- * The thread as both views read it: chat mode uses `cleanText`, `fromMe`, `fromTeam`, `display`
- * and `addedParticipants`; email mode uses `hasHtml` and the HTML route. Storage keys stay inside.
- *
- * `fromTeam`: sent from this mailbox's address. `fromMe`: sent by the reader. On a personal
- * mailbox the two are the same; on a shared inbox only the replies the reader sent from Omni are
- * theirs (`sentByMemberId`), and a teammate's (or one sent from another mail app) is the team's.
- */
+async function triage(c: Context<AppEnv>, patch: TriagePatch) {
+  const id = c.req.param("id") ?? "";
+  const key = c.req.header("idempotency-key") ?? "";
+  const applied = await setTriage(writerOf(c), id, patch, key);
+  if (!applied) notFound();
+  if (applied.actionIds.length) pingLater(c);
+  return c.json({ state: applied.state });
+}
+
 function threadResponse(
   thread: NonNullable<Awaited<ReturnType<MemberQueries["getThread"]>>>,
   memberId: string,
@@ -171,10 +166,25 @@ function threadResponse(
   const added = addedParticipants(thread.messages);
   return {
     ...thread,
-    messages: thread.messages.map(({ r2Key: _raw, htmlR2Key, attachments, ...message }, i) => {
+    messages: thread.messages.map((row, i) => {
+      const {
+        r2Key: _raw,
+        htmlR2Key,
+        attachments,
+        listUnsubscribe,
+        listUnsubscribeOneClick,
+        ...message
+      } = row;
       const fromTeam = message.fromAddress.toLowerCase() === self;
+      const unsubscribe = fromTeam
+        ? null
+        : unsubscribeMethod(listUnsubscribe, listUnsubscribeOneClick);
       return {
         ...message,
+        unsubscribe: unsubscribe && {
+          kind: unsubscribe.kind,
+          url: unsubscribe.kind === "link" ? unsubscribe.url : null,
+        },
         fromTeam,
         fromMe:
           fromTeam && (thread.mailboxKind === "personal" || message.sentByMemberId === memberId),
@@ -188,8 +198,6 @@ function threadResponse(
 }
 
 export const mail = new Hono<AppEnv>()
-  // `?scope=all`: every mailbox the user can open, in every workspace their session reaches
-  // (ADR 0024), each with its `orgId`; the default is the active workspace's, as before.
   .get("/mailboxes", async (c) => {
     if (c.req.query("scope") === "all") {
       const reader = forUser(c.var.db, c.var.user.id, c.var.user.scopeOrgId);
@@ -199,8 +207,8 @@ export const mail = new Hono<AppEnv>()
   })
 
   .get("/threads", zValidator("query", listQuery), async (c) => {
-    const { cursor, scope, ...query } = c.req.valid("query");
-    const threads = await reader(c, scope).listThreads({
+    const { cursor, scope: _scope, ...query } = c.req.valid("query");
+    const threads = await reader(c).listThreads({
       ...query,
       before: cursor,
     });
@@ -217,15 +225,10 @@ export const mail = new Hono<AppEnv>()
     return c.json(threadResponse(thread, c.var.member.id));
   })
 
-  /** Per mailbox: inbox and unread inbox threads, queued threads, and inbox threads per lane. */
   .get("/counts", zValidator("query", z.object({ scope: scopeParam })), async (c) => {
-    return c.json({ counts: await reader(c, c.req.valid("query").scope).counts() });
+    return c.json({ counts: await reader(c).counts() });
   })
 
-  /**
-   * An outbox action's state, e.g. to learn after a reconnect whether a send failed. Any of the
-   * user's members' actions: a reply sent from another workspace's thread is checked here too.
-   */
   .get("/actions/:id", async (c) => {
     const action = await forUser(c.var.db, c.var.user.id, c.var.user.scopeOrgId).getAction(
       c.req.param("id"),
@@ -234,14 +237,9 @@ export const mail = new Hono<AppEnv>()
     return c.json(action);
   })
 
-  /**
-   * One row per thread, best first: the matching message's subject, sender and date, a snippet
-   * around the match, and the thread's mailbox. `ranking` says whether Jev ordered them (`jev`)
-   * or full-text relevance did (`text`: no TypeSafe key, or Jev failed or was slow).
-   */
   .get("/search", limitPerMember("search"), zValidator("query", searchQuery), async (c) => {
-    const { q, scope, ...options } = c.req.valid("query");
-    const { hits, ranking } = await smartSearch(reader(c, scope), c.var.config, q, {
+    const { q, scope: _scope, ...options } = c.req.valid("query");
+    const { hits, ranking } = await smartSearch(reader(c), c.var.config, q, {
       ...options,
       log: c.var.log,
     });
@@ -262,10 +260,6 @@ export const mail = new Hono<AppEnv>()
     return attachmentResponse(object, file);
   })
 
-  /**
-   * Read state is per member and lives in Postgres. On a personal mailbox it also syncs to the
-   * IMAP \Seen flag; a shared mailbox never changes it (spec: "Sync rules").
-   */
   .patch(
     "/threads/:id/state",
     limitPerMember("actions"),
@@ -282,75 +276,38 @@ export const mail = new Hono<AppEnv>()
     },
   )
 
-  // Done and Later are this member's triage state (ADR 0007, ADR 0027): Postgres only, nothing
-  // for the outbox, so another member of a shared mailbox is unaffected. Each request sets
-  // absolute values, so a retry under the same idempotency key writes the same row. Done and
-  // Later exclude each other: marking one clears the other.
-
-  /**
-   * Done through `through` (capped at the newest message). Answers `done: false` when a message
-   * newer than `through` has arrived: the thread stays in the Inbox.
-   */
   .post(
     "/threads/:id/done",
     zValidator("header", idempotencyHeader),
     zValidator("json", doneBody),
     async (c) => {
       const { through } = c.req.valid("json");
-      const state = await forMember(c.var.db, c.var.member.id).setThreadState(c.req.param("id"), {
-        doneThrough: new Date(through),
-        later: false,
-      });
-      if (!state) notFound();
-      return c.json({ state });
+      return triage(c, { doneThrough: new Date(through), later: false });
     },
   )
 
-  /** Not done: back in the Inbox. */
-  .delete("/threads/:id/done", zValidator("header", idempotencyHeader), async (c) => {
-    const state = await forMember(c.var.db, c.var.member.id).setThreadState(c.req.param("id"), {
-      doneThrough: null,
-    });
-    if (!state) notFound();
-    return c.json({ state });
-  })
+  .delete("/threads/:id/done", zValidator("header", idempotencyHeader), (c) =>
+    triage(c, { doneThrough: null }),
+  )
 
-  /** Into Later: out of the Inbox until the member moves it back (or marks it done). */
-  .post("/threads/:id/later", zValidator("header", idempotencyHeader), async (c) => {
-    const state = await forMember(c.var.db, c.var.member.id).setThreadState(c.req.param("id"), {
-      later: true,
-      doneThrough: null,
-    });
-    if (!state) notFound();
-    return c.json({ state });
-  })
+  .post("/threads/:id/later", zValidator("header", idempotencyHeader), (c) =>
+    triage(c, { later: true, doneThrough: null }),
+  )
 
-  /** Out of Later: back in the Inbox. */
-  .delete("/threads/:id/later", zValidator("header", idempotencyHeader), async (c) => {
-    const state = await forMember(c.var.db, c.var.member.id).setThreadState(c.req.param("id"), {
-      later: false,
-    });
-    if (!state) notFound();
-    return c.json({ state });
-  })
+  .delete("/threads/:id/later", zValidator("header", idempotencyHeader), (c) =>
+    triage(c, { later: false }),
+  )
 
-  /** Deprecated (ADR 0027): the timed deferral, for tabs open from before Later. */
   .post(
     "/threads/:id/defer",
     zValidator("header", idempotencyHeader),
     zValidator("json", deferBody),
     async (c) => {
       const { until } = c.req.valid("json");
-      const state = await forMember(c.var.db, c.var.member.id).setThreadState(c.req.param("id"), {
-        deferredUntil: new Date(until),
-        doneThrough: null,
-      });
-      if (!state) notFound();
-      return c.json({ state });
+      return triage(c, { deferredUntil: new Date(until), doneThrough: null });
     },
   )
 
-  /** Deprecated (ADR 0027): out of Later, for tabs open from before it. */
   .delete("/threads/:id/defer", zValidator("header", idempotencyHeader), async (c) => {
     const state = await forMember(c.var.db, c.var.member.id).setThreadState(c.req.param("id"), {
       deferredUntil: null,

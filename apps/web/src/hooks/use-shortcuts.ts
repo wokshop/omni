@@ -1,10 +1,13 @@
-// Runs keyboard shortcuts. `lib/shortcuts.ts` says which keys mean what; components say what
-// each one does where they are (`useShortcut`). The shell mounts one key listener
-// (`useShortcutListener`); the ⌘K menu runs the same handlers (`runShortcut`).
+import { useLocation } from "@tanstack/react-router";
 import { useEffect, useRef, useSyncExternalStore } from "react";
-import { createMatcher, eventKey, type ShortcutId } from "../lib/shortcuts.ts";
+import {
+  createMatcher,
+  eventKey,
+  placeOf,
+  shortcutPlace,
+  type ShortcutId,
+} from "../lib/shortcuts.ts";
 
-// The most recently mounted handler for an id wins, so a nested screen can take over a key.
 const handlers = new Map<ShortcutId, (() => void)[]>();
 const subscribers = new Set<() => void>();
 let available: ReadonlySet<ShortcutId> = new Set();
@@ -14,14 +17,21 @@ function changed() {
   for (const notify of subscribers) notify();
 }
 
-/** Binds `run` to shortcut `id` while the component is mounted and `enabled`. */
+/**
+ * Binds `run` to shortcut `id` while the component is mounted and `enabled`, and only while the
+ * app is in the shortcut's place (`SHORTCUTS[id].place`): a shell-wide binding of a Mail key does
+ * nothing in Drive, and neither the ⌘K menu nor `?` offers it there.
+ */
 export function useShortcut(id: ShortcutId, run: () => void, enabled = true) {
+  const place = shortcutPlace(id);
+  const here = useLocation({ select: (location) => placeOf(location.pathname) });
+  const on = enabled && (!place || place === here);
   const latest = useRef(run);
   useEffect(() => {
     latest.current = run;
   });
   useEffect(() => {
-    if (!enabled) return;
+    if (!on) return;
     const handler = () => latest.current();
     handlers.set(id, [...(handlers.get(id) ?? []), handler]);
     changed();
@@ -32,31 +42,29 @@ export function useShortcut(id: ShortcutId, run: () => void, enabled = true) {
       );
       changed();
     };
-  }, [id, enabled]);
+  }, [id, on]);
 }
 
 /** Runs the shortcut's current handler. False when nothing on screen handles it. */
-export function runShortcut(id: ShortcutId): boolean {
+export function runShortcut(id: ShortcutId) {
   const handler = handlers.get(id)?.at(-1);
   handler?.();
   return !!handler;
 }
 
 /** The shortcuts something on screen handles right now (the ⌘K menu offers only these). */
-export function useAvailableShortcuts(): ReadonlySet<ShortcutId> {
+export function useAvailableShortcuts() {
   return useSyncExternalStore(
     (notify) => {
       subscribers.add(notify);
       return () => subscribers.delete(notify);
     },
     () => available,
-  );
+  ) satisfies ReadonlySet<ShortcutId>;
 }
 
 const EDITABLE = "input, textarea, select, [contenteditable]:not([contenteditable=false])";
-// Inside these, keys belong to the widget (a menu's typeahead, a dialog's own Escape).
 const OWN_KEYS = "[role=dialog], [role=alertdialog], [role=menu], [role=listbox], [role=combobox]";
-// Keys that already do something on a focused control: only take them when nothing is focused.
 const NATIVE = new Set(["Enter", "ArrowDown", "ArrowUp"]);
 
 /**
@@ -73,7 +81,6 @@ export function useShortcutListener() {
       if (!key) return;
       const target = event.target instanceof Element ? event.target : null;
       const focused = target && target !== document.body && target !== document.documentElement;
-      // A ⌘ chord can't be typing and no widget uses one, so it works from anywhere.
       const chord = key.startsWith("Mod+");
       if (!chord && (target?.closest(EDITABLE) || target?.closest(OWN_KEYS))) return;
       if (focused && NATIVE.has(key)) return;
@@ -86,13 +93,10 @@ export function useShortcutListener() {
   }, []);
 }
 
-// A polite live region for what a shortcut did ("Marked done") when nothing else on screen
-// would tell a screen reader. The shell renders it (`useAnnouncement`).
 let message = "";
 const listeners = new Set<() => void>();
 
 export function announce(text: string) {
-  // Clear first so the same message twice in a row is read twice.
   message = "";
   for (const notify of listeners) notify();
   queueMicrotask(() => {
@@ -101,7 +105,7 @@ export function announce(text: string) {
   });
 }
 
-export function useAnnouncement(): string {
+export function useAnnouncement() {
   return useSyncExternalStore(
     (notify) => {
       listeners.add(notify);

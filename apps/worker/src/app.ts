@@ -17,9 +17,10 @@ import {
   type AppEnv,
 } from "./context.ts";
 import type { Config } from "./env.ts";
+import { crm } from "./crm/routes.ts";
 import { answerThrown, apiError } from "./errors.ts";
 import { createLogger, REQUEST_ID_HEADER, requestIdFrom } from "./log.ts";
-import { MEMBER_HEADER } from "./realtime.ts";
+import { MEMBER_HEADER, WATCH_HEADER } from "./realtime.ts";
 import { account } from "./routes/account.ts";
 import { internal } from "./routes/internal.ts";
 import { assets } from "./routes/assets.ts";
@@ -28,12 +29,16 @@ import { billingCards } from "./routes/billing-cards.ts";
 import { conversations } from "./routes/conversations.ts";
 import { stripeWebhook } from "./routes/stripe-webhook.ts";
 import { compose } from "./routes/compose.ts";
+import { unsubscribe } from "./routes/unsubscribe.ts";
 import { handoff } from "./routes/handoff.ts";
-import { connect } from "./routes/connect.ts";
+import { connect, desktopGoogleReturn } from "./routes/connect.ts";
+import { desktop } from "./routes/desktop.ts";
 import { folders } from "./routes/folders.ts";
 import { library } from "./routes/library.ts";
 import { mail } from "./routes/mail.ts";
+import { saveToDrive } from "./mail/save-to-drive.ts";
 import { forwarding } from "./routes/forwarding.ts";
+import { mailCrmSharing } from "./mail/crm-sharing.ts";
 import { workspaceAdmin } from "./routes/workspace-admin.ts";
 import { aiSettings } from "./routes/ai-settings.ts";
 import { workspaceInboxes } from "./routes/workspace-inboxes.ts";
@@ -42,6 +47,8 @@ import { onboarding } from "./routes/onboarding.ts";
 import { account as accountPicture, pictures, workspaceLogo } from "./routes/pictures.ts";
 import { storage } from "./storage/routes.ts";
 import { storageShared } from "./storage/shared.ts";
+import { storageSigning } from "./storage/signing.ts";
+import { storageSync } from "./storage/sync.ts";
 import { workspaces } from "./routes/workspaces.ts";
 import { join } from "./routes/join.ts";
 import { mcp } from "./routes/mcp.ts";
@@ -53,12 +60,6 @@ function allowedOrigins(config: Config) {
   return new Set([new URL(config.auth.baseURL).origin, ...config.auth.trustedOrigins]);
 }
 
-/**
- * One ID per request: the caller's `x-request-id` (web, iOS) or the mail service's signed one
- * when well-formed, else a fresh one. Echoed on the response; on every log line, outbox row,
- * mail-service call and Sentry event of this request. Logs the route pattern, never the URL:
- * query strings carry search terms.
- */
 const trace = createMiddleware<AppEnv>(async (c, next) => {
   const requestId = requestIdFrom(
     c.req.header(REQUEST_ID_HEADER) ?? c.req.header(SIGNED_REQUEST_ID_HEADER),
@@ -73,9 +74,7 @@ const trace = createMiddleware<AppEnv>(async (c, next) => {
   } finally {
     try {
       c.res.headers.set(REQUEST_ID_HEADER, requestId);
-    } catch {
-      // Immutable headers (a Durable Object's websocket upgrade): the log still has it.
-    }
+    } catch {}
     log.info("http.request", {
       method: c.req.method,
       route: routePath(c, -1),
@@ -87,30 +86,17 @@ const trace = createMiddleware<AppEnv>(async (c, next) => {
 });
 
 const api = new Hono<AppEnv>()
-  // Thread routes (mail and assets) act as the user's member in the thread's org (ADR 0014).
   .use("/threads/:id/*", requireThreadMember)
   .use(requireMember)
-  // A request naming a mailbox acts as the user's member who can open it (ADR 0024).
   .use(requireMailboxMember)
-  // Deny by default: every write below needs a plan in good standing unless `READ_ONLY_ALLOWED`
-  // (billing.ts) names it. After `requireThreadMember`, so a thread write checks the thread's org.
   .use(requireWritableWorkspace)
-  /** The member in the active org, with how far that org's setup got (route guards read it). */
   .get("/me", async (c) =>
     c.json({ ...c.var.member, setup: await orgSetupStep(c.var.db, c.var.member.orgId) }),
   )
-  /**
-   * Websocket of `{ type: "changed", mailboxId, threadIds }` events for this member, or with
-   * `?org=<id>` for the user's member in that org (the cross-workspace view keeps one per org).
-   */
   .get("/realtime", async (c) => {
     if (c.req.header("upgrade") !== "websocket") {
       return apiError(c, "upgrade_required", "expected a websocket upgrade");
     }
-    // The socket authenticates by cookie, and browsers send cookies on cross-site websocket
-    // handshakes, so a foreign page could open one as the member (cross-site WebSocket
-    // hijacking). Browsers always send Origin on a handshake: accept only our own origins. A
-    // handshake with no Origin comes from a native client, which has to hold the session itself.
     const origin = c.req.header("origin");
     if (origin !== undefined && !allowedOrigins(c.var.config).has(origin)) {
       return apiError(c, "forbidden", "origin not allowed");
@@ -124,12 +110,17 @@ const api = new Hono<AppEnv>()
     const { id, orgId } = member;
     const headers = new Headers(c.req.raw.headers);
     headers.set(MEMBER_HEADER, id);
+    if (c.req.query("watch") === "1") headers.set(WATCH_HEADER, "1");
+    else headers.delete(WATCH_HEADER);
     const stub = c.env.REALTIME.get(c.env.REALTIME.idFromName(orgId));
     return stub.fetch(new Request(c.req.raw, { headers }));
   })
   .route("/", mail)
+  .route("/", saveToDrive)
   .route("/", forwarding)
+  .route("/mail", mailCrmSharing)
   .route("/", compose)
+  .route("/", unsubscribe)
   .route("/", handoff)
   .route("/", folders)
   .route("/connect", connect)
@@ -143,9 +134,9 @@ const api = new Hono<AppEnv>()
   .route("/", assets)
   .route("/", billing)
   .route("/", billingCards)
-  .route("/storage", storage);
+  .route("/storage", storage)
+  .route("/crm", crm);
 
-/** A resend, from the old web app, of an invitation already pending in the session's workspace. */
 async function isPendingResend(c: Context<AppEnv>) {
   const body = (await c.req.raw
     .clone()
@@ -171,44 +162,33 @@ export const app = new Hono<AppEnv>()
   .use(trace)
   .use(securityHeaders)
   .get("/health", (c) => c.json({ ok: true }))
+  .route("/desktop", desktop)
   .route("/", internal)
   .use("/api/*", requestScope)
-  // People's own agents (ADR 0029): the MCP endpoint and its OAuth discovery documents.
   .use("/mcp", requestScope)
   .use("/.well-known/*", requestScope)
   .route("/", mcp)
-  /** Public: which sign-in buttons the login page shows. Google needs its OAuth client set. */
   .get("/api/sign-in-methods", (c) => c.json({ google: c.var.config.auth.google !== undefined }))
-  // Stripe calls this, not a browser: no per-IP auth limit. It dedupes and orders events, then
-  // hands them to Better Auth's Stripe plugin.
   .route("/api/auth/stripe/webhook", stripeWebhook)
-  // Checkout and the portal go through /api/billing, which pins them to the active workspace.
-  // The plugin's own POSTs would also let a person subscribe for themselves, so they are closed.
   .post("/api/auth/subscription/*", (c) => apiError(c, "not_found", "use /api/billing"))
-  // Invitations carry the new member's inbox, so they go through the Worker (ADR 0026). Tabs
-  // loaded before that still resend here: a resend of an invitation already pending in the
-  // session's workspace passes; anything else would skip the inbox rule. Remove once those tabs
-  // have reloaded.
   .post("/api/auth/organization/invite-member", limitAuth, async (c) => {
     if (await isPendingResend(c)) return withSignInRequest(() => c.var.auth.handler(c.req.raw));
     return apiError(c, "not_found", "use /api/workspace/invitations");
   })
   .on(["GET", "POST"], "/api/auth/*", limitAuth, (c) =>
-    // Each auth request records the address it signs in with, to scope its session (ADR 0024).
     withSignInRequest(() => c.var.auth.handler(c.req.raw)),
   )
-  // Before `api`: these work for a user who has no organization yet.
   .route("/api/onboarding", onboarding)
   .route("/api/workspaces", workspaces)
   .route("/api/join", join)
-  // An agent's sign-in: back to the request after login, and the consent screen's workspace.
   .route("/api/oauth", oauth)
   .route("/api/account", account)
-  // Your picture lives beside your sign-in emails under /api/account.
   .route("/api/account", accountPicture)
   .route("/api/pictures", pictures)
-  // Storage's link door (ADR 0034): a session is optional, so it sits ahead of the member API.
   .route("/api/storage/shared", storageShared)
+  .route("/api/storage/signing", storageSigning)
+  .route("/api/storage/sync", storageSync)
+  .use("/api/connect/google/callback", desktopGoogleReturn)
   .route("/api", api)
   .onError(answerThrown);
 

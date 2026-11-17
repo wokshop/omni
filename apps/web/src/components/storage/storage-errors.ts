@@ -1,6 +1,3 @@
-// Every sentence a refused Storage request shows, in one place, keyed by the Worker's `code`
-// (never by HTTP status or the message's text). Anything without a code that this list knows
-// falls back to what the action was ("It was not renamed").
 import type { ErrorCode } from "@omni/client";
 import { appToast } from "@/components/ui/toast";
 import { ApiError } from "@/lib/api.ts";
@@ -17,18 +14,18 @@ const BY_CODE: Partial<Record<ErrorCode, string>> = {
   cycle: "A folder can't move into itself",
   parent_trashed: "Its folder is in Trash",
   invalid_email: "That isn't an email address",
+  locked: "That file is locked",
   rate_limited: "Too many at once. Try again in a minute",
 };
 
-/** Refusals that would only repeat: an upload that met one offers no Retry. */
 const FINAL = new Set<string>([
   "storage_full",
   "billing_inactive",
   "file_too_large",
+  "locked",
   "identity_changed",
 ]);
 
-/** The API's code, or the client's own (`identity_changed`: the session switched since queueing). */
 const codeOf = (error: unknown) => {
   if (error instanceof ApiError) return error.code;
   const code = (error as { code?: unknown } | null)?.code;

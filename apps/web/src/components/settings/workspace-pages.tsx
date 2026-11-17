@@ -1,6 +1,3 @@
-// Settings pages about the active workspace: what it is and the others you belong to, and who is
-// in it. Owners and admins also see each person's personal inbox there (ADR 0017). The mailboxes
-// you open and the shared ones are `mailbox-pages.tsx`.
 import {
   IconPlus,
   IconCircleX,
@@ -50,12 +47,8 @@ import { useRemoveWorkspaceLogo, useUploadWorkspaceLogo } from "@/hooks/use-pict
 import { useWorkspaces } from "@/hooks/use-workspaces.ts";
 import type { OnboardingDomain, Workspace, WorkspaceMember } from "@/lib/types.ts";
 import { NameInputRow, PersonAvatar } from "./account-pages";
-import {
-  type InboxOwner,
-  MAILBOX_STATUS,
-  NewMailboxDialog,
-  useMailboxDomains,
-} from "./mailbox-pages";
+import { MAILBOX_STATUS, useMailboxDomains } from "./mailbox-pages";
+import { type InboxOwner, NewMailboxDialog, useOwnInboxCreation } from "./new-mailbox-dialog";
 import { InviteDialog } from "./invite-dialog";
 import { JoinRequestsSection } from "./join-requests-section";
 import { UnassignedInboxesSection } from "./unassigned-inboxes";
@@ -78,13 +71,11 @@ import { SettingsValueRow } from "./kit/settings-value-row";
 
 const DAY = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
 
-/** The role a member holds, as people say it. Better Auth stores several as a comma list. */
 function roleLabel(role: string) {
   const first = role.split(",")[0]?.trim() ?? role;
   return first.charAt(0).toUpperCase() + first.slice(1);
 }
 
-// Skeleton stand-ins: the shape of what loads (three people), drawn before the first load.
 type MemberList = NonNullable<ReturnType<typeof useMembers>["data"]>["members"];
 const SAMPLE_PEOPLE = ["Sample person", "Another person", "Third person"].map((name, i) => ({
   id: `sample-${i}`,
@@ -97,7 +88,6 @@ const SAMPLE_MEMBERS = SAMPLE_PEOPLE.map((p) => ({
   user: { name: p.name, email: p.email, image: null },
 })) as unknown as MemberList;
 
-/** A handle as it's typed: lowercase letters, digits and single dashes. */
 const toHandle = (value: string) =>
   value
     .toLowerCase()
@@ -115,7 +105,6 @@ export function WorkspaceAvatar({ workspace, size }: { workspace: Workspace; siz
       isSquare
       src={workspace.logo}
       initials={size >= 20 ? workspace.name.slice(0, 1).toUpperCase() : undefined}
-      // A plain nav-sized mark is `muted`, so it still reads on the current row's accent fill.
       className={cn("text-foreground outline-0", size >= 20 ? "bg-accent" : "bg-muted")}
       style={{ "--avatar-size": `${size}px` } as CSSProperties}
     />
@@ -213,9 +202,6 @@ export function GeneralPage() {
   );
 }
 
-/** Passing: the provider saw it, or the domain's own nameservers already serve it. */
-
-/** A domain's state in one word, and the badge colour it reads in. */
 function domainState(domain: OnboardingDomain) {
   if (domain.status === "expired") return { label: "Expired", intent: "danger" } as const;
   if (domain.status === "pending") return { label: "Pending", intent: "secondary" } as const;
@@ -226,17 +212,11 @@ function domainState(domain: OnboardingDomain) {
   return { label: "Verified", intent: "success" } as const;
 }
 
-/** What a stacked dialog over the Domains section is doing, if anything. */
 type DomainDialog =
   | { kind: "add" }
   | { kind: "records"; domainId: string }
   | { kind: "remove"; domainId: string };
 
-/**
- * The workspace's mail domains (owners and admins: only they can see or change them). A domain is
- * added here after setup too (ADR 0016); each row's menu opens its DNS records over settings, to
- * copy again or check after a change at the DNS host, or removes it.
- */
 function DomainsSection() {
   const { member } = useMember();
   const onboarding = useOnboarding();
@@ -287,8 +267,6 @@ function DomainsSection() {
                               label: "DNS records",
                               onAction: () => setDialog({ kind: "records", domainId: domain.id }),
                             },
-                            // A verified domain is released by owners only (ADR 0010); a claim
-                            // that never verified, by any owner or admin.
                             ...(isOwner || domain.status !== "verified"
                               ? [
                                   {
@@ -361,7 +339,6 @@ function AddDomainDialog(props: {
 
 function RemoveDomainDialog(props: { domain: OnboardingDomain | undefined; onClose: () => void }) {
   const remove = useRemoveDomain();
-  // Kept while the dialog animates out, so its text doesn't change under it.
   const [shown, setShown] = useState(props.domain);
   if (props.domain && props.domain !== shown) setShown(props.domain);
   const verified = shown?.status === "verified";
@@ -392,14 +369,12 @@ function RemoveDomainDialog(props: { domain: OnboardingDomain | undefined; onClo
   );
 }
 
-/** The domain's records in the records table's shape: Omni's challenge first, then the provider's. */
-function shownRecords(domain: OnboardingDomain): TableRecord[] {
+function shownRecords(domain: OnboardingDomain) {
   const challenge: TableRecord[] = domain.challenge
     ? [
         {
           type: domain.challenge.type,
           name: domain.challenge.name,
-          // Empty once its one showing is gone (only its hash is stored): the dialog renders it.
           value: rememberedChallenge(domain) ?? "",
           purpose: "ownership",
           required: true,
@@ -409,23 +384,32 @@ function shownRecords(domain: OnboardingDomain): TableRecord[] {
     : [];
   return [
     ...challenge,
-    ...domain.records.map((record): TableRecord => ({
-      type: record.type,
-      name: record.name,
-      value:
-        record.diagnostic?.suggestion ??
-        (record.priority !== undefined ? `${record.priority} ${record.value}` : record.value),
-      purpose: record.check === "ownership" ? "ownership" : "routing",
-      required: true,
-      status: recordPasses(record) ? "valid" : "pending",
-    })),
-  ];
+    ...domain.records.map((record) => {
+      const result: TableRecord = {
+        type: record.type,
+        name: record.name,
+        value:
+          record.diagnostic?.suggestion ??
+          (record.priority !== undefined ? `${record.priority} ${record.value}` : record.value),
+        purpose: record.check === "ownership" ? "ownership" : "routing",
+        required: true,
+        status: recordPasses(record) ? "valid" : "pending",
+      };
+      return result;
+    }),
+  ] satisfies TableRecord[];
 }
 
 function DomainRecordsDialog(props: { domain: OnboardingDomain; onClose: () => void }) {
   const { domain } = props;
   const check = useCheckDomain();
   const rotate = useRotateChallenge();
+  const own = useOwnInboxCreation(domain.id);
+  const mailboxes = useOnboarding().data?.mailboxes;
+  const firstInbox =
+    own.personal &&
+    own.domains.some((d) => d.id === domain.id) &&
+    mailboxes?.every((m) => !m.address.toLowerCase().endsWith(`@${domain.domain}`));
   return (
     <SettingsListDialog
       isOpen
@@ -433,25 +417,27 @@ function DomainRecordsDialog(props: { domain: OnboardingDomain; onClose: () => v
       title={domain.domain}
       description="The records at your DNS host. Each must stay in place for mail to flow."
       footer={
-        <Button
-          intent="outline"
-          isPending={check.isPending}
-          onPress={() =>
-            check.mutate(domain.id, {
-              onError: (error) => appToast.error(error.message || "The records were not checked."),
-            })
-          }
-        >
-          Check records
-        </Button>
+        <>
+          <Button
+            intent="outline"
+            isPending={check.isPending}
+            onPress={() =>
+              check.mutate(domain.id, {
+                onError: (error) =>
+                  appToast.error(error.message || "The records were not checked."),
+              })
+            }
+          >
+            Check records
+          </Button>
+          {firstInbox && <Button onPress={own.open}>Create your inbox</Button>}
+          {own.dialog}
+        </>
       }
     >
       <DnsRecordsTable
         records={shownRecords(domain)}
         renderValue={(record) => {
-          // Omni's challenge, shown once, then only its hash is kept: in DNS already, nothing to
-          // copy; missing, pressing makes a new value (never on its own, since it would replace a
-          // record that may have just been added).
           if (record.purpose !== "ownership" || record.value !== "" || !domain.challenge)
             return undefined;
           return record.status === "valid" ? (
@@ -481,12 +467,10 @@ const ROLE_OPTIONS: { label: string; value: Role }[] = [
   { label: "Admin", value: "admin" },
 ];
 
-/** A member's role as a quiet badge, the way transitive lists people. */
 function RoleBadge({ role }: { role: string }) {
   return <Badge intent="secondary">{roleLabel(role)}</Badge>;
 }
 
-/** What a stacked dialog over the People page is doing, if anything. */
 type PeopleDialog =
   | { kind: "invite" }
   | { kind: "role"; memberId: string; name: string; role: Role }
@@ -494,11 +478,6 @@ type PeopleDialog =
   | { kind: "revoke"; invitationId: string; email: string }
   | { kind: "inbox"; person: InboxOwner };
 
-/**
- * The inboxes a person can open as their People row says it: their own first, then the shared
- * ones they are on, then the state of their own when it isn't syncing normally. Text in the
- * description, so the row stays as tall as the others.
- */
 function InboxDescription({ person }: { person: WorkspaceMember }) {
   const addresses = [...person.inboxes, ...person.sharedInboxes].map((inbox) => inbox.address);
   const [first] = addresses;
@@ -519,7 +498,6 @@ function InboxDescription({ person }: { person: WorkspaceMember }) {
 
 type MemberRow = NonNullable<ReturnType<typeof useMembers>["data"]>["members"][number];
 
-/** A person's row menu on People: their inbox for managers, and role and removal for others. */
 function memberMenu(
   person: MemberRow,
   name: string,
@@ -554,7 +532,6 @@ function memberMenu(
   return [...(can.inbox ? [inbox] : []), ...(can.manage ? [role, remove] : [])];
 }
 
-/** One member on People, with the inboxes they can open when the viewer manages them. */
 function PersonRow(props: {
   person: MemberRow;
   self: boolean;
@@ -602,14 +579,11 @@ export function PeoplePage() {
   const cancel = useCancelInvitation();
   const resend = useResendInvitation();
   const canManage = isManager(me.role);
-  // Owners and admins see which inboxes each person can open, and the ones former members left;
-  // the lists are theirs only (ADR 0017, ADR 0026).
   const team = useWorkspaceMembers(canManage);
   const domains = useMailboxDomains();
   const pending = invitations.data?.filter((invitation) => invitation.status === "pending");
   const [dialog, setDialog] = useState<PeopleDialog | null>(null);
   const close = () => setDialog(null);
-  // Members alone for everyone else; for owners and admins, members once their inboxes load too.
   const rows = canManage && !team.data ? undefined : members.data?.members;
   const canCreateInbox = canManage && !!domains && domains.length > 0;
 

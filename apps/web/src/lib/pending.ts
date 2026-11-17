@@ -1,6 +1,3 @@
-// Client-only state kept in the query cache: sends that have not arrived as messages yet, and
-// actions the outbox gave up on. Living in the cache means hooks subscribe to it like any query,
-// and an organization or account switch clears it with everything else.
 import type { QueryClient } from "@tanstack/react-query";
 import { keys } from "./query-keys.ts";
 
@@ -31,8 +28,8 @@ export interface ActionFailure {
   at: string;
 }
 
-export function pendingFor(client: QueryClient, threadId: string): PendingSend[] {
-  return client.getQueryData<PendingSend[]>(keys.pending(threadId)) ?? [];
+export function pendingFor(client: QueryClient, threadId: string) {
+  return (client.getQueryData<PendingSend[]>(keys.pending(threadId)) ?? []) satisfies PendingSend[];
 }
 
 export function addPending(client: QueryClient, pending: PendingSend) {
@@ -73,10 +70,10 @@ export function prunePending(
 }
 
 /** Every pending send in every thread. */
-export function allPending(client: QueryClient): PendingSend[] {
+export function allPending(client: QueryClient) {
   return client
     .getQueriesData<PendingSend[]>({ queryKey: keys.pendingAll() })
-    .flatMap(([, list]) => list ?? []);
+    .flatMap(([, list]) => list ?? []) satisfies PendingSend[];
 }
 
 /** Marks the pending send for this action failed. Returns false when no pending send has it. */
@@ -98,4 +95,53 @@ export function dismissFailure(client: QueryClient, actionId: string) {
   client.setQueryData<ActionFailure[]>(keys.failures(), (list = []) =>
     list.filter((f) => f.actionId !== actionId),
   );
+}
+
+/**
+ * A send (reply or new mail) the outbox accepted whose result, sent or failed, has not come back
+ * yet, and the workspace it runs in: that workspace's socket stays open until it does. Kept
+ * outside the query cache, so a workspace switch (which clears the cache) keeps waiting for it;
+ * `resetSession` forgets them when the signed-in person changes or signs out.
+ */
+export interface OutstandingSend {
+  actionId: string;
+  orgId: string;
+  /** When it was recorded (ms), for the cap on how long anything waits. */
+  since: number;
+}
+
+let outstanding: readonly OutstandingSend[] = [];
+const outstandingListeners = new Set<() => void>();
+
+function setOutstanding(next: readonly OutstandingSend[]) {
+  outstanding = next;
+  for (const listener of outstandingListeners) listener();
+}
+
+/** For `useSyncExternalStore`: the sends still waiting for their result. */
+export const outstandingSends = {
+  get: () => outstanding,
+  subscribe(listener: () => void) {
+    outstandingListeners.add(listener);
+    return () => outstandingListeners.delete(listener);
+  },
+};
+
+export function addOutstanding(send: Omit<OutstandingSend, "since">) {
+  setOutstanding([
+    ...outstanding.filter((s) => s.actionId !== send.actionId),
+    { ...send, since: Date.now() },
+  ]);
+}
+
+/** Its result came back (or it was cancelled): nothing left to wait for. */
+export function settleOutstanding(actionId: string) {
+  if (outstanding.some((s) => s.actionId === actionId)) {
+    setOutstanding(outstanding.filter((s) => s.actionId !== actionId));
+  }
+}
+
+/** Another person (or nobody) is signed in now: their sends are not theirs to wait for. */
+export function forgetOutstanding() {
+  if (outstanding.length) setOutstanding([]);
 }

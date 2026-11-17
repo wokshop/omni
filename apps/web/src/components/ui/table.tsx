@@ -43,6 +43,8 @@ export interface TableProps extends Omit<TablePrimitiveProps, "className"> {
    * page's scroll container (the table's own wrapper scrolls nothing).
    */
   variant?: "default" | "page";
+  /** A `page` table's row height: `md` 44px, `lg` 56px (rows that lead with a 32px tile). */
+  rowSize?: "md" | "lg";
   ref?: React.Ref<HTMLTableElement>;
 }
 
@@ -71,13 +73,14 @@ export function Table({
   grid = false,
   striped = false,
   variant = "default",
+  rowSize = "md",
   ref,
   ...props
 }: TableProps) {
   const page = variant === "page";
   if (page) bleed = true;
   return (
-    <TableContext.Provider value={{ allowResize, bleed, grid, striped, variant }}>
+    <TableContext.Provider value={{ allowResize, bleed, grid, striped, variant, rowSize }}>
       <div className="flow-root">
         <div
           className={cn(
@@ -500,7 +503,7 @@ export interface TableCellProps extends CellProps {
   ref?: React.Ref<HTMLTableCellElement>;
 }
 export function TableCell({ className, actions = false, ref, ...props }: TableCellProps) {
-  const { allowResize, bleed, grid, striped, variant } = useTableContext();
+  const { allowResize, bleed, grid, striped, variant, rowSize } = useTableContext();
   return (
     <Cell
       ref={ref}
@@ -513,8 +516,7 @@ export function TableCell({ className, actions = false, ref, ...props }: TableCe
           grid && "border-l first:border-l-0",
           !bleed && "sm:first:ps-1 sm:last:pe-1",
           allowResize && "truncate overflow-hidden",
-          variant === "page" && "h-11 py-0",
-          // 10px in from the end, where a page header's own actions sit.
+          variant === "page" && (rowSize === "lg" ? "h-14 py-0" : "h-11 py-0"),
           actions && "px-0 last:pe-2.5",
         ),
         className,
@@ -532,8 +534,6 @@ export function TableCell({ className, actions = false, ref, ...props }: TableCe
             className={
               isTreeColumn ? "flex items-center" : actions ? "flex justify-end" : undefined
             }
-            // A row with a link or an action would take presses on its own controls, and React
-            // carries a menu's presses up from its portal: an action cell's stay in the cell.
             {...(actions ? STOP : {})}
           >
             {hasChildItems && isTreeColumn && (

@@ -1,11 +1,6 @@
-// `triage`: change many threads at once (ADR 0029). Each field sets an absolute value, so a
-// retried call writes the same state. Every change acts as the person's member whose grant shows
-// the thread, through the same functions the app's routes use, and answers per change: one bad
-// thread id does not stop the rest.
 import type { McpServer } from "@modelcontextprotocol/server";
 import {
   applyConversationChange,
-  forMember,
   LANES,
   PRIORITIES,
   resortThread,
@@ -19,8 +14,10 @@ import { fanOut, notifyMembers } from "../../realtime.ts";
 import {
   archiveThread,
   markRead,
+  setTriage,
   type ThreadTargets,
   type ThreadWriter,
+  type TriagePatch,
 } from "../../thread-writes.ts";
 import { result, toolError } from "../format.ts";
 import { readsFor, type Reads } from "../scope.ts";
@@ -71,14 +68,12 @@ const outputSchema = z.object({
   ),
 });
 
-/** What one change did, for the result and the audit row. */
 interface Outcome {
   applied: string[];
   error?: string;
 }
 
 interface Effects {
-  /** Mailbox → threads whose open apps must refresh. */
   changed: Map<string, Set<string>>;
   queued: boolean;
 }
@@ -92,17 +87,11 @@ const FAILURES: Record<string, string> = {
   assignee_changed: "a teammate assigned it first",
 };
 
-/** The thread as the change found it: which inbox, and how far its mail went. */
 interface Found {
   mailboxId: string;
   lastMessageAt: Date;
 }
 
-/**
- * The outbox key for archiving: the thread and where its mail is now. Repeating the archive (a
- * retried call) queues nothing new until the mail has moved, e.g. back to the inbox in another
- * mail app, when it is queued again.
- */
 async function archiveKey(threadId: string, targets: ThreadTargets) {
   const where = targets.map((t) => `${t.folder}:${t.uidValidity}:${t.uids.join(",")}`).join("|");
   const digest = await crypto.subtle.digest(
@@ -117,7 +106,7 @@ async function conversationChanges(
   member: { id: string },
   mailboxId: string,
   change: Change,
-): Promise<{ changes: ConversationChange[] } | { error: string }> {
+) {
   const changes: ConversationChange[] = [];
   if (change.status) changes.push({ type: change.status === "resolved" ? "resolve" : "reopen" });
   if (change.priority) changes.push({ type: "priority", priority: change.priority });
@@ -127,7 +116,10 @@ async function conversationChanges(
     else {
       const people = (await reads.mailboxAssignees(mailboxId)) ?? [];
       const person = people.find((p) => p.email?.toLowerCase() === change.assignee!.toLowerCase());
-      if (!person) return { error: `${change.assignee} cannot see this inbox` };
+      if (!person)
+        return { error: `${change.assignee} cannot see this inbox` } satisfies
+          | { changes: ConversationChange[] }
+          | { error: string };
       changes.push({ type: "assign", memberId: person.memberId });
     }
   }
@@ -140,17 +132,16 @@ async function conversationChanges(
     if (unknown.length) {
       return {
         error: `no tag ${unknown.join(", ")} in this inbox (${tags.map((t) => t.name).join(", ") || "it has none"})`,
-      };
+      } satisfies { changes: ConversationChange[] } | { error: string };
     }
     for (const name of change.add_tags ?? [])
       changes.push({ type: "tag", tagId: idOf(name)!, add: true });
     for (const name of change.remove_tags ?? [])
       changes.push({ type: "tag", tagId: idOf(name)!, add: false });
   }
-  return { changes };
+  return { changes } satisfies { changes: ConversationChange[] } | { error: string };
 }
 
-/** One thread being changed, as the member whose grant shows it. */
 interface Target {
   threadId: string;
   member: { id: string; orgId: string };
@@ -159,30 +150,24 @@ interface Target {
   effects: Effects;
 }
 
-/** The person's own state: done, Later, read, lane, archived. Returns the fields applied. */
 async function applyPersonal(context: ToolContext, target: Target, change: Change) {
   const { threadId, member, found, writer, effects } = target;
-  const state = forMember(context.db, member.id);
   const applied: string[] = [];
+  const sync = async (name: "done" | "later", patch: TriagePatch) => {
+    const set = await setTriage(writer, threadId, patch, `mcp.${name}.${crypto.randomUUID()}`);
+    if (set?.actionIds.length) effects.queued = true;
+    applied.push(name);
+  };
   if (change.done !== undefined) {
-    await state.setThreadState(
-      threadId,
-      // Done through the mail this call saw, as the app's Done does: a message that arrives
-      // meanwhile stays in the Inbox.
+    await sync(
+      "done",
       change.done ? { doneThrough: found.lastMessageAt, later: false } : { doneThrough: null },
     );
-    applied.push("done");
   }
   if (change.later !== undefined) {
-    await state.setThreadState(
-      threadId,
-      change.later ? { later: true, doneThrough: null } : { later: false },
-    );
-    applied.push("later");
+    await sync("later", change.later ? { later: true, doneThrough: null } : { later: false });
   }
   if (change.read !== undefined) {
-    // A fresh key per call: read, unread, read again must each reach IMAP. A retried call queues
-    // the same flag twice, which is harmless.
     const marked = await markRead(writer, threadId, change.read, `mcp.read.${crypto.randomUUID()}`);
     if (marked?.actionIds.length) effects.queued = true;
     applied.push("read");
@@ -201,13 +186,12 @@ async function applyPersonal(context: ToolContext, target: Target, change: Chang
   return applied;
 }
 
-/** A shared conversation's status, assignee, priority and tags, through its workflow. */
-async function applyConversation(
+const applyConversation: (
   context: ToolContext,
   reads: Reads,
   target: Target,
   change: Change,
-): Promise<Outcome> {
+) => Promise<Outcome> = async (context, reads, target, change) => {
   const { threadId, member, found, effects } = target;
   const planned = await conversationChanges(reads, member, found.mailboxId, change);
   if ("error" in planned) return { applied: [], error: planned.error };
@@ -232,7 +216,7 @@ async function applyConversation(
     }
   }
   return { applied: CONVERSATION_FIELDS.filter((field) => change[field] !== undefined) };
-}
+};
 
 async function applyOne(
   context: ToolContext,
@@ -241,14 +225,21 @@ async function applyOne(
   found: Found | undefined,
   effects: Effects,
   standing: Map<string, Promise<boolean>>,
-): Promise<Outcome> {
+) {
   const member = found && (await reads.memberFor(change.thread_id));
-  if (!found || !member) return { applied: [], error: "not a thread you can see" };
+  if (!found || !member) {
+    const result: Outcome = { applied: [], error: "not a thread you can see" };
+    return result;
+  }
   const good =
     standing.get(member.orgId) ?? inGoodStanding(context.db, context.config, member.orgId);
   standing.set(member.orgId, good);
   if (!(await good)) {
-    return { applied: [], error: "this workspace is read-only until its plan is paid" };
+    const result: Outcome = {
+      applied: [],
+      error: "this workspace is read-only until its plan is paid",
+    };
+    return result;
   }
   const target: Target = {
     threadId: change.thread_id,
@@ -264,7 +255,6 @@ async function applyOne(
     applied.push(...outcome.applied);
     error = outcome.error;
   }
-  // Whatever was applied is announced and audited, even when a later field failed.
   if (applied.length) {
     const threads = effects.changed.get(found.mailboxId) ?? new Set();
     effects.changed.set(found.mailboxId, threads.add(change.thread_id));
@@ -276,24 +266,22 @@ async function applyOne(
       data: { via: "mcp", clientId: context.caller.clientId, applied },
     });
   }
-  return error ? { applied, error } : { applied };
+  const outcome: Outcome = error ? { applied, error } : { applied };
+  return outcome;
 }
 
 async function triage(context: ToolContext, input: z.infer<typeof inputSchema>) {
-  // Each change counts toward the per-person action limit, as it would one by one in the app.
   const wait = await context.rateLimit("actions", input.changes.length);
   if (wait) return toolError(`Too many changes. Try again in ${wait} seconds.`);
   const scoped = readsFor(context, input.workspace);
   if ("error" in scoped) return toolError(scoped.error);
   const effects: Effects = { changed: new Map(), queued: false };
   const standing = new Map<string, Promise<boolean>>();
-  // Every thread once, in three queries: its inbox and latest mail, and whether it is visible.
   const threads = await scoped.reads.getThreads(input.changes.map((c) => c.thread_id));
   const found = new Map(
     threads.map((t) => [t.id, { mailboxId: t.mailboxId, lastMessageAt: t.lastMessageAt }]),
   );
   const results = [];
-  // One at a time: changes to one thread may depend on each other's order (done, then archive).
   for (const change of input.changes) {
     const outcome = await applyOne(
       context,

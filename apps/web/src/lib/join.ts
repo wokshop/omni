@@ -1,5 +1,3 @@
-// Join requests (ADR 0024): a sign-in with a company's address reaches only that company, so
-// someone who is not its member asks to join, and its owners and admins accept or decline.
 import { mutationOptions, queryOptions, type QueryClient } from "@tanstack/react-query";
 import { api, call } from "./api.ts";
 import { keys } from "./query-keys.ts";
@@ -13,6 +11,7 @@ export const joinQuery = () =>
 
 export const askToJoinMutation = (client: QueryClient) =>
   mutationOptions({
+    meta: { handlesError: true },
     mutationFn: () => call(api.join.$post()),
     onSuccess: (status) => client.setQueryData(keys.join(), status),
   });
@@ -28,6 +27,7 @@ export const joinRequestsQuery = (enabled = true) =>
 /** `mutate({ id, answer })`: accept adds them as a member; decline drops the request. */
 export const answerJoinRequestMutation = (client: QueryClient) =>
   mutationOptions({
+    meta: { handlesError: true },
     mutationFn: ({ id, answer }: { id: string; answer: "accept" | "decline" }) =>
       call(
         answer === "accept"

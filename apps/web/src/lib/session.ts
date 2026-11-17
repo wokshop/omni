@@ -1,10 +1,10 @@
-// Who is signed in, and the transitions that change it (sign in, sign out, switch organization).
-// Any change of identity clears the whole cache and reloads the routes, so no data from one
-// member or organization is ever shown to another.
 import { mutationOptions, queryOptions, type QueryClient } from "@tanstack/react-query";
 import { dropStartupResponses } from "./startup-fetch.ts";
 import { api, ApiError, auth, call } from "./api.ts";
+import { setCurrentWorkspaceId } from "./current-workspace.ts";
+import { desktop } from "./desktop.ts";
 import { keys } from "./query-keys.ts";
+import { forgetOutstanding } from "./pending.ts";
 import { cancelUploads } from "./storage-uploads.ts";
 import type { Member } from "./types.ts";
 
@@ -15,7 +15,7 @@ interface AuthResult<T> {
 }
 
 /** Unwraps a Better Auth client call, throwing `ApiError` on failure. */
-export async function authCall<T>(request: Promise<AuthResult<T>>): Promise<T> {
+export async function authCall<T>(request: Promise<AuthResult<T>>) {
   const { data, error } = await request;
   if (error) throw new ApiError(error.status, error.message || error.statusText || "auth error");
   return data as T;
@@ -34,24 +34,25 @@ export interface Session {
 export const sessionQuery = () =>
   queryOptions({
     queryKey: keys.session(),
-    queryFn: async ({ signal }): Promise<Session | null> => {
-      // Both read the session cookie, so they go out together: every route waits on this, and
-      // one round trip instead of two is what startup saves. Signed out, `/me` is ignored.
+    queryFn: async ({ signal }) => {
       const me = call(api.me.$get(undefined, { init: { signal } })).then(
         (member) => ({ member }),
         (error: unknown) => ({ error }),
       );
       const data = await authCall(auth.getSession({ fetchOptions: { signal } }));
-      if (!data) return null;
+      if (!data) return null satisfies Session | null;
       const result = await me;
       if ("member" in result)
-        return { user: data.user, session: data.session, member: result.member };
+        return {
+          user: data.user,
+          session: data.session,
+          member: result.member,
+        } satisfies Session | null;
       const { error } = result;
-      // Signed in but not a member of any organization (yet): an invitation can fix that.
       if (error instanceof ApiError && error.status === 403) {
-        return { user: data.user, session: data.session, member: null };
+        return { user: data.user, session: data.session, member: null } satisfies Session | null;
       }
-      if (error instanceof ApiError && error.status === 401) return null;
+      if (error instanceof ApiError && error.status === 401) return null satisfies Session | null;
       throw error;
     },
     staleTime: 5 * 60_000,
@@ -67,18 +68,20 @@ interface Reloadable {
  * In-flight queries are aborted first so a late answer cannot land in the new cache.
  */
 export async function resetSession(client: QueryClient, router: Reloadable) {
-  // Already done before a switch; here for the rest (a 401): nothing goes on as someone else.
+  const before = client.getQueryData<Session | null>(keys.session())?.user.id;
   await cancelUploads();
   dropStartupResponses();
+  setCurrentWorkspaceId(undefined);
   await client.cancelQueries();
   client.clear();
   await router.invalidate();
+  const after = client.getQueryData<Session | null>(keys.session())?.user.id;
+  if (!after || after !== before) forgetOutstanding();
 }
 
 /** Only same-origin paths: `?redirect=https://evil.example` must not become an open redirect. */
 export function safeRedirect(to: string | undefined) {
-  // `//host` and `/\host` are both protocol-relative to a browser.
-  return to && /^\/(?![/\\])/.test(to) ? to : "/inbox";
+  return to && /^\/(?![/\\])/.test(to) ? to : "/";
 }
 
 /**
@@ -89,15 +92,40 @@ export function isServerPath(to: string) {
   return to.startsWith("/api/");
 }
 
-/** Emails a sign-in link that returns to `redirect` (a same-origin path) or the inbox. */
-export function signInWithMagicLink(email: string, redirect?: string) {
+/**
+ * Emails a sign-in link that returns to `redirect` (a same-origin path) or the inbox. In the
+ * desktop app the link opens in the browser, so it returns to the app through the shell's
+ * `omni://` callback instead, success or failure; the window then reloads where it was.
+ */
+export async function signInWithMagicLink(email: string, redirect?: string) {
+  const callback = desktop.isDesktop ? await desktop.signInCallback() : null;
+  if (callback) rememberSignInRedirect(safeRedirect(redirect));
   return authCall(
     auth.signIn.magicLink({
       email,
-      callbackURL: safeRedirect(redirect),
-      errorCallbackURL: "/login?error=magic_link",
+      callbackURL: callback ?? safeRedirect(redirect),
+      errorCallbackURL: callback ?? "/login?error=magic_link",
     }),
   );
+}
+
+const SIGN_IN_REDIRECT = "omni.sign-in-redirect";
+
+function rememberSignInRedirect(to: string) {
+  try {
+    localStorage.setItem(SIGN_IN_REDIRECT, to);
+  } catch {}
+}
+
+/** The destination a desktop sign-in started from, once; null when there is none. */
+export function takeSignInRedirect() {
+  try {
+    const to = localStorage.getItem(SIGN_IN_REDIRECT);
+    localStorage.removeItem(SIGN_IN_REDIRECT);
+    return to && to !== "/" ? safeRedirect(to) : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Which sign-in methods this deployment offers beyond email and passkeys. */
@@ -105,16 +133,35 @@ export const signInMethodsQuery = () =>
   queryOptions({
     queryKey: keys.signInMethods(),
     queryFn: ({ signal }) => call(api["sign-in-methods"].$get(undefined, { init: { signal } })),
-    // Server config: it changes only on a redeploy.
     staleTime: Infinity,
   });
 
 /**
  * Leaves for Google's consent screen; Google returns through the Worker to `redirect` (a
  * same-origin path) or the inbox. A refused sign-in (no invitation, cancelled consent) comes back
- * to `/login?error=<code>`.
+ * to `/login?error=<code>`. In the desktop app the consent opens in the browser (Google refuses
+ * embedded sign-in) through Better Auth's Expo proxy, which gives that browser the flow's state
+ * cookie; the session comes back to the window through the shell's `omni://` callback, as a
+ * magic link's does.
  */
-export function signInWithGoogle(redirect?: string) {
+export async function signInWithGoogle(redirect?: string) {
+  const callback = desktop.isDesktop ? await desktop.signInCallback() : null;
+  if (callback) {
+    rememberSignInRedirect(safeRedirect(redirect));
+    const { url } = await authCall(
+      auth.signIn.social({
+        provider: "google",
+        callbackURL: callback,
+        errorCallbackURL: callback,
+        disableRedirect: true,
+      }),
+    );
+    if (!url) throw new ApiError(500, "Google sign-in did not start");
+    const proxy = new URL("/api/auth/expo-authorization-proxy", window.location.origin);
+    proxy.searchParams.set("authorizationURL", url);
+    desktop.openOutside(proxy.toString());
+    return;
+  }
   return authCall(
     auth.signIn.social({
       provider: "google",
@@ -203,6 +250,7 @@ export const sessionsQuery = () =>
 /** `mutate(sessionToken)` signs the user out on that device. Not for the current session. */
 export const revokeSessionMutation = (client: QueryClient) =>
   mutationOptions({
+    meta: { handlesError: true },
     mutationFn: (token: string) => authCall(auth.revokeSession({ token })),
     onSettled: () => client.invalidateQueries({ queryKey: keys.sessions() }),
   });
@@ -210,6 +258,7 @@ export const revokeSessionMutation = (client: QueryClient) =>
 /** `mutate()` signs the user out on every device but this one. */
 export const revokeOtherSessionsMutation = (client: QueryClient) =>
   mutationOptions({
+    meta: { handlesError: true },
     mutationFn: () => authCall(auth.revokeOtherSessions()),
     onSettled: () => client.invalidateQueries({ queryKey: keys.sessions() }),
   });
@@ -220,6 +269,7 @@ export const revokeOtherSessionsMutation = (client: QueryClient) =>
  */
 export const updateNameMutation = (client: QueryClient) =>
   mutationOptions({
+    meta: { handlesError: true },
     mutationFn: (name: string) => authCall(auth.updateUser({ name })),
     onSuccess: () =>
       Promise.all([

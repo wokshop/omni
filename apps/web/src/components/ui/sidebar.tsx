@@ -33,6 +33,7 @@ import { useFluidHoverList } from "@/hooks/use-fluid-hover-list";
 import { cx } from "@/lib/primitive";
 import { FluidHoverHighlight } from "./fluid-hover-highlight";
 import { AriaButton as Button } from "./aria-button";
+import { Button as MenuButton, type ButtonProps as MenuButtonProps } from "./button";
 import { Link } from "./link";
 import { TooltipTrigger, Tooltip } from "./tooltip";
 
@@ -223,7 +224,7 @@ export function Sidebar({
           aria-label="Sidebar"
           data-slot="sidebar"
           data-intent="default"
-          className="entering:blur-in exiting:blur-out w-(--sidebar-width) [--sidebar-width:18rem] has-data-[slot=calendar]:[--sidebar-width:23rem]"
+          className="entering:blur-in exiting:blur-out bg-sidebar w-(--sidebar-width) [--sidebar-width:18rem] has-data-[slot=calendar]:[--sidebar-width:23rem]"
           position={side}
         >
           <Heading slot="title" className="sr-only">
@@ -252,7 +253,6 @@ export function Sidebar({
         className={cn([
           "w-(--sidebar-width) group-data-[collapsible=hidden]:w-0",
           "group-data-[side=right]:-rotate-180",
-          // Opens and closes at once: no width or slide animation.
           "relative h-svh bg-transparent",
           intent === "default" && "group-data-[collapsible=dock]:w-(--sidebar-width-dock)",
           intent === "float" &&
@@ -315,9 +315,9 @@ export function SidebarFooter({ className, ...props }: React.ComponentProps<"div
 
 export function SidebarContent({ className, ...props }: React.ComponentProps<"div">) {
   const { state } = useSidebar();
-  // One hover highlight springs between the rows (transitive's fluid hover); rows have no hover
-  // fill of their own. Only the row under the pointer lights: the space between groups does not.
-  const hover = useFluidHoverList({ itemSelector: "[data-slot='sidebar-item']" });
+  const hover = useFluidHoverList({
+    itemSelector: "[data-slot='sidebar-item'], [data-sidebar-item]",
+  });
   return (
     <div
       data-slot="sidebar-content"
@@ -364,7 +364,7 @@ export function SidebarSection({ className, ...props }: SidebarSectionProps) {
       {...props}
     >
       {state !== "collapsed" && "label" in props && (
-        <Header className="flex h-8 shrink-0 items-center px-2.25 text-xs text-subtle-foreground">
+        <Header className="flex h-8 shrink-0 items-center px-2.25 text-label text-subtle-foreground">
           {props.label}
         </Header>
       )}
@@ -400,6 +400,9 @@ export function SidebarItem({
       ref={ref}
       data-slot="sidebar-item"
       aria-current={isCurrent ? "page" : undefined}
+      aria-label={
+        props["aria-label"] ?? (isCollapsed && typeof tooltip === "string" ? tooltip : undefined)
+      }
       className={composeRenderProps(
         className,
         (className, { isFocusVisible, isHovered, isDisabled }) =>
@@ -411,6 +414,8 @@ export function SidebarItem({
             isHovered && "[&_svg:not([class*='text-'])]:text-foreground",
             isFocusVisible && "inset-ring inset-ring-sidebar-ring",
             isDisabled && "opacity-50",
+            isCollapsed &&
+              "size-7 justify-center px-0 [&_svg:not([class*='text-'])]:text-foreground",
             className,
           ),
       )}
@@ -439,6 +444,29 @@ export function SidebarItem({
         {...tooltip}
       />
     </TooltipTrigger>
+  );
+}
+
+/**
+ * A sidebar row that opens a menu (put it first in a `MenuTrigger`): a `SidebarItem`'s box,
+ * mark, label and hover highlight, as a button. Open shares the current row's accent fill, as a
+ * pressed menu trigger keeps its fill (React Aria holds it pressed while the menu is open).
+ * Focus is a `SidebarItem`'s inset ring: the button's outline sits outside the row, where the
+ * sidebar's scroll container crops it.
+ */
+export function SidebarItemTrigger({ className, ...props }: MenuButtonProps) {
+  return (
+    <MenuButton
+      intent="plain"
+      data-sidebar-item
+      className={cn(
+        "group/sidebar-item h-8 w-full min-w-0 justify-start gap-2.5 rounded-lg px-2 text-start text-sm *:[svg]:size-icon",
+        "aria-expanded:[--btn-bg:var(--sidebar-accent)] aria-expanded:[--btn-overlay:var(--sidebar-accent)] aria-expanded:*:[svg]:text-foreground",
+        "focus-visible:outline-hidden focus-visible:inset-ring focus-visible:inset-ring-sidebar-ring",
+        className,
+      )}
+      {...props}
+    />
   );
 }
 
@@ -554,14 +582,16 @@ export function SidebarDisclosureTrigger({
       <PrimitiveButton
         ref={ref}
         slot="trigger"
-        className={composeRenderProps(className, (className, { isFocusVisible, isDisabled }) =>
-          cn(
-            "flex h-8 w-full min-w-0 items-center gap-1 px-2.25 text-start text-xs text-subtle-foreground",
-            "group/sidebar-disclosure-trigger relative focus-visible:outline-hidden",
-            isFocusVisible && "inset-ring inset-ring-ring/70",
-            isDisabled && "opacity-50",
-            className,
-          ),
+        className={composeRenderProps(
+          className,
+          (className, { isFocusVisible, isDisabled }) =>
+            `${cn(
+              "flex h-8 w-full min-w-0 items-center gap-1 px-2.25 text-start text-subtle-foreground",
+              "group/sidebar-disclosure-trigger relative focus-visible:outline-hidden",
+              isFocusVisible && "inset-ring inset-ring-ring/70",
+              isDisabled && "opacity-50",
+              className,
+            )} text-label`,
         )}
         {...props}
       >
@@ -571,7 +601,6 @@ export function SidebarDisclosureTrigger({
             {state !== "collapsed" && (
               <IconChevronDownSmall
                 data-slot="chevron"
-                // Turns at once, as the group opens and closes at once.
                 className="mt-0.5 group-not-aria-expanded/sidebar-disclosure-trigger:-rotate-90"
               />
             )}
@@ -586,11 +615,7 @@ export function SidebarDisclosurePanel({ className, ...props }: DisclosurePanelP
   return (
     <DisclosurePanel
       data-slot="sidebar-disclosure-panel"
-      className={cx(
-        // Opens and closes at once: no height animation.
-        "h-(--disclosure-panel-height) overflow-clip",
-        className,
-      )}
+      className={cx("h-(--disclosure-panel-height) overflow-clip", className)}
       {...props}
     >
       <div data-slot="sidebar-disclosure-panel-content" className="flex flex-col gap-y-0.5">

@@ -1,15 +1,15 @@
-// Storage's background work (ADR 0034 decisions 1 and 5). Every job is safe to run twice and
-// bounded per run: what one run leaves, the next takes. Each is an Effect program run at the
-// edge (ADR 0038 decision 2): every database and bucket call is retried on a blip, and the run's
-// Postgres client is a scoped resource.
 import {
   deletedStorageWorkspaces,
   expiredStorageUploads,
   purgeStorageTrash,
+  purgeStorageVersions,
   randomStorageSweepStart,
   recomputeStorageUsage,
   removeStorageUpload,
+  STORAGE_TOMBSTONE_DAYS,
   STORAGE_TRASH_DAYS,
+  STORAGE_VERSION_DAYS,
+  sweepStorageTombstones,
   type Db,
 } from "@omni/db";
 import { Effect, Result } from "effect";
@@ -19,13 +19,11 @@ import { createLogger, type Logger } from "../log.ts";
 import { abortMultipart, deleteStorageObjects } from "./core.ts";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-/** Batches of 100 trashed nodes one daily run purges. */
 const PURGE_BATCHES = 20;
-/** Pages of 1000 workspace prefixes one sweep reads, and batches of 1000 objects it deletes. */
+const TOMBSTONE_BATCHES = 20;
 const SWEEP_PREFIX_PAGES = 10;
 const SWEEP_DELETE_BATCHES = 20;
 const ORG_PREFIX = "orgs/";
-/** A page with this many workspaces, most of them unknown to the database, stops the sweep. */
 const SWEEP_GUARD_PREFIXES = 20;
 
 /**
@@ -40,7 +38,6 @@ export function abortExpiredStorageUploads(env: Env) {
     Effect.gen(function* () {
       const db = yield* scopedDb(env);
       const expired = yield* retried("expired_uploads", () => expiredStorageUploads(db));
-      // One upload at a time; one that fails is left for the next minute and fails this run.
       const failures = yield* eachIsolated(expired, (upload) =>
         retried("expire_upload", async () => {
           await abortMultipart(env.STORAGE_BUCKET, upload.r2Key, upload.r2UploadId);
@@ -55,17 +52,12 @@ export function abortExpiredStorageUploads(env: Env) {
   );
 }
 
-/** Runs `job` for each item in turn; a failure never stops the rest. Answers the failures. */
 function eachIsolated<T>(items: readonly T[], job: (item: T) => Effect.Effect<unknown, JobError>) {
   return Effect.forEach(items, (item) => Effect.result(job(item)), { concurrency: 1 }).pipe(
     Effect.map((results) => results.filter(Result.isFailure).map((result) => result.failure)),
   );
 }
 
-/**
- * Trash older than 30 days: rows first (which frees the bytes), then the objects. With billing
- * on, a read-only workspace keeps its Trash: nothing is deleted for not paying (ADR 0034).
- */
 function purgeTrash(db: Db, bucket: R2Bucket, log: Logger, now: Date, keepReadOnly: boolean) {
   return Effect.gen(function* () {
     const before = new Date(now.getTime() - STORAGE_TRASH_DAYS * DAY_MS);
@@ -74,7 +66,37 @@ function purgeTrash(db: Db, bucket: R2Bucket, log: Logger, now: Date, keepReadOn
       const { r2Keys, more } = yield* retried("purge_trash", () =>
         purgeStorageTrash(db, { before, keepReadOnly }),
       );
-      // Never fails: objects it could not delete are logged (`storage.objects_left`).
+      yield* Effect.promise(() => deleteStorageObjects(bucket, r2Keys, log));
+      objects += r2Keys.length;
+      if (!more) break;
+    }
+    return objects;
+  });
+}
+
+function sweepTombstones(db: Db, now: Date) {
+  return Effect.gen(function* () {
+    const before = new Date(now.getTime() - STORAGE_TOMBSTONE_DAYS * DAY_MS);
+    let deleted = 0;
+    for (let batch = 0; batch < TOMBSTONE_BATCHES; batch++) {
+      const swept = yield* retried("sweep_tombstones", () =>
+        sweepStorageTombstones(db, { before }),
+      );
+      deleted += swept.deleted;
+      if (!swept.more) break;
+    }
+    return deleted;
+  });
+}
+
+function purgeVersions(db: Db, bucket: R2Bucket, log: Logger, now: Date, keepReadOnly: boolean) {
+  return Effect.gen(function* () {
+    const before = new Date(now.getTime() - STORAGE_VERSION_DAYS * DAY_MS);
+    let objects = 0;
+    for (let batch = 0; batch < PURGE_BATCHES; batch++) {
+      const { r2Keys, more } = yield* retried("purge_versions", () =>
+        purgeStorageVersions(db, { before, keepReadOnly }),
+      );
       yield* Effect.promise(() => deleteStorageObjects(bucket, r2Keys, log));
       objects += r2Keys.length;
       if (!more) break;
@@ -86,28 +108,19 @@ function purgeTrash(db: Db, bucket: R2Bucket, log: Logger, now: Date, keepReadOn
 interface Sweep {
   workspaces: number;
   objects: number;
-  /** What the run has spent of `SWEEP_PREFIX_PAGES` and `SWEEP_DELETE_BATCHES`. */
   pages: number;
   batches: number;
-  /** Set when the database does not look like this bucket's: the run deletes nothing more. */
   refused?: "no_workspaces" | "mostly_unknown";
 }
 
-/** The workspace ids on one page of the bucket's prefixes. */
 const workspaceIds = (listed: R2Objects) =>
   listed.delimitedPrefixes
     .map((prefix) => prefix.slice(ORG_PREFIX.length, -1))
     .filter((id) => id.length > 0);
 
-/**
- * A few deleted workspaces among many are what the sweep is for. Most of a page being unknown
- * is a database that is not this bucket's (a second install on the same bucket, a restore from
- * before these workspaces existed), and deleting would take live files that nothing brings back.
- */
 const looksForeign = (listed: number, gone: number) =>
   listed >= SWEEP_GUARD_PREFIXES && gone * 2 > listed;
 
-/** Deletes everything under a deleted workspace's prefix. False when the run's batches ran out. */
 function deleteWorkspaceObjects(bucket: R2Bucket, orgId: string, sweep: Sweep) {
   return Effect.gen(function* () {
     for (let more = true; more;) {
@@ -124,11 +137,6 @@ function deleteWorkspaceObjects(bucket: R2Bucket, orgId: string, sweep: Sweep) {
   });
 }
 
-/**
- * Sweeps one stretch of the workspace prefixes, in key order: from just after the key `after`
- * (the first prefix when absent) until the listing ends or has passed the key `until`. False
- * when the run's pages or batches ran out first.
- */
 function sweepStretch(
   db: Db,
   bucket: R2Bucket,
@@ -144,7 +152,6 @@ function sweepStretch(
         bucket.list({
           prefix: ORG_PREFIX,
           delimiter: "/",
-          // A cursor already says where to go on from.
           ...(cursor ? { cursor } : after ? { startAfter: after } : {}),
         }),
       );
@@ -211,9 +218,10 @@ export function sweepDeletedWorkspaces(db: Db, bucket: R2Bucket, log: Logger) {
 }
 
 /**
- * The daily job: purge old Trash, recount every workspace's usage from its files (a drifted
- * counter is wrong for a day at most), and sweep deleted workspaces out of the bucket. The three
- * run side by side and each runs even if another fails; the run still fails so the error is
+ * The daily job: purge old Trash and old versions, recount every workspace's usage from its
+ * files (a drifted counter is wrong for a day at most), sweep deleted workspaces out of the
+ * bucket, and sweep old sync tombstones. They run side by side and each runs even if another
+ * fails; the run still fails so the error is
  * visible.
  */
 export function storageDaily(env: Env, now = new Date()) {
@@ -223,20 +231,29 @@ export function storageDaily(env: Env, now = new Date()) {
   return runJob(
     Effect.gen(function* () {
       const db = yield* scopedDb(env);
-      const [purged, recounted, swept] = yield* Effect.all(
+      const [purged, versions, recounted, swept, tombstones] = yield* Effect.all(
         [
           Effect.result(purgeTrash(db, bucket, log, now, billed)),
+          Effect.result(purgeVersions(db, bucket, log, now, billed)),
           Effect.result(retried("recompute_usage", () => recomputeStorageUsage(db))),
           Effect.result(sweepDeletedWorkspaces(db, bucket, log)),
+          Effect.result(sweepTombstones(db, now)),
         ],
         { concurrency: "unbounded" },
       );
       log.info("storage.daily", {
         purgedObjects: valueOf(purged),
+        purgedVersions: valueOf(versions),
         usageRepaired: valueOf(recounted),
         swept: valueOf(swept),
+        tombstonesSwept: valueOf(tombstones),
       });
-      const failed = failureOf(purged) ?? failureOf(recounted) ?? failureOf(swept);
+      const failed =
+        failureOf(purged) ??
+        failureOf(versions) ??
+        failureOf(recounted) ??
+        failureOf(swept) ??
+        failureOf(tombstones);
       if (failed) return yield* Effect.fail(failed);
     }),
   );
@@ -244,5 +261,5 @@ export function storageDaily(env: Env, now = new Date()) {
 
 const valueOf = <A>(step: Result.Result<A, JobError>) =>
   Result.isSuccess(step) ? step.success : null;
-const failureOf = <A>(step: Result.Result<A, JobError>): JobError | undefined =>
-  Result.isFailure(step) ? step.failure : undefined;
+const failureOf = <A>(step: Result.Result<A, JobError>) =>
+  (Result.isFailure(step) ? step.failure : undefined) satisfies JobError | undefined;

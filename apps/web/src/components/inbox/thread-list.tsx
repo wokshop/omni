@@ -4,8 +4,9 @@ import type { Selection } from "react-aria-components";
 import { Collection } from "react-aria-components/Collection";
 import { GridListLoadMoreItem } from "react-aria-components/GridList";
 import { ListLayout, Virtualizer } from "react-aria-components/Virtualizer";
-import { Skeleton, SkeletonBox } from "skullet/react";
-import { ConversationMeta, type ConversationRowInfo } from "@/components/inbox/conversation-meta";
+import { Skeleton } from "skullet/react";
+import type { ConversationRowInfo } from "@/components/inbox/conversation-meta";
+import { DateHeader, RowBones, ThreadRow } from "@/components/inbox/thread-row";
 import { ListSweepSlot } from "@/components/inbox/list-sweep";
 import { OpenListContext } from "@/components/inbox/open-list";
 import { HeaderAction, MarkAllRead, ReloadAction } from "@/components/inbox/list-header-actions";
@@ -14,26 +15,24 @@ import { EmptyState } from "@/components/empty/empty-state";
 import { ThreadListEmpty } from "@/components/inbox/list-empty";
 import { FloatingCompose } from "@/components/compose/floating-actions";
 import { IconPencil } from "@/components/icons/central";
-import { IconSearch } from "@/components/icons/sidebar";
-import { openSearch, SearchPopover } from "@/components/search/search-popover";
+import { SearchTrigger } from "@/components/search/search-trigger";
 import { Button } from "@/components/ui/button";
-import { Avatar } from "@/components/ui/avatar";
 import { FluidHoverHighlight } from "@/components/ui/fluid-hover-highlight";
-import { GridList, GridListItem } from "@/components/ui/grid-list";
+import { GridList, GridListSection } from "@/components/ui/grid-list";
 import { Heading } from "@/components/ui/heading";
-import { SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
-import { IconSidebar } from "@/components/icons/sidebar";
+import { PageNav, usePageNavShown } from "@/components/shell/page-nav";
 import { useFluidHoverList } from "@/hooks/use-fluid-hover-list";
 import { ResizeGrip, useStoredWidth } from "@/components/ui/resize-grip";
 import { useOpenCompose } from "@/hooks/use-compose-pane.ts";
 import { useFullScreen } from "@/hooks/use-full-screen.ts";
 import { useThreads } from "@/hooks/use-mail.ts";
+import { useToday } from "@/hooks/use-today.ts";
 import {
   useThreadListShortcuts,
   type ThreadListActions,
 } from "@/hooks/use-thread-list-shortcuts.ts";
-import { useWorkspaceNames } from "@/hooks/use-workspaces.ts";
-import { senderLabel } from "@/lib/threads.ts";
+import { groupByDate } from "@/lib/date-groups.ts";
+import { senderAddress, senderLabel } from "@/lib/threads.ts";
 import type {
   ConversationFilter,
   ConversationSummary,
@@ -42,9 +41,6 @@ import type {
   ThreadView,
 } from "@/lib/types.ts";
 
-// With a thread open, the reading column keeps the width the person dragged it to (640px until
-// then) and the list takes the rest, never under 320px (`min-w-80`). The width is the reader's,
-// not the list's, so a wide window grows the list and the reader stays where it was put.
 const READER_WIDTH = 640;
 const READER_MIN = 400;
 const READER_MAX = 4096;
@@ -54,11 +50,15 @@ const LIST_MIN = 320;
 export interface ListRow {
   id: string;
   sender: string;
+  /** Whose picture the row's avatar shows: the first sender's address. */
+  senderAddress?: string | undefined;
   subject: string;
   snippet: string;
   unread: boolean;
-  /** The workspace it belongs to, when the list spans more than one. */
-  workspace?: string | undefined;
+  /** When the thread last heard from anyone: the row's time and its date group. */
+  date?: string | undefined;
+  /** Messages in the thread, shown after the subject when there is more than one. */
+  count?: number | undefined;
   /** A helpdesk conversation's status, assignee, SLA and the rest, shown after the subject. */
   conversation?: ConversationRowInfo | undefined;
   /** Your own Done and Later on the thread, where the row's menu offers them. */
@@ -73,6 +73,8 @@ interface ListProps {
   children?: ReactNode;
   /** Shown in place of the rows when there are none. */
   empty?: ReactNode;
+  /** Rows under relative date headers (Today, Yesterday, ...), from each row's `date`. */
+  grouped?: boolean;
 }
 
 /** One view's threads (inbox, later, all mail...), loading more as it scrolls. */
@@ -87,19 +89,14 @@ export function ThreadList(props: ListProps & { filter: ThreadFilter }) {
     isSuccess,
     refetch,
   } = useThreads(props.filter);
-  const names = useWorkspaceNames(props.filter.mailbox);
-  // Stable rows, so the virtualized list's row cache survives renders that don't change them.
-  const rows = useMemo(
-    () => threads.map((thread) => toRow(thread, names?.get(thread.orgId))),
-    [threads, names],
-  );
-  // Stable too: a new function would re-render every row (see `Rows`).
+  const rows = useMemo(() => threads.map(toRow), [threads]);
   const loadMore = useMemo(
     () => (hasNextPage ? () => void fetchNextPage() : undefined),
     [hasNextPage, fetchNextPage],
   );
   return (
     <List
+      grouped
       {...props}
       empty={
         props.empty ??
@@ -129,18 +126,21 @@ export function ListFailed(props: { retry: () => void }) {
   );
 }
 
-const toRow = (thread: ThreadSummary, workspace?: string): ListRow => ({
-  id: thread.id,
-  sender: senderLabel(thread),
-  subject: thread.subject,
-  snippet: thread.snippet,
-  unread: thread.unread,
-  workspace,
-  triage: { done: thread.done, later: thread.later, lastMessageAt: thread.lastMessageAt },
-});
+const toRow = (thread: ThreadSummary) => {
+  const result: ListRow = {
+    id: thread.id,
+    sender: senderLabel(thread),
+    senderAddress: senderAddress(thread),
+    subject: thread.subject,
+    snippet: thread.snippet,
+    unread: thread.unread,
+    date: thread.lastMessageAt,
+    count: thread.messageCount,
+    triage: { done: thread.done, later: thread.later, lastMessageAt: thread.lastMessageAt },
+  };
+  return result;
+};
 
-// Figma: Omni, inbox list (node 15:2), on our tokens: brand blue for the count, checkboxes and
-// unread dot; foreground for unread text, muted for read, subtle for previews.
 export function List(
   props: ListProps & {
     rows: ListRow[];
@@ -165,52 +165,41 @@ export function List(
     rowMenu?: boolean;
   },
 ) {
+  const pageNav = usePageNavShown();
   const threads = props.rows;
   const [selected, setSelected] = useState<Selection>(new Set());
   const count = selected === "all" ? threads.length : selected.size;
   const [fullScreen] = useFullScreen();
   const { threadId } = useParams({ strict: false });
-  // The list without the open thread: its row links here, so clicking it again closes it.
   const location = useLocation();
   const closeHref = threadId
     ? location.pathname.slice(0, location.pathname.lastIndexOf("/")) + location.searchStr
     : undefined;
-  // New mail opens in a dialog over the page (`ComposeDialog`).
   const openCompose = useOpenCompose();
   const detail = !!threadId;
-  // Full screen (toggled from the conversation's toolbar): the open pane takes the whole width.
   const hideList = fullScreen && detail;
   const listRef = useRef<HTMLElement>(null);
-  // The keys' actions, for the rows' context menu.
   const actions = useRef<ThreadListActions | null>(null);
-  // With a thread open, three columns: the list keeps a width the person can drag, the reading
-  // column the rest at the window's full height. Closed, the list fills the page.
   const split = detail && !hideList;
   const reader = useStoredWidth("omni:reader-width", READER_WIDTH, READER_MIN, READER_MAX);
   const rowRef = useRef<HTMLDivElement>(null);
-  // The grip moves the edge between the list and the reader: it reports the list's new width,
-  // and the reader takes what the row leaves, so the list never drops under its minimum.
   const resizeList = (listWidth: number) => {
     const row = rowRef.current?.offsetWidth ?? 0;
     reader.set(row - Math.max(LIST_MIN, listWidth));
   };
   const [resizing, setResizing] = useState(false);
-  // The rows behind the open thread, for its full-screen switcher.
-  // A helpdesk list's rows follow its status, not Done or Later: no view to leave there.
   const view = props.shortcuts?.helpdesk ? undefined : props.shortcuts?.view;
   const openList = useMemo(
     () => ({ rows: threads, href: props.href, closeHref, view }),
     [threads, props.href, closeHref, view],
   );
-  // Collapsed, the sidebar's own toggle is gone with it: the list's header offers it instead.
-  const sidebar = useSidebar();
-  const sidebarHidden = sidebar.isMobile || !sidebar.open;
 
   const rows = (
     <RowHover>
       <Rows
         label={props.title}
         rows={threads}
+        grouped={props.grouped}
         href={props.href}
         current={threadId}
         closeHref={closeHref}
@@ -223,8 +212,6 @@ export function List(
   );
 
   return (
-    // Viewport height, so the virtualized list is its own scroll container however tall the
-    // thread beside it is. No `flex-1`: its 0% basis resolves to the content height here.
     <div className="flex h-svh min-h-0 flex-col">
       {props.shortcuts && (
         <ListShortcuts
@@ -238,7 +225,6 @@ export function List(
           actions={actions}
         />
       )}
-      {/* The list and the reading column side by side, each the window's full height. */}
       <div
         ref={rowRef}
         className={`flex min-h-0 flex-1 ${resizing ? "cursor-ew-resize select-none" : ""}`}
@@ -247,41 +233,23 @@ export function List(
           ref={listRef}
           className={`relative flex flex-1 flex-col ${split ? "min-w-80" : "min-w-0"} ${hideList ? "hidden" : ""}`}
         >
-          {/* 10px on the right, the same as the 28px controls' inset from the top. */}
           <header
-            className={`flex h-12 shrink-0 items-center gap-2 border-b pe-2.5 ${sidebarHidden ? "ps-2.5" : "ps-5"}`}
+            className={`@container/list-head flex h-12 shrink-0 items-center gap-2 pe-2.5 ${pageNav ? "ps-2.5" : "ps-5"}`}
           >
-            {sidebarHidden && (
-              <SidebarTrigger intent="ghost" size="sq-sm" aria-label="Open sidebar">
-                <IconSidebar />
-              </SidebarTrigger>
-            )}
-            {/* Centred as laid out, with no nudge: its capitals sit on the icons' centre line,
-                like the sidebar's "All" and the subject beside it. It never shrinks: the
-                caption truncates and the search field narrows first. */}
-            <Heading className="shrink-0 whitespace-nowrap">{props.title}</Heading>
+            <PageNav />
+            <Heading className="shrink-0 text-md whitespace-nowrap">{props.title}</Heading>
             <span className="min-w-0 flex-1 truncate text-xs text-subtle-foreground">
               {props.caption}
             </span>
-            {/* A plain list's checked rows: how many, before the actions. */}
             {count > 0 && !props.bulkActions && (
               <span className="shrink-0 text-sm text-muted-foreground tabular-nums">
                 {count} selected
               </span>
             )}
             <div className="flex min-w-0 items-center gap-1 *:shrink-0 *:data-[search-field]:shrink">
-              {/* The same search as the sidebar's field (and `/`). On a phone the sidebar is a sheet
-                  that unmounts when closed, so the header holds the search field itself there. */}
-              {sidebar.isMobile ? (
-                <SearchPopover />
-              ) : (
-                <HeaderAction label="Search" onPress={openSearch}>
-                  <IconSearch />
-                </HeaderAction>
-              )}
+              <SearchTrigger />
               <MarkAllRead rows={threads} />
               <ReloadAction />
-              {/* With no thread open, Compose floats at the list's foot instead. */}
               {detail && (
                 <HeaderAction label="Compose" shortcut="compose" onPress={openCompose}>
                   <IconPencil />
@@ -290,10 +258,6 @@ export function List(
             </div>
           </header>
 
-          {/* Only the rows on screen are in the DOM, so thousands of threads scroll like fifty.
-              The list is its own scroll container; rows keep the frame's fixed height. The
-              wrapper holds the fluid hover highlight, which sits under the rows and follows the
-              list's scroll. The slot puts them inside smart search's sweep. */}
           {props.loading ? (
             <Skeleton
               loading
@@ -321,10 +285,6 @@ export function List(
               )}
             </ListSweepSlot>
           )}
-          {/* A helpdesk list's actions on its checked rows float at the column's foot, 16px up and
-              centred, framed like the reader's properties bar. 12px before the count, where the
-              buttons' labels sit from the other edge. */}
-          {/* New mail, where Reply floats once a thread opens; gone while the bulk bar is up. */}
           {!detail && !(count > 0 && props.bulkActions) && (
             <FloatingCompose onPress={openCompose} />
           )}
@@ -339,10 +299,7 @@ export function List(
             </div>
           )}
         </section>
-        {/* The reading column, from the window's top to its bottom, only with a thread open. The
-            same wrapper in and out of full screen, so toggling it doesn't remount it. */}
         {threadId && props.children && (
-          // Split, a fixed width that still gives way to the list's minimum in a narrow window.
           <div
             style={split ? { width: reader.width } : undefined}
             className={`relative flex min-w-0 ${split ? "shrink" : "flex-1"}`}
@@ -364,57 +321,69 @@ export function List(
   );
 }
 
-/**
- * The virtualized rows, memoized: `List` re-renders when a thread opens (the URL), the selection
- * count changes or the hover highlight moves, and any re-render of the grid re-renders every
- * visible row (React Aria hands each row fresh context). With stable props the rows render only
- * when what they show changes.
- */
 const Rows = memo(function Rows(props: {
   label: string;
   rows: ListRow[];
+  grouped?: boolean | undefined;
   href: (threadId: string) => string;
-  /** The open thread, whose row is filled. */
   current: string | undefined;
-  /** Where the open thread's row leads: back to the list alone. */
   closeHref: string | undefined;
   selected: Selection;
   onSelectionChange: (keys: Selection) => void;
   loadMore?: (() => void) | undefined;
   isLoadingMore?: boolean | undefined;
 }) {
+  const today = useToday();
+  const groups = useMemo(
+    () => (props.grouped ? groupByDate(props.rows, (row) => row.date ?? "") : undefined),
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- `today` moves the groups on.
+    [props.grouped, props.rows, today],
+  );
+  const row = (thread: ListRow) => (
+    <ThreadRow
+      thread={thread}
+      href={
+        thread.id === props.current && props.closeHref ? props.closeHref : props.href(thread.id)
+      }
+      isCurrent={thread.id === props.current}
+    />
+  );
+  const dependencies = [props.href, props.current, props.closeHref, today];
   return (
     <Virtualizer layout={ListLayout} layoutOptions={LIST_LAYOUT}>
       <GridList
         aria-label={props.label}
-        // Transparent: the list is positioned, so its own fill would paint over the
-        // highlight. The page behind it is already the background.
-        // The virtualizer gives its sizer and row wrappers no width here (its measured width is
-        // NaN), so each row would shrink to its content; they take the list's width instead.
         className="min-h-0 flex-1 overflow-y-auto overscroll-none bg-transparent *:w-full *:*:w-full"
-        // Letters are shortcuts here (j, k, x, e, ...), not type-to-find.
         disallowTypeAhead
         selectionMode="multiple"
         selectionBehavior="toggle"
         selectedKeys={props.selected}
         onSelectionChange={props.onSelectionChange}
       >
-        {/* `items` lets React Aria cache rows by thread, so a scroll renders only new rows. */}
-        <Collection items={props.rows} dependencies={[props.href, props.current, props.closeHref]}>
-          {(thread) => (
-            <ThreadRow
-              thread={thread}
-              href={
-                thread.id === props.current && props.closeHref
-                  ? props.closeHref
-                  : props.href(thread.id)
-              }
-              isCurrent={thread.id === props.current}
-            />
-          )}
-        </Collection>
-        {/* Asks for the next page three screens before the end (React Aria's default is one),
-            so older mail is usually there by the time the reader scrolls to it. */}
+        {groups ? (
+          <Collection items={groups} dependencies={dependencies}>
+            {(group) => (
+              <GridListSection
+                id={group.id}
+                aria-label={group.label}
+                className="divide-y-0 *:w-full"
+              >
+                <DateHeader
+                  label={group.label}
+                  count={group.rows.length}
+                  first={group === groups[0]}
+                />
+                <Collection items={group.rows} dependencies={dependencies}>
+                  {row}
+                </Collection>
+              </GridListSection>
+            )}
+          </Collection>
+        ) : (
+          <Collection items={props.rows} dependencies={dependencies}>
+            {row}
+          </Collection>
+        )}
         <GridListLoadMoreItem
           onLoadMore={props.loadMore}
           isLoading={props.isLoadingMore}
@@ -425,12 +394,6 @@ const Rows = memo(function Rows(props: {
   );
 });
 
-/**
- * One hover highlight springs between the rows (transitive's fluid hover). The row moved to with
- * j/k lights the same way whenever the pointer is not over the list. Its own component, taking
- * the rows as `children`: the highlight moves on every scroll (the rows move under the pointer),
- * and re-rendering here leaves the rows alone, where re-rendering `List` re-rendered every row.
- */
 function RowHover({ children }: { children: ReactNode }) {
   const hover = useFluidHoverList({
     itemSelector: "[role='row']",
@@ -444,10 +407,7 @@ function RowHover({ children }: { children: ReactNode }) {
   );
 }
 
-// 52px with its 1px border, the composer's row height, so the list and the composer beside it
-// rule their lines at the same heights (the row's own `h-13` must match). The load-more
-// sentinel takes no space; `loaderSize` 0 keeps the list's end where it was.
-const LIST_LAYOUT = { rowSize: 52, loaderSize: 0 };
+const LIST_LAYOUT = { rowSize: 40, gap: 2, estimatedHeadingSize: 48, loaderSize: 0 };
 
 interface ShortcutsSource {
   view: ThreadView;
@@ -457,12 +417,10 @@ interface ShortcutsSource {
   helpdesk?: { filter: ConversationFilter; conversations: ConversationSummary[] } | undefined;
 }
 
-/** Binds the list keys while mounted; a component so `List` can use them only for threads. */
 function ListShortcuts({
   actions,
   ...props
 }: Parameters<typeof useThreadListShortcuts>[0] & {
-  /** Handed the list's actions, for the rows' context menu. */
   actions: RefObject<ThreadListActions | null>;
 }) {
   const current = useThreadListShortcuts(props);
@@ -473,85 +431,4 @@ function ListShortcuts({
     };
   });
   return null;
-}
-
-function ThreadRow({
-  thread,
-  href,
-  isCurrent,
-}: {
-  thread: ListRow;
-  href: string;
-  isCurrent: boolean;
-}) {
-  const sender = thread.sender;
-  return (
-    <GridListItem
-      id={thread.id}
-      href={href}
-      textValue={`${sender} ${thread.subject}`}
-      // The open thread's row keeps the accent fill, the same grey as the sidebar's current item;
-      // a checked row takes the brand tint, like your own messages. The checkbox and the avatar
-      // multiply, so their edge and fill still show on the hover highlight or the tint. 52px with
-      // its border, the composer's row height, so the two tables' lines meet side by side.
-      className={`h-13 gap-4 border-b px-5 selected:bg-primary-subtle **:data-[slot=indicator]:mix-blend-multiply ${isCurrent ? "bg-accent" : ""}`}
-    >
-      <Avatar
-        isSquare
-        initials={sender.slice(0, 1).toUpperCase()}
-        className="shrink-0 bg-accent text-foreground outline-0 mix-blend-multiply [--avatar-radius:var(--radius-sm)] [--avatar-size:--spacing(7)]"
-      />
-      {/* 16px gap plus 16px margin: the frame's 32px between avatar and sender. The sender
-          column narrows with the list beside an open thread, so the subject keeps room and
-          sits close to the name. */}
-      <span
-        className={`ms-4 w-[min(--spacing(68),30%)] shrink-0 truncate @max-4xl:w-[min(--spacing(36),25%)] ${thread.unread ? "text-foreground" : "text-muted-foreground"}`}
-      >
-        {sender}
-      </span>
-      <span className="relative flex min-w-0 flex-1 items-center">
-        {thread.unread && (
-          <span
-            aria-label="Unread"
-            className="absolute -left-4.25 size-2 rounded-full bg-primary"
-          />
-        )}
-        <span className="truncate">
-          <span className={thread.unread ? "text-foreground" : "text-muted-foreground"}>
-            {thread.subject || "(no subject)"}
-            {thread.snippet && " –"}
-          </span>
-          {thread.snippet && (
-            <span className="ms-1.5 text-subtle-foreground">{thread.snippet}</span>
-          )}
-        </span>
-      </span>
-      {thread.workspace && (
-        <span className="max-w-40 shrink-0 truncate text-xs text-subtle-foreground">
-          {thread.workspace}
-        </span>
-      )}
-      {thread.conversation && <ConversationMeta info={thread.conversation} />}
-    </GridListItem>
-  );
-}
-
-/**
- * The list while its rows load, drawn from skullet's boxes on the row's own grid (avatar,
- * sender, subject; the checkbox column stays empty), enough rows to fill the list. Not measured
- * from sample rows: measuring ran on every list switch, a quarter of its time, though the
- * skeleton is held back 150 ms and usually never shows. Each box costs a style read too.
- */
-function RowBones() {
-  return Array.from({ length: 16 }, (_, i) => (
-    <div key={i} className="flex h-13 items-center gap-4 border-b ps-13.25 pe-5">
-      <SkeletonBox width={28} height={28} radius="var(--radius-sm)" />
-      <span className="ms-4 w-[min(--spacing(68),30%)] shrink-0">
-        <SkeletonBox width={`${45 + ((i * 17) % 30)}%`} height={10} />
-      </span>
-      <span className="min-w-0 flex-1">
-        <SkeletonBox width={`${55 + ((i * 23) % 35)}%`} height={10} />
-      </span>
-    </div>
-  ));
 }

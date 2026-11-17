@@ -1,6 +1,3 @@
-// Writing mail (ADR 0021): staged uploads, signatures, canned replies, recipient autocomplete,
-// shared drafts, and sends that wait out the undo window. Queries and mutations only; the
-// hooks in `hooks/use-compose.ts` expose them.
 import { mutationOptions, queryOptions, type QueryClient } from "@tanstack/react-query";
 import type { Api } from "@omni/client";
 import type { InferRequestType, InferResponseType } from "hono/client";
@@ -8,6 +5,7 @@ import { api, ApiError, call } from "./api.ts";
 import { reportAnswer, reportNoAnswer } from "./connectivity.ts";
 import { addPending, removePending, updatePending } from "./pending.ts";
 import { keys } from "./query-keys.ts";
+import { workspaceHeaders } from "./current-workspace.ts";
 
 export type Upload = InferResponseType<Api["uploads"]["$post"], 201>;
 export type CannedReply = InferResponseType<Api["canned-replies"]["$get"], 200>["replies"][number];
@@ -28,7 +26,6 @@ export type Queued = InferResponseType<Api["send"]["$post"], 202>;
 
 const retry = (failureCount: number, error: Error) =>
   error instanceof ApiError && error.status === 0 && failureCount < 10;
-// One queue with the other mail actions, so sends made offline leave in order (`mail-mutations.ts`).
 const scope = { id: "mail-actions" };
 const header = (key: string) => ({ "idempotency-key": key });
 
@@ -40,12 +37,14 @@ export function uploadFile(
   mailboxId: string,
   file: File,
   options: { onProgress?: (fraction: number) => void; signal?: AbortSignal } = {},
-): Promise<Upload> {
+) {
   const url = api.uploads.$url({ query: { mailboxId, filename: file.name } });
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("POST", url.pathname + url.search);
     xhr.setRequestHeader("content-type", file.type || "application/octet-stream");
+    for (const [name, value] of Object.entries(workspaceHeaders()))
+      xhr.setRequestHeader(name, value);
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable) options.onProgress?.(event.loaded / event.total);
     };
@@ -71,7 +70,7 @@ export function uploadFile(
     xhr.onabort = () => reject(new DOMException("aborted", "AbortError"));
     options.signal?.addEventListener("abort", () => xhr.abort(), { once: true });
     xhr.send(file);
-  });
+  }) satisfies Promise<Upload>;
 }
 
 /** Removes a staged file the composer dropped. A file a send already took is kept (404). */
@@ -90,7 +89,7 @@ export const signaturesQuery = (mailboxId: string) =>
   });
 
 /** The text the composer starts a message with: the member's own signature, else the inbox's. */
-export function signatureText(signatures: Signatures | undefined): string | null {
+export function signatureText(signatures: Signatures | undefined) {
   const own = signatures?.mine?.bodyText.trim();
   const inbox = signatures?.inbox?.bodyText.trim();
   return own || inbox || null;
@@ -142,29 +141,25 @@ export const draftsQuery = (where: { threadId: string } | { mailboxId?: string |
 
 export const createDraft = (json: NewDraft) => call(api.drafts.$post({ json }));
 
-/**
- * Autosave. A teammate's newer save answers 409; the error carries their draft so the composer
- * can take it over instead of overwriting it.
- */
-export async function saveDraft(
-  id: string,
-  version: number,
-  content: DraftContent,
-): Promise<{ conflict: Draft } | { draft: Draft }> {
+type SavedDraft = { conflict: Draft } | { draft: Draft };
+
+export async function saveDraft(id: string, version: number, content: DraftContent) {
   const response = await api.drafts[":id"].$put({ param: { id }, json: { ...content, version } });
   if (response.status === 409) {
     const body = (await response.json()) as { draft: Draft };
     reportAnswer();
-    return { conflict: body.draft };
+    const conflict: SavedDraft = { conflict: body.draft };
+    return conflict;
   }
-  return { draft: (await call(Promise.resolve(response))) as Draft };
+  const saved: SavedDraft = { draft: (await call(Promise.resolve(response))) as Draft };
+  return saved;
 }
 
 export const deleteDraft = (id: string) =>
   call(api.drafts[":id"].$delete({ param: { id } })).catch(() => undefined);
 
 /** Stops a send inside its undo window. Answers `false` when it already left. */
-export async function cancelSend(actionId: string): Promise<boolean> {
+export async function cancelSend(actionId: string) {
   try {
     await call(api.actions[":id"].cancel.$post({ param: { id: actionId } }));
     return true;
@@ -199,6 +194,7 @@ export interface ComposeReplyVariables extends Recipients {
  */
 export const composeReplyMutation = (client: QueryClient) =>
   mutationOptions({
+    meta: { handlesError: true },
     mutationKey: [...keys.mail(), "reply"],
     retry,
     scope,
@@ -258,6 +254,7 @@ export interface ForwardVariables extends Recipients {
 /** Forwards a message (the latest by default) with what the agent wrote above it. */
 export const forwardMutation = (client: QueryClient) =>
   mutationOptions({
+    meta: { handlesError: true },
     mutationKey: [...keys.mail(), "forward"],
     retry,
     scope,
@@ -304,6 +301,7 @@ export interface HandoffVariables extends Recipients {
  */
 export const handoffMutation = (client: QueryClient) =>
   mutationOptions({
+    meta: { handlesError: true },
     mutationKey: [...keys.mail(), "handoff"],
     retry,
     scope,
@@ -336,6 +334,7 @@ export interface NewMailVariables {
 /** New mail from one of the member's mailboxes. */
 export const newMailMutation = (client: QueryClient) =>
   mutationOptions({
+    meta: { handlesError: true },
     mutationKey: [...keys.mail(), "send"],
     retry,
     scope,
@@ -366,8 +365,7 @@ export function forgetPending(client: QueryClient, threadId: string, key: string
   removePending(client, threadId, key);
 }
 
-/** Drops empty lists and undefined fields, so payloads match what the routes expect. */
-function compact<T extends Record<string, unknown>>(value: T): T {
+function compact<T extends Record<string, unknown>>(value: T) {
   return Object.fromEntries(
     Object.entries(value).filter(
       ([, v]) => v !== undefined && !(Array.isArray(v) && v.length === 0),

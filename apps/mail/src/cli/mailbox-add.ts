@@ -1,8 +1,3 @@
-// Adds a mailbox, or replaces its credentials: `pnpm --filter @omni/mail mailbox:add ...`.
-// The app password is read from stdin (never argv, which lands in shell history), or created
-// through the Purelymail API with --create-app-password. It is encrypted with the keyring, bound
-// to the mailbox id, and stored with an owner grant. A running service connects it on the next
-// signed ping (sent here when MAIL_SERVICE_URL is set) or sync interval.
 import { randomUUIDv7 } from "node:crypto";
 import { existsSync } from "node:fs";
 import { parseArgs } from "node:util";
@@ -39,9 +34,9 @@ function fail(message: string): never {
   process.exit(1);
 }
 
-function endpoint(value: string | undefined, fallback?: ServerEndpoint): ServerEndpoint {
+function endpoint(value: string | undefined, fallback?: ServerEndpoint) {
   if (value === undefined) {
-    if (fallback) return fallback;
+    if (fallback) return fallback satisfies ServerEndpoint;
     fail(`--imap and --smtp are required for this provider\n\n${USAGE}`);
   }
   const [host, port, mode, ...rest] = value.split(":");
@@ -52,17 +47,17 @@ function endpoint(value: string | undefined, fallback?: ServerEndpoint): ServerE
   if (mode !== undefined && mode !== "starttls" && mode !== "plain") {
     fail(`bad server mode "${mode}": use starttls`);
   }
-  return { host, port: parsed, secure: mode === undefined };
+  return { host, port: parsed, secure: mode === undefined } satisfies ServerEndpoint;
 }
 
-async function readStdin(): Promise<string> {
+async function readStdin() {
   if (process.stdin.isTTY) console.error("App password (end with Ctrl-D):");
   const chunks: Buffer[] = [];
   for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
   return Buffer.concat(chunks).toString("utf8").trim();
 }
 
-async function verifyLogin(credentials: PasswordCredentials): Promise<void> {
+async function verifyLogin(credentials: PasswordCredentials) {
   const refused = await verifyImapLogin(credentials);
   if (refused) fail(refused);
 }
@@ -73,7 +68,6 @@ if (!config.success) {
   fail(`missing or invalid: ${config.error.issues.map((i) => i.path.join(".")).join(", ")}`);
 }
 
-// `pnpm mailbox:add -- --org ...` forwards the `--` itself; drop it.
 const argv = process.argv.slice(2);
 const { values } = parseArgs({
   args: argv[0] === "--" ? argv.slice(1) : argv,

@@ -1,12 +1,8 @@
-// Merging two threads that turn out to be one conversation: a reply that arrived before its
-// parent started a thread of its own, and the parent then joined the older one. The mail service
-// calls this while storing a message; the rules for helpdesk state were agreed with the ticket
-// workflow (ADR 0021): the most active status wins, the survivor keeps its assignee, SLA clocks
-// keep the earliest time.
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { uuidv7 } from "uuidv7";
 import type { Db } from "../client.ts";
 import { queueMailEvents } from "./pending-mail-events.ts";
+import { mergeParticipants } from "./thread-participants.ts";
 import { assignments, conversationEvents, threads } from "../schema/index.ts";
 
 type Thread = typeof threads.$inferSelect;
@@ -28,18 +24,14 @@ export interface MergedThreads {
 
 /**
  * Merges `threadIds` (of one mailbox) into the oldest of them and deletes the rest. Messages,
- * notes, events, tags, drafts, notifications and per-member state move to the survivor. Two
+ * participants, notes, events, tags, drafts, notifications and per-member state move to the survivor. Two
  * threads that each belong to a different provider thread (Gmail) are separate conversations by
  * definition and are never merged: only the ones that agree with the survivor's provider thread
  * join it. Idempotent: ids that no longer exist are skipped.
  */
-export async function mergeThreads(
-  db: Db,
-  input: { mailboxId: string; threadIds: string[] },
-): Promise<MergedThreads> {
+export async function mergeThreads(db: Db, input: { mailboxId: string; threadIds: string[] }) {
   const ids = [...new Set(input.threadIds)];
-  return db.transaction(async (tx) => {
-    // Locked in id order, so a merge and a Worker change on the same rows cannot deadlock.
+  return db.transaction<MergedThreads>(async (tx) => {
     const rows = await tx
       .select()
       .from(threads)
@@ -78,9 +70,6 @@ export async function mergeThreads(
         .filter((d): d is Date => d !== null)
         .toSorted((a, b) => b.getTime() - a.getTime())[0] ?? null;
 
-    // Each child row moves unless the survivor (or another merged thread, for the lowest ctid)
-    // already has its twin: same member, tag or dedupe key. Twins go with the merged thread's
-    // cascade.
     const from = sql`array[${sql.join(
       fromIds.map((id) => sql`${id}`),
       sql`, `,
@@ -88,6 +77,7 @@ export async function mergeThreads(
     const into = survivor.id;
     await tx.execute(sql`update messages set thread_id = ${into}, updated_at = now()
       where thread_id = any(${from})`);
+    await mergeParticipants(tx, { intoThreadId: into, fromThreadIds: fromIds });
     for (const table of ["notes", "drafts", "notifications", "triage_feedback"]) {
       await tx.execute(
         sql`update ${sql.identifier(table)} set thread_id = ${into} where thread_id = any(${from})`,
@@ -103,8 +93,6 @@ export async function mergeThreads(
         select 1 from thread_tags s where s.thread_id = ${into} and s.tag_id = t.tag_id)
       and t.ctid = (select min(d.ctid) from thread_tags d
         where d.thread_id = any(${from}) and d.tag_id = t.tag_id)`);
-    // A member's read, done and deferred state on the whole conversation: unread if any part
-    // was (no row means unread), done and deferred only as far as every part was.
     const every = sql`array[${sql.join(
       [into, ...fromIds].map((id) => sql`${id}`),
       sql`, `,
@@ -129,7 +117,6 @@ export async function mergeThreads(
         where thread_id = (select min(thread_id) from assignments where thread_id = any(${from}))`);
     }
 
-    // The merged threads go first: the provider thread id is unique per mailbox.
     await tx.delete(threads).where(inArray(threads.id, fromIds));
     await tx
       .update(threads)
@@ -154,7 +141,6 @@ export async function mergeThreads(
         nextResponseDueAt: earliest((row) => row.nextResponseDueAt),
         resolutionDueAt: earliest((row) => row.resolutionDueAt),
         firstRespondedAt: earliest((row) => row.firstRespondedAt),
-        // The summary covered one half; the next AI job writes one for the whole conversation.
         summary: null,
         summaryMessageId: null,
         updatedAt: new Date(),
@@ -171,8 +157,6 @@ export async function mergeThreads(
         data: { fromThreadId: row.id },
       })),
     );
-    // Open apps showing a merged thread move to the survivor; queued with the merge, so a crash
-    // cannot leave them holding a thread that no longer exists.
     await queueMailEvents(tx, [
       {
         type: "threads.merged",

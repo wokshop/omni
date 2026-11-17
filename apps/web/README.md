@@ -27,6 +27,9 @@ opening a thread, loading older mail and scrolling in that Chromium against the 
 with the CPU slowed 4x (`scripts/bench.ts`). Run it before and after a performance change.
 `BENCH_LATENCY=80` adds a round trip to every request; `BENCH_H2=1` serves the app over HTTP/2 as
 production does (`wrangler dev` alone is HTTP/1.1, which queues the scripts six at a time).
+`pnpm bench:drive` does the same for Drive (`scripts/bench-drive.ts`): startup on My files,
+switching places, opening a folder, loading 3,000 files of a 5,000-file folder, scrolling them,
+and selecting one, against the seed's Drive (`perf:seed` makes it too).
 
 ## Layout
 
@@ -45,30 +48,41 @@ Components use `hooks/` only. `lib/` is how the hooks work.
 
 ## Path map
 
-| Path                                       | Search params                        | Loader                                           |
-| ------------------------------------------ | ------------------------------------ | ------------------------------------------------ |
-| `/`                                        |                                      | redirect to `/inbox`                             |
-| `/login`                                   | `redirect?`, `error?`                | signed-in members are sent on to `redirect`      |
-| `/invite/$invitationId`                    |                                      | the invitation (any signed-in user)              |
-| `/onboarding`                              |                                      | setup status (may create, or finishing one)      |
-| `/inbox`, `/inbox/$threadId`               | `mailbox?`, `lane?`, `view?`, `tag?` | first page of the list; the thread               |
-| `/later`, `/later/$id`                     | `mailbox?`                           | same, Later view                                 |
-| `/done`, `/done/$id`                       | `mailbox?`                           | same, done view                                  |
-| `/archive`, `/archive/$id`                 | `mailbox?`                           | same, archive view                               |
-| `/all`, `/all/$id`                         | `mailbox?`                           | same, all mail                                   |
-| `/search`, `/search/$id`                   | `q`, `mailbox?`                      | results for `q`; the thread                      |
-| `/compose`                                 | `mailbox?`, `to?`, `subject?`        | (mailboxes come from the shell)                  |
-| `/settings`                                |                                      | opens the settings dialog (⌘. anywhere)          |
-| `/files/my`, `/files/my/$folderId`         | `mailbox?`                           | a folder of My files (ADR 0034)                  |
-| `/files/shared`, `/files/shared/$folderId` | `mailbox?`                           | a folder of Shared (companies only)              |
-| `/files/shared-with-me`, `/files/trash`    | `mailbox?`                           | what was shared with you; Trash                  |
-| `/s/$shareId`                              | `node?`                              | a shared link, signed in or not; 404 → not found |
+Every page inside a workspace starts with its slug (`$ws` below, ADR 0043); mail has its own
+`/mail` prefix. A path from before (`/inbox/<id>`, `/files/my`, `/settings`) is sent on under the
+session's workspace.
 
-Guards: `_authed` needs a user, `_authed/_member` needs a member of the active organization and
+| Path                                               | Search params                        | Loader                                           |
+| -------------------------------------------------- | ------------------------------------ | ------------------------------------------------ |
+| `/`                                                |                                      | redirect to the workspace's `/$ws/mail/inbox`    |
+| `/login`                                           | `redirect?`, `error?`                | signed-in members are sent on to `redirect`      |
+| `/invite/$invitationId`                            |                                      | the invitation (any signed-in user)              |
+| `/onboarding`                                      |                                      | setup status (may create, or finishing one)      |
+| `/$ws/mail/inbox`, `/$ws/mail/inbox/$threadId`     | `mailbox?`, `lane?`, `view?`, `tag?` | first page of the list; the thread               |
+| `/$ws/mail/later`, `/$ws/mail/later/$id`           | `mailbox?`                           | same, Later view                                 |
+| `/$ws/mail/done`, `/$ws/mail/done/$id`             | `mailbox?`                           | same, done view                                  |
+| `/$ws/mail/archive`, `/$ws/mail/archive/$id`       | `mailbox?`                           | same, archive view                               |
+| `/$ws/mail/all`, `/$ws/mail/all/$id`               | `mailbox?`                           | same, all mail                                   |
+| `/$ws/mail/{drafts,sent,spam,trash}[/$id]`         | `mailbox?`                           | same, those folders                              |
+| `/$ws/mail/search`, `/$ws/mail/search/$id`         | `q`, `mailbox?`                      | results for `q`; the thread                      |
+| `/$ws/mail/compose`                                | `mailbox?`, `to?`, `subject?`        | (mailboxes come from the shell)                  |
+| `/$ws/settings`, `/$ws/settings/$page`             |                                      | the settings page shown last (⌘. anywhere)       |
+| `/$ws/files/my`, `/$ws/files/my/$folderId`         | `mailbox?`                           | a folder of My files (ADR 0034)                  |
+| `/$ws/files/shared`, `/$ws/files/shared/$folderId` | `mailbox?`                           | a folder of Shared (companies only)              |
+| `/$ws/files/shared-with-me`, `/$ws/files/trash`    | `mailbox?`                           | what was shared with you; Trash                  |
+| `/s/$shareId`                                      | `node?`                              | a shared link, signed in or not; 404 → not found |
+| `/$ws/crm/companies`, `/$ws/crm/people`            | `q?`, `mailbox?`                     | first page for `q` (company workspaces only)     |
+| `/$ws/crm/deals`                                   | `q?`, `view?` (`list`), `mailbox?`   | the board's deals, or the list for `q`           |
+| `/$ws/crm/{companies,people,deals}/$id`            | `mailbox?`                           | the record and its timeline's first page         |
+
+Guards: `_authed` needs a user. `_authed/$workspace` resolves the slug, makes it the tab's
+workspace (`lib/workspaces.ts` `enterWorkspace`: every API call sends `omni-workspace`, every
+workspace query key carries its id, the session's active organization follows), moves a
+`?mailbox=` or a thread of another workspace to that one, and needs the user's member there; it
 loads mailboxes and counts for the shell. A user with no organization goes to `/onboarding` if
 they may create one (always with open sign-up; owners only with `SIGN_UP=invitation`, ADR 0018), else to `/login?error=no_organization`; an owner or
 admin whose workspace's setup is unfinished (`member.setup !== "complete"`, from `/api/me`) goes
-to `/onboarding`, which resumes at the saved step; `/settings` stays reachable (ADR 0007, 0009). The thread routes are children of their list, so the
+to `/onboarding`, which resumes at the saved step; `/$ws/settings` stays reachable (ADR 0007, 0009). The thread routes are children of their list, so the
 list stays mounted (three panes) and the back button walks the URL history.
 
 ## How the data layer works
@@ -156,45 +170,47 @@ reconnects realtime for the new member. Any 401 does the same, which sends the u
 
 ## Hooks
 
-| Hook                                                                                                                                               | Returns / takes                                                                                  |
-| -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `useSession()`                                                                                                                                     | `{ user, session, member } \| null`                                                              |
-| `useMember()`                                                                                                                                      | `{ user, member }` (member routes only)                                                          |
-| `useSignInMagicLink()`                                                                                                                             | `mutate({ email, redirect? })`                                                                   |
-| `useSignInPasskey()`                                                                                                                               | `mutate()`                                                                                       |
-| `useSignOut()`                                                                                                                                     | `mutate()`                                                                                       |
-| `useOrganizations()`, `useSetActiveOrganization()`                                                                                                 | list; `mutate(organizationId)`                                                                   |
-| `useInvitation(id)`, `useAcceptInvitation()`, `useRejectInvitation()`                                                                              | invitation; `mutate(id)`                                                                         |
-| `useMembers()`, `useInvitations()`, `useInviteMember()`, `useCancelInvitation()`, `useRemoveMember()`, `useUpdateMemberRole()`                     | organization admin                                                                               |
-| `usePasskeys()`, `useAddPasskey()`, `useDeletePasskey()`                                                                                           | passkeys                                                                                         |
-| `useOnboarding()`, `useCreateWorkspace()`, `useAddDomain()`, `useCheckDomain()`, `useCreateMailboxes()`, `useFinishSetup()`, `useOnboardingExit()` | workspace setup (`hooks/use-onboarding.ts`)                                                      |
-| `useWorkspaces()`, `useOpenWorkspace()`, `useOpenMailbox()`                                                                                        | switcher (`hooks/use-workspaces.ts`)                                                             |
-| `useMailboxes()`, `useCounts()`                                                                                                                    | sidebar data                                                                                     |
-| `useThreads({ view, mailbox?, lane? })`                                                                                                            | `{ threads, fetchNextPage, hasNextPage, … }`                                                     |
-| `useThread(id)`, `useSuspenseThread(id)`                                                                                                           | `{ thread, pending, … }`                                                                         |
-| `useSearch(q, mailbox?)`                                                                                                                           | results                                                                                          |
-| `usePrefetchThread()`                                                                                                                              | `(threadId) => void`                                                                             |
-| `useMarkRead()`, `useMoveToLater()`, `useMarkDone()`, `useMarkUndone()`, `useArchive()`, `useMove()`                                               | `mutate({ threadId, … })`                                                                        |
-| `useMarkReadOnOpen(thread)`                                                                                                                        | marks an opened unread thread read, once                                                         |
-| `useSendReply()`, `useSend()`                                                                                                                      | `mutate({ … })`                                                                                  |
-| `useDiscardPending()`, `useActionFailures()`                                                                                                       | failed sends and actions                                                                         |
-| `useRealtimeConnection(memberId)`, `useRealtimeStatus()`                                                                                           | the socket                                                                                       |
-| `useConnectivity()`                                                                                                                                | `{ online, queued }`                                                                             |
-| `useShortcut(id, run, enabled?)`, `runShortcut(id)`, `useAvailableShortcuts()`, `announce(text)`                                                   | keyboard shortcuts (`hooks/use-shortcuts.ts`)                                                    |
-| `useConversation(threadId)`, `useTags(mailboxId)`, `useAssignees(mailboxId)`                                                                       | helpdesk state, the inbox's tags and agents                                                      |
-| `useResolve()`, `useReopen()`, `useSnooze()`, `useClaim()`, `useAssign()`, `useSetPriority()`, `useToggleTag()`                                    | `mutate({ threadId, … })`, with undo                                                             |
-| `useCreateTag()`, `useUpdateTag()`, `useDeleteTag()`                                                                                               | an inbox's tags (settings)                                                                       |
-| `usePresence(threadId)`, `useReportPresence(thread, state)`                                                                                        | who is viewing or replying; say you are                                                          |
-| `useUndo()`, `offerUndo(label, undo)`                                                                                                              | `{ offer, undo, dismiss }` for the undo toast                                                    |
-| `useThreadListShortcuts({ … })`                                                                                                                    | the list keys: j/k, o, x, e, h, u, Esc                                                           |
-| `useConversations(filter)`, `useConversationCounts()`                                                                                              | helpdesk lists (`conversations`, paging) and the navigation's counts                             |
-| `useThreadListShortcuts({ …, helpdesk: { filter, conversations } })`                                                                               | on a helpdesk list e/h/i resolve, snooze, assign to me (one bulk request, one undo)              |
-| `useBulkChange()`                                                                                                                                  | `run(threadIds, change, { mailboxId, tag?, undo? })`: one request per 100, failed rows roll back |
-| `useStorageList(place)`, `useStorageTrash()`, `useSharedWithMe()`, `useStorageLink(shareId, node?)`, `useStorageUsage()`                           | Storage (ADR 0034): folders, Trash, shared with you, a link's contents, usage                    |
-| `useCreateFolder()`, `useChangeNode()`, `useTrashNode()`, `useRestoreNode()`, `useDeleteForever()`, `useUploads()`                                 | changes and uploads; pass `shareId` to go through a link's door (an Editor)                      |
-| `useStorageSharing(id)`, `usePutStoragePerson()`, `useRemoveStoragePerson()`, `useSetStorageLink()`                                                | who an item is shared with, and its link                                                         |
-| `useSlaSettings(mailboxId)`                                                                                                                        | `{ policies, businessHours, autoAssign }` for an inbox                                           |
-| `usePutSlaPolicy()`, `useDeleteSlaPolicy()`, `usePutBusinessHours()`, `useDeleteBusinessHours()`, `useSetAutoAssign()`                             | inbox SLA settings (owners and admins; optimistic, rollback)                                     |
+| Hook                                                                                                                                                                                                   | Returns / takes                                                                                  |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| `useSession()`                                                                                                                                                                                         | `{ user, session, member } \| null`                                                              |
+| `useMember()`                                                                                                                                                                                          | `{ user, member }` (member routes only)                                                          |
+| `useSignInMagicLink()`                                                                                                                                                                                 | `mutate({ email, redirect? })`                                                                   |
+| `useSignInPasskey()`                                                                                                                                                                                   | `mutate()`                                                                                       |
+| `useSignOut()`                                                                                                                                                                                         | `mutate()`                                                                                       |
+| `useOrganizations()`, `useSetActiveOrganization()`                                                                                                                                                     | list; `mutate(organizationId)`                                                                   |
+| `useInvitation(id)`, `useAcceptInvitation()`, `useRejectInvitation()`                                                                                                                                  | invitation; `mutate(id)`                                                                         |
+| `useMembers()`, `useInvitations()`, `useInviteMember()`, `useCancelInvitation()`, `useRemoveMember()`, `useUpdateMemberRole()`                                                                         | organization admin                                                                               |
+| `usePasskeys()`, `useAddPasskey()`, `useDeletePasskey()`                                                                                                                                               | passkeys                                                                                         |
+| `useOnboarding()`, `useCreateWorkspace()`, `useAddDomain()`, `useCheckDomain()`, `useCreateMailboxes()`, `useFinishSetup()`, `useOnboardingExit()`                                                     | workspace setup (`hooks/use-onboarding.ts`)                                                      |
+| `useWorkspaces()`, `useOpenWorkspace()`, `useOpenMailbox()`                                                                                                                                            | switcher (`hooks/use-workspaces.ts`)                                                             |
+| `useMailboxes()`, `useCounts()`                                                                                                                                                                        | sidebar data                                                                                     |
+| `useThreads({ view, mailbox?, lane? })`                                                                                                                                                                | `{ threads, fetchNextPage, hasNextPage, … }`                                                     |
+| `useThread(id)`, `useSuspenseThread(id)`                                                                                                                                                               | `{ thread, pending, … }`                                                                         |
+| `useSearch(q, mailbox?)`                                                                                                                                                                               | results                                                                                          |
+| `usePrefetchThread()`                                                                                                                                                                                  | `(threadId) => void`                                                                             |
+| `useMarkRead()`, `useMoveToLater()`, `useMarkDone()`, `useMarkUndone()`, `useArchive()`, `useMove()`                                                                                                   | `mutate({ threadId, … })`                                                                        |
+| `useMarkReadOnOpen(thread)`                                                                                                                                                                            | marks an opened unread thread read, once                                                         |
+| `useSendReply()`, `useSend()`                                                                                                                                                                          | `mutate({ … })`                                                                                  |
+| `useDiscardPending()`, `useActionFailures()`                                                                                                                                                           | failed sends and actions                                                                         |
+| `useRealtimeConnection(memberId)`, `useRealtimeStatus()`                                                                                                                                               | the socket                                                                                       |
+| `useConnectivity()`                                                                                                                                                                                    | `{ online, queued }`                                                                             |
+| `useShortcut(id, run, enabled?)`, `runShortcut(id)`, `useAvailableShortcuts()`, `announce(text)`                                                                                                       | keyboard shortcuts (`hooks/use-shortcuts.ts`)                                                    |
+| `useConversation(threadId)`, `useTags(mailboxId)`, `useAssignees(mailboxId)`                                                                                                                           | helpdesk state, the inbox's tags and agents                                                      |
+| `useResolve()`, `useReopen()`, `useSnooze()`, `useClaim()`, `useAssign()`, `useSetPriority()`, `useToggleTag()`                                                                                        | `mutate({ threadId, … })`, with undo                                                             |
+| `useCreateTag()`, `useUpdateTag()`, `useDeleteTag()`                                                                                                                                                   | an inbox's tags (settings)                                                                       |
+| `usePresence(threadId)`, `useReportPresence(thread, state)`                                                                                                                                            | who is viewing or replying; say you are                                                          |
+| `useUndo()`, `offerUndo(label, undo)`                                                                                                                                                                  | `{ offer, undo, dismiss }` for the undo toast                                                    |
+| `useThreadListShortcuts({ … })`                                                                                                                                                                        | the list keys: j/k, o, x, e, h, u, Esc                                                           |
+| `useConversations(filter)`, `useConversationCounts()`                                                                                                                                                  | helpdesk lists (`conversations`, paging) and the navigation's counts                             |
+| `useThreadListShortcuts({ …, helpdesk: { filter, conversations } })`                                                                                                                                   | on a helpdesk list e/h/i resolve, snooze, assign to me (one bulk request, one undo)              |
+| `useBulkChange()`                                                                                                                                                                                      | `run(threadIds, change, { mailboxId, tag?, undo? })`: one request per 100, failed rows roll back |
+| `useStorageList(place)`, `useStorageTrash()`, `useSharedWithMe()`, `useStorageLink(shareId, node?)`, `useStorageUsage()`                                                                               | Storage (ADR 0034): folders, Trash, shared with you, a link's contents, usage                    |
+| `useCreateFolder()`, `useChangeNode()`, `useTrashNode()`, `useRestoreNode()`, `useDeleteForever()`, `useUploads()`                                                                                     | changes and uploads; pass `shareId` to go through a link's door (an Editor)                      |
+| `useStorageSharing(id)`, `usePutStoragePerson()`, `useRemoveStoragePerson()`, `useSetStorageLink()`                                                                                                    | who an item is shared with, and its link                                                         |
+| `useCrmCompanies(q)`, `useCrmPeople(q)`, `useCrmDeals(q, { all? })`, `useCrmCompany(id)`, `useCrmPerson(id)`, `useCrmDeal(id)`, `useCrmTimeline(kind, id)`, `useCrmContracts(where)`, `useCrmStages()` | the CRM (ADR 0039); `crm.changed` marks all of it stale                                          |
+| `useMoveDeal()`, `useCreate*()`, `useUpdate*()`, `useCreateNote()`, `useRecordFolder()`, `useCreateContract()`, `useUpdateContract()`, `usePutStages()`                                                | CRM changes; a deal's move is optimistic with rollback                                           |
+| `useSlaSettings(mailboxId)`                                                                                                                                                                            | `{ policies, businessHours, autoAssign }` for an inbox                                           |
+| `usePutSlaPolicy()`, `useDeleteSlaPolicy()`, `usePutBusinessHours()`, `useDeleteBusinessHours()`, `useSetAutoAssign()`                                                                                 | inbox SLA settings (owners and admins; optimistic, rollback)                                     |
 
 Message HTML goes in a sandboxed iframe: `messageHtmlUrl(threadId, messageId)`; attachments:
 `attachmentUrl(threadId, attachmentId)` (`lib/urls.ts`).

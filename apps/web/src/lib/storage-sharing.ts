@@ -1,5 +1,3 @@
-// Sharing (ADR 0034 decision 4): who a file or folder is shared with and its one link, what was
-// shared with the signed-in person, and what a link opens (`/s/<shareId>`), signed in or not.
 import {
   infiniteQueryOptions,
   mutationOptions,
@@ -32,7 +30,6 @@ export const storageSharingQuery = (nodeId: string) =>
       call(api.storage.nodes[":id"].sharing.$get({ param: { id: nodeId } }, { init: { signal } })),
   });
 
-/** Each change answers with the sharing as it is now; the cache takes it as it comes. */
 const sharingChanged =
   (client: QueryClient) =>
   ({ sharing }: { sharing: StorageSharing }) =>
@@ -41,6 +38,7 @@ const sharingChanged =
 /** `mutate({ id, linkAccess })` sets general access; `mutate({ id, reset: true })` a new link. */
 export const setLinkMutation = (client: QueryClient) =>
   mutationOptions({
+    meta: { handlesError: true },
     mutationFn: ({
       id,
       ...json
@@ -52,6 +50,7 @@ export const setLinkMutation = (client: QueryClient) =>
 /** `mutate({ id, email, role })` adds a person (they get one mail) or changes their role. */
 export const putPersonMutation = (client: QueryClient) =>
   mutationOptions({
+    meta: { handlesError: true },
     mutationFn: ({ id, email, role }: { id: string; email: string; role: StorageGrantRole }) =>
       call(
         api.storage.nodes[":id"].sharing.people[":email"].$put({
@@ -65,6 +64,7 @@ export const putPersonMutation = (client: QueryClient) =>
 /** `mutate({ id, email })` removes a person; their next request finds nothing. */
 export const removePersonMutation = (client: QueryClient) =>
   mutationOptions({
+    meta: { handlesError: true },
     mutationFn: ({ id, email }: { id: string; email: string }) =>
       call(api.storage.nodes[":id"].sharing.people[":email"].$delete({ param: { id, email } })),
     onSuccess: sharingChanged(client),
@@ -104,7 +104,6 @@ export const storageLinkQuery = (shareId: string, nodeId?: string) =>
       ),
     initialPageParam: null as string | null,
     getNextPageParam: (page) => page.nextCursor,
-    // A link that opens nothing to this reader says so at once: trying again won't open it.
     retry: (count, error) => !(error instanceof ApiError && error.status === 404) && count < 3,
   });
 

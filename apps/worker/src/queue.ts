@@ -1,9 +1,3 @@
-// AI queue consumer: triage for a thread after new mail, in either direction. A job
-// names only the thread; the consumer reads its current state and triages the latest message, so
-// a redelivered or duplicate job converges on the same result, and work already done for that
-// message (`triage_message_id`, and `summary_message_id` as the job's done marker) is skipped without a model call.
-// The consumer is an Effect program at the edge (ADR 0038 decision 2, `job-effects.ts`): typed
-// failures decide ack, retry or dead letter; `runAiJob` stays a plain async function.
 import Anthropic from "@anthropic-ai/sdk";
 import * as Sentry from "@sentry/cloudflare";
 import {
@@ -36,7 +30,6 @@ import {
   Retryable,
   retryTransient,
   scopedDb,
-  within,
 } from "./job-effects.ts";
 import { createLogger, type Logger } from "./log.ts";
 import { pingMailService } from "./mail-service.ts";
@@ -57,6 +50,9 @@ export type AiJob = {
 
 /** Must match `max_retries` of the `omni-ai` consumer in wrangler.jsonc. */
 export const AI_QUEUE_MAX_RETRIES = 5;
+
+const MODEL_TIMEOUT_MS = 20_000;
+const BATCH_START_BUDGET_MS = 10 * 60 * 1000;
 
 /**
  * One handler for both queues the Worker consumes: AI jobs, and their dead-letter queue (by
@@ -86,12 +82,7 @@ export async function consumeDeadLetters(batch: MessageBatch<AiJob>, env: Env) {
   );
 }
 
-function recordFromDeadLetterQueue(
-  db: Db,
-  queue: string,
-  source: string,
-  message: Message<AiJob>,
-): Effect.Effect<void> {
+function recordFromDeadLetterQueue(db: Db, queue: string, source: string, message: Message<AiJob>) {
   const job = message.body;
   const log = jobLogger(queue, job);
   const record = attempt("record_dead_letter", () =>
@@ -119,7 +110,7 @@ function recordFromDeadLetterQueue(
         message.retry({ delaySeconds: 60 });
       },
     }),
-  );
+  ) satisfies Effect.Effect<void>;
 }
 
 /**
@@ -141,13 +132,6 @@ export type AiJobOutcome =
   | "ingesting"
   | "triaged";
 
-/**
- * How long one job may take, its in-invocation retries included. A batch's ten jobs run one at a
- * time, so ten of these stay inside a consumer's 15-minute wall clock. Past it the job is retried
- * by Queues, like any retryable failure.
- */
-const JOB_TIME_LIMIT = "60 seconds";
-
 interface AiRun {
   env: Env;
   db: Db;
@@ -164,8 +148,11 @@ interface AiRun {
  */
 export async function consumeAiQueue(batch: MessageBatch<AiJob>, env: Env) {
   const config = loadConfig(env);
-  // With no key the client is never called: only the wordless-reply rule runs (see runAiJob).
-  const anthropic = new Anthropic({ apiKey: config.ANTHROPIC_API_KEY ?? null });
+  const anthropic = new Anthropic({
+    apiKey: config.ANTHROPIC_API_KEY ?? null,
+    timeout: MODEL_TIMEOUT_MS,
+    maxRetries: 0,
+  });
   const models = {
     triage: chooseTriageClient({
       provider: config.TRIAGE_PROVIDER,
@@ -179,30 +166,32 @@ export async function consumeAiQueue(batch: MessageBatch<AiJob>, env: Env) {
     Effect.gen(function* () {
       const db = yield* scopedDb(env);
       const run: AiRun = { env, db, config, models, queue: batch.queue };
-      // One at a time, as before: a settled message never stops the rest of the batch.
-      yield* Effect.forEach(batch.messages, (message) => consumeAiMessage(run, message), {
-        concurrency: 1,
-        discard: true,
-      });
+      const started = Date.now();
+      yield* Effect.forEach(
+        batch.messages,
+        (message) =>
+          Date.now() - started < BATCH_START_BUDGET_MS
+            ? consumeAiMessage(run, message)
+            : Effect.sync(() => message.retry({ delaySeconds: 5 })),
+        { concurrency: 1, discard: true },
+      );
     }).pipe(Effect.scoped),
   );
 }
 
-function consumeAiMessage(run: AiRun, message: Message<AiJob>): Effect.Effect<void> {
+function consumeAiMessage(run: AiRun, message: Message<AiJob>) {
   const log = jobLogger(run.queue, message.body);
   const started = Date.now();
   return processAiJob(run, message.body, log).pipe(
-    // A bug in the job is a failure like any other: retried, then dead-lettered.
     Effect.catchDefect((cause) => Effect.fail(new Retryable({ step: "job", cause }))),
     Effect.matchEffect({
       onSuccess: (outcome) => Effect.sync(() => settle(message, outcome, log, started)),
       onFailure: (failure) => settleFailure(run, message, failure, log, started),
     }),
-  );
+  ) satisfies Effect.Effect<void>;
 }
 
-/** The job, then the live update for the people who see the thread. */
-function processAiJob(run: AiRun, job: AiJob, log: Logger): Effect.Effect<AiJobOutcome, JobError> {
+function processAiJob(run: AiRun, job: AiJob, log: Logger) {
   const { env, db, config, models } = run;
   return Effect.gen(function* () {
     if (typeof job?.threadId !== "string" || typeof job.mailboxId !== "string") {
@@ -212,9 +201,7 @@ function processAiJob(run: AiRun, job: AiJob, log: Logger): Effect.Effect<AiJobO
       Sentry.withScope((scope) => {
         if (job.requestId) scope.setTag("request_id", job.requestId);
         return runAiJob(db, models, config, job, {
-          // A noise resolve queued its IMAP archive: tell the mail service.
           outboxChanged: () => pingMailService({ config, requestId: jobRequestId(job), log }),
-          // AI handed it to someone: their notification list updates live.
           assigned: (orgId, memberIds) =>
             notifyMembers(env, db, { orgId, threadId: job.threadId, memberIds, kind: "assigned" }),
         });
@@ -225,27 +212,24 @@ function processAiJob(run: AiRun, job: AiJob, log: Logger): Effect.Effect<AiJobO
       yield* attempt("fan_out", () => fanOut(env, db, config, changes)).pipe(retryTransient);
     }
     return outcome;
-  }).pipe(within("job", JOB_TIME_LIMIT));
+  }) satisfies Effect.Effect<AiJobOutcome, JobError>;
 }
 
 function settle(message: Message<AiJob>, outcome: AiJobOutcome, log: Logger, started: number) {
   const { threadId } = message.body;
   log.info("ai.job", { threadId, outcome, durationMs: Date.now() - started });
-  // Nothing else is sure to queue a job for a prune, so this one reads the thread again.
   if (outcome === "changed") message.retry({ delaySeconds: 5 });
-  // The ingest usually lands within seconds; at 30s apart, the retries outlast
-  // `INGEST_WAIT_MS`, after which the job triages the message as it is.
   else if (outcome === "ingesting") message.retry({ delaySeconds: 30 });
   else message.ack();
 }
 
-function settleFailure(
+const settleFailure: (
   run: AiRun,
   message: Message<AiJob>,
   failure: JobError,
   log: Logger,
   started: number,
-): Effect.Effect<void> {
+) => Effect.Effect<void> = (run, message, failure, log, started) => {
   const permanent = failure instanceof Permanent;
   const fields = {
     threadId: message.body?.threadId,
@@ -256,7 +240,6 @@ function settleFailure(
     permanent,
     durationMs: Date.now() - started,
   };
-  // Backoff grows with each attempt; after max_retries the job lands in the DLQ.
   const retry = () =>
     message.retry({ delaySeconds: Math.min(30 * 2 ** (message.attempts - 1), 600) });
   if (!permanent && message.attempts <= AI_QUEUE_MAX_RETRIES) {
@@ -265,9 +248,6 @@ function settleFailure(
       retry();
     });
   }
-  // Permanent, or the last attempt: record the dead letter with its error now. The last attempt
-  // is still retried, which hands it to the DLQ as configured; that copy finds it recorded. A
-  // permanent failure is acked once recorded; if it could not be recorded, it is retried.
   log.error("ai.job_dead", fields);
   const error = failure.cause instanceof Error ? failure.cause.message : String(failure.cause);
   return attempt("record_dead_letter", () =>
@@ -282,9 +262,8 @@ function settleFailure(
       },
     }),
   );
-}
+};
 
-/** A dead letter's row for this message, from `queue`; the caller adds the error. */
 function deadLetterOf(queue: string, message: Message<AiJob>) {
   const job = message.body;
   return {
@@ -320,50 +299,39 @@ export async function runAiJob(
     outboxChanged?: () => Promise<unknown>;
     assigned?: (orgId: string, memberIds: string[]) => Promise<unknown>;
   } = {},
-): Promise<AiJobOutcome> {
+) {
   const thread = await loadThreadForAi(db, job.threadId);
   const latest = thread?.messages.at(-1);
-  if (!thread || !latest) return "missing";
-  // The done marker (`summary_message_id`, named for the removed summaries) moves only after the
-  // whole job ran for this message.
-  if (thread.summaryMessageId === latest.id) return "done_already";
+  if (!thread || !latest) return "missing" satisfies AiJobOutcome;
+  if (thread.summaryMessageId === latest.id) return "done_already" satisfies AiJobOutcome;
 
-  // Triage runs on Jev or Claude.
   const triageEnabled = Boolean(config.TYPESAFE_API_KEY || config.ANTHROPIC_API_KEY);
   const isUs = (address: string) => thread.selfAddresses.has(address.toLowerCase());
   const day = new Date().toISOString().slice(0, 10);
 
   let bucket = thread.triage;
   let triaged = false;
-  // The triage describes the latest message. Already done for it (a redelivery, or a retry after
-  // the marker failed): reuse it. A newer message, from either side, re-triages, even a thread a
-  // person re-sorted. Without a model only the wordless-reply rule can file a thread.
   if (thread.triageMessageId !== latest.id) {
     const input = triageInputFor(thread.messages, isUs);
-    // A shared inbox: triage also judges priority, tags (ADR 0022) and who takes it (ADR 0033).
     const helpdesk = await helpdeskContextForAi(db, thread.mailboxId);
     if (helpdesk) {
-      // Its status rule runs first, so what triage sets is not undone by it (nor round-robin beaten).
-      if (await awaitingIngest(db, latest.id)) return "ingesting";
+      if (await awaitingIngest(db, latest.id)) return "ingesting" satisfies AiJobOutcome;
       input.helpdesk = helpdesk;
     }
     const byRule = triageByRule(input);
-    // A model call counts against the workspace's monthly allowance (ADR 0015); the rule is free.
     if (triageEnabled && !byRule) {
       const gate = await gateTriage(db, config, { orgId: thread.orgId, messageId: latest.id });
       if (!gate.run) {
         if (gate.reason === "allowance_reached") {
           await markTriagePaused(db, thread.id, gate.until);
-          return "triage_paused";
+          return "triage_paused" satisfies AiJobOutcome;
         }
-        return "billing_inactive";
+        return "billing_inactive" satisfies AiJobOutcome;
       }
     }
     const result = byRule ?? (triageEnabled ? await triage(models.triage, input) : null);
     if (result) {
       await addAiUsage(db, thread.orgId, day, result.usage);
-      // Before the triage is saved: a crash in between re-triages, and this applies again as a
-      // no-op, instead of being skipped as done.
       if (result.helpdesk) {
         const applied = await applyAiHelpdeskTriage(db, {
           threadId: thread.id,
@@ -379,26 +347,23 @@ export async function runAiJob(
           await hooks.assigned?.(thread.orgId, applied.notified);
         }
       }
-      // Lanes are derived on read: below the auto-file confidence a thread shows in Unsure.
       const saved = await saveTriage(db, thread.id, {
         bucket: result.bucket,
         confidence: result.confidence,
         messageId: latest.id,
       });
-      if (!saved) return "superseded";
+      if (!saved) return "superseded" satisfies AiJobOutcome;
       bucket = result.bucket;
       triaged = true;
     }
   }
-  if (!bucket) return "no_model";
+  if (!bucket) return "no_model" satisfies AiJobOutcome;
 
-  // The job is complete for this message: the marker makes a redelivery a no-op. Summaries were
-  // removed (ADR 0028), so the marker is all that is written.
   const saved = await saveSummary(db, thread.id, {
     summary: null,
     messageId: latest.id,
     messageCount: thread.messages.length,
   });
-  if (!saved) return "changed";
-  return triaged ? "triaged" : "done_already";
+  if (!saved) return "changed" satisfies AiJobOutcome;
+  return (triaged ? "triaged" : "done_already") satisfies AiJobOutcome;
 }

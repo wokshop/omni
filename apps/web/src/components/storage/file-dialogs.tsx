@@ -1,13 +1,7 @@
-// Storage's small dialogs: name a new folder, rename, pick where to move, confirm deleting for
-// good. Each takes the door it changes through: a shared link's (`shareId`), or the member's.
 import { useState } from "react";
 import { Collection } from "react-aria-components/Collection";
 import { GridListLoadMoreItem } from "react-aria-components/GridList";
 import { IconFolder } from "@/components/icons/central";
-import {
-  SettingsFormDialog,
-  SettingsRenameDialog,
-} from "@/components/settings/kit/settings-stacked-dialog";
 import { Breadcrumbs, BreadcrumbsItem } from "@/components/ui/breadcrumbs";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,13 +12,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/field";
 import { GridList, GridListItem } from "@/components/ui/grid-list";
-import { Input } from "@/components/ui/input";
-import { TextField } from "@/components/ui/text-field";
 import {
   useChangeNode,
-  useCreateFolder,
   useDeleteForever,
   useHasSharedFiles,
   useStorageLink,
@@ -33,71 +23,6 @@ import {
 import type { StorageNode, StoragePlace, StorageSpace } from "@/lib/storage.ts";
 import { storageErrorToast } from "./storage-errors.ts";
 import { SPACE_LABEL } from "./storage-nav.tsx";
-
-/** The longest name the API takes. */
-export const NAME_MAX = 255;
-
-/** Mount it while open, so the field starts empty. */
-export function NewFolderDialog(props: {
-  place: StoragePlace;
-  shareId?: string | undefined;
-  onClose: () => void;
-}) {
-  const create = useCreateFolder();
-  const [value, setValue] = useState("");
-  const name = value.trim();
-  return (
-    <SettingsFormDialog
-      isOpen
-      onOpenChange={(open) => !open && props.onClose()}
-      title="New folder"
-      action="Create"
-      disabled={!name}
-      saving={create.isPending}
-      onSubmit={() =>
-        create.mutate(
-          { name, place: props.place, ...(props.shareId ? { shareId: props.shareId } : {}) },
-          {
-            onSuccess: props.onClose,
-            onError: (error) => storageErrorToast(error, "The folder was not created"),
-          },
-        )
-      }
-    >
-      <TextField isRequired autoFocus maxLength={NAME_MAX} value={value} onChange={setValue}>
-        <Label>Name</Label>
-        <Input autoComplete="off" />
-      </TextField>
-    </SettingsFormDialog>
-  );
-}
-
-export function RenameDialog(props: {
-  node: StorageNode;
-  shareId?: string | undefined;
-  onClose: () => void;
-}) {
-  const change = useChangeNode();
-  return (
-    <SettingsRenameDialog
-      title="Rename"
-      label="Name"
-      maxLength={NAME_MAX}
-      name={props.node.name}
-      saving={change.isPending}
-      onClose={props.onClose}
-      onSave={(name) =>
-        change.mutate(
-          { id: props.node.id, name, ...(props.shareId ? { shareId: props.shareId } : {}) },
-          {
-            onSuccess: props.onClose,
-            onError: (error) => storageErrorToast(error, "It was not renamed"),
-          },
-        )
-      }
-    />
-  );
-}
 
 /** Asks before deleting from Trash for good; the button says what happens. */
 export function DeleteForeverDialog(props: { node: StorageNode; onClose: () => void }) {
@@ -147,17 +72,12 @@ export type MoveScope =
       path: { id: string; name: string }[];
     };
 
-/** Where the dialog is looking: a space (or the link's top) and the folders below it. */
 type Browse = { space: StorageSpace | null; path: { id: string; name: string }[] } | null;
 
 const SPACES = ["personal", "shared"] as const;
 
 type Crumb = { id: string; name: string; go: () => void };
 
-/**
- * What the move dialog shows as it is browsed: where it is (`at`, null at a company's top level
- * of spaces), the place a move there goes to, the folders inside it, and the trail back up.
- */
 function useMoveBrowser(scope: MoveScope, node: StorageNode) {
   const link = scope.kind === "link" ? scope : null;
   const hasShared = useHasSharedFiles();
@@ -169,16 +89,13 @@ function useMoveBrowser(scope: MoveScope, node: StorageNode) {
   const place = placeAt(at, folder);
   const member = useStorageList(place ?? { space: "personal" }, { enabled: !link && !!place });
   const shared = useStorageLink(...linkArgs(link, folder));
-  // Itself is no place to move a folder to, and the API pages folders first.
   const folders = (link ? shared.nodes : member.nodes).filter(
     (n) => n.kind === "folder" && n.id !== node.id,
   );
-  // Where it already is: the same folder (or root), in the same space.
   const here =
     !!at && (folder?.id ?? null) === node.parentId && (!!link || at.space === node.space);
   const crumbs = crumbsFor({ link, at, setAt, hasShared });
   const { rows, enter } = rowsAt(at, folders, setAt);
-  // Folders come first in every page, so the next page is needed only while this one ends in one.
   const listing = link ? shared : member;
   const loadMore = at && listing.hasNextPage ? () => void listing.fetchNextPage() : undefined;
   return {
@@ -193,13 +110,12 @@ function useMoveBrowser(scope: MoveScope, node: StorageNode) {
   };
 }
 
-/** The trail from the top (a company's spaces, a space, or a link's folder) down to `at`. */
-function crumbsFor(props: {
+const crumbsFor: (props: {
   link: Extract<MoveScope, { kind: "link" }> | null;
   at: Browse;
   setAt: (at: Browse) => void;
   hasShared: boolean;
-}): Crumb[] {
+}) => Crumb[] = (props) => {
   const { link, at, setAt } = props;
   const trail = (path: { id: string; name: string }[], space: StorageSpace | null) =>
     path.map((entry, i) => ({ ...entry, go: () => setAt({ space, path: path.slice(0, i + 1) }) }));
@@ -209,7 +125,7 @@ function crumbsFor(props: {
       ...trail(at?.path ?? [], null),
     ];
   }
-  const top = props.hasShared ? [{ id: "top", name: "Files", go: () => setAt(null) }] : [];
+  const top = props.hasShared ? [{ id: "top", name: "Drive", go: () => setAt(null) }] : [];
   if (!at?.space) return top;
   const space = at.space;
   return [
@@ -217,22 +133,20 @@ function crumbsFor(props: {
     { id: space, name: SPACE_LABEL[space], go: () => setAt({ space, path: [] }) },
     ...trail(at.path, space),
   ];
-}
+};
 
-/** What to list through a link: its top folder is the link itself, without `node`. */
-function linkArgs(
+const linkArgs: (
   link: Extract<MoveScope, { kind: "link" }> | null,
   folder: { id: string } | undefined,
-): [string, string | undefined, { enabled: boolean }] {
+) => [string, string | undefined, { enabled: boolean }] = (link, folder) => {
   if (!link) return ["", undefined, { enabled: false }];
   return [
     link.shareId,
     folder && folder.id !== link.top.id ? folder.id : undefined,
     { enabled: true },
   ];
-}
+};
 
-/** The rows at `at` (a company's spaces at the top, else the folders) and opening one. */
 function rowsAt(at: Browse, folders: StorageNode[], setAt: (at: Browse) => void) {
   if (!at) {
     return {
@@ -249,12 +163,14 @@ function rowsAt(at: Browse, folders: StorageNode[], setAt: (at: Browse) => void)
   };
 }
 
-/** The place a move to `at` goes: inside its last folder, or a space's root. */
-function placeAt(at: Browse, folder: { id: string } | undefined): StoragePlace | null {
+const placeAt: (at: Browse, folder: { id: string } | undefined) => StoragePlace | null = (
+  at,
+  folder,
+) => {
   if (!at) return null;
   if (folder) return { parentId: folder.id };
   return { space: at.space ?? "personal" };
-}
+};
 
 /** Picks the folder to move `node` into, one level at a time, then Move here. */
 export function MoveDialog(props: { node: StorageNode; scope: MoveScope; onClose: () => void }) {
@@ -275,9 +191,6 @@ export function MoveDialog(props: { node: StorageNode; scope: MoveScope; onClose
             </BreadcrumbsItem>
           ))}
         </Breadcrumbs>
-        {/* The crumbs take the rows' 8px inset, so their labels line up; the list stays the
-            body's width (wider, the body would scroll sideways as focus moves into it). */}
-        {/* Five rows tall whatever it holds, so the dialog keeps its size from folder to folder. */}
         <GridList
           aria-label="Folders"
           className="h-45 overflow-y-auto"
@@ -289,7 +202,6 @@ export function MoveDialog(props: { node: StorageNode; scope: MoveScope; onClose
               <GridListItem
                 id={item.id}
                 textValue={item.name}
-                // The list is a fixed-height column that scrolls: rows keep their height.
                 className="h-9 shrink-0 cursor-pointer gap-2.5 rounded-lg px-2 hover:bg-accent"
               >
                 <IconFolder className="size-icon shrink-0 text-muted-foreground" />
@@ -297,7 +209,6 @@ export function MoveDialog(props: { node: StorageNode; scope: MoveScope; onClose
               </GridListItem>
             )}
           </Collection>
-          {/* The next page as the end nears, as the main table loads its rows. */}
           <GridListLoadMoreItem onLoadMore={browse.loadMore} isLoading={browse.isLoadingMore} />
         </GridList>
       </DialogBody>

@@ -1,5 +1,3 @@
-// Route guards, called from `beforeLoad`. They read the session through the query cache, so
-// navigating between signed-in routes costs no request.
 import type { QueryClient } from "@tanstack/react-query";
 import { redirect, type ParsedLocation } from "@tanstack/react-router";
 import { joinQuery } from "./join.ts";
@@ -21,8 +19,6 @@ export async function requireUser(client: QueryClient, location: ParsedLocation)
  */
 export async function requireMember(client: QueryClient, location: ParsedLocation) {
   const session = await requireUser(client, location);
-  // No member: a sign-in with a company's address whose person is not its member asks to join
-  // it (ADR 0024); anything else signs in again.
   if (!session.member) {
     const company = await client.ensureQueryData(joinQuery()).catch(() => null);
     if (company) throw redirect({ to: "/join" });
@@ -34,8 +30,7 @@ export async function requireMember(client: QueryClient, location: ParsedLocatio
   return { ...session, member: session.member };
 }
 
-const isSettings = (pathname: string) =>
-  pathname === "/settings" || pathname.startsWith("/settings/");
+const isSettings = (pathname: string) => pathname.split("/")[2] === "settings";
 
 /**
  * Onboarding is for someone who may create a company, or who is finishing the active one.
@@ -44,7 +39,7 @@ const isSettings = (pathname: string) =>
 export async function requireOnboarding(client: QueryClient) {
   const status = await client.ensureQueryData(onboardingQuery());
   if (status.canCreateOrganization || needsSetup(status.organization)) return status;
-  throw redirect({ to: "/inbox" });
+  throw redirect({ to: "/" });
 }
 
 /** Sends a signed-in member away from the sign-in page. */

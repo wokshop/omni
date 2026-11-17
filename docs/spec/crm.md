@@ -1,7 +1,7 @@
 # Omni CRM: the client layer
 
 Nov 16, 2026 · Draft for review · Extends `docs/spec/v1.md` and `docs/spec/modules.md` ·
-Decisions: ADR 0036 (v1), ADR 0037 (later)
+Decisions: ADR 0036 (v1), ADR 0039 (v1 close-out), ADR 0037 (later)
 
 ## Summary
 
@@ -114,6 +114,10 @@ All under `/api/crm` on the Worker, for the active workspace. Shapes live in
 - Error codes beside `error`: `NOT_FOUND`, `NO_CRM`, `ADDRESS_TAKEN`, `DOMAIN_TAKEN`,
   `WEBMAIL_DOMAIN`, `STAGE_IN_USE`, `STAGE_KIND_REQUIRED` (each kind keeps at least one stage),
   `INVALID_CURRENCY`, `CONTRACT_SIGNED`, and the platform's `BILLING_INACTIVE`.
+- A contract goes `draft` → `sent` → `signed` → `ended`; `draft` may go straight to `signed`
+  and `sent` back to `draft`. Its file is replaced while `draft`, or with the move that takes a
+  `sent` one back to draft or to `signed`. Once signed it never goes back, keeps its file and
+  its row, and its company or deal is not deleted for good (`CONTRACT_SIGNED`).
 - `PATCH` changes only the fields it names. Two members editing different fields both win; on
   the same field the later write wins. There is no version check in v1.
 - Every write publishes `{ type: "crm.changed", kind, ids }` to the workspace's sockets.
@@ -142,13 +146,25 @@ Three tools on the MCP server (ADR 0029), through the same member door:
 
 | Tool         | Scope       | Does                                                                                           |
 | ------------ | ----------- | ---------------------------------------------------------------------------------------------- |
-| `crm_search` | `crm:read`  | Finds people, companies and deals by words, kind, stage kind or owner. Compact rows with `url`. |
+| `crm_search` | `crm:read`  | Finds people, companies and deals by words, kind, stage kind or owner. Compact rows.            |
 | `crm_fetch`  | `crm:read`  | Reads up to 10 records with their people, deals, contracts, recent notes and thread ids.        |
 | `crm_write`  | `crm:write` | Adds or changes a person, company or deal, moves a stage, adds a note. Never deletes.           |
 
 Thread ids from `crm_fetch` go to the mail `fetch` tool, which applies mail's own access. Note
 text is written by teammates, and names and titles can come from mail: the server's
 instructions keep telling agents to treat it as data.
+
+- A token reaches the company workspaces its grant does: its one workspace, or every company
+  the person belongs to (`workspace` narrows a read; a write to one of several must name it). A
+  Personal space has no CRM, so a token that reaches only one gets a tool error.
+- Every row carries `kind`, `id`, `workspace` and a `url` on the web app (`/crm/people/<id>`,
+  `/crm/companies/<id>`, `/crm/deals/<id>`), which agents cite. The rows gained it with the web
+  screens (ADR 0039), so it never pointed at a page that answered "Not found".
+- `crm_fetch` takes `records: [{ kind, id }]`. Its thread ids come from
+  `forUser(user, grant scope).threadsWith`, so they are threads the person can open.
+- `crm_write` takes exactly one of `person`, `company`, `deal` or `note`; with `id` it changes
+  that record, without it adds one. A deal's `stage` (name or id) moves it. It passes the
+  read-only billing gate, announces `crm.changed` and writes an `mcp.crm_write` audit row.
 
 ## Plan
 
@@ -215,7 +231,7 @@ Each test below is named for the bug it catches.
 
 ## Open questions
 
-- [ ] Web screens: built now from references as Storage's were, or after Figma frames.
+- [x] Web screens: built now from Mobbin references; the founder redesigns them later (ADR 0039).
 - [ ] The starting stage names (Lead, In progress, Won, Delivered, Lost) and the folder name
       (`Clients`). Both can be renamed by a workspace; these are only what a new one sees.
-- [ ] Bringing our own records over from Attio: by hand (it is small today) or an import.
+- [x] Bringing our own records over from Attio: by hand. No imports in v1 (ADR 0039).

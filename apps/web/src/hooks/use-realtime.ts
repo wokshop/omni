@@ -1,34 +1,83 @@
-import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useSyncExternalStore } from "react";
-import { onThreadsMerged, realtimeStatus, startRealtime } from "../lib/realtime.ts";
-import { useWorkspaces } from "./use-workspaces.ts";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useParams } from "@tanstack/react-router";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { threadQuery } from "../lib/mail-queries.ts";
+import { outstandingSends } from "../lib/pending.ts";
+import {
+  onThreadsMerged,
+  RECHECK_SENDS_FAST_MS,
+  RECHECK_SENDS_SLOW_MS,
+  realtimeStatus,
+  recheckOutstanding,
+  recheckPendingSends,
+  SEND_SOCKET_MS,
+  startRealtime,
+  trackSends,
+  type RealtimeConnections,
+} from "../lib/realtime.ts";
 
 /**
- * Keeps the realtime socket for `orgId` open while mounted. With `everyWorkspace`, also one per
- * other workspace the user belongs to: the signed-in layout's lists span them all (ADR 0014).
- * A new `memberId` or org (organization or account switch), or a joined or left workspace,
- * reopens them.
+ * Keeps the realtime socket for `orgId`, the active workspace, open while mounted. The lists show
+ * only the active workspace's mail (ADR 0014, amended: workspace isolation), so that is the one
+ * socket that always stays open. Another workspace's opens only while (a) a thread of it is on
+ * screen (a link opens it as that workspace's member) or (b) for `SEND_SOCKET_MS` after a send
+ * from one of its addresses, and closes once neither holds, so the member is offline there again
+ * and gets its push. A send's result is tracked apart from the socket, over HTTP, until it
+ * comes. A new `memberId` or org reopens the active one.
  */
-export function useRealtimeConnection(
-  orgId: string,
-  options: { memberId?: string; everyWorkspace?: boolean } = {},
-) {
+export function useRealtimeConnection(orgId: string, options: { memberId?: string } = {}) {
   const client = useQueryClient();
-  const workspaces = useWorkspaces({ enabled: !!options.everyWorkspace }).data?.workspaces;
-  // A string, so a refetch that returns the same workspaces keeps the sockets. Only workspaces
-  // with a mailbox: one with none (a Personal space before anything is connected, ADR 0024) has
-  // nothing to announce. Connecting its first mailbox refetches the workspaces and opens it.
-  const orgIds =
-    (options.everyWorkspace &&
-      workspaces
-        ?.filter((w) => w.mailboxes.length > 0)
-        .map((w) => w.id)
-        .join(",")) ||
-    "";
-  useEffect(
-    () => startRealtime(client, orgIds ? orgIds.split(",") : [], orgId),
-    [client, orgId, options.memberId, orgIds],
+  const { threadId } = useParams({ strict: false }) as { threadId?: string };
+  const threadOrg = useQuery({
+    ...threadQuery(threadId ?? ""),
+    enabled: !!threadId,
+    select: (thread) => thread.orgId,
+  }).data;
+  const sending = useSyncExternalStore(
+    outstandingSends.subscribe,
+    outstandingSends.get,
+    outstandingSends.get,
   );
+  const [now, setNow] = useState(() => Date.now());
+  const fresh = sending.filter((s) => now - s.since < SEND_SOCKET_MS).map((s) => s.orgId);
+  const others = [...new Set([threadId ? threadOrg : undefined, ...fresh])]
+    .filter((id): id is string => !!id && id !== orgId)
+    .sort()
+    .join(",");
+
+  const connections = useRef<RealtimeConnections | null>(null);
+  const followed = useRef(others);
+  useEffect(() => trackSends(client), [client]);
+  useEffect(() => {
+    const opened = startRealtime(client, orgId);
+    connections.current = opened;
+    opened.follow(followed.current ? followed.current.split(",") : []);
+    return () => {
+      opened.stop();
+      connections.current = null;
+    };
+  }, [client, orgId, options.memberId]);
+  useEffect(() => {
+    followed.current = others;
+    connections.current?.follow(others ? others.split(",") : []);
+  }, [others]);
+  const waiting = sending.length > 0;
+  useEffect(() => {
+    if (!waiting) return;
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = () => {
+      const at = Date.now();
+      setNow(at);
+      void recheckOutstanding(client);
+      const young = outstandingSends.get().some((s) => at - s.since < SEND_SOCKET_MS);
+      timer = setTimeout(tick, young ? RECHECK_SENDS_FAST_MS : RECHECK_SENDS_SLOW_MS);
+    };
+    timer = setTimeout(tick, RECHECK_SENDS_FAST_MS);
+    return () => clearTimeout(timer);
+  }, [client, waiting]);
+  useEffect(() => {
+    if (threadId) void recheckPendingSends(client, threadId);
+  }, [client, threadId]);
 }
 
 /** `connecting`, `open` or `closed`: for a "reconnecting…" indicator. */

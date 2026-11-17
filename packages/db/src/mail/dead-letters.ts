@@ -1,6 +1,3 @@
-// Work that will not run again, in one listing: queue jobs that reached the dead-letter queue
-// (`dead_letters`) and outbox actions that exhausted their retries (`mail_actions` with status
-// `failed`). Operator reads, not member-scoped: never serve them to a member's request.
 import { and, desc, eq, gte } from "drizzle-orm";
 import type { Db } from "../client.ts";
 import { deadLetters, mailActions, threads } from "../schema/index.ts";
@@ -22,7 +19,7 @@ export interface DeadLetterInput {
  * consumer's last attempt already wrote it) keeps the first, which has the error. Returns false
  * when nothing was written: already recorded, or no org could be found for it.
  */
-export async function recordDeadLetter(db: Db, input: DeadLetterInput): Promise<boolean> {
+export async function recordDeadLetter(db: Db, input: DeadLetterInput) {
   let orgId = input.orgId;
   if (!orgId && input.threadId) {
     const [thread] = await db
@@ -66,7 +63,7 @@ export interface DeadLetterEntry {
 export async function listDeadLetters(
   db: Db,
   options: { limit?: number; since?: Date; orgId?: string } = {},
-): Promise<DeadLetterEntry[]> {
+) {
   const limit = options.limit ?? 50;
   const jobs = await db
     .select()
@@ -126,5 +123,7 @@ export async function listDeadLetters(
       at: row.at,
     })),
   ];
-  return entries.sort((a, b) => b.at.getTime() - a.at.getTime()).slice(0, limit);
+  return entries
+    .sort((a, b) => b.at.getTime() - a.at.getTime())
+    .slice(0, limit) satisfies DeadLetterEntry[];
 }

@@ -1,4 +1,3 @@
-// Connecting a personal Gmail, shared by setup's inbox step and Settings, Connected accounts.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
@@ -11,6 +10,7 @@ import {
   type GoogleOutcome,
   type GoogleReturn,
 } from "../lib/google-connection.ts";
+import { desktop } from "../lib/desktop.ts";
 
 /** `{ available, accounts }`: can this install connect Google, and what you connected. */
 export function useGoogleAccounts() {
@@ -19,13 +19,14 @@ export function useGoogleAccounts() {
 
 /**
  * `mutate()` leaves for Google's consent screen and comes back to `from`. Stays pending until the
- * page is gone, so the button shows it is on its way.
+ * page is gone, so the button shows it is on its way. In the desktop app the consent opens in the
+ * browser and this page stays, so it settles once the browser has it.
  */
 export function useConnectGoogle(from: GoogleReturn) {
   return useMutation({
-    mutationFn: () => {
-      startGoogleConnect(from);
-      return new Promise<never>(() => {});
+    mutationFn: async () => {
+      await startGoogleConnect(from);
+      if (!desktop.isDesktop) await new Promise<never>(() => {});
     },
   });
 }
@@ -40,7 +41,7 @@ export function useDisconnectGoogle() {
  * load). The `?google=` parameters are cleared and the lists refetched, so a reload doesn't
  * repeat it.
  */
-export function useGoogleReturn(): GoogleOutcome | null {
+export const useGoogleReturn: () => GoogleOutcome | null = () => {
   const client = useQueryClient();
   const router = useRouter();
   const [outcome] = useState(() => readGoogleOutcome(window.location.search));
@@ -50,4 +51,4 @@ export function useGoogleReturn(): GoogleOutcome | null {
     router.history.replace(window.location.pathname);
   }, [outcome, client, router]);
   return outcome;
-}
+};

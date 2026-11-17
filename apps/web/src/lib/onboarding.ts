@@ -1,5 +1,3 @@
-// Workspace setup (ADR 0007): the workspace is a Better Auth organization; its domain and
-// mailboxes go through the Worker's `/api/onboarding` routes, which ask the mail service.
 import { cancelUploads } from "./storage-uploads.ts";
 import { mutationOptions, queryOptions, type QueryClient } from "@tanstack/react-query";
 import { api, auth, call } from "./api.ts";
@@ -32,15 +30,15 @@ export type OnboardingExit =
   | { kind: "workspace"; workspace: Workspace }
   | { kind: "sign-out" };
 
-export function onboardingExit(
+export const onboardingExit: (
   status: Onboarding | undefined,
   workspaces: readonly Workspace[] | undefined,
-): OnboardingExit {
+) => OnboardingExit = (status, workspaces) => {
   const active = status?.organization;
   if (active && !needsSetup(active)) return { kind: "inbox" };
   const ready = workspaces?.find((w) => w.id !== active?.id && !needsSetup(w));
   return ready ? { kind: "workspace", workspace: ready } : { kind: "sign-out" };
-}
+};
 
 /**
  * Every onboarding step, in one flat order that Back and Continue walk one step at a time: the
@@ -63,7 +61,7 @@ export const PAGE_TITLES: Record<OnboardingPage, string> = {
 };
 
 /** This setup's steps. */
-export function onboardingPages(data: Pick<Onboarding, "billing"> | undefined): OnboardingPage[] {
+export function onboardingPages(data: Pick<Onboarding, "billing"> | undefined) {
   return [
     "Workspace",
     "Domain",
@@ -71,7 +69,7 @@ export function onboardingPages(data: Pick<Onboarding, "billing"> | undefined): 
     "Inbox",
     "Team",
     ...(data?.billing.enabled ? (["Plan"] as const) : []),
-  ];
+  ] satisfies OnboardingPage[];
 }
 
 /**
@@ -84,7 +82,7 @@ export const recordPasses = (
 ) => (r.diagnostic ? r.diagnostic.status === "ok" : r.verified);
 
 /** Omni's ownership record and the provider's ownership records all pass. */
-export function ownershipReady(domain: OnboardingDomain): boolean {
+export function ownershipReady(domain: OnboardingDomain) {
   return (
     challengePasses(domain) &&
     domain.records.filter((r) => r.check === "ownership").every(recordPasses)
@@ -92,7 +90,7 @@ export function ownershipReady(domain: OnboardingDomain): boolean {
 }
 
 /** The provider's mail records (MX, SPF, DKIM, DMARC) all pass. */
-export function mailRecordsReady(domain: OnboardingDomain): boolean {
+export function mailRecordsReady(domain: OnboardingDomain) {
   return domain.records.filter((r) => r.check !== "ownership").every(recordPasses);
 }
 
@@ -101,7 +99,7 @@ export const domainReady = (domain: OnboardingDomain) =>
   ownershipReady(domain) && mailRecordsReady(domain);
 
 /** Whether a step is done, from what is saved, never from the page someone is on. */
-export function pageDone(page: OnboardingPage, data: Onboarding | undefined): boolean {
+export function pageDone(page: OnboardingPage, data: Onboarding | undefined) {
   const org = data?.organization;
   switch (page) {
     case "Workspace":
@@ -113,8 +111,6 @@ export function pageDone(page: OnboardingPage, data: Onboarding | undefined): bo
     case "Inbox":
       return !!data?.mailboxes.length;
     case "Team":
-      // Inviting nobody is fine, so only a later step proves it was passed: invitations sent,
-      // setup finished, or the plan (the step after it) set.
       return (
         org?.setup === "invites_sent" ||
         org?.setup === "complete" ||
@@ -126,12 +122,11 @@ export function pageDone(page: OnboardingPage, data: Onboarding | undefined): bo
 }
 
 /** Where setup resumes: the first step that is not done. */
-export function resumePage(data: Onboarding): OnboardingPage {
+export function resumePage(data: Onboarding) {
   const pages = onboardingPages(data);
-  return pages.find((p) => !pageDone(p, data)) ?? pages.at(-1) ?? "Team";
+  return (pages.find((p) => !pageDone(p, data)) ?? pages.at(-1) ?? "Team") satisfies OnboardingPage;
 }
 
-/** Lowercase letters and digits joined by dashes, plus a random tail so slugs never collide. */
 function workspaceSlug(name: string) {
   const base = name
     .normalize("NFKD")
@@ -151,7 +146,6 @@ interface Reloadable {
  * so everything cached for the previous workspace is dropped (an identity change).
  */
 export async function createWorkspace(client: QueryClient, router: Reloadable, name: string) {
-  // Creating switches the session to the new workspace: uploads stop first (see `session.ts`).
   await cancelUploads();
   const organization = await authCall(
     auth.organization.create({ name: name.trim(), slug: workspaceSlug(name) }),
@@ -167,7 +161,7 @@ const challengeKey = (domainId: string) => `omni.challenge.${domainId}`;
  * answered at the last check wins over the claim's flag: right after a new value is made the claim
  * still reads verified, but DNS holds the old value until it is replaced.
  */
-export function challengePasses(domain: OnboardingDomain): boolean {
+export function challengePasses(domain: OnboardingDomain) {
   const challenge = domain.challenge;
   if (!challenge) return true;
   return challenge.diagnostic ? challenge.diagnostic.status === "ok" : challenge.verified;
@@ -178,7 +172,7 @@ export function challengePasses(domain: OnboardingDomain): boolean {
  * is stored, ADR 0010), so it is kept here for a reload mid-setup. A convenience: without it the
  * DNS page offers a new value.
  */
-export function rememberedChallenge(domain: OnboardingDomain): string | null {
+export function rememberedChallenge(domain: OnboardingDomain) {
   if (domain.challenge?.value) return domain.challenge.value;
   try {
     return localStorage.getItem(challengeKey(domain.id));
@@ -191,30 +185,23 @@ function rememberChallenge(domain: OnboardingDomain) {
   try {
     if (domain.challenge?.value)
       localStorage.setItem(challengeKey(domain.id), domain.challenge.value);
-    // Forgotten only once DNS serves it. Not on the claim's flag alone: a fresh value would be
-    // dropped the moment it was made, and lost on the next refetch (switching apps).
     if (domain.challenge?.diagnostic?.status === "ok" && !domain.challenge.value) {
       localStorage.removeItem(challengeKey(domain.id));
     }
-  } catch {
-    // Storage blocked (private window): the page still works, minus surviving a reload.
-  }
+  } catch {}
 }
 
-/** Writes a domain's latest state into the cached onboarding status. */
 function storeDomain(client: QueryClient, domain: OnboardingDomain) {
   rememberChallenge(domain);
   client.setQueryData<Onboarding>(keys.onboarding(), (data) =>
-    data?.organization
-      ? { ...data, domains: [...data.domains.filter((d) => d.id !== domain.id), domain] }
-      : data,
+    data ? { ...data, domains: [...data.domains.filter((d) => d.id !== domain.id), domain] } : data,
   );
 }
 
 /** `mutate(domain)`: claims it and returns the DNS records to add, each checked. */
 export const addDomainMutation = (client: QueryClient) =>
   mutationOptions({
-    /** A domain, or `{ domain, host: "gmail" }` for one whose mail stays at Google (ADR 0024). */
+    meta: { handlesError: true },
     mutationFn: (input: string | { domain: string; host: "gmail" }) =>
       call(
         api.onboarding.domains.$post({
@@ -231,16 +218,15 @@ export const addDomainMutation = (client: QueryClient) =>
  */
 export const removeDomainMutation = (client: QueryClient) =>
   mutationOptions({
+    meta: { handlesError: true },
     mutationFn: (id: string) =>
       call(api.onboarding.domains[":id"].release.$post({ param: { id } })),
     onSuccess: (_, id) => {
       try {
         localStorage.removeItem(challengeKey(id));
-      } catch {
-        // Storage blocked: nothing was kept.
-      }
+      } catch {}
       client.setQueryData<Onboarding>(keys.onboarding(), (data) =>
-        data?.organization ? { ...data, domains: data.domains.filter((d) => d.id !== id) } : data,
+        data ? { ...data, domains: data.domains.filter((d) => d.id !== id) } : data,
       );
     },
     onSettled: () => client.invalidateQueries({ queryKey: keys.onboarding() }),
@@ -249,6 +235,7 @@ export const removeDomainMutation = (client: QueryClient) =>
 /** `mutate(domainId)`: a new challenge value, for a member who lost the first one. */
 export const rotateChallengeMutation = (client: QueryClient) =>
   mutationOptions({
+    meta: { handlesError: true },
     mutationFn: (id: string) =>
       call(api.onboarding.domains[":id"].challenge.$post({ param: { id } })),
     onSuccess: (domain) => storeDomain(client, domain),
@@ -265,6 +252,7 @@ export function watchDomain(id: string, reset: boolean) {
 /** `mutate(domainId)`: checks the DNS records again. */
 export const checkDomainMutation = (client: QueryClient) =>
   mutationOptions({
+    meta: { handlesError: true },
     mutationFn: (id: string) => call(api.onboarding.domains[":id"].check.$post({ param: { id } })),
     onSuccess: (domain) => storeDomain(client, domain),
   });
@@ -275,11 +263,14 @@ export interface MailServer {
 }
 
 /** A server as people type it, `host` or `host:port`; null when it isn't one. */
-export function parseServer(value: string, defaultPort: number): MailServer | null {
+export const parseServer: (value: string, defaultPort: number) => MailServer | null = (
+  value,
+  defaultPort,
+) => {
   const match = /^\s*([^\s:]+)(?::(\d{1,5}))?\s*$/.exec(value);
   if (!match) return null;
   return { host: match[1]!, port: match[2] ? Number(match[2]) : defaultPort };
-}
+};
 
 export interface NewMailbox {
   localPart: string;
@@ -293,6 +284,7 @@ export interface NewMailbox {
  */
 export const createMailboxesMutation = (client: QueryClient) =>
   mutationOptions({
+    meta: { handlesError: true },
     mutationFn: async (input: {
       domainId: string;
       mailboxes: NewMailbox[];
@@ -331,6 +323,7 @@ export const createMailboxesMutation = (client: QueryClient) =>
  */
 export const finishSetupMutation = (client: QueryClient) =>
   mutationOptions({
+    meta: { handlesError: true },
     mutationFn: () => call(api.onboarding.complete.$post()),
     onSuccess: () =>
       Promise.all([

@@ -1,7 +1,3 @@
-// The sanitizer against known XSS and remote-load vectors: OWASP's filter evasion cheat sheet,
-// cure53's DOMPurify mXSS cases, and mail-specific tracking tricks. Each vector is checked by
-// an oracle that re-parses the output the way the client's iframe will and fails on anything
-// that executes or fetches from somewhere other than our proxy or attachment store.
 import { describe, expect, test } from "vitest";
 import { sanitizeHtml } from "./html.ts";
 import { attribute, elements, parseBodyFragment, textContent } from "./tree.ts";
@@ -39,7 +35,6 @@ const EXECUTES_OR_EMBEDS = new Set([
 const URL_ATTRIBUTES = ["href", "src", "action", "formaction", "xlink:href", "data", "cite"];
 const FETCHING_ATTRIBUTES = ["srcset", "background", "poster", "ping", "lowsrc", "dynsrc"];
 
-/** Browsers strip these from URLs before reading the scheme. */
 const scheme = (url: string) =>
   [...url]
     .filter((char) => char > " " && char !== "\u007f")
@@ -50,15 +45,13 @@ const scheme = (url: string) =>
 const loadsFromUs = (url: string) =>
   url.startsWith(PROXY) || url.startsWith(ATTACHMENTS) || /^data:image\//i.test(url);
 
-/** Every problem a browser would act on in `html`; empty means inert. */
-function hazards(html: string): string[] {
+function hazards(html: string) {
   const found: string[] = [];
   const checkCss = (css: string, where: string) => {
     if (/@import|expression\s*\(|\\|image-set|\bimage\s*\(|\bsrc\s*\(/i.test(css)) {
       found.push(`${where}: unsafe CSS ${css.slice(0, 80)}`);
     }
     const urls = [...css.matchAll(/url\(\s*["']?([^"')]*)/gi)].map((m) => m[1] ?? "");
-    // A url( without its ")" still loads: the browser closes it at the end.
     if ((css.match(/url\(/gi) ?? []).length !== urls.length || /url\([^)]*$/i.test(css)) {
       found.push(`${where}: unterminated url(`);
     }
@@ -90,12 +83,11 @@ function hazards(html: string): string[] {
         found.push(`${tag} no noreferrer`);
     }
   }
-  return found;
+  return found satisfies string[];
 }
 
 const T = "https://t.example.com";
 
-// [name, html]. Every vector here is inert after sanitizing, in both image modes.
 const VECTORS: [string, string][] = [
   ["script tag", "<script>alert(1)</script>"],
   ["img onerror", "<img src=x onerror=alert(1)>"],
@@ -196,6 +188,18 @@ const VECTORS: [string, string][] = [
     `<p style="background:url(data:image/png,x(url(${T}/p.gif)))">x</p>`,
   ],
   ["svg style @import", `<svg><style>@import url(${T}/svg.css)</style></svg>`],
+  [
+    "CSS escape in one rule of a sheet",
+    `<style>p{color:red} b{background:u\\72l(${T}/e.gif)}</style>`,
+  ],
+  ["escaped brace ending a rule early", `<style>a\\{}b{background:u\\72l(${T}/e.gif)}</style>`],
+  ["escape in an @media prelude", `<style>@media (\\6d in-width:1px){p{color:red}}</style>`],
+  [
+    "escape in a string across rules",
+    `<style>p{content:"\\"} q{background:u\\72l(${T}/e.gif)}"}</style>`,
+  ],
+  ["body style", `<body style="background:u\\72l(${T}/b.gif)"><p>x</p></body>`],
+  ["body style url", `<body style="background:url(${T}/b.gif)"><p>x</p></body>`],
   ["target _top", `<a href="https://example.com/" target="_top">x</a>`],
   ["area target", `<map name="m"><area href="https://example.com/" target="_parent"></map>`],
 ];
@@ -208,7 +212,6 @@ describe.each(["block", "proxy"] as const)("remote images: %s", (remoteImages) =
 });
 
 test("the oracle catches each hazard class it is meant to", () => {
-  // Guards the guard: if the oracle went blind, every vector above would pass vacuously.
   expect(hazards(`<img src="${T}/a.gif">`)).not.toEqual([]);
   expect(hazards(`<p style="background:url(${T}/a.gif)">x</p>`)).not.toEqual([]);
   expect(hazards(`<p style="background:url(${T}/a.gif">x</p>`)).not.toEqual([]);
@@ -228,7 +231,6 @@ test("inline styles survive, with their URLs rewritten", () => {
   expect(sanitizeHtml(html, { ...options, remoteImages: "proxy" }).html).toBe(
     `<p style="color: red; font-family: 'A B'; background: url(&quot;${PROXY}${encodeURIComponent("https://cdn.example.com/a.png")}&quot;)">x</p>`,
   );
-  // Inline styles travel through DOMPurify under this name; a sender cannot use it.
   expect(sanitizeHtml(`<p data-omni-style="color: blue">y</p>`, options).html).toBe("<p>y</p>");
 });
 
@@ -254,7 +256,6 @@ describe("links", () => {
   });
 
   test("a lookalike domain in the text is compared by its punycode", () => {
-    // Cyrillic "а" in the text: it reads as paypal.com but is another domain.
     expect(links(`<a href="https://paypal.com/">pаypal.com</a>`)).toMatchObject([
       { textHost: "xn--pypal-4ve.com", hrefHost: "paypal.com" },
     ]);
@@ -272,5 +273,27 @@ describe("links", () => {
         ].join(""),
       ),
     ).toEqual([]);
+  });
+});
+
+describe("the sender's own styles", () => {
+  test("one escaped rule costs only itself, not the whole sheet", () => {
+    const html = sanitizeHtml(
+      `<style>.sm\\:w-full{width:100%} body{font-family:-apple-system,"Segoe UI",sans-serif}</style><p>x</p>`,
+      options,
+    ).html;
+    expect(html).toContain('body{font-family:-apple-system,"Segoe UI",sans-serif}');
+    expect(html).not.toContain("w-full");
+  });
+
+  test("<body>'s style and bgcolor go back to the body, under the sender's !important rules", () => {
+    const html = sanitizeHtml(
+      `<html><head><style>@media (prefers-color-scheme:dark){body{background:#000!important}}</style></head><body style="font-family:Helvetica;color:#24292e" bgcolor="#f6f8fa"><p>x</p></body></html>`,
+      options,
+    ).html;
+    expect(html).toBe(
+      "<style>:where(body){background-color:#f6f8fa}html body{font-family:Helvetica;color:#24292e}</style>" +
+        "<style>@media (prefers-color-scheme:dark){body{background:#000!important}}</style><p>x</p>",
+    );
   });
 });

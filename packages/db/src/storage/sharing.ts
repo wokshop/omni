@@ -1,17 +1,14 @@
-// Sharing (ADR 0034 decision 4): people added by address, and the one link every shared node
-// has. Only a member who can write the node shares it; every request checks the grant, so a
-// change here is immediate.
 import { normalizeAddress } from "@omni/mail-core/addresses";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
 import { organizations } from "../schema/auth.ts";
-import { storageGrants, storageNodes } from "../schema/storage.ts";
+import { storageGrants, storageLocks, storageNodes } from "../schema/storage.ts";
 import type { Door } from "./access.ts";
 import { inTrash, MAX_WALK, pageSize, toNode, type NodeRow, type StorageNode } from "./core.ts";
 import { reach, type Forbidden, type NotFound } from "./tree.ts";
 
 export type StorageLinkAccess = (typeof storageNodes.linkAccess.enumValues)[number];
-export type StorageGrantRole = (typeof storageGrants.role.enumValues)[number];
+export type StorageGrantRole = (typeof storageGrants.$inferSelect)["role"];
 
 export interface StoragePerson {
   email: string;
@@ -31,7 +28,6 @@ export interface StorageSharing {
 
 export type SharingResult = { status: "ok"; sharing: StorageSharing } | NotFound | Forbidden;
 export type PutGrantResult =
-  /** `created` is false when the person was already there and only their role changed. */
   | { status: "ok"; created: boolean; shareId: string; person: StoragePerson; node: StorageNode }
   | NotFound
   | Forbidden
@@ -50,7 +46,7 @@ export function newShareId() {
     .replace(/=+$/, "");
 }
 
-async function readSharing(ex: Db, chain: NodeRow[]): Promise<StorageSharing> {
+async function readSharing(ex: Db, chain: NodeRow[]) {
   const node = chain[0]!;
   const names = new Map(chain.map((row) => [row.id, row.name]));
   const grants = await ex
@@ -58,11 +54,12 @@ async function readSharing(ex: Db, chain: NodeRow[]): Promise<StorageSharing> {
     .from(storageGrants)
     .where(inArray(storageGrants.nodeId, [...names.keys()]))
     .orderBy(storageGrants.createdAt, storageGrants.id);
-  const person = (grant: (typeof grants)[number]): StoragePerson => ({
-    email: grant.email,
-    role: grant.role,
-    createdAt: grant.createdAt,
-  });
+  const person = (grant: (typeof grants)[number]) =>
+    ({
+      email: grant.email,
+      role: grant.role,
+      createdAt: grant.createdAt,
+    }) satisfies StoragePerson;
   return {
     nodeId: node.id,
     shareId: node.shareId,
@@ -75,11 +72,10 @@ async function readSharing(ex: Db, chain: NodeRow[]): Promise<StorageSharing> {
         nodeId: grant.nodeId,
         nodeName: names.get(grant.nodeId) ?? "",
       })),
-  };
+  } satisfies StorageSharing;
 }
 
 export function sharingOperations(db: Db, door: Door) {
-  /** A live node the holder may share, or why not. */
   async function shareable(ex: Db, nodeId: string) {
     const found = await reach(ex, door, nodeId);
     if (!found || inTrash(found.chain)) return NOT_FOUND;
@@ -87,63 +83,68 @@ export function sharingOperations(db: Db, door: Door) {
     return { status: "ok" as const, ...found };
   }
 
-  /** Changes the node's link under a row lock, so the first share makes exactly one `share_id`. */
   function changeLink(
     nodeId: string,
     change: (node: NodeRow) => { shareId: string; linkAccess?: StorageLinkAccess },
-  ): Promise<SharingResult> {
-    return db.transaction(async (tx): Promise<SharingResult> => {
+  ) {
+    return db.transaction<SharingResult>(async (tx) => {
       const found = await shareable(tx, nodeId);
-      if (found.status !== "ok") return found;
+      if (found.status !== "ok") return found satisfies SharingResult;
       const [node] = await tx
         .select()
         .from(storageNodes)
         .where(eq(storageNodes.id, nodeId))
         .for("update");
-      if (!node) return NOT_FOUND;
+      if (!node) return NOT_FOUND satisfies SharingResult;
       const [row] = await tx
         .update(storageNodes)
         .set(change(node))
         .where(eq(storageNodes.id, nodeId))
         .returning();
-      return { status: "ok", sharing: await readSharing(tx, [row!, ...found.chain.slice(1)]) };
+      return {
+        status: "ok",
+        sharing: await readSharing(tx, [row!, ...found.chain.slice(1)]),
+      } satisfies SharingResult;
     });
   }
 
   return {
-    /** Who has access: the people on the node, those on folders above it, and its link. */
-    async sharing(nodeId: string): Promise<SharingResult> {
+    async sharing(nodeId: string) {
       const found = await shareable(db, nodeId);
-      if (found.status !== "ok") return found;
-      return { status: "ok", sharing: await readSharing(db, found.chain) };
+      if (found.status !== "ok") return found satisfies SharingResult;
+      return { status: "ok", sharing: await readSharing(db, found.chain) } satisfies SharingResult;
     },
 
-    /** `anyone` opens the link to whoever holds it; `restricted` closes it again at once. */
-    setLinkAccess(nodeId: string, linkAccess: StorageLinkAccess): Promise<SharingResult> {
+    setLinkAccess(nodeId: string, linkAccess: StorageLinkAccess) {
       return changeLink(nodeId, (node) => ({
         shareId: node.shareId ?? newShareId(),
         linkAccess,
-      }));
+      })) satisfies Promise<SharingResult>;
     },
 
-    /** Gives the node a new link. The old one opens nothing from now on. */
-    resetLink(nodeId: string): Promise<SharingResult> {
-      return changeLink(nodeId, () => ({ shareId: newShareId() }));
+    resetLink(nodeId: string) {
+      return changeLink(nodeId, () => ({ shareId: newShareId() })) satisfies Promise<SharingResult>;
     },
 
-    /** Adds a person by address, or changes their role. */
-    putGrant(nodeId: string, email: string, role: StorageGrantRole): Promise<PutGrantResult> {
+    putGrant(nodeId: string, email: string, role: StorageGrantRole) {
       const address = normalizeAddress(email);
-      if (!/^[^@\s]+@[^@\s]+$/.test(address)) return Promise.resolve({ status: "invalid_email" });
-      return db.transaction(async (tx): Promise<PutGrantResult> => {
+      if (!/^[^@\s]+@[^@\s]+$/.test(address))
+        return Promise.resolve({ status: "invalid_email" }) satisfies Promise<PutGrantResult>;
+      return db.transaction<PutGrantResult>(async (tx) => {
         const found = await shareable(tx, nodeId);
-        if (found.status !== "ok") return found;
+        if (found.status !== "ok") {
+          const result: PutGrantResult = found;
+          return result;
+        }
         const [node] = await tx
           .update(storageNodes)
           .set({ shareId: sql`coalesce(${storageNodes.shareId}, ${newShareId()})` })
           .where(eq(storageNodes.id, nodeId))
           .returning();
-        if (!node?.shareId) return NOT_FOUND;
+        if (!node?.shareId) {
+          const result: PutGrantResult = NOT_FOUND;
+          return result;
+        }
         const [grant] = await tx
           .insert(storageGrants)
           .values({
@@ -152,7 +153,6 @@ export function sharingOperations(db: Db, door: Door) {
             email: address,
             role,
             createdByMemberId: await door.actor(tx, node.orgId),
-            // From this clock, not the database's: a cursor compares it at millisecond precision.
             createdAt: new Date(),
           })
           .onConflictDoUpdate({
@@ -166,21 +166,27 @@ export function sharingOperations(db: Db, door: Door) {
             created: sql<boolean>`(xmax = 0)`,
           });
         const { created, ...person } = grant!;
-        return { status: "ok", created, shareId: node.shareId, person, node: toNode(node) };
+        const result: PutGrantResult = {
+          status: "ok",
+          created,
+          shareId: node.shareId,
+          person,
+          node: toNode({ ...node, lockedAt: found.node.lockedAt }),
+        };
+        return result;
       });
     },
 
-    /** Removes a person. Their next request finds nothing. */
-    async removeGrant(nodeId: string, email: string): Promise<RemoveGrantResult> {
+    async removeGrant(nodeId: string, email: string) {
       const found = await shareable(db, nodeId);
-      if (found.status !== "ok") return found;
+      if (found.status !== "ok") return found satisfies RemoveGrantResult;
       const removed = await db
         .delete(storageGrants)
         .where(
           and(eq(storageGrants.nodeId, nodeId), eq(storageGrants.email, normalizeAddress(email))),
         )
         .returning({ id: storageGrants.id });
-      return removed.length > 0 ? { status: "ok" } : NOT_FOUND;
+      return (removed.length > 0 ? { status: "ok" } : NOT_FOUND) satisfies RemoveGrantResult;
     },
   };
 }
@@ -210,7 +216,6 @@ export async function listSharedWith(
 ) {
   if (addresses.length === 0) return { items: [] as SharedWithMeItem[], nextCursor: null };
   const limit = pageSize(page.limit);
-  // Null when the node, or a folder above it, is in Trash: a grant opens nothing there.
   const live = sql`not exists (
     with recursive up(parent_id, trashed_at, depth) as (
       select n.parent_id, n.trashed_at, 0 from ${storageNodes} n where n.id = ${storageGrants.nodeId}
@@ -236,18 +241,20 @@ export async function listSharedWith(
   const rows = await db
     .select({
       node: storageNodes,
+      lockedAt: storageLocks.lockedAt,
       role: mine.role,
       sharedAt: mine.sharedAt,
       orgName: organizations.name,
     })
     .from(mine)
     .innerJoin(storageNodes, eq(storageNodes.id, mine.nodeId))
+    .leftJoin(storageLocks, eq(storageLocks.nodeId, storageNodes.id))
     .innerJoin(organizations, eq(organizations.id, storageNodes.orgId))
     .where(after)
     .orderBy(desc(mine.sharedAt), desc(mine.nodeId))
     .limit(limit + 1);
   const items: SharedWithMeItem[] = rows.slice(0, limit).map((row) => ({
-    node: toNode(row.node),
+    node: toNode({ ...row.node, lockedAt: row.lockedAt }),
     role: row.role,
     shareId: row.node.shareId,
     orgName: row.orgName,

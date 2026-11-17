@@ -1,7 +1,3 @@
-// Storage in the web app (ADR 0034 step 6), in a real Chromium, on the web app built and served by
-// the real Worker under `wrangler dev` (its local R2), on a real Postgres: a file larger than one
-// part goes up through the page's own file input and comes back byte for byte, and a link open to
-// anyone downloads it for someone signed out.
 import { createHash, randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -10,6 +6,7 @@ import { createOrgWithOwner, schema } from "@omni/db";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { chromium, type Browser, type BrowserContext } from "playwright-core";
 import { afterAll, beforeAll, expect, test } from "vitest";
+import { utils, write, type WorkSheet } from "xlsx";
 import {
   createMailbox,
   createOrg,
@@ -54,19 +51,18 @@ afterAll(async () => {
 
 const sha256 = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 
-// Catches: the browser's upload client cutting parts wrong (an off-by-one slice, a last part of
-// the wrong length, a part skipped when several go at once), so a file over one part never
-// completes or downloads corrupted.
 test("a file larger than one part uploads from the page and downloads byte for byte", async () => {
   const page = await signedIn(`files-${Date.now()}@gmail.test`, "/files/my");
 
-  // Two full parts and a short third: 16 MiB, 16 MiB, 1234 bytes.
   const bytes = randomBytes(2 * 16 * 1024 * 1024 + 1234);
   const parts: string[] = [];
   page.on("request", (request) => {
     if (request.method() === "PUT") parts.push(request.url().split("/parts/")[1] ?? "");
   });
-  await page.getByRole("button", { name: "Upload", exact: true }).waitFor({ timeout: 15_000 });
+  await page
+    .getByRole("button", { name: "Upload", exact: true })
+    .first()
+    .waitFor({ timeout: 15_000 });
   await page
     .locator("input[type=file]")
     .first()
@@ -83,14 +79,15 @@ test("a file larger than one part uploads from the page and downloads byte for b
   const saved = await readFile(await download.path());
   expect(saved.byteLength).toBe(bytes.byteLength);
   expect(sha256(saved)).toBe(sha256(bytes));
-}, 120_000);
+});
 
-// Catches: the link page reaching for a session (the member routes, a sign-in redirect) or
-// downloading through the member's door, so a link open to anyone fails for the people it is for.
 test("a link open to anyone downloads its file, byte for byte, for someone signed out", async () => {
   const page = await signedIn(`link-${Date.now()}@gmail.test`, "/files/my");
   const bytes = randomBytes(300_000);
-  await page.getByRole("button", { name: "Upload", exact: true }).waitFor({ timeout: 15_000 });
+  await page
+    .getByRole("button", { name: "Upload", exact: true })
+    .first()
+    .waitFor({ timeout: 15_000 });
   await page
     .locator("input[type=file]")
     .first()
@@ -109,6 +106,10 @@ test("a link open to anyone downloads its file, byte for byte, for someone signe
   try {
     const anonymous = await signedOut.newPage();
     await anonymous.goto(link);
+    const signInLink = anonymous.getByRole("link", { name: "Sign in" });
+    expect(await signInLink.getAttribute("href")).toBe(
+      `/login?redirect=${encodeURIComponent(new URL(link).pathname)}`,
+    );
     const [download] = await Promise.all([
       anonymous.waitForEvent("download"),
       anonymous.getByRole("button", { name: "Download" }).click(),
@@ -119,11 +120,46 @@ test("a link open to anyone downloads its file, byte for byte, for someone signe
   } finally {
     await signedOut.close();
   }
-}, 120_000);
+});
 
-// Catches: files queued in one workspace going up into another after a workspace switch (the
-// queue lives outside React and outlived the session's reset), or an opened upload left holding
-// room in the workspace that was left.
+test("an XLSX opens to its visible sheets' cells as the workbook shows them", async () => {
+  const page = await signedIn(`xlsx-${Date.now()}@gmail.test`, "/files/my");
+  const book = utils.book_new();
+  const pipeline = utils.aoa_to_sheet([
+    ["Region", "Revenue"],
+    ["North", 12000.5],
+  ]);
+  if (pipeline.B2) pipeline.B2.z = '"$"#,##0.00';
+  utils.book_append_sheet(book, pipeline, "Pipeline");
+  const accounts: WorkSheet = {
+    "!ref": "B2:B3",
+    B2: { t: "s", v: "Owner" },
+    B3: { t: "s", v: "Ana" },
+  };
+  utils.book_append_sheet(book, accounts, "Accounts");
+  utils.book_append_sheet(book, utils.aoa_to_sheet([["kept out of sight"]]), "Hidden");
+  book.Workbook = { Sheets: [{ Hidden: 0 }, { Hidden: 0 }, { Hidden: 1 }] };
+  const buffer = write(book, { type: "buffer", bookType: "xlsx" }) as Buffer;
+  await page
+    .getByRole("button", { name: "Upload", exact: true })
+    .first()
+    .waitFor({ timeout: 15_000 });
+  await page.locator("input[type=file]").first().setInputFiles({
+    name: "pipeline.xlsx",
+    mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    buffer,
+  });
+  await page.getByRole("row", { name: /pipeline\.xlsx/ }).click();
+
+  await page.getByRole("gridcell", { name: "$12,000.50" }).waitFor({ timeout: 15_000 });
+  expect(await page.getByRole("tab").allInnerTexts()).toEqual(["Pipeline", "Accounts"]);
+  await page.getByRole("tab", { name: "Accounts" }).click();
+  const ana = page.getByRole("gridcell", { name: "Ana" });
+  await ana.waitFor({ timeout: 5000 });
+  expect(await ana.getAttribute("aria-colindex")).toBe("3");
+  expect(await ana.locator("..").getAttribute("aria-rowindex")).toBe("4");
+});
+
 test("switching workspace mid-upload stops the queue and leaves nothing in either workspace", async () => {
   const email = `switch-${Date.now()}@acme-files.test`;
   const acme = await createOrgWithOwner(db, {
@@ -133,9 +169,11 @@ test("switching workspace mid-upload stops the queue and leaves nothing in eithe
   });
   await db.insert(schema.orgSetup).values({ orgId: acme.orgId, step: "complete" });
   const page = await signedIn(email, "/files/my");
-  await page.getByRole("button", { name: "Upload", exact: true }).waitFor({ timeout: 15_000 });
+  await page
+    .getByRole("button", { name: "Upload", exact: true })
+    .first()
+    .waitFor({ timeout: 15_000 });
 
-  // The first file's first part waits until the switch has begun, so the queue is mid-flight.
   let release = () => {};
   const held = new Promise<void>((resolve) => (release = resolve));
   await page.route("**/api/storage/uploads/*/parts/1", async (route) => {
@@ -155,12 +193,14 @@ test("switching workspace mid-upload stops the queue and leaves nothing in eithe
     );
   await page.waitForRequest("**/api/storage/uploads/*/parts/1");
 
-  await page.getByRole("button", { name: "Settings" }).click();
-  await page.getByRole("button", { name: /^Workspace: Acme Files/ }).click();
-  await page.getByRole("menuitem", { name: "Personal" }).click();
-  await page.getByRole("button", { name: /^Workspace: Personal/ }).waitFor({ timeout: 15_000 });
+  await page.getByRole("button", { name: /^Switch workspace/ }).click();
+  await page.getByRole("menuitem", { name: "Workspace settings" }).click();
+  await page.getByRole("button", { name: /^Switch workspace, currently Acme Files/ }).click();
+  await page.getByRole("menuitem", { name: /(?:'s|^Personal) Workspace$/ }).click();
+  await page
+    .getByRole("button", { name: /^Switch workspace, currently .*Workspace$/ })
+    .waitFor({ timeout: 15_000 });
   release();
-  // Anything still going would have reached the server by now.
   await page.waitForTimeout(1500);
 
   const files = await db
@@ -173,9 +213,222 @@ test("switching workspace mid-upload stops the queue and leaves nothing in eithe
     .from(schema.storageUploads)
     .where(and(eq(schema.storageUploads.orgId, acme.orgId), isNull(schema.storageUploads.nodeId)));
   expect(open).toEqual([]);
-}, 120_000);
+});
 
-/** Signed in as `email` (a magic link, so a new address signs up), on `path`. */
+test("New folder is named in place, and each name creates one folder", async () => {
+  const page = await signedIn(`folders-${Date.now()}@gmail.test`, "/files/my");
+  const newFolder = page.getByRole("button", { name: "New folder" }).first();
+  await newFolder.waitFor({ timeout: 15_000 });
+  const field = page.getByRole("textbox", { name: "Folder name" });
+
+  await newFolder.click();
+  await field.waitFor();
+  await page.keyboard.type("not kept");
+  await page.keyboard.press("Escape");
+  await page.getByRole("row", { name: "Untitled folder" }).waitFor();
+
+  await page.getByRole("radio", { name: "Rows" }).first().click();
+  await newFolder.click();
+  await page.keyboard.type("Plns");
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.type("a");
+  await page.keyboard.press("Home");
+  await page.keyboard.type("Q3 ");
+  await page.keyboard.press("End");
+  await page.keyboard.type(" final");
+  await page.keyboard.press("Enter");
+  await page.getByRole("row", { name: "Q3 Plans final" }).waitFor();
+  await page.waitForTimeout(1000);
+
+  const folders = await db
+    .select({ name: schema.storageNodes.name })
+    .from(schema.storageNodes)
+    .where(eq(schema.storageNodes.kind, "folder"));
+  expect(folders.map((f) => f.name).toSorted()).toEqual(["Q3 Plans final", "Untitled folder"]);
+  expect(await field.count()).toBe(0);
+});
+
+test("Rename changes a name in place on a row and a card, once", async () => {
+  const page = await signedIn(`rename-${Date.now()}@gmail.test`, "/files/my");
+  await page
+    .getByRole("button", { name: "Upload", exact: true })
+    .first()
+    .waitFor({ timeout: 15_000 });
+  await page
+    .locator("input[type=file]")
+    .first()
+    .setInputFiles({ name: "notes.txt", mimeType: "text/plain", buffer: Buffer.from("hi") });
+  await page.getByRole("row", { name: /notes\.txt/ }).waitFor({ timeout: 15_000 });
+  await page.getByRole("button", { name: "New folder" }).first().click();
+  await page.keyboard.press("Enter");
+  await page.getByRole("row", { name: /Untitled folder/ }).waitFor();
+  const renames: string[] = [];
+  page.on("request", (request) => {
+    if (request.method() === "PATCH") renames.push(request.postData() ?? "");
+  });
+  const field = page.getByRole("textbox", { name: "Name" });
+
+  await page.getByRole("button", { name: "Actions for notes.txt" }).click();
+  await page.getByRole("menuitem", { name: "Rename" }).click();
+  await field.waitFor();
+  await page.waitForTimeout(300);
+  await page.keyboard.type("minutes");
+  await page.keyboard.press("Enter");
+  await page.getByRole("row", { name: /minutes\.txt/ }).waitFor();
+
+  await page.getByRole("button", { name: "Actions for Untitled folder" }).click();
+  await page.getByRole("menuitem", { name: "Rename" }).click();
+  await field.waitFor();
+  await page.keyboard.type("Never");
+  await page.keyboard.press("Escape");
+  expect(await field.count()).toBe(0);
+  await page.waitForTimeout(1000);
+
+  expect(renames).toEqual([JSON.stringify({ name: "minutes.txt" })]);
+  const files = await db
+    .select({ name: schema.storageNodes.name })
+    .from(schema.storageNodes)
+    .where(inArray(schema.storageNodes.name, ["notes.txt", "minutes.txt"]));
+  expect(files).toEqual([{ name: "minutes.txt" }]);
+});
+
+test("a Markdown file is edited as a page, saved as Markdown, and a newer save is never overwritten unasked", async () => {
+  const page = await signedIn(`edit-${Date.now()}@gmail.test`, "/files/my");
+  await page
+    .getByRole("button", { name: "Upload", exact: true })
+    .first()
+    .waitFor({ timeout: 15_000 });
+  await page
+    .locator("input[type=file]")
+    .first()
+    .setInputFiles([
+      {
+        name: "plan.md",
+        mimeType: "text/markdown",
+        buffer: Buffer.from("# Plan\n\n- First point\n"),
+      },
+      { name: "zz.txt", mimeType: "text/plain", buffer: Buffer.from("next") },
+    ]);
+  await page.getByRole("row", { name: /plan\.md/ }).click();
+  await page.getByRole("button", { name: "Edit" }).click();
+  const editor = page.locator("[contenteditable=true]");
+  await editor.getByRole("heading", { name: "Plan" }).waitFor({ timeout: 15_000 });
+  const [file] = await db
+    .select({ id: schema.storageNodes.id })
+    .from(schema.storageNodes)
+    .where(eq(schema.storageNodes.name, "plan.md"));
+  const id = file?.id ?? "";
+  const content = () =>
+    page.evaluate(async (at) => (await fetch(at)).text(), `/api/storage/files/${id}/content`);
+
+  const caretAtEndOf = async (text: string) => {
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const dom = document.querySelector(".ProseMirror") as
+            | (Element & {
+                editor?: {
+                  state: { selection: { $from: { parent: Node; parentOffset: number } } };
+                };
+              })
+            | null;
+          const at = dom?.editor?.state.selection.$from;
+          return at && `${at.parent.textContent}|${at.parentOffset}`;
+        }),
+      )
+      .toBe(`${text}|${text.length}`);
+  };
+
+  await editor.getByText("First point").click();
+  await page.keyboard.press("End");
+  await caretAtEndOf("First point");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("Second **point**");
+  const save = page.getByRole("button", { name: "Save" });
+  await save.click();
+  await expect
+    .poll(content, { timeout: 15_000 })
+    .toMatch(/^# Plan\n\n- First point\n- Second \*\*point\*\*\n*$/);
+  await expect.poll(() => save.isDisabled()).toBe(true);
+
+  const theirs = await page.evaluate(async (fileId) => {
+    const text = "# Theirs\n";
+    const opened = await fetch(`/api/storage/files/${fileId}/versions`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ size: text.length, mimeType: "text/markdown" }),
+    });
+    const { upload } = (await opened.json()) as { upload: { id: string } };
+    await fetch(`/api/storage/uploads/${upload.id}/parts/1`, { method: "PUT", body: text });
+    return (await fetch(`/api/storage/uploads/${upload.id}/complete`, { method: "POST" })).status;
+  }, id);
+  expect(theirs).toBe(200);
+
+  await editor.getByText("Second").click();
+  await page.keyboard.press("End");
+  await caretAtEndOf("Second point");
+  await page.keyboard.type(" mine");
+  await save.click();
+  const conflict = page.getByRole("alertdialog", { name: "Someone saved a newer version" });
+  await conflict.waitFor({ timeout: 15_000 });
+  expect(await content()).toBe("# Theirs\n");
+  await conflict.getByRole("button", { name: "Keep mine" }).click();
+  await expect.poll(content, { timeout: 15_000 }).toContain("- Second **point** mine");
+
+  await editor.getByText("mine").click();
+  await page.keyboard.press("End");
+  await caretAtEndOf("Second point mine");
+  await page.keyboard.type(" again");
+  const leaving = page.getByRole("alertdialog", { name: "Save your changes?" });
+  for (const key of ["ArrowRight", "ArrowLeft", "Escape"]) {
+    await page.keyboard.press(key);
+    await page.waitForTimeout(300);
+    expect(await leaving.count()).toBe(0);
+  }
+  await editor.getByText("mine again").waitFor();
+  await page.getByRole("button", { name: "Close", exact: true }).click();
+  await leaving.getByRole("button", { name: "Save", exact: true }).click();
+  await expect.poll(content, { timeout: 15_000 }).toContain("- Second **point** mine again");
+  await expect.poll(() => editor.count()).toBe(0);
+});
+
+test("a Markdown file the page cannot keep whole edits as text, and saves every line", async () => {
+  const page = await signedIn(`edit-table-${Date.now()}@gmail.test`, "/files/my");
+  await page
+    .getByRole("button", { name: "Upload", exact: true })
+    .first()
+    .waitFor({ timeout: 15_000 });
+  const text = "# Prices\n\n| Plan | Price |\n| --- | --- |\n| Pro | 9 |\n\n![logo](logo.png)\n";
+  await page
+    .locator("input[type=file]")
+    .first()
+    .setInputFiles({ name: "prices.md", mimeType: "text/markdown", buffer: Buffer.from(text) });
+  await page.getByRole("row", { name: /prices\.md/ }).click();
+  await page.getByRole("button", { name: "Edit" }).click();
+  const source = page.locator(".cm-content");
+  await source.getByText("| Pro | 9 |").waitFor({ timeout: 15_000 });
+  expect(await page.locator(".ProseMirror").count()).toBe(0);
+  await source.getByText("| Pro | 9 |").click();
+  await page.keyboard.press("End");
+  await page.keyboard.type(" (monthly)");
+  await page.getByRole("button", { name: "Save" }).click();
+  const [file] = await db
+    .select({ id: schema.storageNodes.id })
+    .from(schema.storageNodes)
+    .where(eq(schema.storageNodes.name, "prices.md"));
+  await expect
+    .poll(
+      () =>
+        page.evaluate(
+          async (at) => (await fetch(at)).text(),
+          `/api/storage/files/${file?.id ?? ""}/content`,
+        ),
+      { timeout: 15_000 },
+    )
+    .toBe(text.replace("| Pro | 9 |", "| Pro | 9 | (monthly)"));
+});
+
 async function signedIn(email: string, path: string) {
   const origin = String(worker.url);
   const cookie = await signIn({ url: new URL(origin) }, db, email);
@@ -192,7 +445,7 @@ async function signedIn(email: string, path: string) {
   return page;
 }
 
-function freePort(): Promise<number> {
+function freePort() {
   return new Promise((resolve, reject) => {
     const server = createServer();
     server.once("error", reject);
@@ -200,5 +453,5 @@ function freePort(): Promise<number> {
       const { port } = server.address() as AddressInfo;
       server.close(() => resolve(port));
     });
-  });
+  }) satisfies Promise<number>;
 }

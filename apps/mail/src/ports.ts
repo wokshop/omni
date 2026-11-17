@@ -1,9 +1,3 @@
-// Storage ports. The IMAP/SMTP engine talks to storage only through these two interfaces, so the
-// `@omni/db` + R2 implementation can replace the e2e in-memory one without touching the engine.
-//
-// Every method must be idempotent: the engine may repeat any call after a crash or a reconnect,
-// and the IMAP server stays the source of truth (a full re-sync must converge).
-
 import type { SpooledFile } from "./spool.ts";
 
 export type FolderRole = "inbox" | "sent" | "archive" | "trash" | "drafts" | "junk" | "other";
@@ -55,6 +49,11 @@ export interface MailStore {
   /** Store one message. Unique on (mailbox, folder, uid). Returns false when it was already stored. */
   storeMessage(mailboxId: string, message: FetchedMessage): Promise<{ created: boolean }>;
   applyFlags(mailboxId: string, folder: string, changes: FlagChange[]): Promise<void>;
+  /**
+   * Brings every thread with a copy in `folder` in line with the flags already stored, for state
+   * no flag change will report (a Google account's mail read before Omni followed it, ADR 0044).
+   */
+  reconcileFolder(mailboxId: string, folder: string): Promise<void>;
   /** Messages expunged or moved out of `folder`. */
   removeMessages(mailboxId: string, folder: string, uids: number[]): Promise<void>;
   /** UIDVALIDITY changed: forget every message and the sync position of this folder. */
@@ -82,11 +81,6 @@ export interface MailStore {
   reportDiscarded(mailboxId: string): Promise<number>;
 }
 
-// Outbox (`mail_actions`). UIDs mean nothing without their folder's UIDVALIDITY, so every action
-// that targets existing messages carries it; a mismatch fails the action instead of touching the
-// wrong message.
-
-// Payload shapes live in `@omni/contracts`, shared with the Worker that writes them.
 export type {
   ForwardCopyPayload,
   MessageTarget,
@@ -105,8 +99,8 @@ export type MailAction =
   | ActionBase<"forward_copy", ForwardCopyPayload>
   | ActionBase<"archive", MessageTarget>
   | ActionBase<"move", MessageTarget & { destination: string }>
-  | ActionBase<"mark_read", MessageTarget>
-  | ActionBase<"mark_unread", MessageTarget>
+  | ActionBase<"mark_read", MessageTarget & { done?: true | undefined }>
+  | ActionBase<"mark_unread", MessageTarget & { done?: true | undefined }>
   | ActionBase<"trash", MessageTarget>
   | ActionBase<"spam", MessageTarget>
   | ActionBase<"not_spam", MessageTarget>;

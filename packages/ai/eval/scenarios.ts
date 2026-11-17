@@ -1,6 +1,3 @@
-// The triage scenarios in `fixtures/triage/threads.json`, each step turned into the exact
-// `TriageInput` production builds: parsed and cleaned by `@omni/mail-core` the way the mail
-// service stores a message, then shaped by `triageInputFor` the way the queue consumer does.
 import { readFileSync } from "node:fs";
 import { parseMessage } from "@omni/mail-core";
 import { cleanMessage } from "@omni/mail-core/clean";
@@ -25,17 +22,17 @@ export interface Step {
 
 export const recordingUrl = (id: string) => new URL(`triage/recordings/${id}.json`, root);
 
-async function stored(eml: string): Promise<ThreadMessage> {
+async function stored(eml: string) {
   const { message } = await parseMessage(readFileSync(new URL(`eml/${eml}`, root)));
   return {
     fromName: message.from?.name || null,
     fromAddress: message.from?.address ?? "",
     subject: message.subject,
     cleanText: cleanMessage(message).cleanText,
-  };
+  } satisfies ThreadMessage;
 }
 
-export async function scenarioSteps(): Promise<Step[]> {
+export async function scenarioSteps() {
   const manifest = JSON.parse(
     readFileSync(new URL("triage/threads.json", root), "utf8"),
   ) as Manifest;
@@ -53,5 +50,5 @@ export async function scenarioSteps(): Promise<Step[]> {
       });
     }
   }
-  return steps;
+  return steps satisfies Step[];
 }

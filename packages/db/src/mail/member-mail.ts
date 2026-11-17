@@ -1,8 +1,5 @@
-// Member-scoped reads and writes the API's mail actions need, beside `forMember`. Like it, every
-// query inner-joins `mailbox_access` for this member and `members` for the row's org, so a
-// missing grant or a grant that crosses orgs finds nothing.
 import type { MessageTarget } from "@omni/contracts";
-import { and, asc, desc, eq, exists, isNotNull, sql, type AnyColumn } from "drizzle-orm";
+import { and, asc, desc, eq, exists, isNotNull, lte, sql, type AnyColumn } from "drizzle-orm";
 import type { Db } from "../client.ts";
 import {
   attachments,
@@ -62,14 +59,21 @@ export async function listMemberMailboxes(db: Db, memberId: string) {
  * yet in any folder (a send before its Sent append) is left out.
  * Null when the member cannot see the thread.
  */
-export async function threadActionTargets(db: Db, memberId: string, threadId: string) {
+export async function threadActionTargets(
+  db: Db,
+  memberId: string,
+  threadId: string,
+  only?: "newest" | Date,
+) {
   const [thread] = await db
     .select({
       id: threads.id,
       orgId: threads.orgId,
       mailboxId: threads.mailboxId,
       mailboxKind: mailboxes.kind,
+      mailboxProvider: mailboxes.provider,
       mailboxAddress: mailboxes.address,
+      lastMessageAt: threads.lastMessageAt,
     })
     .from(threads)
     .innerJoin(mailboxes, eq(mailboxes.id, threads.mailboxId))
@@ -91,10 +95,16 @@ export async function threadActionTargets(db: Db, memberId: string, threadId: st
     .from(messageLocations)
     .innerJoin(messages, eq(messages.id, messageLocations.messageId))
     .innerJoin(mailboxFolders, eq(mailboxFolders.id, messageLocations.folderId))
-    .where(and(eq(messages.threadId, thread.id), isNotNull(mailboxFolders.uidvalidity)))
+    .where(
+      and(
+        eq(messages.threadId, thread.id),
+        isNotNull(mailboxFolders.uidvalidity),
+        only === "newest" ? eq(messages.sentAt, thread.lastMessageAt) : undefined,
+        only instanceof Date ? lte(messages.sentAt, only) : undefined,
+      ),
+    )
     .orderBy(asc(mailboxFolders.path), asc(messageLocations.imapUid));
 
-  // An outbox payload target, plus the folder role so a route can skip folders by role.
   const byFolder = new Map<string, MessageTarget & { role: (typeof rows)[number]["role"] }>();
   for (const row of rows) {
     const target = byFolder.get(row.folder) ?? {
@@ -147,8 +157,33 @@ export async function findMemberAttachmentByHash(db: Db, memberId: string, sha25
     .innerJoin(messages, eq(messages.id, attachments.messageId))
     .where(
       and(
-        // Same expression as `attachments_content_hash_idx`.
         sql`split_part(${attachments.r2Key}, '/att/', 2) = ${sha256}`,
+        exists(grantFor(db, memberId, messages.mailboxId, messages.orgId)),
+      ),
+    )
+    .limit(1);
+  return row ?? null;
+}
+
+/**
+ * One attachment by id, if the member can see its message: the same grant as
+ * `findMemberAttachmentByHash`, for routes that name an attachment (save to drive).
+ */
+export async function findMemberAttachment(db: Db, memberId: string, attachmentId: string) {
+  const [row] = await db
+    .select({
+      id: attachments.id,
+      orgId: attachments.orgId,
+      r2Key: attachments.r2Key,
+      filename: attachments.filename,
+      mimeType: attachments.mimeType,
+      size: attachments.size,
+    })
+    .from(attachments)
+    .innerJoin(messages, eq(messages.id, attachments.messageId))
+    .where(
+      and(
+        eq(attachments.id, attachmentId),
         exists(grantFor(db, memberId, messages.mailboxId, messages.orgId)),
       ),
     )
@@ -210,8 +245,6 @@ export async function resortThread(
       )
       .for("update");
     if (!thread) return false;
-    // Its own query: a correlated subquery in the select above would render `threads.id`
-    // unqualified, and inside the subquery that is the message's own id.
     const [newest] = await tx
       .select({ id: messages.id })
       .from(messages)
@@ -220,8 +253,6 @@ export async function resortThread(
       .limit(1);
     const latest = newest?.id ?? null;
     const sameChoice = thread.triage === lane && thread.triageSource === "person";
-    // Already the person's choice for the latest message: nothing to do. The same lane after new
-    // mail still moves the marker, or that message's triage job would replace the choice.
     if (sameChoice && thread.triageMessageId === latest) return true;
     await tx
       .update(threads)
@@ -233,7 +264,6 @@ export async function resortThread(
         updatedAt: new Date(),
       })
       .where(eq(threads.id, threadId));
-    // Feedback is a change of lane, not a reaffirmation.
     if (sameChoice) return true;
     await tx.insert(triageFeedback).values({
       orgId: thread.orgId,

@@ -1,6 +1,3 @@
-// The three doors of Storage (ADR 0034 decision 3). A door is handed a node's chain (the node
-// and its ancestors) and answers what its holder may do with the node, or null when it opens
-// nothing. Every storage operation asks a door; nothing else decides access.
 import { and, eq, inArray, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
 import { members } from "../schema/auth.ts";
@@ -10,8 +7,8 @@ import { companyForAddress } from "../session-scopes.ts";
 import { listSignInEmails } from "../sign-in-emails.ts";
 import { holdsOthersWork, inTrash, type Drive, type NodeRow, type StorageSpace } from "./core.ts";
 
-/** `member` is someone in the node's space; the other two come from a grant or a link. */
-export type StorageRole = "member" | "editor" | "viewer";
+/** `member` is someone in the node's space; the others come from a grant or a link. */
+export type StorageRole = "member" | "editor" | "commenter" | "viewer";
 
 export interface Access {
   role: StorageRole;
@@ -26,6 +23,22 @@ export interface Access {
   /** May see and change who it is shared with. */
   share: boolean;
 }
+
+/**
+ * Whether the holder may replace a file's content and see what it replaced (ADR 0043
+ * decision 1): a member who reaches it, or an editor, whether the grant is on the file itself or
+ * on a folder above it. Unlike `change`, which an editor has only inside the folder they were
+ * given: writing a document they were handed is what editing it means.
+ */
+export const editsContent = (access: Access) =>
+  access.role === "member" || access.role === "editor";
+
+/**
+ * Whether the holder may read a file's comments and write their own (ADR 0043 decision 5): a
+ * member, an editor or a commenter. A viewer, and a link alone, see the file and not what people
+ * said about it.
+ */
+export const readsComments = (access: Access) => access.role !== "viewer";
 
 export interface Door {
   kind: "member" | "grant" | "link";
@@ -58,7 +71,10 @@ export interface StorageMember {
   personal: boolean;
 }
 
-export async function loadMember(ex: Db, memberId: string): Promise<StorageMember | null> {
+export const loadMember: (ex: Db, memberId: string) => Promise<StorageMember | null> = async (
+  ex,
+  memberId,
+) => {
   const [row] = await ex
     .select({
       id: members.id,
@@ -69,10 +85,9 @@ export async function loadMember(ex: Db, memberId: string): Promise<StorageMembe
     .from(members)
     .where(eq(members.id, memberId));
   if (!row) return null;
-  // Better Auth stores several roles as a comma-separated list.
   const admin = row.role.split(",").some((role) => ADMIN_ROLES.has(role.trim()));
   return { id: row.id, orgId: row.orgId, admin, personal: row.personal };
-}
+};
 
 /**
  * A member reaches their own My files and, in a company, Shared. Nobody reaches another
@@ -81,7 +96,7 @@ export async function loadMember(ex: Db, memberId: string): Promise<StorageMembe
  * while everything inside it is theirs too, or moving a colleague's file into a folder of one's
  * own would be a way to take it.
  */
-export function memberDoor(memberId: string): Door {
+export const memberDoor: (memberId: string) => Door = (memberId) => {
   return {
     kind: "member",
     async access(ex, chain) {
@@ -120,7 +135,7 @@ export function memberDoor(memberId: string): Door {
     },
     ownsUpload: async (_ex, uploader) => uploader === memberId,
   };
-}
+};
 
 /**
  * The addresses a grant may be addressed to for this session: every address the person has
@@ -148,8 +163,11 @@ export async function grantAddresses(ex: Db, userId: string, scopeOrgId?: string
  * With `underShareId` the door opens only the node carrying that link and what is inside it,
  * which is how a request made at `/s/<shareId>` stays in the one workspace it names.
  */
-export function grantDoor(userId: string, scopeOrgId?: string | null, underShareId?: string): Door {
-  /** The person's own member door onto a Shared node of a workspace they belong to. */
+export const grantDoor: (
+  userId: string,
+  scopeOrgId?: string | null,
+  underShareId?: string,
+) => Door = (userId, scopeOrgId, underShareId) => {
   async function asMember(ex: Db, node: NodeRow) {
     if (node.space !== "shared") return null;
     const [row] = await ex
@@ -185,10 +203,11 @@ export function grantDoor(userId: string, scopeOrgId?: string | null, underShare
       );
       const editorAbove = chain.slice(1).some((row) => editing.has(row.id));
       const editor = editorAbove || editing.has(node.id);
+      const commenter = grants.some((grant) => grant.role === "commenter");
       const member = editorAbove ? await asMember(ex, node) : null;
       const memberRemoves = member ? ((await member.access(ex, chain))?.remove ?? false) : true;
       return {
-        role: editor ? "editor" : "viewer",
+        role: editor ? "editor" : commenter ? "commenter" : "viewer",
         top: chain.findLastIndex((row) => granted.has(row.id)),
         inside: editor && node.kind === "folder",
         change: editorAbove,
@@ -201,7 +220,6 @@ export function grantDoor(userId: string, scopeOrgId?: string | null, underShare
     },
     root: async () => null,
     async actor(ex, orgId) {
-      // Their member in the node's workspace when they have one, else their oldest membership.
       const [row] = await ex
         .select({ id: members.id })
         .from(members)
@@ -223,13 +241,13 @@ export function grantDoor(userId: string, scopeOrgId?: string | null, underShare
       return row !== undefined;
     },
   };
-}
+};
 
 /**
  * Anyone holding the link: the node or a folder above it has this `share_id` and is open to
  * anyone. Read only, always: an anonymous editor would be an open upload endpoint.
  */
-export function linkDoor(shareId: string): Door {
+export const linkDoor: (shareId: string) => Door = (shareId) => {
   return {
     kind: "link",
     async access(_ex, chain) {
@@ -243,4 +261,4 @@ export function linkDoor(shareId: string): Door {
     actor: async () => null,
     ownsUpload: async () => false,
   };
-}
+};

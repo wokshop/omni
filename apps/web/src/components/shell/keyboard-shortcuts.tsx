@@ -8,22 +8,39 @@ import {
 } from "@/components/ui/description-list";
 import { Dialog, DialogBody, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useOpenCompose } from "@/hooks/use-compose-pane.ts";
-import { useAnnouncement, useShortcut, useShortcutListener } from "@/hooks/use-shortcuts.ts";
+import {
+  useAnnouncement,
+  useAvailableShortcuts,
+  useShortcut,
+  useShortcutListener,
+} from "@/hooks/use-shortcuts.ts";
 import { keyLabel, SHORTCUT_IDS, SHORTCUTS, type KeySequence } from "@/lib/shortcuts.ts";
+import { useOpenModule } from "./module-switcher";
+import { useWorkspaceSlug } from "@/hooks/use-workspaces.ts";
 
 /**
- * The app-wide keys: compose, go-to and `?`. List keys live on the thread list; `/` and ⌘K
- * belong to the title-bar search popover. Mounted once by the member shell.
+ * The shell's keys: compose (Mail's only, see `place` in `lib/shortcuts.ts`), go-to and `?`. List
+ * keys live on the thread list; `/` and ⌘K belong to the command menu. Mounted once by the
+ * member shell.
  */
 export function KeyboardShortcuts() {
   const navigate = useNavigate();
+  const workspace = useWorkspaceSlug();
   const [help, setHelp] = useState(false);
   const openCompose = useOpenCompose();
   useShortcutListener();
   useShortcut("compose", openCompose);
-  useShortcut("goInbox", () => void navigate({ to: "/inbox" }));
-  useShortcut("goLater", () => void navigate({ to: "/later" }));
-  useShortcut("goAll", () => void navigate({ to: "/all" }));
+  useShortcut(
+    "goInbox",
+    () => void navigate({ to: "/$workspace/mail/inbox", params: { workspace } }),
+  );
+  useShortcut(
+    "goLater",
+    () => void navigate({ to: "/$workspace/mail/later", params: { workspace } }),
+  );
+  useShortcut("goAll", () => void navigate({ to: "/$workspace/mail/all", params: { workspace } }));
+  const openModule = useOpenModule();
+  useShortcut("goDrive", () => openModule("files"));
   useShortcut("help", () => setHelp(true));
 
   return (
@@ -34,9 +51,8 @@ export function KeyboardShortcuts() {
   );
 }
 
-// Layout not in Figma yet: the Dialog and DescriptionList primitives as they are, one row per
-// shortcut in definition order.
 function ShortcutList(props: { isOpen: boolean; onOpenChange: (open: boolean) => void }) {
+  const available = useAvailableShortcuts();
   return (
     <Dialog isOpen={props.isOpen} onOpenChange={props.onOpenChange} size="md">
       <DialogHeader>
@@ -44,7 +60,7 @@ function ShortcutList(props: { isOpen: boolean; onOpenChange: (open: boolean) =>
       </DialogHeader>
       <DialogBody>
         <DescriptionList>
-          {SHORTCUT_IDS.map((id) => (
+          {SHORTCUT_IDS.filter((id) => available.has(id)).map((id) => (
             <Fragment key={id}>
               <DescriptionTerm>{SHORTCUTS[id].label}</DescriptionTerm>
               <DescriptionDetails>

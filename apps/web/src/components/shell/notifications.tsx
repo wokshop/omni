@@ -1,17 +1,11 @@
-// In-app notifications: the bell in the sidebar's footer, with your unread count, toggles a panel
-// the window's height that slides out from the sidebar's edge and floats over the page (Figma:
-// Omni, node 64:2). It shares the thread list's header height, header actions and fluid hover;
-// its rows are two lines beside who did it, so they read as notifications, not mail.
-// All or Unread; picking one marks it read and opens its conversation, or People in settings
-// for a new teammate. Escape or a press outside closes it.
 import { useRouter } from "@tanstack/react-router";
 import { useEffect, useRef, useState, type Key, type ReactNode } from "react";
 import { Collection } from "react-aria-components/Collection";
 import { GridListLoadMoreItem } from "react-aria-components/GridList";
 import { Skeleton, SkeletonBox } from "skullet/react";
 import { EmptyState } from "@/components/empty/empty-state";
+import { IconInbox } from "@/components/icons/sidebar";
 import {
-  IconBell,
   IconCircleAlert,
   IconClock3,
   IconMail,
@@ -29,14 +23,17 @@ import { Tab, TabList, TabPanel, Tabs } from "@/components/ui/tabs";
 import { Tooltip, TooltipTrigger } from "@/components/ui/tooltip";
 import { useFluidHoverList } from "@/hooks/use-fluid-hover-list";
 import { useMarkNotificationsRead, useNotifications } from "@/hooks/use-notifications.ts";
+import { useWhenIdle } from "@/hooks/use-when-idle.ts";
 import {
   closeNotificationsPanel,
   toggleNotificationsPanel,
   useNotificationsPanel,
 } from "@/hooks/use-notifications-panel.ts";
-import { openSettings } from "@/hooks/use-settings-dialog.ts";
+import { useOpenSettings } from "@/hooks/use-settings.ts";
+import { useFilePlace } from "@/hooks/use-storage.ts";
 import {
   actorName,
+  commentTarget,
   notificationParts,
   notificationSubject,
   notificationTitle,
@@ -44,8 +41,10 @@ import {
 import type { Notification } from "@/lib/types.ts";
 import { pictureUrl } from "@/lib/urls.ts";
 import { CountBadge } from "./count-badge";
+import { TitleBarSpace } from "./title-bar";
+import { useWorkspaceSlug } from "@/hooks/use-workspaces.ts";
 
-/** The bell: opens and closes the panel, and wears your unread count. */
+/** Notifications, drawn as an inbox: opens and closes the panel, and wears your unread count. */
 export function NotificationsButton() {
   const { unread } = useNotifications();
   const open = useNotificationsPanel();
@@ -60,14 +59,12 @@ export function NotificationsButton() {
         aria-controls="notifications-panel"
         data-notifications-toggle
         onPress={() => {
-          // On a phone the bell sits in the sidebar's sheet, which would cover the panel.
           if (isMobile) setIsOpenOnMobile(false);
           toggleNotificationsPanel();
         }}
         className="relative"
       >
-        <IconBell />
-        {/* Over the bell's top right, out of the flow so the footer doesn't shift. */}
+        <IconInbox />
         <CountBadge count={unread} className="pointer-events-none absolute -end-2 -top-2" />
       </Button>
       <Tooltip>Notifications</Tooltip>
@@ -81,12 +78,14 @@ type View = "all" | "unread";
 export function NotificationsPanel() {
   const open = useNotificationsPanel();
   const { open: sidebarOpen, isMobile } = useSidebar();
+  const titleBarOver = !sidebarOpen && !isMobile;
   const { unread } = useNotifications();
   const markRead = useMarkNotificationsRead();
+  const openSettings = useOpenSettings();
   const [view, setView] = useState<View>("all");
   const panel = useRef<HTMLElement>(null);
+  const listed = useWhenIdle(open);
 
-  // Escape and a press anywhere outside close it; the bell toggles it on its own.
   useEffect(() => {
     if (!open) return;
     const onKey = (event: KeyboardEvent) => {
@@ -106,13 +105,11 @@ export function NotificationsPanel() {
     };
   }, [open]);
 
-  // Focus moves into it when it opens, so the keyboard can walk the list at once.
   useEffect(() => {
     if (open) panel.current?.focus({ preventScroll: true });
   }, [open]);
 
   return (
-    // The clip starts at the sidebar's edge, so the panel slides out from under it.
     <div
       className={`pointer-events-none fixed inset-y-0 end-0 z-30 overflow-hidden ${
         sidebarOpen && !isMobile ? "start-(--sidebar-width)" : "start-0"
@@ -130,9 +127,8 @@ export function NotificationsPanel() {
             : "invisible -translate-x-full opacity-0 motion-reduce:translate-x-0"
         }`}
       >
-        {/* The thread list's header height and insets: the title 20px in, actions 10px from the
-            edge. No rule under it: the tabs' line closes the header. */}
         <header className="flex h-12 shrink-0 items-center gap-2 ps-5 pe-2.5">
+          {titleBarOver && <TitleBarSpace inset={20} afterIsland={false} />}
           <h2 className="min-w-0 flex-1 truncate text-sm font-medium">Notifications</h2>
           <div className="flex items-center gap-1">
             <HeaderAction
@@ -144,11 +140,13 @@ export function NotificationsPanel() {
             </HeaderAction>
             <HeaderAction
               label="Notification settings"
-              onPress={() => openSettings("notifications")}
+              onPress={() => {
+                closeNotificationsPanel();
+                openSettings("notifications");
+              }}
             >
               <IconSliders />
             </HeaderAction>
-            {/* A phone shows the panel full width, with no outside to press: it closes here. */}
             {isMobile && (
               <HeaderAction label="Close" onPress={closeNotificationsPanel}>
                 <IconX />
@@ -161,8 +159,6 @@ export function NotificationsPanel() {
           onSelectionChange={(key: Key) => setView(key as View)}
           className="min-h-0 w-full flex-1 gap-0"
         >
-          {/* 28px tabs, 2px up into the header's bottom space, so they sit under its title and
-              centre on the sidebar's search field across the page. */}
           <TabList
             aria-label="Show"
             className="-mt-0.5 shrink-0 px-5 [--tab-list-pb:--spacing(2)] [--tab-list-tab-y:--spacing(0.5)]"
@@ -174,10 +170,10 @@ export function NotificationsPanel() {
             </Tab>
           </TabList>
           <TabPanel id="all" className="flex min-h-0 flex-col">
-            <NotificationList unread={false} />
+            {listed && <NotificationList unread={false} />}
           </TabPanel>
           <TabPanel id="unread" className="flex min-h-0 flex-col">
-            <NotificationList unread />
+            {listed && <NotificationList unread />}
           </TabPanel>
         </Tabs>
       </aside>
@@ -185,7 +181,6 @@ export function NotificationsPanel() {
   );
 }
 
-/** An icon action in the header: the thread list's own, the reader's toolbar size. */
 function HeaderAction(props: {
   label: string;
   isDisabled?: boolean;
@@ -213,6 +208,9 @@ function NotificationList({ unread }: { unread: boolean }) {
     useNotifications({ unread });
   const markRead = useMarkNotificationsRead();
   const router = useRouter();
+  const workspace = useWorkspaceSlug();
+  const openSettings = useOpenSettings();
+  const filePlace = useFilePlace();
   const hover = useFluidHoverList({
     itemSelector: "[role='row']",
     highlightedSelector: "[data-focus-visible]",
@@ -221,19 +219,34 @@ function NotificationList({ unread }: { unread: boolean }) {
   const openOne = (n: Notification) => {
     if (!n.readAt) markRead.mutate({ ids: [n.id] });
     closeNotificationsPanel();
+    const comment = commentTarget(n);
+    if (comment) {
+      void filePlace(comment.nodeId).then((now) => {
+        const { space, folderId } = now ?? comment;
+        const place = space === "personal" ? "my" : "shared";
+        const search = { comments: comment.nodeId };
+        return folderId
+          ? router.navigate({
+              to: `/$workspace/files/${place}/$folderId`,
+              params: { workspace, folderId },
+              search,
+            })
+          : router.navigate({ to: `/$workspace/files/${place}/`, params: { workspace }, search });
+      });
+      return;
+    }
     const threadId = n.threadId;
     if (!threadId) {
       if (n.kind === "member_joined") openSettings("people");
       return;
     }
-    // In its inbox's list of every conversation, where it is whatever its status.
     void (n.mailboxId
       ? router.navigate({
-          to: "/inbox/$threadId",
-          params: { threadId },
+          to: "/$workspace/mail/inbox/$threadId",
+          params: { workspace, threadId },
           search: { mailbox: n.mailboxId, view: "all" },
         })
-      : router.navigate({ to: "/all/$threadId", params: { threadId } }));
+      : router.navigate({ to: "/$workspace/mail/all/$threadId", params: { workspace, threadId } }));
   };
 
   if (isPending) {
@@ -262,7 +275,6 @@ function NotificationList({ unread }: { unread: boolean }) {
       <FluidHoverHighlight {...hover.highlightProps} />
       <GridList
         aria-label={unread ? "Unread notifications" : "Notifications"}
-        // Transparent, as the thread list: the highlight sits under the rows.
         className="min-h-0 flex-1 overflow-y-auto overscroll-none bg-transparent"
         selectionMode="none"
         onAction={(key) => {
@@ -281,10 +293,6 @@ function NotificationList({ unread }: { unread: boolean }) {
   );
 }
 
-/**
- * Two lines beside who did it: "Bea Klein assigned you", then what it is about; the unread dot
- * and the time at the end of the first line. 20px all round, ruled like the thread list.
- */
 function NotificationRow({ notification: n }: { notification: Notification }) {
   const unread = !n.readAt;
   const { actor, action } = notificationParts(n);
@@ -306,7 +314,6 @@ function NotificationRow({ notification: n }: { notification: Notification }) {
               {action}
             </span>
           </span>
-          {/* Unread: a primary dot just before the time, which keeps the row's end. */}
           {unread && (
             <span aria-label="Unread" className="size-2 shrink-0 rounded-full bg-primary" />
           )}
@@ -323,11 +330,9 @@ function NotificationRow({ notification: n }: { notification: Notification }) {
   );
 }
 
-/** A squircle: 28px with 6px corners. */
 const AVATAR =
   "shrink-0 bg-accent text-foreground outline-0 mix-blend-multiply [--avatar-radius:var(--radius-lg)] [--avatar-size:--spacing(7)]";
 
-/** Who did it, by their picture; what happened, by a glyph, when no one did. */
 function Lead({ notification: n }: { notification: Notification }) {
   const name = actorName(n);
   if (name) {
@@ -349,7 +354,6 @@ function Lead({ notification: n }: { notification: Notification }) {
   );
 }
 
-/** The rows while they load: the thread list's bones on the same grid. */
 function RowBones() {
   return Array.from({ length: 12 }, (_, i) => (
     <div key={i} className="flex items-center gap-3 border-b p-5">

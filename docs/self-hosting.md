@@ -17,7 +17,7 @@ Status: draft. Each unit adds its required services, bindings, and variables her
 
 ```bash
 pnpm install
-pnpm stack:up                         # Postgres, GreenMail, S3-compatible object store
+pnpm stack:up                         # Postgres, GreenMail, S3-compatible object store, s2-lite
 cp packages/db/.env.example packages/db/.env
 pnpm --filter @omni/db db:migrate     # create the schema
 cp apps/mail/.env.example apps/mail/.env
@@ -41,19 +41,19 @@ apply. The database is an index of your mail host: if it is lost, re-sync rebuil
 
 Filled in per unit: see each unit's `.env.example`.
 
-| Variable               | Used by                         | Required | Notes                                                                    |
-| ---------------------- | ------------------------------- | -------- | ------------------------------------------------------------------------ |
-| `DATABASE_URL`         | migrations, mail service, tests | yes      | `postgres://` URL. The Worker reaches the same database via Hyperdrive.  |
-| `BETTER_AUTH_SECRET`   | Worker (auth)                   | yes      | At least 32 random characters.                                           |
-| `BETTER_AUTH_URL`      | Worker (auth)                   | yes      | Public origin of the API.                                                |
-| `AUTH_TRUSTED_ORIGINS` | Worker (auth)                   | no       | Comma-separated web/app origins allowed to call auth; `omni://` for iOS. |
-| `AUTH_PASSKEY_RP_ID`   | Worker (auth)                   | no       | WebAuthn relying party ID; defaults to the `BETTER_AUTH_URL` host.       |
-| `APP_NAME`             | Worker (auth)                   | no       | Shown in passkey prompts; defaults to `Omni`.                            |
-| `GOOGLE_CLIENT_ID`     | Worker (auth)                   | no       | With `GOOGLE_CLIENT_SECRET`, turns on Google sign-in and Gmail connect.  |
-| `GOOGLE_CLIENT_SECRET` | Worker (auth)                   | no       | Secret. Set together with `GOOGLE_CLIENT_ID`, or neither.                |
-| `SIGN_UP`              | Worker (auth)                   | no       | `open` (default) or `invitation`: who may sign up (ADR 0018).            |
-| `MCP_CIMD_HOSTS`       | Worker (auth)                   | no       | Hosts whose OAuth client metadata agents connect with (ADR 0029).        |
-| `PURELYMAIL_API_TOKEN` | mail service                    | no       | Secret. Lets onboarding create domains, users and app passwords.         |
+| Variable               | Used by                         | Required | Notes                                                                                |
+| ---------------------- | ------------------------------- | -------- | ------------------------------------------------------------------------------------ |
+| `DATABASE_URL`         | migrations, mail service, tests | yes      | `postgres://` URL. The Worker reaches the same database via Hyperdrive.              |
+| `BETTER_AUTH_SECRET`   | Worker (auth)                   | yes      | At least 32 random characters.                                                       |
+| `BETTER_AUTH_URL`      | Worker (auth)                   | yes      | Public origin of the API.                                                            |
+| `AUTH_TRUSTED_ORIGINS` | Worker (auth)                   | no       | Comma-separated web/app origins allowed to call auth; `omni://` for iOS and desktop. |
+| `AUTH_PASSKEY_RP_ID`   | Worker (auth)                   | no       | WebAuthn relying party ID; defaults to the `BETTER_AUTH_URL` host.                   |
+| `APP_NAME`             | Worker (auth)                   | no       | Shown in passkey prompts; defaults to `Omni`.                                        |
+| `GOOGLE_CLIENT_ID`     | Worker (auth)                   | no       | With `GOOGLE_CLIENT_SECRET`, turns on Google sign-in and Gmail connect.              |
+| `GOOGLE_CLIENT_SECRET` | Worker (auth)                   | no       | Secret. Set together with `GOOGLE_CLIENT_ID`, or neither.                            |
+| `SIGN_UP`              | Worker (auth)                   | no       | `open` (default) or `invitation`: who may sign up (ADR 0018).                        |
+| `MCP_CIMD_HOSTS`       | Worker (auth)                   | no       | Hosts whose OAuth client metadata agents connect with (ADR 0029).                    |
+| `PURELYMAIL_API_TOKEN` | mail service                    | no       | Secret. Lets onboarding create domains, users and app passwords.                     |
 
 ### Mail service (`apps/mail`)
 
@@ -62,32 +62,33 @@ host. CONDSTORE and IDLE are used when the server offers them; without them it f
 UID-list diffs and polling. On every connect it logs the server's capabilities
 (`imap.capabilities`).
 
-| Variable                     | Required | Default            | Purpose                                                         |
-| ---------------------------- | -------- | ------------------ | --------------------------------------------------------------- |
-| `MAIL_SERVICE_HMAC_SECRET`   | yes      |                    | Signs Worker → mail service pings; same value in the Worker.    |
-| `DATABASE_URL`               | yes      |                    | Postgres the service writes the mail index to.                  |
-| `MAIL_CREDENTIALS_KEY`       | yes      |                    | Keyring `k1:<base64 32 bytes>[,k0:...]`, current key first.     |
-| `S3_ENDPOINT`                | yes      |                    | S3 API endpoint: R2, MinIO, AWS, or the local gateway.          |
-| `S3_BUCKET`                  | yes      |                    | Bucket for raw mail, sanitized HTML and attachments.            |
-| `S3_ACCESS_KEY_ID`           | yes      |                    | S3 key pair (for R2: an R2 API token with object read/write).   |
-| `S3_SECRET_ACCESS_KEY`       | yes      |                    |                                                                 |
-| `S3_REGION`                  | no       | `auto`             | Signing region; R2 uses `auto`.                                 |
-| `IMAGE_PROXY_URL`            | no       | `/api/image-proxy` | Worker image proxy that remote images in HTML go through.       |
-| `ATTACHMENT_URL`             | no       | `/api/attachments` | Worker route for inline `cid:` images.                          |
-| `PORT`                       | no       | `8788`             | HTTP port for `/health` and `/ping`.                            |
-| `LOG_LEVEL`                  | no       | `info`             | `debug`, `info`, `warn`, or `error`. Logs are JSON on stdout.   |
-| `SYNC_INTERVAL_MS`           | no       | `300000`           | Sync interval for non-inbox folders (INBOX is live via IDLE).   |
-| `OUTBOX_INTERVAL_MS`         | no       | `30000`            | Outbox poll interval when no ping arrives.                      |
-| `MAILBOX_CONCURRENCY`        | no       | `4`                | Mailboxes connecting or syncing at once.                        |
-| `PURELYMAIL_API_TOKEN`       | no       |                    | Purelymail admin API token. Unset: onboarding uses IMAP logins. |
-| `PURELYMAIL_CREDIT_WARN_USD` | no       | `5`                | With the token: credit below this logs `hosting.credit_low`.    |
-| `GOOGLE_CLIENT_ID`           | no       |                    | Google OAuth client. With the secret, Gmail accounts connect.   |
-| `GOOGLE_CLIENT_SECRET`       | no       |                    | Secret. Set both or neither; one alone stops the service.       |
-| `SENTRY_DSN`                 | no       |                    | Sentry DSN. Unset keeps error reporting off.                    |
-| `SENTRY_ENVIRONMENT`         | no       | `production`       | Sentry environment tag.                                         |
-| `DNS_RESOLVERS`              | no       | system resolvers   | `ip` or `ip:port` list used to find a domain's nameservers.     |
-| `DNS_NAMESERVER_PORT`        | no       | `53`               | Port nameservers are asked on. Change only for a test server.   |
-| `DNS_TIMEOUT_MS`             | no       | `2000`             | Per-query DNS timeout.                                          |
+| Variable                     | Required | Default            | Purpose                                                                              |
+| ---------------------------- | -------- | ------------------ | ------------------------------------------------------------------------------------ |
+| `MAIL_SERVICE_HMAC_SECRET`   | yes      |                    | Signs Worker → mail service pings; same value in the Worker.                         |
+| `DATABASE_URL`               | yes      |                    | Postgres the service writes the mail index to.                                       |
+| `MAIL_CREDENTIALS_KEY`       | yes      |                    | Keyring `k1:<base64 32 bytes>[,k0:...]`, current key first.                          |
+| `S3_ENDPOINT`                | yes      |                    | S3 API endpoint: R2, MinIO, AWS, or the local gateway.                               |
+| `S3_BUCKET`                  | yes      |                    | Bucket for raw mail, sanitized HTML and attachments.                                 |
+| `S3_ACCESS_KEY_ID`           | yes      |                    | S3 key pair (for R2: an R2 API token with object read/write).                        |
+| `S3_SECRET_ACCESS_KEY`       | yes      |                    |                                                                                      |
+| `S3_REGION`                  | no       | `auto`             | Signing region; R2 uses `auto`.                                                      |
+| `IMAGE_PROXY_URL`            | no       | `/api/image-proxy` | Worker image proxy that remote images in HTML go through.                            |
+| `ATTACHMENT_URL`             | no       | `/api/attachments` | Worker route for inline `cid:` images.                                               |
+| `PORT`                       | no       | `8788`             | HTTP port for `/health` and `/ping`.                                                 |
+| `LOG_LEVEL`                  | no       | `info`             | `debug`, `info`, `warn`, or `error`. Logs are JSON on stdout.                        |
+| `SYNC_INTERVAL_MS`           | no       | `300000`           | Sync interval for non-inbox folders (INBOX is live via IDLE).                        |
+| `OUTBOX_INTERVAL_MS`         | no       | `30000`            | Outbox poll interval when no ping arrives.                                           |
+| `MAILBOX_CONCURRENCY`        | no       | `4`                | Mailboxes connecting or syncing at once.                                             |
+| `PURELYMAIL_API_TOKEN`       | no       |                    | Purelymail admin API token. Unset: onboarding uses IMAP logins.                      |
+| `PURELYMAIL_CREDIT_WARN_USD` | no       | `5`                | With the token: credit below this logs `hosting.credit_low`.                         |
+| `GOOGLE_CLIENT_ID`           | no       |                    | Google OAuth client. With the secret, Gmail accounts connect.                        |
+| `GOOGLE_CLIENT_SECRET`       | no       |                    | Secret. Set both or neither; one alone stops the service.                            |
+| `GMAIL_SYNC_DAYS`            | no       | `7`                | Days of mail a Gmail account indexes from before it was connected; `0` is all of it. |
+| `SENTRY_DSN`                 | no       |                    | Sentry DSN. Unset keeps error reporting off.                                         |
+| `SENTRY_ENVIRONMENT`         | no       | `production`       | Sentry environment tag.                                                              |
+| `DNS_RESOLVERS`              | no       | system resolvers   | `ip` or `ip:port` list used to find a domain's nameservers.                          |
+| `DNS_NAMESERVER_PORT`        | no       | `53`               | Port nameservers are asked on. Change only for a test server.                        |
+| `DNS_TIMEOUT_MS`             | no       | `2000`             | Per-query DNS timeout.                                                               |
 
 Generate the secrets with `openssl rand -hex 32` and `echo "k1:$(openssl rand -base64 32)"`.
 Keep `MAIL_CREDENTIALS_KEY` only on the mail service. To rotate it, put the new key first
@@ -268,6 +269,10 @@ flyctl deploy . --config apps/mail/fly.toml --app <your-app>
 curl https://<your-app>.fly.dev/health
 ```
 
+The mail service needs at least 512 MB of memory, and 1 GB (what `fly.toml` asks for) once
+several mailboxes import at the same time: importing HTML mail peaks near 300 MB per mailbox. With
+less, a first sync slows to about a message a minute and `/health` starts timing out.
+
 Fly's GitHub deploy works the same with the repo root as working directory and this config path.
 Run the database migrations (`pnpm --filter @omni/db db:migrate`) before deploying code that needs
 them.
@@ -292,9 +297,10 @@ Bindings:
 
 | Binding                                      | Kind                    | Setup                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | -------------------------------------------- | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `HYPERDRIVE`                                 | Hyperdrive              | `wrangler hyperdrive create omni --connection-string=postgres://... --origin-connection-limit=<n>` (see "Connection budget" below), then put the id in `wrangler.jsonc`. Locally, `localConnectionString` is the stack's Postgres.                                                                                                                                                                                                                                                                 |
+| `HYPERDRIVE`                                 | Hyperdrive              | `wrangler hyperdrive create omni --connection-string=postgres://... --origin-connection-limit=<n> --caching-disabled` (see "Connection budget" below), then put the id in `wrangler.jsonc`. Caching stays off: the app reads again right after each write, and a cached read would answer with the rows from before it. Locally, `localConnectionString` is the stack's Postgres.                                                                                                                  |
 | `MAIL_BUCKET`                                | R2                      | The bucket the mail service writes raw mail and attachments to (`wrangler r2 bucket create <name>`). The Worker reads attachments from it and stores profile pictures and workspace logos under `pictures/`.                                                                                                                                                                                                                                                                                       |
 | `STORAGE_BUCKET`                             | R2                      | The bucket Storage keeps people's files in (ADR 0034): `wrangler r2 bucket create omni-storage`, or your own name in `wrangler.jsonc`. Separate from `MAIL_BUCKET` because these files cannot be rebuilt from the mail host: back it up, and never give it a lifecycle rule that expires objects. One bucket per database: never point two installs (staging and production, say) at the same bucket, because the daily sweep deletes the files of every workspace its own database does not know. |
+| `DESKTOP_BUCKET`                             | R2                      | Desktop app releases: the updater manifest and installers, served at `/desktop/latest.json`, `/desktop/download/macos` and `/desktop/releases/*` (`wrangler r2 bucket create omni-desktop`). Filled by `apps/desktop/scripts/release-macos.sh`; empty, those routes answer 404 and installed apps simply never update.                                                                                                                                                                             |
 | `AI_QUEUE`                                   | Queue                   | `wrangler queues create omni-ai` and `wrangler queues create omni-ai-dlq`; the Worker produces and consumes both. Failed jobs land in the DLQ after `max_retries`, and the Worker's DLQ consumer records them in `dead_letters` (see [Observability](#observability)). A DLQ is the source queue's name plus `-dlq`.                                                                                                                                                                               |
 | `REPLAY_GUARD`                               | Durable Object (SQLite) | Created by the `migrations` block on first deploy. Remembers nonces of signed mail-service calls.                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `REALTIME`                                   | Durable Object (SQLite) | Same migration. One per org; holds each open app's hibernatable websocket (`GET /api/realtime`).                                                                                                                                                                                                                                                                                                                                                                                                   |
@@ -317,7 +323,7 @@ to `.dev.vars`.
 | ---------------------------- | ------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `BETTER_AUTH_SECRET`         | secret | yes      | At least 32 random characters.                                                                                                                                                              |
 | `BETTER_AUTH_URL`            | var    | yes      | Public origin of the Worker (and the web app it serves). Magic links point here.                                                                                                            |
-| `AUTH_TRUSTED_ORIGINS`       | var    | no       | Comma-separated web/app origins. Include `omni://` to let the iOS app sign in (its magic links end on that scheme).                                                                         |
+| `AUTH_TRUSTED_ORIGINS`       | var    | no       | Comma-separated web/app origins. Include `omni://` to let the iOS and desktop apps sign in (their magic links end on that scheme).                                                          |
 | `AUTH_PASSKEY_RP_ID`         | var    | no       | WebAuthn relying party ID.                                                                                                                                                                  |
 | `APP_NAME`                   | var    | no       | Defaults to `Omni`.                                                                                                                                                                         |
 | `WEB_APP_URL`                | var    | no       | Web app origin; invitation emails link to `<WEB_APP_URL>/invite/<id>`. Defaults to `BETTER_AUTH_URL`.                                                                                       |
@@ -338,11 +344,14 @@ to `.dev.vars`.
 | `DOMAIN_CONNECT_KEY_HOST`    | var    | no       | TXT host of the public key, for templates that require signed requests.                                                                                                                     |
 | `DOMAIN_CONNECT_PRIVATE_KEY` | secret | no       | PKCS#8 PEM key that signs Domain Connect apply URLs.                                                                                                                                        |
 | `IMAGE_PROXY_DOH_URL`        | var    | no       | DNS-over-HTTPS (JSON) resolver the image proxy uses to refuse hosts that point at private addresses. Default Cloudflare's.                                                                  |
+| `SENDER_LOGO_ICON_SERVICE`   | var    | no       | Icon service for a sender's company logo when the site links no large icon; `{domain}` is replaced. Default Google's favicon service; `off` skips it.                                       |
+| `SENDER_LOGO_GRAVATAR`       | var    | no       | Picture for webmail senders; `{hash}` is the address's SHA-256. Default Gravatar; `off` leaves their initials.                                                                              |
 | `STORAGE_MAX_FILE_BYTES`     | var    | no       | Largest file Storage accepts, in bytes. Default 5 GB (`5368709120`).                                                                                                                        |
 | `STORAGE_PERSONAL_GB`        | var    | no       | Most a Personal space may store, in GB (1024³ bytes; decimals allowed). Past it uploads answer `402 STORAGE_FULL`. Empty: no cap.                                                           |
 | `STORAGE_MAX_GB`             | var    | no       | Ceiling on what any one workspace may store, in GB. Empty: none.                                                                                                                            |
 | `ENVIRONMENT`                | var    | no       | `production` (default). `development` (local only) also logs magic-link and invitation URLs. `test` (e2e suites) is the only value that allows `IMAGE_PROXY_TEST_ALLOW_ORIGIN`.             |
 
+| `S2_BASIN_URL`, `S2_BASIN`, `S2_ACCESS_TOKEN` | both | no | Live co-editing of Markdown files (ADR 0043). See [Live co-editing](#live-co-editing-optional). |
 | `RATE_LIMIT_*` | var | no | Rate limits, `<count>/<seconds>` or `off`. See [Rate limits](#rate-limits). |
 | `STRIPE_*`, `BILLING_*` | both | no | Optional billing. Leave unset to self-host with no plan and no limits. See [Billing](#billing-optional). |
 
@@ -390,6 +399,24 @@ The browser lands on `<WEB_APP_URL>/settings/accounts?google=connected&mailboxId
 Google is configured and lists the connected accounts; `DELETE /api/connect/google/:mailboxId`
 disconnects one.
 
+#### Live co-editing (optional)
+
+With an S2 basin, everyone editing a Markdown file in Drive types into the same page (ADR 0043
+decision 3 step 2, as amended). Without one, each editor saves on its own and a save that someone
+else's beat is refused, never overwritten. The browser never reaches S2: the Worker reads and
+appends for it.
+
+- **Self-hosted:** run `s2-lite` (`ghcr.io/s2-streamstore/s2`, `s2 lite`; `compose.yml` has the
+  local one) and give it a basin that creates streams on first append and read
+  (`create_stream_on_append`, `create_stream_on_read`). Set `S2_BASIN_URL` to its `/v1` URL and
+  `S2_BASIN` to the basin's name. It must be reachable from your Worker.
+- **S2 (s2.dev):** create the basin with the same two settings, set `S2_BASIN_URL` to
+  `https://<basin>.b.aws.s2.dev/v1` and `S2_BASIN`, and store an access token scoped to that
+  basin as the `S2_ACCESS_TOKEN` secret.
+
+A file's stream holds its live edits until the basin's retention drops them; the Markdown file
+stays the truth, and a stream lost early costs at most the edits since the last save.
+
 #### Rate limits
 
 The Worker limits the routes that send mail, call the mail service, fetch remote URLs (the
@@ -410,6 +437,7 @@ which Cloudflare sets and clients cannot.
 | `RATE_LIMIT_IMAGE_PROXY`   | `300/60`   | Per member: image-proxy fetches of images not already cached (cached ones are free).                                                                                          |
 | `RATE_LIMIT_STORAGE_SHARE` | `60/3600`  | Per member: people added to a file or folder in Storage, each of whom is sent one mail. Changing a role sends none and is free.                                               |
 | `RATE_LIMIT_STORAGE_LINK`  | `300/60`   | Per IP: requests to Storage's link door (`/api/storage/shared/*`), which answers anyone holding a link, signed in or not.                                                     |
+| `RATE_LIMIT_STORAGE_SYNC`  | `600/60`   | Per person and desktop app: requests to the desktop sync API (`/api/storage/sync/*`).                                                                                         |
 
 #### Billing (optional)
 

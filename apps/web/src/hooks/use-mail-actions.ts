@@ -1,6 +1,3 @@
-// Changing mail. Every action updates the screen at once and undoes itself if the request fails;
-// the outbox then carries it out on IMAP/SMTP. Call `mutate({ ... })` without a key: one is made
-// per call.
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef } from "react";
 import {
@@ -13,6 +10,7 @@ import {
   sendMutation,
   trashMutation,
   undoneMutation,
+  unsubscribeMutation,
 } from "../lib/mail-mutations.ts";
 import { dismissFailure, removePending, type ActionFailure } from "../lib/pending.ts";
 import { keys } from "../lib/query-keys.ts";
@@ -49,6 +47,11 @@ export function useArchive() {
 /** `mutate({ threadId })`: every copy goes to the mailbox's Trash. */
 export function useMoveToTrash() {
   return useKeyedMutation(trashMutation(useQueryClient()));
+}
+
+/** `mutate({ threadId, messageId })`: leaves the mailing list that message came from. */
+export function useUnsubscribe() {
+  return useKeyedMutation(unsubscribeMutation());
 }
 
 /** `mutate({ threadId, destination })`, where `destination` is an IMAP folder path. */

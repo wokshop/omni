@@ -1,14 +1,14 @@
-// Placeholder UI: accept or decline an invitation. Signed-in users only; they may not belong to
-// any organization yet.
 import { createFileRoute } from "@tanstack/react-router";
 import {
   useAcceptInvitation,
   useInvitation,
   useRejectInvitation,
 } from "../../hooks/use-session.ts";
+import { leaveWorkspace } from "../../lib/current-workspace.ts";
 import { invitationQuery } from "../../lib/org-queries.ts";
 
 export const Route = createFileRoute("/_authed/invite/$invitationId")({
+  beforeLoad: ({ preload }) => leaveWorkspace(preload),
   loader: ({ context, params }) =>
     context.queryClient.ensureQueryData(invitationQuery(params.invitationId)),
   component: Invite,
@@ -21,16 +21,13 @@ function Invite() {
   const accept = useAcceptInvitation();
   const reject = useRejectInvitation();
 
-  // The loader fetched it; a failed load renders the route's error boundary instead.
   if (!invitation.data) return null;
   return (
     <main>
       <pre>{JSON.stringify(invitation.data, null, 2)}</pre>
       <button
         type="button"
-        onClick={() =>
-          accept.mutate(invitationId, { onSuccess: () => void navigate({ to: "/inbox" }) })
-        }
+        onClick={() => accept.mutate(invitationId, { onSuccess: () => void navigate({ to: "/" }) })}
       >
         Accept
       </button>

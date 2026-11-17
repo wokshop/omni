@@ -1,42 +1,25 @@
-// The mailbox switcher in the sidebar header: which mailbox the app shows, or all of them. The
-// UX follows a mail app's account menu: All, then each mailbox, grouped by workspace only when
-// the user belongs to more than one. Settings and log out live in the sidebar footer.
-//
-// Geometry, so the menu breathes and balances optically:
-// - Every row is 50px: a 32px avatar beside a 34px two-line block (13/16 name, 2px, 11/16
-//   address), nothing clipped. Each mark is even inside its own corner of the row: the avatar
-//   9px from the row's top and left, the check's ink the same distance from its top and right.
-// - The menu's 8px padding puts avatars 17px from its edges.
-// - A group label gets room on both sides: 24px under the group above, 16px over its own rows.
-import { CheckIcon, ChevronUpDownIcon } from "@heroicons/react/20/solid";
+import { CheckIcon } from "@heroicons/react/20/solid";
 import { useSearch } from "@tanstack/react-router";
 import { cn } from "cn";
 import type { CSSProperties } from "react";
 import { Avatar } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
+import { IconChevronsUpDown } from "@/components/icons/central";
 import { Loader } from "@/components/ui/loader";
-import { Menu, MenuItem, MenuSection, MenuTrigger } from "@/components/ui/menu";
+import { Menu, MenuItem, MenuTrigger } from "@/components/ui/menu";
+import { SidebarItemTrigger } from "@/components/ui/sidebar";
 import { appToast } from "@/components/ui/toast";
 import { useMember } from "@/hooks/use-session.ts";
 import { useOpenMailbox, useOpenWorkspace, useWorkspaces } from "@/hooks/use-workspaces.ts";
-import type { Workspace, WorkspaceMailbox } from "@/lib/types.ts";
+import type { WorkspaceMailbox } from "@/lib/types.ts";
 import { pictureUrl } from "@/lib/urls.ts";
 
-/** Rows are 50px (8px + the 34px text block + 8px). The 32px avatar sits 9px from the row's top
- *  and left; the check's ink 20px from its top and right (measured). Each mark is even inside its
- *  own corner. */
 const ROW = "min-h-12 rounded-sm ps-2.25 pe-4.5 py-2";
 const ROW_CONTENT = "col-span-full flex min-w-0 items-center gap-3";
-/** 16px above (the row before keeps 8px of its own), 8px below (plus the next row's 8px):
- *  24px under the group above, 16px over its own rows. Aligned with the avatars. */
-const GROUP_LABEL = "px-2.25 pt-4 pb-2 text-xs/4 sm:px-2.25 sm:pt-4 sm:pb-2 sm:text-xs/4";
 
-/** Two blank discs: the cluster's shape before any mailbox has a face. */
 const BLANK_FACES: Face[] = ["a", "b"].map((key) => ({ key, name: "", image: null }));
 
 const failed = () => appToast.error("The mailbox could not be opened. Try again.");
 
-/** A mailbox as the switcher shows it: who it is and their picture, if any. */
 interface Face {
   key: string;
   name: string;
@@ -50,9 +33,6 @@ export function mailboxName(mailbox: WorkspaceMailbox, you: string) {
   return local.charAt(0).toUpperCase() + local.slice(1);
 }
 
-/** A round avatar `size` px across: the picture when there is one, else the initial on a grey a
- *  half step darker than the hover highlight, so a face without a picture still stands out. Multiply:
- *  under the row's hover highlight the fill darkens with it instead of sitting on top. */
 function FaceAvatar(props: { face: Face; size: number }) {
   return (
     <Avatar
@@ -64,20 +44,15 @@ function FaceAvatar(props: { face: Face; size: number }) {
   );
 }
 
-/** Where each disc sits in a `size` square, by how many there are, and how wide each is. */
 function clusterLayout(count: number, size: number) {
   if (count <= 1) return [{ x: 0, y: 0, d: size }];
   if (count === 2) {
-    // Two on the diagonal, top left behind bottom right, each well over half the square.
     const d = size * 0.62;
     return [
       { x: 0, y: 0, d },
       { x: size - d, y: size - d, d },
     ];
   }
-  // Three equal discs on an even triangle: every pair of centres the same distance apart, a
-  // hair under one disc's width, so every ring between them is the same hairline. The triangle
-  // spans the square's width and sits centred in its height.
   const d = size / 1.88;
   const side = d * 0.88;
   const top = (size - (side * Math.sqrt(3)) / 2 - d) / 2;
@@ -88,12 +63,6 @@ function clusterLayout(count: number, size: number) {
   ];
 }
 
-/**
- * "All mailboxes": the mailboxes' own avatars in one avatar's square. One fills it; two sit on
- * the diagonal; with three or more, the first two sit on top and "+N" (the rest) below between them,
- * all three the same size. A ring in the fill behind them (`ring`) keeps a hairline between neighbours on the menu,
- * under the hover highlight and on the trigger.
- */
 function Cluster(props: { faces: Face[]; size: number; ring: string }) {
   const { faces, size } = props;
   const shown: (Face | { more: number })[] =
@@ -125,7 +94,6 @@ function Cluster(props: { faces: Face[]; size: number; ring: string }) {
   );
 }
 
-/** A row's avatar, two lines and the check on the one showing. */
 function RowBody(props: { lead: React.ReactNode; name: string; detail: string; chosen: boolean }) {
   return (
     <span className={ROW_CONTENT}>
@@ -148,106 +116,76 @@ export function MailboxSwitcher() {
   const openMailbox = useOpenMailbox();
   const { mailbox: current } = useSearch({ strict: false }) as { mailbox?: string };
 
-  const all = workspaces.data?.workspaces ?? [];
-  // A workspace still in setup has no mailboxes yet: no group label with nothing under it.
-  const groups = all.filter((workspace) => workspace.mailboxes.length > 0);
-  const grouped = groups.length > 1;
+  const active = workspaces.data?.workspaces.find((workspace) => workspace.id === member.orgId);
+  const mailboxes = active?.mailboxes ?? [];
   const you = user.name || user.email;
-  const face = (mailbox: WorkspaceMailbox): Face => ({
-    key: mailbox.id,
-    name: mailboxName(mailbox, you),
-    image: mailbox.kind === "personal" ? pictureUrl(user.image) : null,
-  });
-  const active = all.find((workspace) => workspace.id === member.orgId);
-  const shown = active?.mailboxes.find((box) => box.id === current);
+  const face = (mailbox: WorkspaceMailbox) =>
+    ({
+      key: mailbox.id,
+      name: mailboxName(mailbox, you),
+      image: mailbox.kind === "personal" ? pictureUrl(user.image) : null,
+    }) satisfies Face;
+  const shown = mailboxes.find((box) => box.id === current);
   const pending = openWorkspace.isPending || openMailbox.isPending;
-  const faces = all.flatMap((workspace) => workspace.mailboxes.map(face));
-  // With no mailbox yet the cluster keeps two discs, blank, so All keeps its mark.
+  const faces = mailboxes.map(face);
   const clusterFaces = faces.length > 0 ? faces : BLANK_FACES;
+  const single = shown ? face(shown) : clusterFaces.length === 1 ? clusterFaces[0] : undefined;
 
-  // The trigger shares the header with four buttons: "All mailboxes" (99px) would clip, so it
-  // says "All" beside the cluster, and a personal mailbox shows the
-  // first name. The menu rows and the trigger's accessible name keep the full names.
   const triggerName = shown ? mailboxName(shown, you) : "All mailboxes";
-  const triggerLabel = shown
-    ? shown.kind === "personal"
-      ? (you.split(" ")[0] ?? you)
-      : triggerName
-    : "All";
 
-  const mailboxRows = (workspace: Workspace) =>
-    workspace.mailboxes.map((mailbox) => (
-      <MenuItem
-        key={mailbox.id}
-        className={ROW}
-        textValue={mailbox.address}
-        onAction={() =>
-          openMailbox.mutate(
-            { workspaceId: workspace.id, mailboxId: mailbox.id },
-            { onError: failed },
-          )
-        }
-      >
-        <RowBody
-          lead={<FaceAvatar face={face(mailbox)} size={32} />}
-          name={mailboxName(mailbox, you)}
-          detail={mailbox.address}
-          chosen={workspace.id === member.orgId && mailbox.id === current}
-        />
-      </MenuItem>
-    ));
+  const mailboxRows = mailboxes.map((mailbox) => (
+    <MenuItem
+      key={mailbox.id}
+      className={ROW}
+      textValue={mailbox.address}
+      onAction={() =>
+        active &&
+        openMailbox.mutate({ workspace: active, mailboxId: mailbox.id }, { onError: failed })
+      }
+    >
+      <RowBody
+        lead={<FaceAvatar face={face(mailbox)} size={32} />}
+        name={mailboxName(mailbox, you)}
+        detail={mailbox.address}
+        chosen={mailbox.id === current}
+      />
+    </MenuItem>
+  ));
 
   return (
     <MenuTrigger>
-      <Button
-        intent="plain"
-        aria-label={`Switch mailbox, currently ${triggerName}`}
-        // Hover, pressed and open share one fill. React Aria keeps the trigger pressed while its
-        // menu is open, so the fill is set through the button's own variables. The lead is the
-        // nav icons' 15px box, 8px in, with the label 10px after: the avatar's centre and the
-        // label line up with the nav rows below. It hugs its label (truncating only when the
-        // header runs out of room).
-        className="group/trigger h-7 min-w-0 justify-start gap-2.5 rounded-sm px-2 [--btn-overlay:var(--color-accent)] aria-expanded:[--btn-bg:var(--color-accent)]"
-      >
+      <SidebarItemTrigger aria-label={`Switch mailbox, currently ${triggerName}`}>
         <span className="grid size-icon shrink-0 place-items-center">
           {pending ? (
             <Loader className="size-icon text-muted-foreground" />
-          ) : shown ? (
-            // 18px over the 15px box: the grid would start it at the box's left edge (centre
-            // 1.5px right of the nav icons'), so the margin centres it on the same axis.
+          ) : single ? (
             <span className="-m-[1.5px]">
-              <FaceAvatar face={face(shown)} size={18} />
+              <FaceAvatar face={single} size={18} />
             </span>
           ) : (
-            // 20px over the 15px box, centred on the same axis.
             <span className="-m-[2.5px]">
               <Cluster
                 faces={clusterFaces}
                 size={20}
-                ring="bg-sidebar group-hover/trigger:bg-accent group-aria-expanded/trigger:bg-accent"
+                ring="bg-sidebar group-hover/sidebar-item:bg-sidebar-accent group-aria-expanded/sidebar-item:bg-sidebar-accent"
               />
             </span>
           )}
         </span>
-        <span className="min-w-0 truncate">{triggerLabel}</span>
-        <ChevronUpDownIcon className="size-3.5 shrink-0 text-subtle-foreground" />
-      </Button>
+        <span className="min-w-0 truncate">{triggerName}</span>
+        <IconChevronsUpDown className="ms-auto -me-0.75 size-3.5 shrink-0 text-subtle-foreground group-hover/sidebar-item:text-foreground group-aria-expanded/sidebar-item:text-foreground" />
+      </SidebarItemTrigger>
 
       <Menu
         placement="bottom start"
         popover={{
-          offset: 8,
-          // The trigger sits 8px from the window's edge: keep the same 8px, so the menu's left
-          // edge lines up with the trigger's instead of being pushed in to the usual 16px.
+          offset: 4,
           collisionPadding: 8,
-          // Rows carry an avatar and two lines: at least 288px, growing to 384px for long
-          // addresses (they truncate past it).
           className:
             "min-w-72 max-w-[min(24rem,calc(100vw-16px))] [--popover-radius:var(--radius-xl)]",
         }}
         className="p-2"
       >
-        {/* One All row for every workspace, above the groups. */}
         <MenuItem
           className={ROW}
           textValue="All mailboxes"
@@ -258,7 +196,6 @@ export function MailboxSwitcher() {
               <Cluster
                 faces={clusterFaces}
                 size={32}
-                // The ring is the fill behind the row: the menu's, or the hover highlight's.
                 ring="bg-overlay in-data-fluid-hover-active:bg-accent"
               />
             }
@@ -267,18 +204,7 @@ export function MailboxSwitcher() {
             chosen={!shown}
           />
         </MenuItem>
-        {grouped
-          ? groups.map((workspace) => (
-              <MenuSection
-                key={workspace.id}
-                label={workspace.name}
-                className="mt-0"
-                labelClassName={GROUP_LABEL}
-              >
-                {mailboxRows(workspace)}
-              </MenuSection>
-            ))
-          : groups[0] && mailboxRows(groups[0])}
+        {mailboxRows}
       </Menu>
     </MenuTrigger>
   );

@@ -1,8 +1,3 @@
-// Authoritative DNS lookups for domain verification (ADR 0010). Public resolvers cache answers,
-// including "no such record", for minutes to hours, so a record someone just saved can read as
-// missing long after it is live. This asks the zone's own nameservers instead: find the zone's NS
-// records (through an ordinary resolver; those rarely change), resolve their addresses, then query
-// them directly. Each lookup uses a fresh resolver, so nothing is cached between checks.
 import { promises as dns } from "node:dns";
 import type { DnsAnswer, DnsLookupBody, DnsLookupResult, DnsQueryType } from "@omni/contracts";
 import type { Logger } from "./log.ts";
@@ -25,14 +20,18 @@ export class DnsLookupError extends Error {
 
 const host = (name: string) => name.toLowerCase().replace(/\.$/, "");
 
-export function createDnsLookup(options: DnsOptions): DnsLookup {
+export const createDnsLookup: (options: DnsOptions) => DnsLookup = (options) => {
   const resolver = (servers: string[]) => {
     const r = new dns.Resolver({ timeout: options.timeoutMs, tries: 2 });
     if (servers.length > 0) r.setServers(servers);
     return r;
   };
 
-  async function query(r: dns.Resolver, name: string, type: DnsQueryType): Promise<DnsAnswer> {
+  const query: (r: dns.Resolver, name: string, type: DnsQueryType) => Promise<DnsAnswer> = async (
+    r,
+    name,
+    type,
+  ) => {
     try {
       let values: string[];
       switch (type) {
@@ -49,7 +48,6 @@ export function createDnsLookup(options: DnsOptions): DnsLookup {
           values = (await r.resolveNs(name)).map(host);
           break;
       }
-      // An answer holding only a CNAME parses as no records of the asked type.
       return values.length > 0 ? { status: "found", values } : { status: "nodata" };
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code ?? "UNKNOWN";
@@ -57,9 +55,8 @@ export function createDnsLookup(options: DnsOptions): DnsLookup {
       if (code === dns.NOTFOUND) return { status: "nxdomain" };
       return { status: "error", code };
     }
-  }
+  };
 
-  /** The closest enclosing zone with NS records, walking up from `domain`. */
   async function findZone(recursive: dns.Resolver, domain: string) {
     const labels = domain.split(".");
     for (let i = 0; i < labels.length - 1; i++) {
@@ -101,7 +98,6 @@ export function createDnsLookup(options: DnsOptions): DnsLookup {
       queries.map(async ({ name, type }) => {
         if (authoritative) {
           const answer = await query(authoritative, name, type);
-          // A nameserver that did not answer says nothing; a public resolver may still know.
           if (answer.status !== "error")
             return { name, type, source: "authoritative" as const, answer };
         }
@@ -115,4 +111,4 @@ export function createDnsLookup(options: DnsOptions): DnsLookup {
     );
     return { zone: zone?.zone ?? null, nameservers: zone?.nameservers ?? [], answers };
   };
-}
+};

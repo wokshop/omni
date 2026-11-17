@@ -1,10 +1,3 @@
-// Runs every member read and hot writer against the `perf:seed` database, captures the SQL each
-// one sends, and prints `EXPLAIN (ANALYZE, BUFFERS)` numbers per call: queries sent, summed
-// execution time (median of 5), buffers touched, and any sequential scan of a big table.
-// Writers run inside a transaction that is rolled back, so the seed stays put between runs.
-//
-//   pnpm --filter @omni/db perf:explain                  # summary table
-//   pnpm --filter @omni/db perf:explain -- --plans out/  # also writes each text plan to out/
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import postgres from "postgres";
@@ -21,6 +14,7 @@ import {
   forMember,
   forUser,
   hasLocation,
+  indexParticipants,
   listMemberMailboxes,
   loadThreadForAi,
   mailboxAudience,
@@ -42,6 +36,7 @@ const BIG_TABLES = new Set([
   "attachments",
   "thread_state",
   "mail_actions",
+  "thread_participants",
 ]);
 
 const dbName = process.env.PERF_DATABASE ?? "omni_perf";
@@ -59,8 +54,6 @@ const { db, close } = createDb(url.toString(), {
 });
 const raw = postgres(url.toString(), { max: 1, onnotice: () => {} });
 
-// Fixtures: two members at the ends of the spread (one sees all 12 org1 mailboxes, one sees 2),
-// the busiest mailbox, a typical and the longest thread.
 const one = async <T>(q: Promise<T[]>) => (await q)[0]!;
 const memberAll = "member-org1-1";
 const memberFew = "member-org1-8";
@@ -115,7 +108,6 @@ const inboxUids = (
     order by imap_uid desc limit 50`
 ).map((r) => r.uid);
 
-// The busiest shared inbox, for the helpdesk views.
 const desk = await one(
   raw<{ id: string }[]>`
     select m.id from mailboxes m join threads t on t.mailbox_id = m.id
@@ -130,7 +122,6 @@ const tenThreads = (
   )
 ).map((row) => row.id);
 const few = forMember(db, memberFew);
-// The web app reads through `forUser` (every workspace the person belongs to, ADR 0014).
 const user = forUser(db, `user-${memberAll}`);
 const rollback = new Error("rollback");
 
@@ -183,7 +174,6 @@ const cases: Case[] = [
   },
   { name: "getThread (3 messages)", run: () => all.getThread(typical.id) },
   { name: "getThread (longest thread)", run: () => all.getThread(longest.id) },
-  // Agents' reads (ADR 0029): filtered listings and searches, and a batch read.
   {
     name: "agent: list from common domain",
     run: () => all.listThreads({ view: "all", filters: { from: "acme.test" } }),
@@ -200,6 +190,35 @@ const cases: Case[] = [
     name: "agent: list participant, one mailbox",
     run: () =>
       all.listThreads({ view: "all", mailboxId: box.id, filters: { participant: "globex.test" } }),
+  },
+  {
+    name: "threadsWith one rare address",
+    run: () => all.threadsWith({ addresses: ["person42@acme.test"] }),
+  },
+  {
+    name: "threadsWith common domain",
+    run: () => all.threadsWith({ domains: ["acme.test"] }),
+  },
+  {
+    name: "threadsWith address + domain (2 boxes)",
+    run: () => few.threadsWith({ addresses: ["person42@globex.test"], domains: ["initech.test"] }),
+  },
+  {
+    name: "threadsWith the inbox's own address",
+    run: () => all.threadsWith({ addresses: [box.address] }),
+  },
+  {
+    name: "threadsWith common domain, deep cursor",
+    run: () => all.threadsWith({ domains: ["acme.test"], before: deepCursor }),
+  },
+  {
+    name: "user: threadsWith common domain",
+    run: () => user.threadsWith({ domains: ["acme.test"] }),
+  },
+  {
+    name: "indexParticipants, caught up",
+    write: true,
+    run: (tx) => indexParticipants(tx),
   },
   {
     name: "agent: list unread, last 30 days",
@@ -353,8 +372,6 @@ const seqScans = (node: PlanNode, out: string[] = []) => {
 
 type Explained = { json: Record<string, unknown>[]; text: Record<string, unknown>[] };
 
-// Explains a call's queries in order. A writer's queries depend on each other (an insert, then
-// rows referencing it), so they run in one transaction that is rolled back.
 const explainAll = async (queries: { query: string; params: unknown[] }[], write: boolean) => {
   const run = async (
     sql: postgres.Sql | postgres.TransactionSql,
@@ -376,7 +393,6 @@ const explainAll = async (queries: { query: string; params: unknown[] }[], write
   const out: Explained[] = [];
   await raw
     .begin(async (tx) => {
-      // Text and JSON both execute the statement; the savepoint undoes the first execution.
       for (const q of queries) {
         await tx.unsafe("savepoint e");
         const json = (await tx.unsafe(
@@ -415,7 +431,7 @@ for (const c of cases) {
         if (error !== rollback) throw error;
       });
   };
-  await call(); // warm
+  await call();
   const walls: number[] = [];
   for (let i = 0; i < RUNS; i++) {
     captured = [];

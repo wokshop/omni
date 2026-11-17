@@ -16,13 +16,14 @@ const parse = async (name: string) =>
 const SELF = ["sam@example.com", "hello@example.com"];
 const DAY = 24 * 60 * 60 * 1000;
 
-const deployThread = (overrides: Partial<ThreadCandidate>): ThreadCandidate => ({
-  threadId: "t-deploy",
-  subjectKey: "deploy window",
-  participants: ["hello@example.com", "ops@fundacionsol.example.org"],
-  lastMessageAt: new Date("2026-10-15T07:00:00Z"),
-  ...overrides,
-});
+const deployThread = (overrides: Partial<ThreadCandidate>) =>
+  ({
+    threadId: "t-deploy",
+    subjectKey: "deploy window",
+    participants: ["hello@example.com", "ops@fundacionsol.example.org"],
+    lastMessageAt: new Date("2026-10-15T07:00:00Z"),
+    ...overrides,
+  }) satisfies ThreadCandidate;
 const decide = async (candidates: ThreadCandidate[]) =>
   decideThread(await parse("no-message-id.eml"), {
     knownMessageIds: new Map(),
@@ -38,7 +39,6 @@ describe("normalizeSubject", () => {
     ["FW: TR: RV: Enc: WG: Antw: Brand review", "brand review"],
     ["Re：Brand review", "brand review"],
     ["Re: Re:", ""],
-    // Words that only start like a prefix are part of the subject.
     ["Regarding: the plan", "regarding: the plan"],
     ["Resume: Ana Pérez", "resume: ana pérez"],
   ])("%j → %j", (subject, expected) => {
@@ -59,7 +59,6 @@ describe("decideThread", () => {
   });
 
   test("falls back to References when the direct parent was never synced", async () => {
-    // In-Reply-To names a message sent from another device that we have not stored.
     const message = await parse("apple-mail-reply.eml");
     const knownMessageIds = new Map([
       ["<CAGm7xR2pQw9LkV4n+YtE5uB1aD@mail.gmail.example.com>", "t-brand"],

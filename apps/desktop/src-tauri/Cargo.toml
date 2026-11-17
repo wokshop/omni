@@ -1,0 +1,38 @@
+[package]
+name = "omni-desktop"
+version = "0.0.0"
+description = "Omni Desktop: the Omni web app in a native window"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+# `_lib` keeps the library's name apart from the binary's (a Cargo limitation on Windows).
+name = "omni_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.7", features = [] }
+
+[dependencies]
+tauri = { version = "2.12", features = ["tray-icon"] }
+serde_json.workspace = true
+omni-sync-types.workspace = true
+serde.workspace = true
+tauri-plugin-store = "2.5.1"
+tauri-plugin-opener = "2.7.3"
+tauri-plugin-notification = "2.8.1"
+url = "2.5.8"
+tauri-plugin-deep-link = "2.6.3"
+tauri-plugin-single-instance = { version = "2.5.5", features = ["deep-link"] }
+uuid = { version = "1.29.2", features = ["v4"] }
+tauri-plugin-autostart = "2.7.0"
+tauri-plugin-window-state = "2.5.0"
+tauri-plugin-updater = "2.14.1"
+tokio = { version = "1.54.1", features = ["time"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = { version = "3.7", features = ["OSX_10_15"] }
+
+[lints]
+workspace = true

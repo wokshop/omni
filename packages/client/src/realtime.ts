@@ -1,4 +1,12 @@
-import type { HelpdeskRealtimeEvent, MailActionKind } from "@omni/contracts";
+import type {
+  CrmChangedEvent,
+  CrmChangedKind,
+  HelpdeskRealtimeEvent,
+  MailActionKind,
+  StorageDocEvent,
+  StorageFilePresenceEvent,
+  StorageLiveRecord,
+} from "@omni/contracts";
 import type { schema } from "@omni/db";
 import type { Realtime as RealtimeObject } from "@omni/worker";
 
@@ -14,10 +22,6 @@ export type NotificationKind = (typeof schema.notificationKind.enumValues)[numbe
  */
 export type NotificationEvent =
   | { type: "notification"; threadId: string | null; kind: NotificationKind }
-  /**
-   * Notifications this member had about the thread were withdrawn (the note that mentioned them
-   * was deleted): refetch the list. Never show it as a new notification.
-   */
   | { type: "notification.removed"; threadId: string };
 
 /**
@@ -27,19 +31,28 @@ export type NotificationEvent =
 export type RealtimeEvent =
   | Parameters<RealtimeObject["broadcast"]>[1]
   | HelpdeskRealtimeEvent
-  | NotificationEvent;
+  | NotificationEvent
+  | StorageFilePresenceEvent
+  | StorageDocEvent;
 export type RealtimeStatus = "connecting" | "open" | "closed";
 
 /**
  * What an app sends on the socket. `presence`: this member is viewing or replying in a
  * conversation, or `left` it; the Durable Object adds the member and mailbox and tells the
- * inbox's other members (ADR 0021).
+ * inbox's other members (ADR 0021). `file.presence`: this socket has a Drive file open in its
+ * editor, or closed it; those who see the file hear it (ADR 0043 decision 3). `doc.append`: one
+ * record for the live document of the file this socket edits (`storageDocEventSchema`).
  */
-export type RealtimeClientMessage = {
-  type: "presence";
-  threadId: string;
-  state: "viewing" | "replying" | "left";
-};
+export type RealtimeClientMessage =
+  | { type: "presence"; threadId: string; state: "viewing" | "replying" | "left" }
+  | { type: "file.presence"; nodeId: string; state: "editing" | "left" }
+  | {
+      type: "doc.append";
+      nodeId: string;
+      ref: number;
+      record: StorageLiveRecord;
+      matchSeqNum?: number;
+    };
 
 export interface RealtimeOptions {
   /** The Worker's origin; the socket is `/api/realtime` on it. */
@@ -49,6 +62,11 @@ export interface RealtimeOptions {
    * there. Without it, the session's active organization.
    */
   orgId?: string;
+  /**
+   * A watch socket: only `mail.arrived` and the member's notifications, for desktop
+   * notifications. It does not count as an open app, so the member's phone still gets its push.
+   */
+  watch?: boolean;
   onEvent: (event: RealtimeEvent) => void;
   /**
    * Socket state. An `"open"` with `reconnected: true` follows a socket that dropped or never
@@ -87,7 +105,7 @@ export interface Realtime {
  * each event it knows to `onEvent`. Messages it does not know are ignored, so the Worker can
  * add event types without breaking older apps.
  */
-export function connectRealtime(options: RealtimeOptions): Realtime {
+export function connectRealtime(options: RealtimeOptions) {
   const {
     minDelayMs = 500,
     maxDelayMs = 30_000,
@@ -97,20 +115,16 @@ export function connectRealtime(options: RealtimeOptions): Realtime {
   } = options;
   const url = new URL("/api/realtime", options.baseUrl);
   if (options.orgId) url.searchParams.set("org", options.orgId);
+  if (options.watch) url.searchParams.set("watch", "1");
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
 
   let socket: WebSocket | undefined;
   let attempt = 0;
-  /**
-   * Set once any socket has dropped, including one that never opened. A first open after failed
-   * attempts is a reconnect too: data loaded meanwhile missed the events sent in between.
-   */
   let dropped = false;
   let stopped = false;
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
   let pingTimer: ReturnType<typeof setInterval> | undefined;
   let probeTimer: ReturnType<typeof setTimeout> | undefined;
-  /** Pings the open socket now; set while one is open. */
   let probe: (() => void) | undefined;
 
   const connect = () => {
@@ -119,7 +133,6 @@ export function connectRealtime(options: RealtimeOptions): Realtime {
     socket = current;
     let awaitingPong = false;
 
-    // A socket is dropped once: on close, error, or a missed pong, whichever comes first.
     const drop = () => {
       if (socket !== current) return;
       socket = undefined;
@@ -128,9 +141,7 @@ export function connectRealtime(options: RealtimeOptions): Realtime {
       clearTimeout(probeTimer);
       try {
         current.close();
-      } catch {
-        // Already closed.
-      }
+      } catch {}
       dropped = true;
       options.onStatus?.("closed", { reconnected: dropped });
       if (stopped) return;
@@ -194,15 +205,14 @@ export function connectRealtime(options: RealtimeOptions): Realtime {
     wake() {
       if (stopped) return;
       if (socket) return probe?.();
-      // Waiting out the backoff: the reason to wait may be gone, so try now and start over.
       clearTimeout(retryTimer);
       attempt = 0;
       connect();
     },
-  };
+  } satisfies Realtime;
 }
 
-function parseEvent(data: string): RealtimeEvent | undefined {
+const parseEvent: (data: string) => RealtimeEvent | undefined = (data) => {
   let value: unknown;
   try {
     value = JSON.parse(data);
@@ -218,6 +228,14 @@ function parseEvent(data: string): RealtimeEvent | undefined {
     event.threadIds.every((id) => typeof id === "string")
   ) {
     return { type: "changed", mailboxId: event.mailboxId, threadIds: event.threadIds };
+  }
+  if (
+    event.type === "mail.arrived" &&
+    isId(event.mailboxId) &&
+    Array.isArray(event.threadIds) &&
+    event.threadIds.every(isId)
+  ) {
+    return { type: "mail.arrived", mailboxId: event.mailboxId, threadIds: event.threadIds };
   }
   if (
     event.type === "action" &&
@@ -251,14 +269,12 @@ function parseEvent(data: string): RealtimeEvent | undefined {
       ? { type: "notification.removed", threadId: event.threadId }
       : undefined;
   }
-  return parseHelpdeskEvent(value as Record<string, unknown>);
-}
+  const record = value as Record<string, unknown>;
+  return parseCrmEvent(record) ?? parseHelpdeskEvent(record) ?? parseStorageEvent(record);
+};
 
-// Checked by hand rather than with the contracts' zod schemas: this runs in the web app's entry
-// chunk, which stays free of full zod. Each event is rebuilt from the fields it declares.
 const PRESENCE_STATES = new Set(["viewing", "replying", "left"]);
 const SLA_TARGETS = new Set(["first_response", "next_response", "resolution"]);
-// A record, so a new action kind in the contracts is a type error here until it is listed.
 const ACTION_KINDS: Record<MailActionKind, true> = {
   send: true,
   forward_copy: true,
@@ -279,11 +295,79 @@ const NOTIFICATION_KINDS: Record<NotificationKind, true> = {
   sla_breached: true,
   note: true,
   member_joined: true,
+  comment: true,
 };
 
 const isId = (value: unknown): value is string => typeof value === "string" && value.length > 0;
 
-function parseHelpdeskEvent(event: Record<string, unknown>): HelpdeskRealtimeEvent | undefined {
+const CRM_CHANGED_KINDS: Record<CrmChangedKind, true> = {
+  company: true,
+  person: true,
+  deal: true,
+  note: true,
+  stages: true,
+  settings: true,
+  contract: true,
+};
+
+const parseCrmEvent: (event: Record<string, unknown>) => CrmChangedEvent | undefined = (event) => {
+  if (event.type !== "crm.changed") return undefined;
+  const { kind, ids } = event;
+  if (typeof kind !== "string" || !Object.hasOwn(CRM_CHANGED_KINDS, kind)) return undefined;
+  if (!Array.isArray(ids) || !ids.every(isId)) return undefined;
+  return { type: "crm.changed", kind: kind as CrmChangedKind, ids };
+};
+
+const isSeqNum = (value: unknown): value is number =>
+  typeof value === "number" && Number.isInteger(value) && value >= 0;
+const DOC_REFUSALS = new Set(["tail", "editing", "denied", "locked", "unavailable"]);
+
+const parseLiveRecord: (value: unknown) => StorageLiveRecord | undefined = (value) => {
+  if (typeof value !== "object" || value === null) return undefined;
+  const { t, cv, e, u } = value as Record<string, unknown>;
+  if (t === "seed" && isSeqNum(cv) && typeof u === "string") return { t, cv, u };
+  if (t === "update" && isSeqNum(e) && typeof u === "string") return { t, e, u };
+  const { s } = value as Record<string, unknown>;
+  if (t === "fold" && isSeqNum(e) && isSeqNum(cv) && isSeqNum(s)) return { t, e, cv, s };
+  return undefined;
+};
+
+const parseStorageEvent: (
+  event: Record<string, unknown>,
+) => StorageFilePresenceEvent | StorageDocEvent | undefined = (event) => {
+  const { nodeId, ref, seqNum } = event;
+  if (!isId(nodeId)) return undefined;
+  switch (event.type) {
+    case "file.presence": {
+      const { memberId, state } = event;
+      if (!isId(memberId) || (state !== "editing" && state !== "left")) return;
+      return { type: "file.presence", nodeId, memberId, state };
+    }
+    case "doc.appended":
+      if (!Number.isInteger(ref) || !isSeqNum(seqNum)) return;
+      return { type: "doc.appended", nodeId, ref: ref as number, seqNum };
+    case "doc.refused": {
+      const { reason } = event;
+      if (!Number.isInteger(ref) || !DOC_REFUSALS.has(reason as string)) return;
+      return {
+        type: "doc.refused",
+        nodeId,
+        ref: ref as number,
+        reason: reason as Extract<StorageDocEvent, { type: "doc.refused" }>["reason"],
+      };
+    }
+    case "doc.record": {
+      const record = parseLiveRecord(event.record);
+      if (!isSeqNum(seqNum) || !record) return;
+      return { type: "doc.record", nodeId, seqNum, record };
+    }
+  }
+  return undefined;
+};
+
+const parseHelpdeskEvent: (event: Record<string, unknown>) => HelpdeskRealtimeEvent | undefined = (
+  event,
+) => {
   const { mailboxId, threadId } = event;
   if (!isId(mailboxId)) return undefined;
   switch (event.type) {
@@ -326,4 +410,4 @@ function parseHelpdeskEvent(event: Record<string, unknown>): HelpdeskRealtimeEve
     }
   }
   return undefined;
-}
+};

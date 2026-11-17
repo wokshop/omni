@@ -1,10 +1,8 @@
-// Wire contracts between the Worker and the mail service. Both directions are HMAC-signed with
-// `signRequest` / `verifyRequest` from `@omni/crypto` over the exact path and body below.
 import { z } from "zod";
 
-// The Worker's Storage API as its clients see it (ADR 0034).
 export * from "./storage.ts";
-// Every Worker error answer, in both shapes (ADR 0038).
+export * from "./crm.ts";
+export * from "./mail.ts";
 export * from "./errors.ts";
 export * from "./error-schemas.ts";
 
@@ -127,9 +125,6 @@ export const mailEventsBodySchema = z.object({
 export type MailEvent = z.infer<typeof mailEventSchema>;
 export type MailEventsBody = z.infer<typeof mailEventsBodySchema>;
 
-// `mail_actions.payload` per `kind`. The Worker writes them; the mail service validates before
-// acting, and an invalid payload fails the action without retrying.
-
 /** UIDs mean nothing without their folder's UIDVALIDITY; a mismatch fails the action. */
 export const messageTargetSchema = z.object({
   folder: z.string().min(1),
@@ -139,10 +134,12 @@ export const messageTargetSchema = z.object({
 });
 
 /**
- * A file to attach to a send: one uploaded for it (`uploads.id`), or an attachment of a stored
- * message in the same mailbox (`attachments.id`), which is how forward keeps the originals. The
- * mail service streams each from R2 into the MIME.
+ * `done`: the flag carries Done to a Google account, where Gmail's read is Omni's Done (ADR
+ * 0044). There the mail service runs only these, and drops a plain read or unread: Omni's read
+ * state is not Gmail's, whatever a Worker from before that rule still queues.
  */
+export const flagTargetSchema = messageTargetSchema.extend({ done: z.literal(true).optional() });
+
 /** The most files one sent message may carry. */
 export const MAX_SEND_ATTACHMENTS = 50;
 
@@ -199,8 +196,8 @@ export const actionPayloadSchemas = {
   forward_copy: forwardCopyPayloadSchema,
   archive: messageTargetSchema,
   move: messageTargetSchema.extend({ destination: z.string().min(1) }),
-  mark_read: messageTargetSchema,
-  mark_unread: messageTargetSchema,
+  mark_read: flagTargetSchema,
+  mark_unread: flagTargetSchema,
   /** Move to the mailbox's trash folder (`folder_role` trash). */
   trash: messageTargetSchema,
   /** Move to the junk folder (`folder_role` junk). */
@@ -215,10 +212,6 @@ export type SendPayload = z.infer<typeof sendPayloadSchema>;
 export type ForwardCopyPayload = z.infer<typeof forwardCopyPayloadSchema>;
 export type SendAttachment = z.infer<typeof sendAttachmentSchema>;
 export type ActionPayload<K extends MailActionKind> = z.infer<(typeof actionPayloadSchemas)[K]>;
-
-// Helpdesk realtime events (ADR 0021): Worker → apps over the realtime socket, alongside the
-// Worker's existing `changed`/`action`/`mailbox`/`domain` events. They carry ids, never mail
-// content: a client refetches what it shows. Apps ignore types they do not know.
 
 const realtimeBase = { mailboxId: z.string().min(1) };
 
@@ -259,7 +252,6 @@ const slaRealtime = {
   ...realtimeBase,
   threadId: z.string().min(1),
   target: slaTargetSchema,
-  /** ISO 8601. */
   dueAt: z.iso.datetime({ offset: true }),
 };
 
@@ -280,12 +272,6 @@ export const helpdeskRealtimeEventSchema = z.discriminatedUnion("type", [
 
 export type HelpdeskRealtimeEvent = z.infer<typeof helpdeskRealtimeEventSchema>;
 export type SlaTarget = z.infer<typeof slaTargetSchema>;
-
-// Onboarding: provisioning domains and mailboxes. Worker → mail service, signed like the ping
-// (with a nonce), JSON in and out. Only the mail service holds the Purelymail token and mailbox
-// passwords; these calls are how the Worker asks it to use them. Errors answer
-// `{ error: string }` with a status the Worker passes on: 400 bad input, 409 conflict or
-// provider unavailable, 422 the mail host refused (bad login), 502 the provider API failed.
 
 export const PROVISION_DOMAIN_PATH = "/provision/domain";
 export const PROVISION_MAILBOX_PATH = "/provision/mailbox";
@@ -319,14 +305,12 @@ export const provisionDomainResultSchema = z.discriminatedUnion("provider", [
     /** Why Purelymail refused to add it, in its own words. */
     addError: z.string().optional(),
   }),
-  /** No provider API here: mailboxes are existing IMAP/SMTP logins, and DNS is the host's. */
   z.object({ provider: z.literal("imap") }),
 ]);
 
 const serverSchema = z.object({
   host: z.string().min(1),
   port: z.number().int().positive().max(65_535),
-  /** Implicit TLS (993, 465). False: STARTTLS when the server offers it. */
   secure: z.boolean(),
 });
 
@@ -345,9 +329,7 @@ export const provisionMailboxBodySchema = z.object({
    */
   ownerMemberId: z.string().min(1).nullable(),
   login: z.discriminatedUnion("provider", [
-    /** The mail service creates the user and an app password. */
     z.object({ provider: z.literal("purelymail") }),
-    /** An existing login, checked over IMAP before it is stored. Never logged. */
     z.object({
       provider: z.literal("imap"),
       user: z.string().min(1),
@@ -384,16 +366,9 @@ export const dnsLookupBodySchema = z.object({
 });
 
 export const dnsAnswerSchema = z.discriminatedUnion("status", [
-  /**
-   * TXT: each record's strings joined. MX: `"<priority> <host>"`. CNAME and NS: the host. Hosts
-   * are lowercase with no trailing dot.
-   */
   z.object({ status: z.literal("found"), values: z.array(z.string()) }),
-  /** The name does not exist. */
   z.object({ status: z.literal("nxdomain") }),
-  /** The name exists but has no record of this type (or only a CNAME, for TXT and MX). */
   z.object({ status: z.literal("nodata") }),
-  /** No answer (timeout, SERVFAIL, refused): says nothing about the record. */
   z.object({ status: z.literal("error"), code: z.string() }),
 ]);
 
@@ -421,13 +396,6 @@ export type ProvisionDomainBody = z.infer<typeof provisionDomainBodySchema>;
 export type ProvisionDomainResult = z.infer<typeof provisionDomainResultSchema>;
 export type ProvisionMailboxBody = z.infer<typeof provisionMailboxBodySchema>;
 export type ProvisionMailboxResult = z.infer<typeof provisionMailboxResultSchema>;
-
-// Personal Gmail (helpdesk plan G1-G3). Worker → mail service, signed with a nonce like
-// provisioning. The Worker receives Google's OAuth callback but never sees a token: it passes the
-// one-time code (and its PKCE verifier) to the mail service, which exchanges it, stores the
-// encrypted refresh token and creates or reconnects the member's personal `gmail` mailbox.
-// Errors answer `{ error: string }` with 400 (bad or expired code), 409 (that Google account is
-// connected elsewhere) or 502 (Google failed).
 
 export const GOOGLE_CONNECT_PATH = "/connect/google";
 export const GOOGLE_DISCONNECT_PATH = "/connect/google/disconnect";
@@ -475,11 +443,6 @@ export const googleDisconnectBodySchema = z.object({
 });
 
 export const googleDisconnectResultSchema = z.object({ mailboxId: z.string().min(1) });
-
-// Removing an Omni-hosted mailbox (ADR 0007). Disconnect only: the mail service stops syncing,
-// revokes the app password Omni holds and forgets the mailbox; the user at the host and all its
-// mail stay, so adding the same address again reconnects it. The Worker checks that the member is
-// an owner or admin. 404 when the org has no such hosted mailbox.
 
 export const HOSTED_DISCONNECT_PATH = "/hosting/mailbox/disconnect";
 

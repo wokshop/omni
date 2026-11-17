@@ -1,8 +1,6 @@
-// What sanitized mail HTML loads: remote images through the proxy, inline (cid:) images and
-// attachments by content hash, and the HTML document itself. All need a signed-in member; mail
-// objects are served only when `forMember` (or its member-scoped helpers) can see them.
 import { findMemberAttachmentByHash, findMemberMessageHtml } from "@omni/db";
 import { codeForStatus } from "@omni/contracts";
+import { domainLogoSource, logoSource } from "@omni/mail-core/sender-logo";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
@@ -10,6 +8,7 @@ import type { AppEnv } from "../context.ts";
 import { apiError } from "../errors.ts";
 import { imageHeaders, isProxiableImageType, proxyImage } from "../image-proxy.ts";
 import { checkRateLimit, tooManyRequests } from "../rate-limiter.ts";
+import { senderLogo } from "../sender-logo.ts";
 import { zValidator } from "../validator.ts";
 
 function notFound(): never {
@@ -44,7 +43,35 @@ export const assets = new Hono<AppEnv>()
       const result = await proxyImage(c.req.valid("query").url, {
         dohUrl: config.IMAGE_PROXY_DOH_URL,
         testAllowOrigin: config.IMAGE_PROXY_TEST_ALLOW_ORIGIN,
-        // Each miss is an outbound fetch on the member's behalf; cached images are free.
+        beforeFetch: () => checkRateLimit(c.env, config, "imageProxy", member.id),
+      });
+      if (result instanceof Response) return result;
+      if (result.status === 429) return tooManyRequests(c, result.retryAfter, "imageProxy");
+      return apiError(c, codeForStatus(result.status), result.reason);
+    },
+  )
+
+  .get(
+    "/sender-logo",
+    zValidator(
+      "query",
+      z.object({ address: z.string().max(320).optional(), domain: z.string().max(253).optional() }),
+    ),
+    async (c) => {
+      const { config, member } = c.var;
+      const { address, domain } = c.req.valid("query");
+      const source = address ? logoSource(address) : domain ? domainLogoSource(domain) : null;
+      if (!source) {
+        return new Response(null, {
+          status: 404,
+          headers: { "cache-control": "private, max-age=86400" },
+        });
+      }
+      const result = await senderLogo(source, {
+        dohUrl: config.IMAGE_PROXY_DOH_URL,
+        testAllowOrigin: config.IMAGE_PROXY_TEST_ALLOW_ORIGIN,
+        iconService: config.SENDER_LOGO_ICON_SERVICE,
+        gravatar: config.SENDER_LOGO_GRAVATAR,
         beforeFetch: () => checkRateLimit(c.env, config, "imageProxy", member.id),
       });
       if (result instanceof Response) return result;
@@ -61,7 +88,6 @@ export const assets = new Hono<AppEnv>()
     return attachmentResponse(object, file);
   })
 
-  /** The sanitized HTML of one message, for a sandboxed iframe. No script can run in it. */
   .get("/threads/:id/messages/:messageId/html", async (c) => {
     const htmlR2Key = await findMemberMessageHtml(
       c.var.db,
@@ -78,11 +104,6 @@ export const assets = new Hono<AppEnv>()
         "content-type": "text/html; charset=utf-8",
         "x-content-type-options": "nosniff",
         "referrer-policy": "no-referrer",
-        // Images only from our proxy and attachments; inline styles are the sanitizer's output.
-        // The sandbox keeps our origin (allow-same-origin) so those image requests carry the
-        // session cookie; an opaque origin is cross-site, gets no cookie, and every image 401s.
-        // Nothing can run with that origin: no allow-scripts, no script-src, and the HTML was
-        // sanitized on save. Forms, plugins and top-level navigation stay off.
         "content-security-policy": `default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; frame-ancestors ${frameAncestors}; sandbox allow-same-origin allow-popups allow-popups-to-escape-sandbox`,
         "cache-control": "private, max-age=3600",
       },

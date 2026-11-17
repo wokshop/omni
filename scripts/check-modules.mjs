@@ -1,35 +1,18 @@
-// Module boundaries (ADR 0035 decision 4). Fails when code crosses a module's edge:
-//
-// 1. A module's private folder (`packages/db/src/<module>/`) is imported only by that module.
-//    Everything else goes through its surface file, `packages/db/src/<module>.ts`.
-// 2. A module's tables (`packages/db/src/schema/<module>.ts` and `schema/<module>/`) are named only
-//    by that module. A schema file may name them in a foreign key; nothing else selects from
-//    them, even in a join. Platform code is held to this too.
-// 3. A module imports another module's code only when it declares it in `uses`, and then only its
-//    surface file and contract: CRM may use Mail and Storage, which know nothing of each other.
-// 4. A module's Worker folder (`apps/worker/src/<module>/`) is imported only by that module, a
-//    module that uses it, and the files that wire modules in (`app.ts`, `index.ts`, `modules.ts`, `mcp/`).
-// 5. A module's tables are named `<module>_*`, unless they predate the rule (`prefixed: false`).
-//
-// A module is its folders in every package, and `apps/<module>/` (the mail service is Mail's).
-//
-// Tests are not checked: a leak test sets up rows the way it must. Files that predate the rule
-// are listed in DEBT; an entry that stops failing must be removed, so the list only shrinks.
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join, normalize } from "node:path";
 
 /**
  * The modules and what each may use. Mail's tables predate `<module>_*` and keep their names: a
- * rename is a destructive migration that buys nothing (ADR 0035 decision 3).
+ * rename is a destructive migration that buys nothing (ADR 0035 decision 3). Mail's Worker
+ * folder calls Storage's door to save an attachment to drive (ADR 0039 decision 3).
  */
 export const MODULES = {
-  mail: { uses: [], prefixed: false },
+  mail: { uses: [], workerUses: ["storage"], prefixed: false },
   storage: { uses: [], prefixed: true },
   crm: { uses: ["mail", "storage"], prefixed: true },
 };
 
-/** Files that wire every module in (routes, crons, agents), so they may import its Worker folder. */
 const REGISTRARS = [
   "apps/worker/src/app.ts",
   "apps/worker/src/index.ts",
@@ -43,7 +26,6 @@ export const DEBT = [];
 const SOURCE = /^(packages\/[^/]+\/src|apps\/(worker|mail)\/src)\/.*\.(ts|tsx|mts)$/;
 const TEST = /(\.test\.|\/e2e\/)/;
 
-/** Bare package specifiers that resolve inside the paths this check knows. */
 const PACKAGES = {
   "@omni/db": "packages/db/src/index.ts",
   "@omni/db/schema": "packages/db/src/schema/index.ts",
@@ -73,7 +55,6 @@ export function importsOf(source) {
   const STATIC = /\b(import|export)\s+(type\s+)?([\s\S]*?)\s+from\s+["']([^"']+)["']/g;
   for (const [, keyword, , clause, specifier] of source.matchAll(STATIC)) {
     const bindings = bindingsOf(clause);
-    // `export * from` hands on everything the module exports; a dynamic import has no names.
     const reexportsAll =
       keyword === "export" && bindings.some((b) => b.imported === "*" && !b.local);
     found.push({ specifier, bindings, names: bindings.map((b) => b.imported), reexportsAll });
@@ -87,7 +68,6 @@ export function importsOf(source) {
   return found;
 }
 
-/** What an import clause binds: `{ a, b as c }` gives a→a and b→c; `* as x` gives *→x. */
 function bindingsOf(clause) {
   const braces = clause.match(/\{([\s\S]*)\}/);
   const bindings = braces
@@ -114,7 +94,6 @@ export function exportOrigins(files, entry, done = new Map(), active = new Set()
   if (done.has(entry)) return done.get(entry);
   const origins = new Map();
   const source = files.get(entry);
-  // Only a file on the current path is a cycle; one already read keeps its finished map.
   if (!source || active.has(entry)) return origins;
   active.add(entry);
   const DECLARED =
@@ -161,10 +140,6 @@ export function tablesOf(files, modules = MODULES) {
   return tables;
 }
 
-/**
- * The tables a file names: imported from a schema path, or read as `<x>.<table>` where `x` is
- * `schema` or any name the file bound the schema to (`schema as s`, `* as s`).
- */
 function tablesNamedBy(file, source, tables) {
   const named = new Set();
   const aliases = new Set(["schema"]);
@@ -180,7 +155,6 @@ function tablesNamedBy(file, source, tables) {
   for (const { specifier, names } of importsOf(source)) {
     const target = resolve(file, specifier);
     if (!target?.startsWith("packages/db/src/schema/")) continue;
-    // `* as x` of a module's own schema file names all its tables; of the barrel, `x.<table>` does.
     const all = [...tables].filter(
       ([, t]) => target === t.file || target === `packages/db/src/schema/${t.module}.ts`,
     );
@@ -198,13 +172,8 @@ function tablesNamedBy(file, source, tables) {
   return [...named];
 }
 
-/** Barrels a module may import from, whose names are traced back to the file defining them. */
 const BARRELS = ["packages/db/src/index.ts", "packages/contracts/src/index.ts"];
 
-/**
- * Names a module file takes from a barrel that belong to a module it does not declare in
- * `uses`: `import { recordCustomer } from "../index.ts"` is still an import of Mail.
- */
 function barrelProblems(file, source, owner, origins, modules) {
   if (!owner) return [];
   const foreign = new Set();
@@ -216,16 +185,12 @@ function barrelProblems(file, source, owner, origins, modules) {
       const origin = origins(barrel).get(name);
       const to = origin && ownerOf(origin, modules);
       if (!to || to.module === owner.module || to.part === "schema") continue;
-      if (!modules[owner.module].uses.includes(to.module)) foreign.add(`${name} (${to.module})`);
+      if (!usesOf(owner, modules).includes(to.module)) foreign.add(`${name} (${to.module})`);
     }
   }
   return foreign.size ? [{ file, rule: "uses", message: MESSAGES.barrel([...foreign]) }] : [];
 }
 
-/**
- * The names a file reads from a module: named imports, `ns.<name>` for a namespace import
- * (`* as ns`), and for a dynamic import, what it destructures or reads from its result.
- */
 function namesTaken(source, specifier, bindings) {
   const names = new Set();
   const members = (local) => {
@@ -254,21 +219,24 @@ function namesTaken(source, specifier, bindings) {
   return names;
 }
 
-/** Whether `importer` may import `target`, by rules 1, 3 and 4; the rule broken, or null. */
 function importProblem(importer, target, modules) {
   const to = ownerOf(target, modules);
   if (!to) return null;
   const from = ownerOf(importer, modules);
   if (from?.module === to.module) return null;
-  if (to.part === "schema") return null; // rule 2 judges what is named from it
+  if (to.part === "schema") return null;
   const registrar = REGISTRARS.some((path) =>
     path.endsWith("/") ? importer.startsWith(path) : importer === path,
   );
   if (to.part === "worker" && registrar) return null;
   if (to.part === "private") return "private";
   if (!from) return to.part === "worker" ? "worker" : null;
-  // What is left is a surface, a contract, a Worker folder or a module's own service.
-  return modules[from.module].uses.includes(to.module) ? null : "uses";
+  return usesOf(from, modules).includes(to.module) ? null : "uses";
+}
+
+function usesOf(from, modules) {
+  const { uses, workerUses = [] } = modules[from.module];
+  return from.part === "worker" ? [...uses, ...workerUses] : uses;
 }
 
 const MESSAGES = {
@@ -344,9 +312,7 @@ function main() {
   for (const path of paths) {
     try {
       files.set(path, readFileSync(path, "utf8"));
-    } catch {
-      // deleted in the working tree
-    }
+    } catch {}
   }
   const { problems, stale } = check(files);
   const lines = [
