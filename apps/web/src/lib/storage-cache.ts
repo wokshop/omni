@@ -5,6 +5,7 @@
 // answers. Only the listings the change touched are then asked again, so the server's order and
 // anything another tab did converge without refetching every folder on screen.
 import type { InfiniteData, QueryClient, QueryKey } from "@tanstack/react-query";
+import { currentWorkspaceId } from "./current-workspace.ts";
 import { keys } from "./query-keys.ts";
 import type { StorageListPage, StorageNode, StoragePlace } from "./storage.ts";
 
@@ -87,9 +88,12 @@ const within = (data: ListData | undefined, id: string) =>
 const touching = (client: QueryClient, id: string) =>
   lists(client).flatMap(([key, data]) => (shows(data, id) || within(data, id) ? [key] : []));
 
-/** Asked again, in the background: the change already shows. */
+/** Asked again, in the background: the change already shows. Every Search too, by its prefix. */
 const refresh = (client: QueryClient, queryKeys: QueryKey[]) =>
-  Promise.all(queryKeys.map((queryKey) => client.invalidateQueries({ queryKey, exact: true })));
+  Promise.all([
+    ...queryKeys.map((queryKey) => client.invalidateQueries({ queryKey, exact: true })),
+    client.invalidateQueries({ queryKey: keys.storageSearches() }),
+  ]);
 
 /**
  * A request still on its way for a listing about to change would land after the change with
@@ -103,6 +107,11 @@ const settle = (client: QueryClient, queryKeys: QueryKey[]) =>
  * its place, out of every other, and its own listing's title and path renamed.
  */
 export async function storageNodeChanged(client: QueryClient, node: StorageNode) {
+  // Answered after the tab moved to another workspace: the keys below are that one's, so the
+  // workspace it came from refetches its Storage instead.
+  if (node.orgId !== currentWorkspaceId()) {
+    return client.invalidateQueries({ queryKey: [...keys.root, node.orgId, "storage"] });
+  }
   const here = keys.storageList(placeOf(node));
   const touched = [here, ...touching(client, node.id)];
   await settle(client, touched);
@@ -113,12 +122,7 @@ export async function storageNodeChanged(client: QueryClient, node: StorageNode)
       : withFolder(without(data, node.id), node);
     if (next !== data) client.setQueryData<ListData>(key, next);
   }
-  void refresh(client, [
-    ...touched,
-    keys.storageNode(node.id),
-    keys.storageSearches(),
-    keys.storageTrash(),
-  ]);
+  void refresh(client, [...touched, keys.storageNode(node.id), keys.storageTrash()]);
 }
 
 /**
@@ -127,7 +131,7 @@ export async function storageNodeChanged(client: QueryClient, node: StorageNode)
  * to its own request.
  */
 export function storageFolderMade(client: QueryClient, node: StorageNode) {
-  if (node.kind !== "folder") return;
+  if (node.kind !== "folder" || node.orgId !== currentWorkspaceId()) return;
   const parent = node.parentId
     ? client.getQueryData<ListData>(keys.storageList({ parentId: node.parentId }))?.pages[0]?.folder
     : null;
@@ -163,7 +167,6 @@ export async function storageNodeRemoved(client: QueryClient, id: string) {
   void refresh(client, [
     ...showing.map(([key]) => key),
     keys.storageNode(id),
-    keys.storageSearches(),
     keys.storageTrash(),
     keys.storageUsage(),
   ]);
