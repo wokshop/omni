@@ -8,6 +8,7 @@ import {
   IconDownload,
   IconFolderMove,
   IconPencil,
+  IconSparkle,
   IconTrash,
   IconUserAdd,
 } from "@/components/icons/central";
@@ -91,6 +92,16 @@ function useRowMenu() {
         : []),
       { icon: IconUserAdd, label: "Share", onAction: () => open({ dialog: "share", node }) },
       { icon: IconPencil, label: "Rename", onAction: () => open({ dialog: "rename", node }) },
+      // A cluster (a top-level folder) picks its sidebar glyph; nested folders stay folders.
+      ...(node.kind === "folder" && node.parentId === null
+        ? [
+            {
+              icon: IconSparkle,
+              label: "Change icon",
+              onAction: () => open({ dialog: "icon", node }),
+            },
+          ]
+        : []),
       { icon: IconFolderMove, label: "Move", onAction: () => open({ dialog: "move", node }) },
       ...(node.kind === "file"
         ? [

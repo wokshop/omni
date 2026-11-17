@@ -1,0 +1,1 @@
+ALTER TABLE "storage_nodes" ADD COLUMN "icon" text;

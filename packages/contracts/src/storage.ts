@@ -24,6 +24,31 @@ const isoDate = z.iso.datetime();
 const id = z.string().min(1);
 const name = z.string().min(1).max(255);
 
+/** The glyphs a folder may take in Drive's sidebar instead of the folder (ADR 0047). */
+export const STORAGE_FOLDER_ICONS = [
+  "rocket",
+  "star",
+  "heart",
+  "sparkle",
+  "light-bulb",
+  "target",
+  "trophy",
+  "megaphone",
+  "analytics",
+  "coins",
+  "buildings",
+  "globe",
+  "home",
+  "book",
+  "code",
+  "brush",
+  "video",
+  "archive",
+  "package",
+  "lock",
+] as const;
+export const storageFolderIconSchema = z.enum(STORAGE_FOLDER_ICONS);
+
 export const storageNodeSchema = z.object({
   id,
   orgId: id,
@@ -56,6 +81,11 @@ export const storageNodeSchema = z.object({
   contentVersion: z.number().int().nonnegative().optional(),
   /** Hex sha256 of the bytes, as the uploading client sent it; null when it sent none. */
   contentSha256: z.string().nullable().optional(),
+  /**
+   * A folder's chosen sidebar glyph; null for the folder glyph and every file. A string, not the
+   * enum, so a client older than a new glyph still reads the node. Absent from an older Worker.
+   */
+  icon: z.string().nullable().optional(),
 });
 
 /** A node as its reader sees it. `path` runs from the highest folder they can open to the node. */
@@ -94,9 +124,13 @@ export const storageListResponseSchema = z.object({
 /** `POST /folders`. A taken name gets a number. Answers `{ node }`. */
 export const storageCreateFolderBodySchema = z.object({ name, ...place }).refine(...onePlace);
 
-/** `PATCH /nodes/:id`: a new name, or a new place in the same workspace. Answers `{ node }`. */
+/**
+ * `PATCH /nodes/:id`: a new name, a new place in the same workspace, or a folder's sidebar glyph
+ * (null clears it). Answers `{ node }`.
+ */
 export const storageChangeNodeBodySchema = z.union([
   z.strictObject({ name }),
+  z.strictObject({ icon: storageFolderIconSchema.nullable() }),
   z.strictObject(place).refine(...onePlace),
 ]);
 

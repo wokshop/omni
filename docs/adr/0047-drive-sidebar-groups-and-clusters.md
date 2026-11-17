@@ -26,6 +26,12 @@ inside it, and the sidebar tree stops there. Deeper folders and all files are on
 There is no cluster object in the schema: a cluster is a folder, so it moves, shares and trashes
 like one, and a real cluster type can still come later without migrating data.
 
+A cluster can take a glyph in place of the folder, picked from a fixed set
+(`STORAGE_FOLDER_ICONS`) with **Change icon** in a top-level folder's menu. It is stored on the
+node (`storage_nodes.icon`, nullable, additive) and set with `PATCH /nodes/:id { icon }` (null
+clears it). Setting it is neither an edit nor a sync change: "Modified" and the revision stay.
+Nested folders always show the folder; a glyph a client doesn't know shows the folder too.
+
 ## Decision 3: Search across both drives
 
 `GET /api/storage/search?q=` (live files and folders whose name holds `q`, ignoring case) reads

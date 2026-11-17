@@ -42,13 +42,19 @@ export const storageChanges = new Hono<AppEnv>()
     return c.json({ node: wireNode(made.node) } satisfies StorageNodeResponse, 201);
   })
 
-  /** A new name, or a new place: another folder, or the root of My files or Shared. */
+  /** A new name, a new place (another folder, or the root of My files or Shared), or a glyph. */
   /** With `?ifRevision=`, refused `409 version_conflict` when the node has changed since. */
   .patch("/nodes/:id", zValidator("json", storageChangeNodeBodySchema), async (c) => {
     const body = c.req.valid("json");
     const guard = guardOf(c);
     const id = c.req.param("id");
     const { files } = writeDoor(c);
+    if ("icon" in body) {
+      const set = await files.setIcon(id, body.icon);
+      if (set.status !== "ok") return refused(c, set.status);
+      announceDrives(c, [set.node]);
+      return c.json({ node: wireNode(set.node) } satisfies StorageNodeResponse);
+    }
     if ("name" in body) {
       const renamed = await files.rename(id, body.name, guard);
       if (renamed.status !== "ok") return refused(c, renamed.status);

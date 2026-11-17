@@ -169,6 +169,7 @@ public struct StorageNode: Codable, Equatable {
     public let contentVersion: Int?
     public let createdAt: String
     public let createdByMemberId: String?
+    public let icon: String?
     public let id: String
     public let kind: Kind
     public let lockedAt: String?
@@ -188,6 +189,7 @@ public struct StorageNode: Codable, Equatable {
         case contentVersion = "contentVersion"
         case createdAt = "createdAt"
         case createdByMemberId = "createdByMemberId"
+        case icon = "icon"
         case id = "id"
         case kind = "kind"
         case lockedAt = "lockedAt"
@@ -203,11 +205,12 @@ public struct StorageNode: Codable, Equatable {
         case updatedAt = "updatedAt"
     }
 
-    public init(contentSha256: String?, contentVersion: Int?, createdAt: String, createdByMemberId: String?, id: String, kind: Kind, lockedAt: String?, mimeType: String?, name: String, orgId: String, ownerMemberId: String?, parentId: String?, revision: Int?, size: Int, space: Space, trashedAt: String?, updatedAt: String) {
+    public init(contentSha256: String?, contentVersion: Int?, createdAt: String, createdByMemberId: String?, icon: String?, id: String, kind: Kind, lockedAt: String?, mimeType: String?, name: String, orgId: String, ownerMemberId: String?, parentId: String?, revision: Int?, size: Int, space: Space, trashedAt: String?, updatedAt: String) {
         self.contentSha256 = contentSha256
         self.contentVersion = contentVersion
         self.createdAt = createdAt
         self.createdByMemberId = createdByMemberId
+        self.icon = icon
         self.id = id
         self.kind = kind
         self.lockedAt = lockedAt
@@ -247,6 +250,7 @@ public extension StorageNode {
         contentVersion: Int?? = nil,
         createdAt: String? = nil,
         createdByMemberId: String?? = nil,
+        icon: String?? = nil,
         id: String? = nil,
         kind: Kind? = nil,
         lockedAt: String?? = nil,
@@ -266,6 +270,7 @@ public extension StorageNode {
             contentVersion: contentVersion ?? self.contentVersion,
             createdAt: createdAt ?? self.createdAt,
             createdByMemberId: createdByMemberId ?? self.createdByMemberId,
+            icon: icon ?? self.icon,
             id: id ?? self.id,
             kind: kind ?? self.kind,
             lockedAt: lockedAt ?? self.lockedAt,
@@ -494,17 +499,20 @@ public extension StorageCreateFolderBody {
 // MARK: - StorageChangeNodeBody
 public struct StorageChangeNodeBody: Codable, Equatable {
     public let name: String?
+    public let icon: Icon?
     public let parentId: String?
     public let space: Space?
 
     public enum CodingKeys: String, CodingKey {
         case name = "name"
+        case icon = "icon"
         case parentId = "parentId"
         case space = "space"
     }
 
-    public init(name: String?, parentId: String?, space: Space?) {
+    public init(name: String?, icon: Icon?, parentId: String?, space: Space?) {
         self.name = name
+        self.icon = icon
         self.parentId = parentId
         self.space = space
     }
@@ -530,11 +538,13 @@ public extension StorageChangeNodeBody {
 
     func with(
         name: String?? = nil,
+        icon: Icon?? = nil,
         parentId: String?? = nil,
         space: Space?? = nil
     ) -> StorageChangeNodeBody {
         return StorageChangeNodeBody(
             name: name ?? self.name,
+            icon: icon ?? self.icon,
             parentId: parentId ?? self.parentId,
             space: space ?? self.space
         )
@@ -547,6 +557,29 @@ public extension StorageChangeNodeBody {
     func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
         return String(data: try self.jsonData(), encoding: encoding)
     }
+}
+
+public enum Icon: String, Codable, Equatable {
+    case analytics = "analytics"
+    case archive = "archive"
+    case book = "book"
+    case brush = "brush"
+    case buildings = "buildings"
+    case code = "code"
+    case coins = "coins"
+    case globe = "globe"
+    case heart = "heart"
+    case home = "home"
+    case lightBulb = "light-bulb"
+    case lock = "lock"
+    case megaphone = "megaphone"
+    case package = "package"
+    case rocket = "rocket"
+    case sparkle = "sparkle"
+    case star = "star"
+    case target = "target"
+    case trophy = "trophy"
+    case video = "video"
 }
 
 //

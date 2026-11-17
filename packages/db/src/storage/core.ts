@@ -54,6 +54,8 @@ export interface StorageNode {
   contentVersion: number;
   /** Hex SHA-256 of the bytes when the uploader sent it. */
   contentSha256: string | null;
+  /** A folder's chosen sidebar glyph; null for the folder glyph and for every file. */
+  icon: string | null;
 }
 
 export function toNode(row: NodeRow): StorageNode {
@@ -75,6 +77,7 @@ export function toNode(row: NodeRow): StorageNode {
     revision: row.revision,
     contentVersion: row.contentVersion,
     contentSha256: row.contentSha256,
+    icon: row.icon,
   };
 }
 

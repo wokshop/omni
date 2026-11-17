@@ -98,6 +98,8 @@ export const storageNodes = pgTable(
     contentVersion: integer("content_version").notNull().default(1),
     /** Hex SHA-256 of the bytes, as the client that uploaded them sent it; null when unknown. */
     contentSha256: text("content_sha256"),
+    /** A folder's chosen glyph in Drive's sidebar (`STORAGE_FOLDER_ICONS`); null is the folder. */
+    icon: text("icon"),
   },
   (t) => [
     // Target for composite foreign keys that pin a row to its node's org.

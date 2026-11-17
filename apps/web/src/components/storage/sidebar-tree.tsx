@@ -7,7 +7,7 @@ import { SidebarSection } from "@/components/ui/sidebar";
 import { useSidebarExpanded } from "@/hooks/use-sidebar-expanded.ts";
 import { useStorageList } from "@/hooks/use-storage.ts";
 import type { StorageNode, StorageSpace } from "@/lib/storage.ts";
-import { FileGlyph } from "./file-glyph.tsx";
+import { FolderIcon } from "./folder-icons.tsx";
 import { SPACE_ICON, SPACE_LABEL, SPACE_PATH } from "./storage-nav.tsx";
 import { useWorkspacePaths } from "@/hooks/use-workspaces.ts";
 
@@ -77,7 +77,8 @@ function FolderRow(props: {
       href={inWorkspace(href + props.search)}
       isCurrent={pathname === href}
       depth={props.depth}
-      icon={<FileGlyph kind="folder" className="size-icon" />}
+      // A cluster shows its chosen glyph; a folder inside it, the folder.
+      icon={<FolderIcon icon={props.depth === 1 ? node.icon : null} className="size-icon" />}
       label={node.name}
       {...(props.expand ? { expand: props.expand } : {})}
       // Opening a cluster's page opens it in the tree too; only the chevron closes it.
