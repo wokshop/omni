@@ -172,7 +172,7 @@ export function recordStorageSeal(
 
 /**
  * The sealed copy's object, for a signer or the sender to download; null until it is sealed, and
- * null again once the file no longer holds the copy recorded (unlocked and replaced): a signer
+ * null again once the file no longer holds the object a seal run wrote (unlocked and replaced): a signer
  * gets the certificate they signed toward or nothing, never what a member put in its place.
  */
 export async function sealedObject(ex: Db, requestId: string) {
@@ -181,6 +181,11 @@ export async function sealedObject(ex: Db, requestId: string) {
     .from(storageSignatureRequests)
     .innerJoin(storageNodes, eq(storageNodes.id, storageSignatureRequests.sealedNodeId))
     .where(eq(storageSignatureRequests.id, requestId));
-  if (!row?.node.r2Key || row.node.contentSha256 !== row.sealedSha256) return null;
+  // The object, not a hash: a replacement's hash is the uploader's word, its key is ours, and
+  // only a seal run writes under this request's prefix.
+  const prefix = storageObjectKey(row?.node.orgId ?? "", `sealed-${requestId}-`);
+  if (!row?.node.r2Key?.startsWith(prefix) || row.node.contentSha256 !== row.sealedSha256) {
+    return null;
+  }
   return { node: toNode(row.node), r2Key: row.node.r2Key };
 }

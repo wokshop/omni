@@ -286,9 +286,11 @@ test("the last signature seals: a locked signed copy beside the original with an
     200,
   );
   const forged = Buffer.from("%PDF-1.7 a different certificate");
+  // It even claims the recorded hash: the server takes an upload's hash on the uploader's word.
   const opened = await stack.api(ana.jar, "POST", `/files/${request.sealedNodeId}/versions`, {
     size: forged.length,
     mimeType: "application/pdf",
+    sha256: request.sealedSha256,
   });
   await (await stack.putPart(ana.jar, opened.body.upload.id, 1, forged)).body?.cancel();
   const replaced = await stack.api(ana.jar, "POST", `/uploads/${opened.body.upload.id}/complete`);
