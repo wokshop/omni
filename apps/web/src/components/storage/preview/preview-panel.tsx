@@ -236,12 +236,13 @@ function Stage(props: {
   tools: ReturnType<typeof usePreviewTools>;
   onDownload: () => void;
 }) {
-  const { shown, marks, rail } = props.tools;
+  const { shown, marks, rail, contentVersion } = props.tools;
   return (
     <>
       <PdfMarksContext value={marks}>
         <PreviewBody
-          key={shown?.key ?? "current"}
+          // A replaced file loads again, so a box is drawn on the content its comment names.
+          key={shown?.key ?? `current:${contentVersion ?? ""}`}
           node={shown?.node ?? props.node}
           url={shown?.url ?? props.url}
           onDownload={props.onDownload}
@@ -395,5 +396,5 @@ function usePreviewTools(node: StorageNode, shareId: string | undefined) {
     },
   };
 
-  return { shown, marks, rail };
+  return { shown, marks, rail, contentVersion: data?.contentVersion };
 }
