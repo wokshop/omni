@@ -33,7 +33,7 @@ export function DriveSyncPage() {
                 label={workspace.name}
                 avatar={<WorkspaceAvatar workspace={workspace} size={32} />}
                 checked={state(workspace.id) !== "off"}
-                disabled={change.isPending}
+                disabled={!sync.data.available || change.isPending}
                 onCheckedChange={(on) =>
                   change.mutate(
                     { orgId: workspace.id, on },
