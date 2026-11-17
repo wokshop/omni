@@ -85,34 +85,13 @@ function surfaceOf(node: StorageNode): Surface | null {
   return null;
 }
 
-export function usePreviewTools(node: StorageNode, shareId: string | undefined) {
-  const [fileId, setFileId] = useState(node.id);
-  const [shownKey, setShownKey] = useState("current");
-  const [composing, setComposing] = useState(false);
-  const [targeting, setTargeting] = useState(false);
-  const [draft, setDraft] = useState<PdfBox | null>(null);
-  // The content the box was drawn on, so a replacement before Send can't take the comment.
-  const [draftVersion, setDraftVersion] = useState<number | undefined>(undefined);
-  // The stage could not show it after all (an image that fails to decode): the whole-file bar.
-  const [unshown, setUnshown] = useState(false);
-  if (fileId !== node.id) {
-    setFileId(node.id);
-    setShownKey("current");
-    setComposing(false);
-    setTargeting(false);
-    setUnshown(false);
-    setDraft(null);
-  }
-
-  // Each answers 403 to whoever may not: a Viewer gets neither, a Commenter no versions.
-  const versions = useStorageVersions(node.id, shareId);
-  const comments = useStorageComments(node.id, shareId);
-  const restore = useRestoreVersion();
-  const surface = unshown ? null : surfaceOf(node);
-
-  const list = versions.data ? railVersions(versions.data) : undefined;
-  const kept = versions.data?.versions.find((version) => version.id === shownKey);
-  const shown: ShownVersion | undefined = kept && {
+/** An older version on the stage: the file as that version had it. */
+function shownOf(
+  node: StorageNode,
+  kept: StorageVersions["versions"][number],
+  shareId: string | undefined,
+): ShownVersion {
+  return {
     key: kept.id,
     url: storageVersionUrl(node.id, kept.id, shareId),
     node: {
@@ -122,6 +101,37 @@ export function usePreviewTools(node: StorageNode, shareId: string | undefined) 
       updatedAt: kept.writtenAt,
     },
   };
+}
+
+export function usePreviewTools(node: StorageNode, shareId: string | undefined) {
+  const [fileId, setFileId] = useState(node.id);
+  const [shownKey, setShownKey] = useState("current");
+  const [composing, setComposing] = useState(false);
+  const [targeting, setTargeting] = useState(false);
+  const [draft, setDraft] = useState<PdfBox | null>(null);
+  // The content the box was drawn on, so a replacement before Send can't take the comment.
+  const [draftVersion, setDraftVersion] = useState<number | undefined>(undefined);
+  // The stage could not show it after all (an image that fails to decode): the whole-file bar.
+  // Which content it failed on: a replacement gets its own try.
+  const [unshownAt, setUnshownAt] = useState<number | null>(null);
+  if (fileId !== node.id) {
+    setFileId(node.id);
+    setShownKey("current");
+    setComposing(false);
+    setTargeting(false);
+    setUnshownAt(null);
+    setDraft(null);
+  }
+
+  // Each answers 403 to whoever may not: a Viewer gets neither, a Commenter no versions.
+  const versions = useStorageVersions(node.id, shareId);
+  const comments = useStorageComments(node.id, shareId);
+  const restore = useRestoreVersion();
+  const surface = unshownAt === comments.data?.contentVersion ? null : surfaceOf(node);
+
+  const list = versions.data ? railVersions(versions.data) : undefined;
+  const kept = versions.data?.versions.find((version) => version.id === shownKey);
+  const shown = kept && shownOf(node, kept, shareId);
 
   const close = () => {
     setComposing(false);
@@ -148,7 +158,7 @@ export function usePreviewTools(node: StorageNode, shareId: string | undefined) 
           selected: null,
           drawing: targeting,
           onUnshown: () => {
-            setUnshown(true);
+            setUnshownAt(data.contentVersion);
             setTargeting(false);
             setDraft(null);
           },

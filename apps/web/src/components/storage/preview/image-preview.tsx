@@ -30,7 +30,11 @@ export function ImagePreview(props: {
   const scale =
     natural && room ? Math.min(room.width / natural.width, room.height / natural.height, 1) : null;
   return (
-    <div ref={stage} className="flex min-h-0 flex-1 items-center justify-center p-5">
+    <div
+      ref={stage}
+      data-preview-stage
+      className="flex min-h-0 flex-1 items-center justify-center p-5"
+    >
       <div
         className="relative max-h-full max-w-full"
         style={

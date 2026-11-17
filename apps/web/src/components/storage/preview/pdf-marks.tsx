@@ -135,29 +135,43 @@ function Pin(props: { pin: PdfPin; selected: boolean; onSelect: (() => void) | u
 }
 
 /**
- * The comment bar beside the box: up and to the right of it, moved left where the page runs out
- * and under the box when there is not room for it above; kept 8px inside the page where it fits.
- * Always its full width, so a small image still gets a bar to type in.
+ * The comment bar beside the box: up and to the right of it, moved left where the stage around
+ * the page or image runs out (kept 8px inside it), and under the box when there is not room for
+ * it above. Always its full width, so a small image still gets a bar to type in.
  */
 function AtBox(props: { box: PdfBox; children: ReactNode }) {
   const { box } = props;
   const ref = useRef<HTMLDivElement>(null);
-  // Over the box while the bar, as tall as it is now (it grows as the text wraps), fits above it
-  // on the page; under it otherwise.
   const [below, setBelow] = useState(box.y < 0.12);
+  // Moved sideways, in px, so it stays inside the stage around the page or image.
+  const [shift, setShift] = useState(0);
   useLayoutEffect(() => {
     const bar = ref.current;
     const page = bar?.parentElement;
     if (!bar || !page) return;
-    const place = () => setBelow(box.y * page.clientHeight < bar.offsetHeight + 16);
+    const stage = bar.closest<HTMLElement>("[data-preview-stage]") ?? page;
+    const place = () => {
+      // Over the box while the bar, as tall as it is now (it grows as the text wraps), fits
+      // above it on the page; under it otherwise.
+      setBelow(box.y * page.clientHeight < bar.offsetHeight + 16);
+      const room = stage.getBoundingClientRect();
+      const at = bar.getBoundingClientRect();
+      setShift((current) => {
+        const left = at.left - current;
+        const over = left + at.width - (room.right - 8);
+        return over > 0 ? Math.max(room.left + 8 - left, -over) : 0;
+      });
+    };
     place();
     const observer = new ResizeObserver(place);
     observer.observe(bar);
     observer.observe(page);
+    observer.observe(stage);
     return () => observer.disconnect();
-  }, [box.y]);
+  }, [box.x, box.y, box.width]);
   const style: CSSProperties = {
-    left: `clamp(8px, calc(${(box.x + box.width) * 100}% + 8px), calc(100% - min(20rem, 100% - 16px) - 8px))`,
+    left: `calc(${(box.x + box.width) * 100}% + 8px)`,
+    transform: shift ? `translateX(${shift}px)` : undefined,
     ...(below
       ? { top: `calc(${(box.y + box.height) * 100}% + 8px)` }
       : { bottom: `calc(${(1 - box.y) * 100}% + 8px)` }),
@@ -166,7 +180,7 @@ function AtBox(props: { box: PdfBox; children: ReactNode }) {
     <div
       ref={ref}
       style={style}
-      className="pointer-events-auto absolute z-20 w-80 rounded-[12px] shadow-(--shadow-overlay)"
+      className="pointer-events-auto absolute z-20 w-80 max-w-[calc(100vw-32px)] rounded-[12px] shadow-(--shadow-overlay)"
     >
       {props.children}
     </div>
