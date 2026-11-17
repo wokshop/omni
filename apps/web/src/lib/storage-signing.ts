@@ -52,10 +52,13 @@ export const signingQuery = (requestId: string) =>
     queryKey: keys.signing(requestId),
     queryFn: ({ signal }) =>
       call(signerDoor().$get({ param: { id: requestId } }, { init: { signal } })),
-    // Signed by everyone, the copy is sealed just after: ask again until it is there.
+    // The page has no realtime connection, so it asks again while something is still to come:
+    // others signing after this person did (every 15 s), then the sealed copy (every 2 s).
     refetchInterval: (query) => {
       const item = query.state.data?.item;
-      return item?.status === "completed" && !item.sealed ? 2000 : false;
+      if (item?.status === "completed" && !item.sealed) return 2000;
+      if (item?.status === "sent" && item.me.signedAt) return 15_000;
+      return false;
     },
   });
 
