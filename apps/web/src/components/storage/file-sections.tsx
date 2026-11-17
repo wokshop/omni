@@ -245,7 +245,12 @@ function Items(props: {
             "draft" in node ? (
               <DraftRow draft={node.draft} handlers={node.handlers} />
             ) : (
-              <FileRow node={node} href={href(node)} menu={props.menu(node)} />
+              <FileRow
+                node={node}
+                href={href(node)}
+                menu={props.menu(node)}
+                prefetch={props.peek !== false}
+              />
             )
           }
         </GridList>
@@ -257,6 +262,8 @@ function Items(props: {
 function FileRow(props: {
   node: StorageNode;
   href: string | undefined;
+  /** Folders read their contents on hover; off through a shared link's door. */
+  prefetch: boolean;
   menu: SettingsRowMenuItem[];
 }) {
   const { node } = props;
@@ -267,7 +274,8 @@ function FileRow(props: {
       id={node.id}
       href={props.href}
       textValue={node.name}
-      onHoverStart={() => prefetch(node)}
+      // Not through a shared link's door: a folder's own list is the member's.
+      onHoverStart={props.prefetch ? () => prefetch(node) : undefined}
       // The open file keeps the accent fill, as the open thread's row does. 48px: a 32px tile,
       // 8px above and below.
       className="mx-2.5 h-12 gap-3 rounded-lg ps-2 pe-1 selected:bg-accent"
