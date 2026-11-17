@@ -1,4 +1,4 @@
-// Storage (ADR 0034): a folder's contents, Trash, the changes, and uploads.
+// Storage (ADR 0034): a folder's contents, Trash, Search, the changes, and uploads.
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo, useSyncExternalStore } from "react";
 import {
@@ -10,7 +10,9 @@ import {
   storageTrashQuery,
   storageUsageQuery,
   trashNodeMutation,
+  type StorageNode,
   type StoragePlace,
+  type StorageSpace,
 } from "../lib/storage.ts";
 import {
   putPersonMutation,
@@ -34,6 +36,7 @@ import {
   storageCommentsQuery,
   storageNodeQuery,
 } from "../lib/storage-comments.ts";
+import { storageFolderIconsQuery } from "../lib/storage-find.ts";
 import { restoreVersionMutation, storageVersionsQuery } from "../lib/storage-versions.ts";
 import { useSession } from "./use-session.ts";
 import { useCurrentWorkspace } from "./use-workspaces.ts";
@@ -48,11 +51,33 @@ export function useStorageList(place: StoragePlace, options: { enabled?: boolean
   return { ...query, nodes, folder: query.data?.pages[0]?.folder ?? null };
 }
 
+/**
+ * Starts reading a folder's first page as the pointer rests on its row, so opening it finds it
+ * cached. A card's stack already reads it as the card nears the screen; a fresh page is not
+ * asked again.
+ */
+export function usePrefetchFolder() {
+  const client = useQueryClient();
+  return useCallback(
+    (node: StorageNode) => {
+      if (node.kind === "folder")
+        void client.prefetchInfiniteQuery(storageListQuery({ parentId: node.id }));
+    },
+    [client],
+  );
+}
+
 /** What you may restore from Trash, newest first. */
 export function useStorageTrash() {
   const query = useInfiniteQuery(storageTrashQuery());
   const nodes = useMemo(() => query.data?.pages.flatMap((page) => page.nodes) ?? [], [query.data]);
   return { ...query, nodes };
+}
+
+/** A drive's cluster glyphs by folder id; empty until they load, or if they fail to. */
+export function useFolderIcons(space: StorageSpace) {
+  const query = useQuery(storageFolderIconsQuery(space));
+  return { icons: query.data?.icons ?? {}, isLoaded: query.isSuccess };
 }
 
 /** True in a company workspace: only those have Shared (a Personal space has My files alone). */

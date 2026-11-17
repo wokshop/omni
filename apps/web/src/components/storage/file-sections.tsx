@@ -22,6 +22,7 @@ import { GridList, GridListItem } from "@/components/ui/grid-list";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipTrigger } from "@/components/ui/tooltip";
 import { useFluidHoverList } from "@/hooks/use-fluid-hover-list";
+import { usePrefetchFolder } from "@/hooks/use-storage.ts";
 import type { FolderDraft } from "@/hooks/use-folder-drafts.ts";
 import { useStorageView, type StorageSection, type StorageView } from "@/hooks/use-storage-view.ts";
 import { fileType } from "@/lib/file-kind.ts";
@@ -29,8 +30,10 @@ import { formatBytes, type StorageNode } from "@/lib/storage.ts";
 import { CARDS_LAYOUT, CardsLayout } from "./cards-layout.ts";
 import { FileCard, FileCardBones, KEEP_IN_MENU } from "./file-card.tsx";
 import { DraftCard, DraftRow, type DraftHandlers } from "./folder-draft.tsx";
-import { FileTile, TypeBadge } from "./file-glyph.tsx";
+import { TypeBadge } from "./file-glyph.tsx";
+import { RowTile } from "./row-tile.tsx";
 import { DAY } from "./file-table.tsx";
+import { DROP_TARGET, useNodeDragAndDrop, type NodeDrag } from "./node-drag.tsx";
 
 export interface FileSectionsProps {
   label: string;
@@ -45,6 +48,8 @@ export interface FileSectionsProps {
   drafts?: Drafts | undefined;
   /** Folder cards show a few of their files; off through a shared link's door. */
   peek?: boolean | undefined;
+  /** Dragging items onto folders (`node-drag.tsx`); off without it. */
+  drag?: NodeDrag | undefined;
 }
 
 /** New folders not yet in the list, and their fields' handlers. */
@@ -73,6 +78,7 @@ export const FileSections = memo(function FileSections(props: FileSectionsProps)
               fileUrl={props.fileUrl}
               menu={props.menu}
               peek={props.peek}
+              drag={props.drag}
             />
           )}
         </Section>
@@ -87,6 +93,7 @@ export const FileSections = memo(function FileSections(props: FileSectionsProps)
               href={props.href}
               fileUrl={props.fileUrl}
               menu={props.menu}
+              drag={props.drag}
               selection={{
                 selectionMode: "single",
                 selectionBehavior: "replace",
@@ -186,6 +193,7 @@ function Items(props: {
   menu: (node: StorageNode) => SettingsRowMenuItem[];
   selection?: SelectionProps;
   peek?: boolean | undefined;
+  drag?: NodeDrag | undefined;
 }) {
   const href = (node: StorageNode) => (node.kind === "folder" ? props.href(node) : undefined);
   const drafts = props.drafts?.list ?? [];
@@ -194,9 +202,11 @@ function Items(props: {
     ? [...drafts.map((draft) => ({ id: draft.key, draft, handlers })), ...props.nodes]
     : props.nodes;
   const top = useRevealDraft(drafts.find((d) => d.step === "naming")?.key);
+  const { dragAndDropHooks } = useNodeDragAndDrop(props.nodes, props.drag);
   const list = {
     "aria-label": props.label,
     items,
+    dragAndDropHooks,
     ...props.selection,
     // While a name is typed, arrows and Home/End stay in its field rather than the list's.
     ...(drafts.some((d) => d.step === "naming")
@@ -244,7 +254,13 @@ function Items(props: {
             "draft" in node ? (
               <DraftRow draft={node.draft} handlers={node.handlers} />
             ) : (
-              <FileRow node={node} href={href(node)} menu={props.menu(node)} />
+              <FileRow
+                node={node}
+                href={href(node)}
+                url={props.fileUrl(node)}
+                menu={props.menu(node)}
+                prefetch={props.peek !== false}
+              />
             )
           }
         </GridList>
@@ -256,20 +272,27 @@ function Items(props: {
 function FileRow(props: {
   node: StorageNode;
   href: string | undefined;
+  /** Where its bytes are read, for an image's or a PDF's tile. */
+  url: string;
+  /** Folders read their contents on hover; off through a shared link's door. */
+  prefetch: boolean;
   menu: SettingsRowMenuItem[];
 }) {
   const { node } = props;
   const type = node.kind === "file" ? fileType(node.name, node.mimeType) : null;
+  const prefetch = usePrefetchFolder();
   return (
     <GridListItem
       id={node.id}
       href={props.href}
       textValue={node.name}
+      // Not through a shared link's door: a folder's own list is the member's.
+      onHoverStart={props.prefetch ? () => prefetch(node) : undefined}
       // The open file keeps the accent fill, as the open thread's row does. 48px: a 32px tile,
       // 8px above and below.
-      className="mx-2.5 h-12 gap-3 rounded-lg ps-2 pe-1 selected:bg-accent"
+      className={`mx-2.5 h-12 gap-3 rounded-lg ps-2 pe-1 selected:bg-accent ${DROP_TARGET}`}
     >
-      <FileTile kind={type?.kind ?? "folder"} />
+      <RowTile node={node} url={props.url} />
       <span className="min-w-0 flex-1 truncate text-foreground">{node.name}</span>
       {/* The secondary columns, muted, in tabular figures; they leave as the list narrows. */}
       <span className="w-16 shrink-0 @max-xl:hidden">
