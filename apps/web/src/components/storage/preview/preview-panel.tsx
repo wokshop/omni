@@ -55,6 +55,8 @@ export function PreviewPanel(props: {
   canWrite: boolean;
   /** Through a shared link's door; else the member's. */
   shareId?: string | undefined;
+  /** Opens the file's comments. */
+  onComments?: (() => void) | undefined;
 }) {
   const { node } = props;
   const session = useEditSession(node, props.url, props.shareId);
@@ -130,7 +132,11 @@ export function PreviewPanel(props: {
         className={`flex min-h-0 flex-1 flex-col bg-surface ${props.fullScreen ? "" : "border-s"}`}
       >
         {session.editing ? (
-          <DocumentEditor session={session} onDownload={props.onDownload} />
+          <DocumentEditor
+            session={session}
+            onDownload={props.onDownload}
+            onComments={props.onComments}
+          />
         ) : (
           <PreviewBody node={node} url={props.url} onDownload={props.onDownload} />
         )}

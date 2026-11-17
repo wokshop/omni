@@ -10,6 +10,7 @@ import {
   lineNumbers,
 } from "@codemirror/view";
 import { useEffect, useRef } from "react";
+import { quoteOf, type EditorSelection } from "./comment-toolbar.tsx";
 import type { EditorProps } from "./document-editor.tsx";
 
 /** The preview's look: its 13/20 mono text, its gutter, the app's tokens. */
@@ -32,6 +33,26 @@ const theme = EditorView.theme({
   ".cm-activeLine": { backgroundColor: "var(--secondary)" },
 });
 
+/** The chosen text's lines (a choice ending at a line's start leaves that line out). */
+function selectionOf(view: EditorView): EditorSelection | null {
+  const { from, to } = view.state.selection.main;
+  const quote = quoteOf(view.state.sliceDoc(from, to));
+  if (!view.hasFocus || !quote) return null;
+  const { doc } = view.state;
+  return {
+    quote,
+    lines: () => ({
+      start: doc.lineAt(from).number,
+      end: doc.lineAt(Math.max(from, to - 1)).number,
+    }),
+    rect: () => {
+      const at = view.coordsAtPos(from);
+      const box = view.scrollDOM.getBoundingClientRect();
+      return at && at.top >= box.top && at.top <= box.bottom ? at : null;
+    },
+  };
+}
+
 /** The editor's accessible name, which follows the file's name. */
 const label = new Compartment();
 
@@ -40,8 +61,10 @@ export default function SourceEditor(props: EditorProps) {
   const { onReady, onChange, name, text } = props;
   // The callbacks may change between renders; the view is made once.
   const latest = useRef(onChange);
+  const selecting = useRef(props.onSelection);
   useEffect(() => {
     latest.current = onChange;
+    selecting.current = props.onSelection;
   });
   const view = useRef<EditorView | null>(null);
   useEffect(() => {
@@ -60,6 +83,9 @@ export default function SourceEditor(props: EditorProps) {
           label.of(EditorView.contentAttributes.of({ "aria-label": name })),
           EditorView.updateListener.of((update) => {
             if (update.docChanged) latest.current();
+            if (update.docChanged || update.selectionSet || update.focusChanged) {
+              selecting.current?.(selectionOf(update.view));
+            }
           }),
           theme,
         ],

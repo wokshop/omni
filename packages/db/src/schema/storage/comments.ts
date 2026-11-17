@@ -13,7 +13,7 @@ import { storageNodes } from "../storage.ts";
 export type StorageCommentAnchor =
   | { kind: "file" }
   | { kind: "pdf"; page: number; x: number; y: number; width: number; height: number }
-  | { kind: "lines"; start: number; end: number }
+  | { kind: "lines"; start: number; end: number; quote?: string }
   | { kind: "cell"; sheet?: string; row: number; column: number };
 
 /**

@@ -10,7 +10,9 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNod
 import { SkeletonBox } from "skullet/react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { appToast } from "@/components/ui/toast";
 import { useReportEditing } from "@/hooks/use-file-presence.ts";
+import { useAddComment } from "@/hooks/use-storage.ts";
 import { ApiError } from "@/lib/api.ts";
 import type { LiveDoc } from "@/lib/live-doc.ts";
 import { fileType, TEXT_PREVIEW_BYTES } from "@/lib/file-kind.ts";
@@ -20,6 +22,7 @@ import { abortUpload, uploadFile } from "@/lib/storage-upload.ts";
 import { identityChecks, identityOf } from "@/lib/storage-uploads.ts";
 import { NoPreview, StageLoading } from "../preview/shared.tsx";
 import { storageErrorToast } from "../storage-errors.ts";
+import { CommentToolbar, type EditorSelection } from "./comment-toolbar.tsx";
 
 const RichEditor = lazy(() => import("./rich-editor.tsx"));
 const SourceEditor = lazy(() => import("./source-editor.tsx"));
@@ -36,6 +39,8 @@ export interface EditorProps {
   /** Called once the editor is up, with how to read its text now. */
   onReady: (read: () => string) => void;
   onChange: () => void;
+  /** What is chosen now, for a comment on it; null when nothing is. */
+  onSelection?: ((selection: EditorSelection | null) => void) | undefined;
 }
 
 /** The file's content version now, when a save was refused because someone saved since. */
@@ -80,6 +85,7 @@ const isMarkdown = (node: StorageNode) =>
 /** The open file's editing: on or off, unsaved changes, and saving them. */
 export function useEditSession(node: StorageNode, url: string, shareId: string | undefined) {
   const client = useQueryClient();
+  const addComment = useAddComment();
   const [editing, setEditing] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -232,6 +238,30 @@ export function useEditSession(node: StorageNode, url: string, shareId: string |
       const unsaved = dirty || !!live.current?.needsFold;
       if (!unsaved || (await save())) setEditing(false);
     },
+    /**
+     * Starts a thread on the chosen lines. What is unsaved is saved first, so the lines are the
+     * saved file's and the thread is on that version.
+     */
+    comment: async (body: string, at: EditorSelection) => {
+      const lines = at.lines();
+      if ((dirty || live.current?.needsFold) && !(await save())) return false;
+      const contentVersion = base.current;
+      try {
+        await addComment.mutateAsync({
+          id: node.id,
+          ...(shareId ? { shareId } : {}),
+          body: {
+            body,
+            anchor: { kind: "lines", ...lines, quote: at.quote },
+            ...(contentVersion === undefined ? {} : { contentVersion }),
+          },
+        });
+        return true;
+      } catch (error) {
+        storageErrorToast(error, "Your comment was not added");
+        return false;
+      }
+    },
     /** Saves over the newer version: the person's text wins. */
     keepMine: () => {
       base.current = conflict ?? base.current;
@@ -284,8 +314,14 @@ export function useEditSession(node: StorageNode, url: string, shareId: string |
 export type EditSession = ReturnType<typeof useEditSession>;
 
 /** The editor for the file, on the file's whole text. ⌘S saves. */
-export function DocumentEditor(props: { session: EditSession; onDownload: () => void }) {
-  const { session } = props;
+export function DocumentEditor(props: {
+  session: EditSession;
+  onDownload: () => void;
+  /** Opens the file's comments. */
+  onComments?: (() => void) | undefined;
+}) {
+  const { session, onComments } = props;
+  const [selection, setSelection] = useState<EditorSelection | null>(null);
   const { node, url, opened, onReady, onChange, live } = session.editor;
   const kind = fileType(node.name, node.mimeType).kind;
   // Read afresh for each opening, never from the preview's cache: it may be an older version.
@@ -330,8 +366,22 @@ export function DocumentEditor(props: { session: EditSession; onDownload: () => 
           live={live}
           onReady={onReady}
           onChange={onChange}
+          onSelection={setSelection}
         />
       </Suspense>
+      <CommentToolbar
+        selection={selection}
+        onSend={async (body, at) => {
+          const sent = await session.comment(body, at);
+          if (sent) {
+            appToast.success(
+              "Comment added",
+              onComments ? { action: { label: "View", onClick: onComments } } : {},
+            );
+          }
+          return sent;
+        }}
+      />
       <ConflictDialog session={session} />
       <LeaveDialog session={session} />
     </div>

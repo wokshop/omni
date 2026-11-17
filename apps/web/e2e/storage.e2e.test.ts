@@ -426,6 +426,72 @@ test("a Markdown file the page cannot keep whole edits as text, and saves every 
       { timeout: 15_000 },
     )
     .toBe(text.replace("| Pro | 9 |", "| Pro | 9 | (monthly)"));
+
+  // A whole line chosen (to the next line's start) is that line alone.
+  await source.getByText("| Pro | 9 | (monthly)").click({ clickCount: 3 });
+  await page.getByRole("button", { name: "Comment", exact: true }).click();
+  await page.getByRole("textbox", { name: "Comment" }).fill("Yearly too?");
+  await page.keyboard.press("Enter");
+  await page.getByText("Comment added").waitFor({ timeout: 15_000 });
+  const [thread] = await db
+    .select({ anchor: schema.storageComments.anchor })
+    .from(schema.storageComments)
+    .where(eq(schema.storageComments.nodeId, file?.id ?? ""));
+  expect(thread?.anchor).toEqual({
+    kind: "lines",
+    start: 5,
+    end: 5,
+    quote: "| Pro | 9 | (monthly)",
+  });
+}, 120_000);
+
+// Catches: a thread from the editor's toolbar pointing at the wrong lines of the saved Markdown
+// (the page's blocks counted, not the file's lines), or made on the version before the unsaved
+// typing it saved first, so it points at text the file no longer has.
+test("Comment on text chosen in a page starts a thread on its lines of the saved file", async () => {
+  const page = await signedIn(`comment-page-${Date.now()}@gmail.test`, "/files/my");
+  await page
+    .getByRole("button", { name: "Upload", exact: true })
+    .first()
+    .waitFor({ timeout: 15_000 });
+  const text = "# Notes\n\nFirst paragraph.\n\n- one\n- two\n\nThird paragraph here.\n";
+  await page
+    .locator("input[type=file]")
+    .first()
+    .setInputFiles({ name: "notes.md", mimeType: "text/markdown", buffer: Buffer.from(text) });
+  await page.getByRole("row", { name: /notes\.md/ }).click();
+  await page.getByRole("button", { name: "Edit" }).click();
+  const doc = page.locator(".ProseMirror");
+  await doc.getByText("First paragraph.").click();
+  await page.keyboard.press("End");
+  await page.keyboard.type(" Edited.");
+  await doc.getByText("Third paragraph here.").click({ clickCount: 3 });
+  await page.getByRole("button", { name: "Comment", exact: true }).click();
+  await page.getByRole("textbox", { name: "Comment" }).fill("Is this right?");
+  await page.keyboard.press("Enter");
+  await page.getByText("Comment added").waitFor({ timeout: 15_000 });
+
+  const [file] = await db
+    .select({ id: schema.storageNodes.id, contentVersion: schema.storageNodes.contentVersion })
+    .from(schema.storageNodes)
+    .where(eq(schema.storageNodes.name, "notes.md"));
+  const saved = await page.evaluate(
+    async (at) => (await fetch(at)).text(),
+    `/api/storage/files/${file?.id ?? ""}/content`,
+  );
+  expect(saved).toContain("First paragraph. Edited.");
+  const line = saved.split("\n").indexOf("Third paragraph here.") + 1;
+  const [thread] = await db
+    .select({
+      anchor: schema.storageComments.anchor,
+      version: schema.storageComments.contentVersion,
+    })
+    .from(schema.storageComments)
+    .where(eq(schema.storageComments.nodeId, file?.id ?? ""));
+  expect(thread).toEqual({
+    anchor: { kind: "lines", start: line, end: line, quote: "Third paragraph here." },
+    version: file?.contentVersion,
+  });
 }, 120_000);
 
 /** Signed in as `email` (a magic link, so a new address signs up), on `path`. */

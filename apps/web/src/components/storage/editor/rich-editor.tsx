@@ -8,9 +8,10 @@ import { TaskItem, TaskList } from "@tiptap/extension-list";
 import { Markdown } from "@tiptap/markdown";
 import { Editor, EditorContent, useEditor, type Extensions } from "@tiptap/react";
 import { StarterKit } from "@tiptap/starter-kit";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type * as Y from "yjs";
 import { openLiveDoc, type LiveDoc } from "@/lib/live-doc.ts";
+import { quoteOf, type EditorSelection } from "./comment-toolbar.tsx";
 import type { EditorProps } from "./document-editor.tsx";
 import SourceEditor from "./source-editor.tsx";
 import "./rich-editor.css";
@@ -61,6 +62,44 @@ function roundTrips(markdown: string) {
   return words(back) === words(markdown);
 }
 
+/** Newlines at the start of `text`. */
+const leading = (text: string) => text.length - text.replace(/^\n+/, "").length;
+
+/**
+ * The lines of the page's Markdown that hold its top-level blocks `first` to `last`: the Markdown
+ * of the blocks before, and of those through `last`, as the page saves them.
+ */
+function blockLines(editor: Editor, first: number, last: number) {
+  const blocks = editor.getJSON().content ?? [];
+  const markdown = (count: number) =>
+    editor.markdown?.serialize({ type: "doc", content: blocks.slice(0, count) }) ?? "";
+  const before = markdown(first);
+  const through = markdown(last + 1).replace(/\n+$/, "");
+  const lines = (text: string) => (text ? text.split("\n").length : 0);
+  const start = before ? lines(before) + leading(through.slice(before.length)) : 1;
+  return { start, end: Math.max(start, lines(through)) };
+}
+
+/** The chosen text on a page, by the top-level blocks it spans. */
+function pageSelection(editor: Editor): EditorSelection | null {
+  const { from, to } = editor.state.selection;
+  const quote = quoteOf(editor.state.doc.textBetween(from, to, "\n"));
+  if (!editor.isFocused || !quote) return null;
+  const { view, state } = editor;
+  return {
+    quote,
+    lines: () =>
+      blockLines(editor, state.doc.resolve(from).index(0), state.doc.resolve(to).index(0)),
+    rect: () => {
+      if (editor.isDestroyed) return null;
+      const at = view.coordsAtPos(from);
+      const scroller = view.dom.closest("[data-page-scroller]") ?? view.dom;
+      const box = scroller.getBoundingClientRect();
+      return at.top >= box.top && at.top <= box.bottom ? at : null;
+    },
+  };
+}
+
 type Phase = { kind: "opening" } | { kind: "live"; doc: LiveDoc } | { kind: "off" };
 
 export default function RichEditor(props: EditorProps) {
@@ -106,6 +145,11 @@ function LivePage(props: EditorProps) {
 
 function Page(props: EditorProps & { doc: Y.Doc | null }) {
   const { onReady, onChange, name, doc } = props;
+  const selecting = useRef(props.onSelection);
+  useEffect(() => {
+    selecting.current = props.onSelection;
+  });
+  const report = ({ editor: at }: { editor: Editor }) => selecting.current?.(pageSelection(at));
   const editorProps = useMemo(
     () => ({ attributes: { class: "document-page", "aria-label": name } }),
     [name],
@@ -120,6 +164,9 @@ function Page(props: EditorProps & { doc: Y.Doc | null }) {
     onUpdate: ({ transaction }) => {
       if (!doc || !isChangeOrigin(transaction)) onChange();
     },
+    onSelectionUpdate: report,
+    onFocus: report,
+    onBlur: report,
     // Ready to type at the start (a new document's selection) once it is up, unless the person
     // already clicked into it. ProseMirror's own focus, at once: Tiptap's `autofocus` and focus
     // command finish on a later frame, after a quick click, and move the caret back.
@@ -132,7 +179,7 @@ function Page(props: EditorProps & { doc: Y.Doc | null }) {
   }, [editor, onReady]);
 
   return (
-    <div className="min-h-0 flex-1 overflow-auto overscroll-contain">
+    <div data-page-scroller className="min-h-0 flex-1 overflow-auto overscroll-contain">
       <EditorContent editor={editor} />
     </div>
   );

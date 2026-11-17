@@ -29,7 +29,13 @@ export const storageCommentAnchorSchema = z.discriminatedUnion("kind", [
       message: "the box must fit on the page",
     }),
   z
-    .object({ kind: z.literal("lines"), start: line, end: line })
+    .object({
+      kind: z.literal("lines"),
+      start: line,
+      end: line,
+      /** The text chosen when the thread started, so it can be found again after edits. */
+      quote: z.string().min(1).max(500).optional(),
+    })
     .refine((lines) => lines.end >= lines.start, { message: "end must not come before start" }),
   z.object({
     kind: z.literal("cell"),

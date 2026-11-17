@@ -189,6 +189,7 @@ export function FolderView(props: {
             shell={shell}
             canWrite={source.canWrite}
             shareId={source.shareId}
+            onComments={() => comments.select(node.id)}
           />
         </div>
       )}
