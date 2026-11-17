@@ -80,19 +80,32 @@ function blockLines(editor: Editor, first: number, last: number) {
   return { start, end: Math.max(start, lines(through)) };
 }
 
-/** The chosen text on a page, by the top-level blocks it spans. */
-function pageSelection(editor: Editor): EditorSelection | null {
+/** Where the last chosen text is, moved along by every change to the page since. */
+interface Range {
+  from: number;
+  to: number;
+}
+
+/**
+ * The chosen text on a page, by the top-level blocks it spans. Its place is `range`, which the
+ * page keeps mapping through every change, the others' too, while a comment on it is written.
+ */
+function pageSelection(editor: Editor, range: Range): EditorSelection | null {
   const { from, to } = editor.state.selection;
   const quote = quoteOf(editor.state.doc.textBetween(from, to, "\n"));
   if (!editor.isFocused || !quote) return null;
-  const { view, state } = editor;
+  range.from = from;
+  range.to = to;
+  const { view } = editor;
   return {
     quote,
-    lines: () =>
-      blockLines(editor, state.doc.resolve(from).index(0), state.doc.resolve(to).index(0)),
+    lines: () => {
+      const { doc } = editor.state;
+      return blockLines(editor, doc.resolve(range.from).index(0), doc.resolve(range.to).index(0));
+    },
     rect: () => {
       if (editor.isDestroyed) return null;
-      const at = view.coordsAtPos(from);
+      const at = view.coordsAtPos(Math.min(range.from, view.state.doc.content.size));
       const scroller = view.dom.closest("[data-page-scroller]") ?? view.dom;
       const box = scroller.getBoundingClientRect();
       return at.top >= box.top && at.top <= box.bottom ? at : null;
@@ -149,7 +162,9 @@ function Page(props: EditorProps & { doc: Y.Doc | null }) {
   useEffect(() => {
     selecting.current = props.onSelection;
   });
-  const report = ({ editor: at }: { editor: Editor }) => selecting.current?.(pageSelection(at));
+  const range = useRef<Range>({ from: 0, to: 0 });
+  const report = ({ editor: at }: { editor: Editor }) =>
+    selecting.current?.(pageSelection(at, range.current));
   const editorProps = useMemo(
     () => ({ attributes: { class: "document-page", "aria-label": name } }),
     [name],
@@ -163,6 +178,13 @@ function Page(props: EditorProps & { doc: Y.Doc | null }) {
     // Only this person's changes: the others' arrive from the live document.
     onUpdate: ({ transaction }) => {
       if (!doc || !isChangeOrigin(transaction)) onChange();
+    },
+    onTransaction: ({ transaction }) => {
+      if (!transaction.docChanged) return;
+      // In place: the selection a comment is being written on holds this same object.
+      const { mapping } = transaction;
+      range.current.from = mapping.map(range.current.from);
+      range.current.to = mapping.map(range.current.to, -1);
     },
     onSelectionUpdate: report,
     onFocus: report,

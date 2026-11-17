@@ -494,6 +494,49 @@ test("Comment on text chosen in a page starts a thread on its lines of the saved
   });
 }, 120_000);
 
+// Catches: a comment on a page nobody typed in, whose file the page writes out differently
+// (here, extra blank lines), pointing at the page's lines while the file keeps its own.
+test("Comment on an untouched page points at the lines of the file as saved", async () => {
+  const page = await signedIn(`comment-layout-${Date.now()}@gmail.test`, "/files/my");
+  await page
+    .getByRole("button", { name: "Upload", exact: true })
+    .first()
+    .waitFor({ timeout: 15_000 });
+  const text = "# Plan\n\n\n\n\nOnly paragraph.\n";
+  await page
+    .locator("input[type=file]")
+    .first()
+    .setInputFiles({ name: "plan.md", mimeType: "text/markdown", buffer: Buffer.from(text) });
+  await page.getByRole("row", { name: /plan\.md/ }).click();
+  await page.getByRole("button", { name: "Edit" }).click();
+  await page.locator(".ProseMirror").getByText("Only paragraph.").click({ clickCount: 3 });
+  await page.getByRole("button", { name: "Comment", exact: true }).click();
+  await page.getByRole("textbox", { name: "Comment" }).fill("Expand?");
+  await page.keyboard.press("Enter");
+  await page.getByText("Comment added").waitFor({ timeout: 15_000 });
+
+  const [file] = await db
+    .select({ id: schema.storageNodes.id, contentVersion: schema.storageNodes.contentVersion })
+    .from(schema.storageNodes)
+    .where(eq(schema.storageNodes.name, "plan.md"));
+  const saved = await page.evaluate(
+    async (at) => (await fetch(at)).text(),
+    `/api/storage/files/${file?.id ?? ""}/content`,
+  );
+  const line = saved.split("\n").indexOf("Only paragraph.") + 1;
+  const [thread] = await db
+    .select({
+      anchor: schema.storageComments.anchor,
+      version: schema.storageComments.contentVersion,
+    })
+    .from(schema.storageComments)
+    .where(eq(schema.storageComments.nodeId, file?.id ?? ""));
+  expect(thread).toEqual({
+    anchor: { kind: "lines", start: line, end: line, quote: "Only paragraph." },
+    version: file?.contentVersion,
+  });
+}, 120_000);
+
 /** Signed in as `email` (a magic link, so a new address signs up), on `path`. */
 async function signedIn(email: string, path: string) {
   const origin = String(worker.url);

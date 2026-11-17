@@ -97,6 +97,8 @@ export function useEditSession(node: StorageNode, url: string, shareId: string |
    */
   const [opened, setOpened] = useState("");
   const read = useRef<(() => string) | null>(null);
+  /** The text this editor last saved; null until it saves, while the file is as it was read. */
+  const savedText = useRef<string | null>(null);
   /** The content version the editor's text was made from: what a save is checked against. */
   const base = useRef<number | undefined>(undefined);
   /** Changes since the editor opened, so a save does not clear a change typed while it ran. */
@@ -165,6 +167,7 @@ export function useEditSession(node: StorageNode, url: string, shareId: string |
       void storageChanged(client);
       if (session.current !== mine) return false;
       base.current = saved.contentVersion;
+      savedText.current = text;
       // The others on the live document learn it is saved, and as which version.
       if (saved.contentVersion !== undefined && boundary !== undefined) {
         // Not past a while: with the socket down the fold waits for it, and the save is done.
@@ -207,6 +210,7 @@ export function useEditSession(node: StorageNode, url: string, shareId: string |
     latestFold.current = fold;
   });
   const reopen = (contentVersion: number) => {
+    savedText.current = null;
     base.current = contentVersion;
     changes.current = 0;
     setDirty(false);
@@ -224,6 +228,7 @@ export function useEditSession(node: StorageNode, url: string, shareId: string |
       session.current += 1;
       identity.current = identityOf(client, shareId);
       base.current = node.contentVersion;
+      savedText.current = null;
       changes.current = 0;
       setOpened(`${node.updatedAt}#${Date.now()}`);
       setDirty(false);
@@ -242,9 +247,13 @@ export function useEditSession(node: StorageNode, url: string, shareId: string |
      * Starts a thread on the chosen lines. What is unsaved is saved first, so the lines are the
      * saved file's and the thread is on that version.
      */
-    comment: async (body: string, at: EditorSelection) => {
+    comment: async (body: string, at: EditorSelection, original: string) => {
       const lines = at.lines();
-      if ((dirty || live.current?.needsFold) && !(await save())) return false;
+      // A page's lines are of the Markdown it saves, which may lay the file out differently
+      // (blank lines, list marks): that text is saved first, so the lines are the file's.
+      const stored = savedText.current ?? original;
+      const unsaved = dirty || !!live.current?.needsFold || read.current?.() !== stored;
+      if (unsaved && !(await save())) return false;
       const contentVersion = base.current;
       try {
         await addComment.mutateAsync({
@@ -303,7 +312,10 @@ export function useEditSession(node: StorageNode, url: string, shareId: string |
               onAcked: () => latestFold.current(),
               onFolded: (contentVersion: number) => {
                 base.current = contentVersion;
-                if (!live.current?.needsFold) setDirty(false);
+                if (live.current?.needsFold) return;
+                // Saved as this page reads now: the same document, written out the same way.
+                savedText.current = read.current?.() ?? null;
+                setDirty(false);
               },
             } satisfies LiveSetup)
           : undefined,
@@ -372,7 +384,7 @@ export function DocumentEditor(props: {
       <CommentToolbar
         selection={selection}
         onSend={async (body, at) => {
-          const sent = await session.comment(body, at);
+          const sent = await session.comment(body, at, text.data.text);
           if (sent) {
             appToast.success(
               "Comment added",
