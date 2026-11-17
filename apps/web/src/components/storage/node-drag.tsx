@@ -9,7 +9,7 @@
 // desktop app, whose window takes the browser's drags for files. The computer's files still come
 // as the browser's drags, and React Aria's drop zones take them.
 import { useDraggable, useDroppable } from "@dnd-kit/core";
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { DropItem, DropOperation } from "react-aria-components";
 import { isFileDropItem } from "react-aria-components/useDrop";
 import { useUploads } from "@/hooks/use-storage.ts";
@@ -24,14 +24,14 @@ export const DROP_TARGET =
 
 /** A folder card a drag would drop into: its preview alone, as Finder marks a folder's icon. */
 export const CARD_DROP_TARGET =
-  "data-drive-target:bg-transparent! data-drive-target:**:data-[slot=folder-art]:border-primary data-drive-target:**:data-[slot=folder-art]:bg-primary/10";
+  "data-drive-target:bg-transparent! data-drive-target:**:data-[slot=folder-art]:border-primary data-drive-target:**:data-[slot=folder-art]:bg-primary/5";
 
 /**
  * Where a lifted item was: its content hidden and a dashed edge where its hover fill sits, in the
  * same rounding; while it lands, nothing.
  */
 export const LIFTED =
-  "data-lifted:bg-transparent! data-lifted:*:invisible data-[lifted=origin]:outline-1 data-[lifted=origin]:-outline-offset-1 data-[lifted=origin]:outline-dashed data-[lifted=origin]:outline-subtle-foreground";
+  "data-lifted:bg-transparent! data-lifted:*:invisible data-[lifted=origin]:outline-1 data-[lifted=origin]:-outline-offset-1 data-[lifted=origin]:outline-dashed data-[lifted=origin]:outline-border";
 
 /** The room a drag opens where its item will land: a dashed edge in the brand's blue, tinted. */
 export const GAP =
@@ -150,7 +150,74 @@ export function useSurfaceDrag(node: StorageNode, look: Look, drag: NodeDrag | u
         : null,
     [node.id, node.kind, node.space, door],
   );
-  return useNodeDrag(`${look}:${node.id}`, source, drop);
+  const lift = useNodeDrag(`${look}:${node.id}`, source, drop);
+  const files = useFilesDropOn(drop?.to ?? null);
+  const { ref: liftRef } = lift;
+  const { ref: filesRef } = files;
+  const ref = useCallback(
+    (element: HTMLElement | null) => {
+      liftRef(element);
+      filesRef(element);
+    },
+    [liftRef, filesRef],
+  );
+  const target = lift.props["data-drive-target"] ?? files.over ?? undefined;
+  return { ref, props: { ...lift.props, "data-drive-target": target } };
+}
+
+/**
+ * A folder's card or row as a drop target for the computer's files: they upload into it, not into
+ * the page's folder around it, and it highlights while they are held over it. Its own listeners:
+ * React Aria's items pass no drag events through.
+ */
+function useFilesDropOn(to: DropPlace | null) {
+  const [element, setElement] = useState<HTMLElement | null>(null);
+  const [over, setOver] = useState(false);
+  const { upload } = useUploads();
+  useEffect(() => {
+    if (!element || !to?.canWrite) return;
+    let depth = 0;
+    const carriesFiles = (event: DragEvent) => event.dataTransfer?.types.includes("Files");
+    const enter = (event: DragEvent) => {
+      if (!carriesFiles(event)) return;
+      depth += 1;
+      setOver(true);
+    };
+    const leave = () => {
+      depth = Math.max(0, depth - 1);
+      if (!depth) setOver(false);
+    };
+    const hover = (event: DragEvent) => {
+      if (!carriesFiles(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+    };
+    const drop = (event: DragEvent) => {
+      if (!carriesFiles(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      depth = 0;
+      setOver(false);
+      const list = [...(event.dataTransfer?.files ?? [])];
+      if (list.length) {
+        upload(list, { place: to.place, shareId: to.shareId }, (name, error) =>
+          storageErrorToast(error, `“${name}” was not uploaded`),
+        );
+      }
+    };
+    element.addEventListener("dragenter", enter);
+    element.addEventListener("dragleave", leave);
+    element.addEventListener("dragover", hover);
+    element.addEventListener("drop", drop);
+    return () => {
+      element.removeEventListener("dragenter", enter);
+      element.removeEventListener("dragleave", leave);
+      element.removeEventListener("dragover", hover);
+      element.removeEventListener("drop", drop);
+    };
+  }, [element, to, upload]);
+  return { ref: setElement, over: over || undefined };
 }
 
 /** A page or list as a drop target: a drop on it, not on one of its folders, lands in `to`. */

@@ -23,9 +23,10 @@ import {
   type Over,
 } from "@dnd-kit/core";
 import { motion, useReducedMotion } from "motion/react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useChangeNode } from "@/hooks/use-storage.ts";
+import { fileType } from "@/lib/file-kind.ts";
 import {
   DriveDragContext,
   GAP_MS,
@@ -34,6 +35,7 @@ import {
   type DriveDragState,
 } from "./drive-drag-state.ts";
 import { canMove, type DragSource, type DropData, type Look } from "./node-drag.tsx";
+import { FileTile } from "./file-glyph.tsx";
 import { storageErrorToast } from "./storage-errors.ts";
 
 /** Where the pointer took hold of the item, and the item's size then. */
@@ -63,7 +65,7 @@ export function DriveDragProvider({ children }: { children: ReactNode }) {
   };
   const grip = useRef<Grip | null>(null);
   const [lift, setLift] = useState<{ grip: Grip; copy: HTMLElement } | null>(null);
-  const [overSidebar, setInSidebar] = useState(false);
+  const [back, setBack] = useState(false);
   const ending = useRef<{ land: Landing | null; settle: () => void } | null>(null);
   const change = useChangeNode();
   const reduce = useReducedMotion() ?? false;
@@ -85,12 +87,13 @@ export function DriveDragProvider({ children }: { children: ReactNode }) {
     update({ source, from: String(event.active.id), aim: null, phase: "origin" });
   };
 
+  // Only the pointer moves the aim: a gap opening shifts the targets under a still pointer, and
+  // following that would close the gap again, and open it, without end.
   const onDragMove = (event: DragMoveEvent) => {
     const { source, aim } = live.current;
     const at = grip.current;
     if (!source || !at) return;
     const pointer = { x: at.x + event.delta.x, y: at.y + event.delta.y };
-    setInSidebar(inSidebar(pointer));
     const next = aimAt(event.over, pointer, source);
     if (next?.over === aim?.over && sameAim(next, aim)) return;
     update({ ...live.current, aim: next });
@@ -129,6 +132,7 @@ export function DriveDragProvider({ children }: { children: ReactNode }) {
       if (live.current.source === source) update(IDLE);
     };
     ending.current = { land, settle };
+    setBack(!land);
     setTimeout(settle, SETTLE_MS * 3);
     update({ ...live.current, aim: land ? live.current.aim : null, phase: "landing" });
   };
@@ -153,7 +157,6 @@ export function DriveDragProvider({ children }: { children: ReactNode }) {
         autoScroll={{ threshold: { x: 0, y: 0.15 } }}
         onDragStart={onDragStart}
         onDragMove={onDragMove}
-        onDragOver={onDragMove}
         onDragEnd={onDragEnd}
         onDragCancel={onDragCancel}
       >
@@ -166,11 +169,10 @@ export function DriveDragProvider({ children }: { children: ReactNode }) {
           <DragOverlay dropAnimation={dropAnimation} zIndex={60} className="pointer-events-none">
             {state.source && lift ? (
               <Lifted
-                look={state.source.look}
+                source={state.source}
                 copy={lift.copy}
                 grip={lift.grip}
-                landing={state.phase === "landing"}
-                small={overSidebar}
+                back={state.phase === "landing" && back}
                 reduce={reduce}
               />
             ) : null}
@@ -180,12 +182,6 @@ export function DriveDragProvider({ children }: { children: ReactNode }) {
       </DndContext>
     </DriveDragContext>
   );
-}
-
-/** Whether the pointer is over the sidebar. */
-function inSidebar(pointer: { x: number; y: number }) {
-  const box = document.querySelector("[data-slot=sidebar-container]")?.getBoundingClientRect();
-  return !!box && pointer.x >= box.left && pointer.x <= box.right;
 }
 
 /** The drop targets under the pointer, folders before the pages and lists they sit in. */
@@ -269,48 +265,81 @@ function Remeasure(props: { aim: Aim | null }) {
 /** How long the lifted copy takes to settle where it was let go. */
 const SETTLE_MS = 240;
 
-const ROUNDING: Record<Look, string> = {
-  card: "rounded-xl",
-  row: "rounded-lg",
-  tree: "rounded-lg",
-};
+/** The pill everything lifts into: its height, and how wide its name may make it. */
+const PILL_HEIGHT = 32;
+const PILL_MAX = 240;
 
-/** A row narrows to this as it lifts: its tile and name, not its columns. */
-const COMPACT_ROW = 280;
-
-/** The lifted copy: the item's own look, raised, following the pointer. */
+/**
+ * What follows the pointer: the item itself as it is picked up, settling at once into one compact
+ * pill (its glyph and name) whatever it was, a card, a row or a sidebar row; and back into the
+ * item when it returns where it was.
+ */
 function Lifted(props: {
-  look: Look;
+  source: DragSource;
   copy: HTMLElement;
   grip: Grip;
-  landing: boolean;
-  /** Over the sidebar, a card shrinks to the size of what is there. */
-  small: boolean;
+  /** Going back where it came from: it grows into the item again. */
+  back: boolean;
   reduce: boolean;
 }) {
-  const { look, grip, landing } = props;
+  const { grip, back, source } = props;
   const mount = useRef<HTMLDivElement>(null);
+  const label = useRef<HTMLSpanElement>(null);
+  const [width, setWidth] = useState(PILL_MAX);
   useEffect(() => {
     mount.current?.replaceChildren(props.copy);
   }, [props.copy]);
-  const narrow = look === "row" ? Math.min(grip.width, COMPACT_ROW) : grip.width;
-  // A narrowed row slides under the pointer when it was taken hold of past its new end.
-  const shift = Math.max(0, grip.grab.x - (narrow - 24));
-  const lifted = {
-    scale: look === "card" ? (props.small ? 0.4 : 1.04) : 1.02,
-    width: narrow,
-    x: shift,
+  useLayoutEffect(() => {
+    if (label.current) setWidth(Math.min(PILL_MAX, label.current.scrollWidth));
+  }, [source.node.name]);
+  const { node } = source;
+  const kind = node.kind === "folder" ? "folder" : fileType(node.name, node.mimeType).kind;
+  // The pill sits with its glyph under the pointer, where the item was taken hold of.
+  const pill = {
+    width,
+    height: PILL_HEIGHT,
+    x: grip.grab.x - PILL_HEIGHT / 2,
+    y: grip.grab.y - PILL_HEIGHT / 2,
+    borderRadius: 10,
   };
-  const rest = { scale: 1, width: grip.width, x: 0 };
+  const item = {
+    width: grip.width,
+    height: grip.height,
+    x: 0,
+    y: 0,
+    borderRadius: source.look === "card" ? 12 : 8,
+  };
+  const transition = props.reduce
+    ? { duration: 0 }
+    : { type: "spring" as const, duration: 0.32, bounce: 0.12 };
+  const fade = props.reduce ? { duration: 0 } : { duration: 0.12, ease: "easeOut" as const };
   return (
     <motion.div
-      initial={rest}
-      animate={landing ? rest : lifted}
-      transition={props.reduce ? { duration: 0 } : { type: "spring", duration: 0.3, bounce: 0.2 }}
-      style={{ height: grip.height, transformOrigin: `${grip.grab.x}px ${grip.grab.y}px` }}
-      className={`overflow-hidden border bg-surface shadow-overlay ${ROUNDING[look]}`}
+      data-pill
+      initial={item}
+      animate={back ? item : pill}
+      transition={transition}
+      className="relative overflow-hidden border bg-surface shadow-overlay"
     >
-      <div ref={mount} inert className="size-full *:m-0! *:size-full" />
+      <motion.div
+        ref={mount}
+        inert
+        initial={{ opacity: 1 }}
+        animate={{ opacity: back ? 1 : 0 }}
+        transition={fade}
+        style={{ width: grip.width, height: grip.height }}
+        className="absolute start-0 top-0 *:m-0! *:size-full"
+      />
+      <motion.span
+        ref={label}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: back ? 0 : 1 }}
+        transition={fade}
+        className="absolute inset-y-0 start-0 flex w-max items-center gap-2 ps-1 pe-3 text-sm text-foreground"
+      >
+        <FileTile kind={kind} size="xs" />
+        <span className="max-w-48 truncate">{node.name}</span>
+      </motion.span>
     </motion.div>
   );
 }
@@ -362,7 +391,9 @@ async function settleCopy(
   reduce: boolean,
 ) {
   const { dragOverlay, transform, active } = args;
-  const from = dragOverlay.rect;
+  // A drop moves the pill; a return moves the item it grows back into.
+  const pill = land && dragOverlay.node.querySelector("[data-pill]");
+  const from = pill ? pill.getBoundingClientRect() : dragOverlay.rect;
   const to = land?.rect ?? (land ? null : active.rect);
   const start = `translate3d(${transform.x}px, ${transform.y}px, 0)`;
   if (reduce || !to) {

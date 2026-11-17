@@ -52,7 +52,7 @@ afterAll(async () => {
 });
 
 // Catches: a drop that does not move what was dragged, or moves it to the wrong place: a folder
-// card's drop going to the page's own folder, a sidebar row not taking drags from the page (the
+// card's drop (or a file from the computer dropped on it) going to the page's own folder, a sidebar row not taking drags from the page (the
 // two are separate drop targets), or a sidebar row dragging its link's address instead of its
 // folder; and a folder offered a drop into a folder inside it.
 test("files and folders move by dragging them onto folders on the page and in the sidebar", async () => {
@@ -82,6 +82,20 @@ test("files and folders move by dragging them onto folders on the page and in th
   );
   await expect.poll(() => names(page, { parent: photos })).toEqual(["sunset.png"]);
 
+  // A file from the computer onto a folder's card: it uploads into that folder, not the page's.
+  await page.getByRole("row", { name: /Photos/ }).evaluate((card) => {
+    const files = new DataTransfer();
+    files.items.add(new File(["dropped"], "dropped.txt", { type: "text/plain" }));
+    for (const type of ["dragenter", "dragover", "drop"]) {
+      card.dispatchEvent(
+        new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: files }),
+      );
+    }
+  });
+  await expect
+    .poll(() => names(page, { parent: photos }), { timeout: 30_000 })
+    .toEqual(["dropped.txt", "sunset.png"]);
+
   // A file's row onto a folder in the sidebar.
   await drag(page, page.getByRole("row", { name: /forest\.png/ }), sidebar("Projects"));
   await expect.poll(() => names(page, { parent: projects })).toEqual(["Drafts", "forest.png"]);
@@ -97,7 +111,7 @@ test("files and folders move by dragging them onto folders on the page and in th
     .poll(() => names(page, { parent: projects }))
     .toEqual(["Drafts", "Photos", "forest.png"]);
   expect(await names(page, { space: "personal" })).toEqual(["Projects"]);
-  expect(await names(page, { parent: photos })).toEqual(["sunset.png"]);
+  expect(await names(page, { parent: photos })).toEqual(["dropped.txt", "sunset.png"]);
 
   // Beside a cluster, by the bottom edge of its sidebar row: Photos out of Projects, back to the
   // top of the space, not into Projects again.
