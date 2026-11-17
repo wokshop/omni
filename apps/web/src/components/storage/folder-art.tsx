@@ -1,7 +1,7 @@
 // A folder card's square, layered over the card's own surface: a loose stack of what the folder
 // holds, with no folder drawn, because the stack is the folder. Its first files come first (an
-// image shows its thumbnail, anything else its glyph), then its subfolders, three at most; an
-// empty folder is one dashed card. The contents come from the folder's own first page, read once
+// image or PDF shows its thumbnail, anything else its glyph), then its subfolders (a solid blue
+// folder), three at most; an empty folder is one dashed card. The contents come from the folder's own first page, read once
 // the card nears the screen, so opening the folder afterwards finds it cached.
 import { useRef, useState, type CSSProperties } from "react";
 import { IconFolderFilled } from "@/components/icons/central";
@@ -91,18 +91,20 @@ function Card(props: { node: StorageNode; url: string; style: CSSProperties }) {
         // A subfolder: the filled folder in the brand blue, so it reads apart from files.
         <IconFolderFilled className="size-6 text-primary" />
       )}
-      {type?.preview === "image" && type.raster && (
-        <CardImage node={node} url={props.url} raster={type.raster} />
-      )}
+      {type?.preview === "image" && type.raster ? (
+        <CardImage node={node} url={props.url} of={{ raster: type.raster }} />
+      ) : type?.preview === "pdf" ? (
+        <CardImage node={node} url={props.url} of="pdf" />
+      ) : null}
     </div>
   );
 }
 
-/** An image card's thumbnail, faded in over the glyph once it has decoded. */
-function CardImage(props: { node: StorageNode; url: string; raster: string }) {
+/** An image's or a PDF's thumbnail, faded in over the glyph once it has decoded. */
+function CardImage(props: { node: StorageNode; url: string; of: { raster: string } | "pdf" }) {
   const thumb = useThumbnail(
     { url: props.url, version: props.node.updatedAt, size: props.node.size },
-    props.raster,
+    props.of,
     true,
   );
   const [shown, setShown] = useState(false);
