@@ -8,7 +8,7 @@
 // One page scroll for both sections. Each section is virtualized against it: only the rows and
 // cards near the screen are rendered, however many pages of the folder have loaded, and the
 // next page loads as the end nears.
-import { memo, useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
+import { memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { Selection } from "react-aria-components";
 import { ListLayout, Virtualizer } from "react-aria-components/Virtualizer";
 import { SkeletonBox } from "skullet/react";
@@ -33,7 +33,8 @@ import { DraftCard, DraftRow, type DraftHandlers } from "./folder-draft.tsx";
 import { TypeBadge } from "./file-glyph.tsx";
 import { RowTile } from "./row-tile.tsx";
 import { DAY } from "./file-table.tsx";
-import { DROP_TARGET, useNodeDragAndDrop, type NodeDrag } from "./node-drag.tsx";
+import { GAP_MS, useDriveDrag } from "./drive-drag-state.ts";
+import { DROP_TARGET, GAP, LIFTED, useGapAt, useSurfaceDrag, type NodeDrag } from "./node-drag.tsx";
 
 export interface FileSectionsProps {
   label: string;
@@ -62,11 +63,15 @@ export interface Drafts {
 export const FileSections = memo(function FileSections(props: FileSectionsProps) {
   const folders = props.nodes.filter((n) => n.kind === "folder");
   const files = props.nodes.filter((n) => n.kind === "file");
+  // While a drag would land in this folder, a gap opens where it will be (`node-drag.tsx`).
+  const here = props.drag?.here?.place;
+  const folderGap = useGapAt(here, folders, "folder");
+  const fileGap = useGapAt(here, files, "file");
   const folderCount = folders.length + (props.drafts?.list.length ?? 0);
   const { open } = props;
   return (
     <div className="flex w-full flex-col pb-6">
-      {folderCount > 0 && (
+      {(folderCount > 0 || folderGap !== null) && (
         <Section section="folders" label="Folders" count={folderCount} first>
           {(view) => (
             <Items
@@ -79,11 +84,12 @@ export const FileSections = memo(function FileSections(props: FileSectionsProps)
               menu={props.menu}
               peek={props.peek}
               drag={props.drag}
+              gap={folderGap}
             />
           )}
         </Section>
       )}
-      {files.length > 0 && (
+      {(files.length > 0 || fileGap !== null) && (
         <Section section="files" label="Files" count={files.length} first={folderCount === 0}>
           {(view) => (
             <Items
@@ -94,6 +100,7 @@ export const FileSections = memo(function FileSections(props: FileSectionsProps)
               fileUrl={props.fileUrl}
               menu={props.menu}
               drag={props.drag}
+              gap={fileGap}
               selection={{
                 selectionMode: "single",
                 selectionBehavior: "replace",
@@ -182,6 +189,14 @@ interface DraftItem {
   handlers: DraftHandlers;
 }
 
+/** The room a drag opens where its item will land. */
+interface GapItem {
+  id: typeof GAP_KEY;
+  gap: true;
+}
+
+const GAP_KEY = "drive-drag-gap";
+
 /** A section's items, as rows or as cards; folders are links, files are picked. */
 function Items(props: {
   view: StorageView;
@@ -194,19 +209,28 @@ function Items(props: {
   selection?: SelectionProps;
   peek?: boolean | undefined;
   drag?: NodeDrag | undefined;
+  /** Where a drag would land among the nodes, if it lands here. */
+  gap?: number | null;
 }) {
   const href = (node: StorageNode) => (node.kind === "folder" ? props.href(node) : undefined);
   const drafts = props.drafts?.list ?? [];
   const handlers = props.drafts?.handlers;
-  const items: (StorageNode | DraftItem)[] = handlers
-    ? [...drafts.map((draft) => ({ id: draft.key, draft, handlers })), ...props.nodes]
-    : props.nodes;
+  const listed: (StorageNode | GapItem)[] = props.nodes;
+  const nodes =
+    props.gap === null || props.gap === undefined
+      ? listed
+      : listed.toSpliced(props.gap, 0, { id: GAP_KEY, gap: true });
+  const items: (StorageNode | DraftItem | GapItem)[] = handlers
+    ? [...drafts.map((draft) => ({ id: draft.key, draft, handlers })), ...nodes]
+    : nodes;
   const top = useRevealDraft(drafts.find((d) => d.step === "naming")?.key);
-  const { dragAndDropHooks } = useNodeDragAndDrop(props.nodes, props.drag);
+  const shifting = useShifting();
   const list = {
     "aria-label": props.label,
     items,
-    dragAndDropHooks,
+    disabledKeys: [GAP_KEY],
+    // A file is picked as the press ends, not as it starts: picking it up to drag it opens nothing.
+    shouldSelectOnPressUp: true,
     ...props.selection,
     // While a name is typed, arrows and Home/End stay in its field rather than the list's.
     ...(drafts.some((d) => d.step === "naming")
@@ -220,9 +244,11 @@ function Items(props: {
       <>
         {top}
         <Virtualizer layout={CardsLayout} layoutOptions={CARDS_LAYOUT}>
-          <GridList {...list} layout="grid" className="bg-transparent">
+          <GridList {...list} layout="grid" className={`bg-transparent ${shifting}`}>
             {(node) =>
-              "draft" in node ? (
+              "gap" in node ? (
+                <GapCard />
+              ) : "draft" in node ? (
                 <DraftCard draft={node.draft} handlers={node.handlers} />
               ) : (
                 <FileCard
@@ -232,6 +258,7 @@ function Items(props: {
                   fileUrl={props.fileUrl}
                   peek={props.peek}
                   menu={props.menu(node)}
+                  drag={props.drag}
                 />
               )
             }
@@ -248,10 +275,12 @@ function Items(props: {
           {...list}
           // Transparent: the hover highlight sits under the rows. The virtualizer gives its sizer
           // and row wrappers no width, so they take the list's (as the mail list's do).
-          className="bg-transparent *:w-full *:*:w-full"
+          className={`bg-transparent *:w-full *:*:w-full ${shifting}`}
         >
           {(node) =>
-            "draft" in node ? (
+            "gap" in node ? (
+              <GapRow />
+            ) : "draft" in node ? (
               <DraftRow draft={node.draft} handlers={node.handlers} />
             ) : (
               <FileRow
@@ -260,6 +289,7 @@ function Items(props: {
                 url={props.fileUrl(node)}
                 menu={props.menu(node)}
                 prefetch={props.peek !== false}
+                drag={props.drag}
               />
             )
           }
@@ -277,12 +307,16 @@ function FileRow(props: {
   /** Folders read their contents on hover; off through a shared link's door. */
   prefetch: boolean;
   menu: SettingsRowMenuItem[];
+  drag: NodeDrag | undefined;
 }) {
   const { node } = props;
   const type = node.kind === "file" ? fileType(node.name, node.mimeType) : null;
   const prefetch = usePrefetchFolder();
+  const lift = useSurfaceDrag(node, "row", props.drag);
   return (
     <GridListItem
+      ref={lift.ref}
+      {...lift.props}
       id={node.id}
       href={props.href}
       textValue={node.name}
@@ -290,29 +324,79 @@ function FileRow(props: {
       onHoverStart={props.prefetch ? () => prefetch(node) : undefined}
       // The open file keeps the accent fill, as the open thread's row does. 48px: a 32px tile,
       // 8px above and below.
-      className={`mx-2.5 h-12 gap-3 rounded-lg ps-2 pe-1 selected:bg-accent ${DROP_TARGET}`}
+      className={`mx-2.5 h-12 gap-3 rounded-lg ps-2 pe-1 selected:bg-accent ${DROP_TARGET} ${LIFTED}`}
     >
       <RowTile node={node} url={props.url} />
       <span className="min-w-0 flex-1 truncate text-foreground">{node.name}</span>
-      {/* The secondary columns, muted, in tabular figures; they leave as the list narrows. */}
-      <span className="w-16 shrink-0 @max-xl:hidden">
+      {/* The secondary columns, muted, in tabular figures; they leave as the list narrows, and
+          a lifted row leaves them behind. */}
+      <span data-drag-trim className="w-16 shrink-0 @max-xl:hidden">
         {type && <TypeBadge label={type.label} />}
       </span>
-      <span className="w-20 shrink-0 text-end text-muted-foreground tabular-nums">
+      <span data-drag-trim className="w-20 shrink-0 text-end text-muted-foreground tabular-nums">
         {type ? formatBytes(node.size) : ""}
       </span>
-      <span className="w-28 shrink-0 text-end text-muted-foreground tabular-nums @max-2xl:hidden">
+      <span
+        data-drag-trim
+        className="w-28 shrink-0 text-end text-muted-foreground tabular-nums @max-2xl:hidden"
+      >
         {DAY.format(new Date(node.updatedAt))}
       </span>
       {/* Shown on the row's hover and focus, and while its menu is open; always on touch. */}
       <span
         {...KEEP_IN_MENU}
+        data-drag-trim
         className="shrink-0 opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100 group-data-selected:opacity-100 has-[[aria-expanded=true]]:opacity-100 pointer-coarse:opacity-100 motion-reduce:transition-none"
       >
         <SettingsRowMenu label={`Actions for ${node.name}`} items={props.menu} lazy />
       </span>
     </GridListItem>
   );
+}
+
+/** The room a drag opens among the rows. */
+function GapRow() {
+  return (
+    <GridListItem id={GAP_KEY} textValue="" className={`mx-2.5 h-12 ${GAP}`} data-drive-gap>
+      <span />
+    </GridListItem>
+  );
+}
+
+/** The room a drag opens among the cards: a card's square and caption, in outline. */
+function GapCard() {
+  return (
+    <GridListItem
+      id={GAP_KEY}
+      textValue=""
+      className={`flex-col items-stretch gap-2 rounded-xl p-1.5 ${GAP}`}
+      data-drive-gap
+    >
+      <div className="aspect-square" />
+      {/* As tall as a card's two caption lines, so the cards keep their measured size. */}
+      <div className="invisible flex flex-col gap-1 text-sm">
+        <span>&nbsp;</span>
+        <span className="text-xs">&nbsp;</span>
+      </div>
+    </GridListItem>
+  );
+}
+
+/**
+ * While a drag is under way, and as it settles, items glide to their new places: aside for a
+ * gap, and together as one closes. The virtualizer places each item, so its wrappers move.
+ */
+function useShifting() {
+  const { phase } = useDriveDrag();
+  const [settling, setSettling] = useState(false);
+  useEffect(() => {
+    if (phase) return setSettling(true);
+    const timer = setTimeout(() => setSettling(false), GAP_MS * 2);
+    return () => clearTimeout(timer);
+  }, [phase]);
+  return phase || settling
+    ? "*:*:transition-[top,left] *:*:duration-200 *:*:ease-out motion-reduce:*:*:transition-none"
+    : "";
 }
 
 /** One hover highlight springs between the rows (mail's `RowHover`). */
