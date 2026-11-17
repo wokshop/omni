@@ -30,7 +30,8 @@ import { formatBytes, type StorageNode } from "@/lib/storage.ts";
 import { CARDS_LAYOUT, CardsLayout } from "./cards-layout.ts";
 import { FileCard, FileCardBones, KEEP_IN_MENU } from "./file-card.tsx";
 import { DraftCard, DraftRow, type DraftHandlers } from "./folder-draft.tsx";
-import { FileTile, TypeBadge } from "./file-glyph.tsx";
+import { TypeBadge } from "./file-glyph.tsx";
+import { RowTile } from "./row-tile.tsx";
 import { DAY } from "./file-table.tsx";
 
 export interface FileSectionsProps {
@@ -248,6 +249,7 @@ function Items(props: {
               <FileRow
                 node={node}
                 href={href(node)}
+                url={props.fileUrl(node)}
                 menu={props.menu(node)}
                 prefetch={props.peek !== false}
               />
@@ -262,6 +264,8 @@ function Items(props: {
 function FileRow(props: {
   node: StorageNode;
   href: string | undefined;
+  /** Where its bytes are read, for an image's or a PDF's tile. */
+  url: string;
   /** Folders read their contents on hover; off through a shared link's door. */
   prefetch: boolean;
   menu: SettingsRowMenuItem[];
@@ -280,7 +284,7 @@ function FileRow(props: {
       // 8px above and below.
       className="mx-2.5 h-12 gap-3 rounded-lg ps-2 pe-1 selected:bg-accent"
     >
-      <FileTile kind={type?.kind ?? "folder"} />
+      <RowTile node={node} url={props.url} />
       <span className="min-w-0 flex-1 truncate text-foreground">{node.name}</span>
       {/* The secondary columns, muted, in tabular figures; they leave as the list narrows. */}
       <span className="w-16 shrink-0 @max-xl:hidden">
