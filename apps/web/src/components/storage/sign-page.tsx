@@ -82,7 +82,15 @@ function Action(props: {
     );
   }
   if (item.me.signedAt) return null;
-  return <SignForm item={item} consent={props.consent} requestId={requestId} />;
+  // A fresh form for each address the person signs for: the code is that address's.
+  return (
+    <SignForm
+      key={`${requestId}:${item.me.email}`}
+      item={item}
+      consent={props.consent}
+      requestId={requestId}
+    />
+  );
 }
 
 function SignForm(props: {
@@ -117,7 +125,7 @@ function SignForm(props: {
       <CheckboxField isSelected={agreed} onChange={setAgreed}>
         <Checkbox>{consent.text}</Checkbox>
       </CheckboxField>
-      {codeSent ? (
+      {codeSent && (
         <>
           <TextField value={code} onChange={setCode} autoFocus>
             <Label>Code</Label>
@@ -131,20 +139,24 @@ function SignForm(props: {
             Sign
           </Button>
         </>
-      ) : (
-        <Button
-          isDisabled={!typedName || !agreed}
-          isPending={mailCode.isPending}
-          onPress={() =>
-            mailCode.mutate(
-              { requestId },
-              { onError: (error) => storageErrorToast(error, "The code was not sent") },
-            )
-          }
-        >
-          Email me a code
-        </Button>
       )}
+      {/* Stays once a code is sent: a code expires and allows five tries, so a new one may be needed. */}
+      <Button
+        intent={codeSent ? "outline" : "primary"}
+        isDisabled={!typedName || !agreed}
+        isPending={mailCode.isPending}
+        onPress={() =>
+          mailCode.mutate(
+            { requestId },
+            {
+              onSuccess: () => setCode(""),
+              onError: (error) => storageErrorToast(error, "The code was not sent"),
+            },
+          )
+        }
+      >
+        {codeSent ? "Email me a new code" : "Email me a code"}
+      </Button>
     </form>
   );
 }

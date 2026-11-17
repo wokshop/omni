@@ -52,6 +52,11 @@ export const signingQuery = (requestId: string) =>
     queryKey: keys.signing(requestId),
     queryFn: ({ signal }) =>
       call(signerDoor().$get({ param: { id: requestId } }, { init: { signal } })),
+    // Signed by everyone, the copy is sealed just after: ask again until it is there.
+    refetchInterval: (query) => {
+      const item = query.state.data?.item;
+      return item?.status === "completed" && !item.sealed ? 2000 : false;
+    },
   });
 
 /** The document as it was sent, for the preview and the download. */
