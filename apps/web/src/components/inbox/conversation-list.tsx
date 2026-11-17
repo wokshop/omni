@@ -1,6 +1,3 @@
-// A shared inbox's helpdesk list (one view: Unassigned, Mine, Open, ...): the thread list's rows
-// with each conversation's status, tags, priority, SLA clock and assignee, a bar for acting on
-// the selected rows, and the empty and failed states.
 import { useMemo, useRef, type ReactNode } from "react";
 import { getLocalTimeZone, today } from "@internationalized/date";
 import type { DateValue } from "react-aria-components/Calendar";
@@ -33,7 +30,6 @@ import type { ConversationRowInfo } from "./conversation-meta";
 import { ConversationListEmpty } from "@/components/inbox/list-empty";
 import { List, ListFailed, type ListRow } from "./thread-list";
 
-/** Views whose rows can be in more than one status, so each row says which. */
 const MIXED = new Set<ConversationFilter["view"]>(["mine", "all"]);
 
 export function ConversationList(props: {
@@ -47,19 +43,18 @@ export function ConversationList(props: {
   const assignees = useAssignees(filter.mailbox).data;
   const rows = useMemo(() => {
     const people = new Map(assignees?.map((a) => [a.memberId, a]));
-    return conversations.map((c): ListRow => {
+    return conversations.map((c) => {
       const assignee = c.assigneeMemberId ? people.get(c.assigneeMemberId) : undefined;
       const info: ConversationRowInfo = {
         status: MIXED.has(filter.view) ? c.status : undefined,
         priority: c.priority,
         tags: c.tags,
-        // Only open conversations run against an SLA: pending waits on the customer.
         slaDueAt: c.status === "open" ? c.slaDueAt : null,
         hasAttachments: c.hasAttachments,
         assignee: assignee ? { name: assignee.name, image: assignee.image } : null,
         lastMessageAt: c.lastMessageAt,
       };
-      return {
+      const result: ListRow = {
         id: c.id,
         sender: senderLabel(c),
         senderAddress: senderAddress(c),
@@ -68,6 +63,7 @@ export function ConversationList(props: {
         unread: c.unread,
         conversation: info,
       };
+      return result;
     });
   }, [conversations, assignees, filter.view]);
   const loadMore = useMemo(
@@ -106,7 +102,6 @@ export function ConversationList(props: {
   );
 }
 
-/** Tomorrow and next Monday at 8:00, and later today (3 hours on): where a snooze usually goes. */
 function snoozePresets(now = new Date()) {
   const at8 = (days: number) => {
     const d = new Date(now);
@@ -124,11 +119,6 @@ function snoozePresets(now = new Date()) {
 
 const plural = (n: number) => (n === 1 ? "Conversation" : `${n} conversations`);
 
-/**
- * The selected rows' actions. Resolve and assign to me run the list's own `e` and `i`, so the
- * bar and the keys do one thing; snooze to a chosen time and tags apply one change per row with
- * one undo for the batch.
- */
 function BulkActions(props: {
   filter: ConversationFilter;
   rows: ConversationSummary[];
@@ -143,7 +133,6 @@ function BulkActions(props: {
   const apply = (make: (row: ConversationSummary) => ConversationChange, said: string) => {
     const batch = rows.map((row) => ({ row, change: make(row) }));
     for (const { row, change } of batch) {
-      // An added tag shows at once only when the whole tag rides along.
       const tag = change.type === "tag" ? tags.find((t) => t.id === change.tagId) : undefined;
       changes.run(row.id, change, { undo: false, tag, mailboxId: filter.mailbox });
     }
@@ -159,8 +148,6 @@ function BulkActions(props: {
   };
   const snooze = (until: Date) =>
     apply(() => ({ type: "snooze", until: until.toISOString() }), `${plural(rows.length)} snoozed`);
-  // "Pick a date" closes the menu and opens the calendar under the Snooze button: a calendar is
-  // not a menu item, so it lives in its own popover instead of a submenu.
   const pickDate = useMemo(() => createPopoverController(), []);
   const snoozeButton = useRef<HTMLButtonElement>(null);
   const pickDay = (day: DateValue) => {

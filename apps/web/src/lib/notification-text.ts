@@ -1,5 +1,3 @@
-// What a notification says, in the panel and as a desktop notification: who did it, what they
-// did, and what it is about (the conversation's subject; nothing for a workspace notification).
 import type { Notification } from "./types.ts";
 
 /** Who did it, by name, else by address; undefined when nobody did (a customer, a clock). */
@@ -7,7 +5,6 @@ export function actorName(n: Pick<Notification, "actor">) {
   return n.actor ? n.actor.name || n.actor.email || undefined : undefined;
 }
 
-/** What happened, said after the actor's name: "assigned you". */
 const DONE_BY: Partial<Record<Notification["kind"], string>> = {
   assigned: "assigned you",
   mention: "mentioned you",
@@ -16,7 +13,6 @@ const DONE_BY: Partial<Record<Notification["kind"], string>> = {
   comment: "commented",
 };
 
-/** What happened when nobody did it, or we no longer know who. */
 const HAPPENED: Record<Notification["kind"], string> = {
   assigned: "Assigned to you",
   mention: "You were mentioned",
@@ -51,7 +47,9 @@ export interface CommentTarget {
 }
 
 /** A comment notification's file, or undefined for any other kind (or a malformed one). */
-export function commentTarget(n: Pick<Notification, "kind" | "data">): CommentTarget | undefined {
+export const commentTarget: (
+  n: Pick<Notification, "kind" | "data">,
+) => CommentTarget | undefined = (n) => {
   if (n.kind !== "comment") return undefined;
   const d = n.data as Partial<CommentTarget>;
   if (typeof d.nodeId !== "string" || (d.space !== "personal" && d.space !== "shared")) return;
@@ -62,7 +60,7 @@ export function commentTarget(n: Pick<Notification, "kind" | "data">): CommentTa
     folderId: typeof d.folderId === "string" ? d.folderId : null,
     excerpt: typeof d.excerpt === "string" ? d.excerpt : "",
   };
-}
+};
 
 /**
  * What it is about: the conversation's subject; for a comment, the file and its first words;

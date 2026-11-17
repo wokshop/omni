@@ -26,7 +26,6 @@ export default function SignedInLayout() {
         <NativeTabs.Trigger.Icon sf={{ default: "folder", selected: "folder.fill" }} />
         <NativeTabs.Trigger.Label>Drive</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
-      {/* A Personal space has no CRM (ADR 0039). */}
       <NativeTabs.Trigger name="crm" hidden={!crm}>
         <NativeTabs.Trigger.Icon sf={{ default: "briefcase", selected: "briefcase.fill" }} />
         <NativeTabs.Trigger.Label>CRM</NativeTabs.Trigger.Label>

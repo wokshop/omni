@@ -89,8 +89,6 @@ export interface ParseResult {
 }
 
 const PARSER_OPTIONS = {
-  // Keep `cid:` links so the sanitizer can map them to attachment ids, and leave `text`
-  // empty for HTML-only mail so reply stripping knows to work on the HTML.
   keepCidLinks: true,
   skipHtmlToText: true,
   skipTextToHtml: true,
@@ -101,7 +99,7 @@ const PARSER_OPTIONS = {
  * Parses raw RFC 5322 bytes into plain data. Message bodies are decoded to UTF-8, and NUL
  * characters are removed from every string (Postgres text cannot store them).
  */
-export async function parseMessage(raw: Uint8Array | string): Promise<ParseResult> {
+export const parseMessage: (raw: Uint8Array | string) => Promise<ParseResult> = async (raw) => {
   const source =
     typeof raw === "string" ? raw : Buffer.from(raw.buffer, raw.byteOffset, raw.length);
   let mail: ParsedMail;
@@ -109,8 +107,6 @@ export async function parseMessage(raw: Uint8Array | string): Promise<ParseResul
   try {
     mail = await simpleParser(source, PARSER_OPTIONS);
   } catch (error) {
-    // mailparser's guards against header and MIME-tree bombs. Keep the message listable
-    // from its main headers rather than failing it on every sync.
     if ((error as { code?: unknown }).code !== "EMAXLEN") throw error;
     mail = await simpleParser(topHeaders(source), PARSER_OPTIONS);
     bodySkipped = true;
@@ -120,7 +116,7 @@ export async function parseMessage(raw: Uint8Array | string): Promise<ParseResul
     message,
     attachmentContents: mail.attachments.map((a) => new Uint8Array(a.content)),
   };
-}
+};
 
 /**
  * `parseMessage` for a message too big to hold in memory: reads `open()` once (twice if its MIME
@@ -131,7 +127,7 @@ export async function parseMessage(raw: Uint8Array | string): Promise<ParseResul
 export async function parseMessageStream(
   open: () => Readable,
   saveAttachment: (index: number, content: Readable) => Promise<void>,
-): Promise<{ message: ParsedMessage }> {
+) {
   let mail: ParsedMail;
   let bodySkipped = false;
   try {
@@ -141,10 +137,10 @@ export async function parseMessageStream(
     mail = await simpleParser(topHeaders(await headBytes(open())), PARSER_OPTIONS);
     bodySkipped = true;
   }
-  return { message: await describe(mail, bodySkipped) };
+  return { message: await describe(mail, bodySkipped) } satisfies { message: ParsedMessage };
 }
 
-async function describe(mail: ParsedMail, bodySkipped: boolean): Promise<ParsedMessage> {
+async function describe(mail: ParsedMail, bodySkipped: boolean) {
   const headerId = firstMessageId(mail.messageId);
   const from = addresses(mail.from)[0] ?? null;
   const message: ParsedMessage = {
@@ -173,21 +169,12 @@ async function describe(mail: ParsedMail, bodySkipped: boolean): Promise<ParsedM
   message.inReplyTo ??= message.automated?.bouncedMessageId ?? null;
   if (bodySkipped) message.bodySkipped = true;
 
-  return withoutNul(message);
+  return withoutNul(message) satisfies ParsedMessage;
 }
 
-// Returned-message parts are read for bounce threading (`automated`); they are small.
 const KEEP_IN_MEMORY_MAX = 1024 * 1024;
 
-/**
- * mailparser's `simpleParser`, except that attachment content goes to `save` as it is decoded
- * instead of into a Buffer. Returned-message parts (bounces) are also kept, up to 1 MB, for
- * `automated`. Attachment sizes are counted here: the decoder's own is set too late.
- */
-function streamParser(
-  input: Readable,
-  save: (index: number, content: Readable) => Promise<void>,
-): Promise<ParsedMail> {
+function streamParser(input: Readable, save: (index: number, content: Readable) => Promise<void>) {
   return new Promise((resolve, reject) => {
     let settled = false;
     const fail = (error: unknown) => {
@@ -205,7 +192,7 @@ function streamParser(
       mail.headerLines = (parser as unknown as { headerLines: HeaderLines }).headerLines;
     });
     let reading = false;
-    const read = (): void => {
+    const read = () => {
       reading = true;
       const data = parser.read() as MessageText | AttachmentStream | null;
       if (data === null) {
@@ -267,11 +254,10 @@ function streamParser(
       resolve(mail);
     });
     input.once("error", fail).pipe(parser);
-  });
+  }) satisfies Promise<ParsedMail>;
 }
 
-/** The start of a stream, enough to hold the top-level header block. */
-async function headBytes(input: Readable): Promise<Buffer> {
+const headBytes: (input: Readable) => Promise<Buffer> = async (input) => {
   const chunks: Buffer[] = [];
   let length = 0;
   for await (const chunk of input) {
@@ -281,23 +267,21 @@ async function headBytes(input: Readable): Promise<Buffer> {
   }
   input.destroy();
   return Buffer.concat(chunks);
-}
+};
 
-/** Postgres text rejects U+0000, and mail carries it in subjects, bodies and filenames. */
-function withoutNul<T>(value: T): T {
+const withoutNul: <T>(value: T) => T = (value) => {
   if (typeof value === "string") {
-    return (value.includes("\0") ? value.replaceAll("\0", "") : value) as T;
+    return (value.includes("\0") ? value.replaceAll("\0", "") : value) as typeof value;
   }
-  if (Array.isArray(value)) return value.map(withoutNul) as T;
+  if (Array.isArray(value)) return value.map(withoutNul) as typeof value;
   if (value !== null && typeof value === "object" && !(value instanceof Date)) {
     return Object.fromEntries(
       Object.entries(value).map(([key, entry]) => [key, withoutNul(entry)]),
-    ) as T;
+    ) as typeof value;
   }
   return value;
-}
+};
 
-// Header fields the rest of the pipeline reads; the fallback parse keeps only these.
 const TOP_HEADERS = new Set([
   "from",
   "to",
@@ -316,29 +300,24 @@ const TOP_HEADERS = new Set([
 ]);
 const MAX_TOP_HEADER = 16 * 1024;
 
-/** The top-level header block cut down to `TOP_HEADERS`, each field capped, with no body. */
-function topHeaders(source: string | Buffer): Buffer {
+const topHeaders: (source: string | Buffer) => Buffer = (source) => {
   const bytes = typeof source === "string" ? Buffer.from(source) : source;
   const ends = [bytes.indexOf("\r\n\r\n"), bytes.indexOf("\n\n")].filter((i) => i !== -1);
-  // latin1 maps bytes to code units one to one, so 8-bit header bytes survive the round trip.
   const head = bytes.subarray(0, Math.min(bytes.length, ...ends)).toString("latin1");
   const fields = head
     .split(/\r?\n(?![ \t])/)
     .filter((field) => TOP_HEADERS.has(field.slice(0, field.indexOf(":")).trim().toLowerCase()))
     .map((field) => field.slice(0, MAX_TOP_HEADER));
   return Buffer.from(`${fields.join("\r\n")}\r\n\r\n`, "latin1");
-}
+};
 
-// RFC 5322 3.6.4 lets senders trim References to the first and the most recent ids;
-// threading only needs those, and a hostile header can carry tens of thousands.
 const MAX_REFERENCES = 100;
 
-function capReferences(ids: string[]): string[] {
+const capReferences: (ids: string[]) => string[] = (ids) => {
   if (ids.length <= MAX_REFERENCES) return ids;
   return [...ids.slice(0, 1), ...ids.slice(-(MAX_REFERENCES - 1))];
-}
+};
 
-// Zero-width, bidi-control and filler characters that render as nothing.
 const INVISIBLE =
   /[\u{AD}\u{61C}\u{115F}\u{1160}\u{180E}\u{200B}-\u{200F}\u{202A}-\u{202E}\u{2060}-\u{2064}\u{2066}-\u{206F}\u{3164}\u{FEFF}\u{FFA0}]|[\u{34F}\u{17B4}\u{17B5}]/gu;
 const ADDRESS_IN_NAME = /[^\s@<>"'(),;:]+@[^\s@<>"'(),;:]+\.[^\s@<>"'(),;:]+/;
@@ -346,7 +325,7 @@ const DOMAIN_TOKEN = /^(?:[\p{L}\p{N}-]+\.)+\p{L}[\p{L}\p{N}-]{1,62}$/u;
 const MAX_CHECKED_NAME = 256;
 
 /** Spoofing hint for a From address: see `DisplayNameSpoof`. */
-export function displayNameSpoof(from: Address | null): DisplayNameSpoof | null {
+export const displayNameSpoof: (from: Address | null) => DisplayNameSpoof | null = (from) => {
   if (from === null || from.name === "" || from.name.length > MAX_CHECKED_NAME) return null;
   const hidden = from.name.match(INVISIBLE);
   if (hidden) {
@@ -372,10 +351,9 @@ export function displayNameSpoof(from: Address | null): DisplayNameSpoof | null 
     if (!related) return { kind: "domain", claimed };
   }
   return null;
-}
+};
 
-/** Lowercased, punycoded domain of an address, or null when it is not a valid host. */
-function domainOf(address: string): string | null {
+function domainOf(address: string) {
   const domain = address.slice(address.lastIndexOf("@") + 1);
   try {
     return new URL(`http://${domain}`).hostname;
@@ -386,29 +364,28 @@ function domainOf(address: string): string | null {
 
 const MESSAGE_ID = /<[^<>\s]+>/g;
 
-function messageIds(value: string | string[] | undefined): string[] {
+const messageIds: (value: string | string[] | undefined) => string[] = (value) => {
   const joined = Array.isArray(value) ? value.join(" ") : (value ?? "");
   const bracketed = joined.match(MESSAGE_ID);
   if (bracketed) return [...new Set(bracketed)];
-  // Some senders omit the angle brackets.
   return [...new Set(joined.split(/\s+/).filter((id) => id.includes("@")))].map((id) => `<${id}>`);
-}
+};
 
-function firstMessageId(value: string | undefined): string | null {
+function firstMessageId(value: string | undefined) {
   return messageIds(value)[0] ?? null;
 }
 
-function addresses(value: AddressObject | AddressObject[] | undefined): Address[] {
+const addresses: (value: AddressObject | AddressObject[] | undefined) => Address[] = (value) => {
   if (!value) return [];
-  const flat = (list: EmailAddress[]): EmailAddress[] =>
+  const flat: (list: EmailAddress[]) => EmailAddress[] = (list) =>
     list.flatMap((entry) => (entry.group ? flat(entry.group) : [entry]));
   return (Array.isArray(value) ? value : [value])
     .flatMap((object) => flat(object.value))
     .filter((entry): entry is EmailAddress & { address: string } => Boolean(entry.address))
     .map((entry) => ({ name: entry.name, address: entry.address.toLowerCase() }));
-}
+};
 
-function header(lines: HeaderLines, key: string): string | null {
+function header(lines: HeaderLines, key: string) {
   const line = lines.find((entry) => entry.key === key)?.line;
   if (line === undefined) return null;
   return line
@@ -417,7 +394,7 @@ function header(lines: HeaderLines, key: string): string | null {
     .trim();
 }
 
-function signals(lines: HeaderLines): Omit<TriageSignals, "displayNameSpoof"> {
+function signals(lines: HeaderLines) {
   const unsubscribe = header(lines, "list-unsubscribe");
   return {
     listId: header(lines, "list-id"),
@@ -427,13 +404,12 @@ function signals(lines: HeaderLines): Omit<TriageSignals, "displayNameSpoof"> {
     ),
     precedence: header(lines, "precedence")?.toLowerCase() ?? null,
     autoSubmitted: header(lines, "auto-submitted")?.toLowerCase() ?? null,
-  };
+  } satisfies Omit<TriageSignals, "displayNameSpoof">;
 }
 
-// Parts that carry a returned message's headers, as named by RFC 3462.
 const RETURNED_PARTS = new Set(["text/rfc822-headers", "message/rfc822"]);
 
-function automated(mail: ParsedMail, from: Address | null): Automated | null {
+const automated: (mail: ParsedMail, from: Address | null) => Automated | null = (mail, from) => {
   const kind = automatedKind((key) => header(mail.headerLines, key), from?.address ?? null);
   if (kind === null) return null;
   if (kind !== "bounce") return { kind, bouncedMessageId: null };
@@ -441,16 +417,13 @@ function automated(mail: ParsedMail, from: Address | null): Automated | null {
     .filter((a) => RETURNED_PARTS.has(a.contentType.toLowerCase()))
     .map((a) => a.content.toString("latin1"));
   return { kind, bouncedMessageId: bouncedMessageId([...returned, mail.text ?? ""]) };
-}
+};
 
-// The spec keys messages on (mailbox, Message-ID), so a missing one is replaced by a hash
-// that is stable across re-syncs of the same raw bytes. The body is included so two
-// header-identical automated messages do not collapse into one.
 async function synthesizeMessageId(
   lines: HeaderLines,
   text: string | undefined,
   html: string | false | undefined,
-): Promise<string> {
+) {
   const keyHeaders = ["from", "to", "cc", "date", "subject"]
     .map((key) => `${key}:${header(lines, key) ?? ""}`)
     .join("\n");

@@ -1,8 +1,4 @@
-// A PDF's first pages as small images, for its grid tile (ADR 0040). pdf.js reads the file by
-// `Range`, so a 300-page PDF costs its first pages' bytes. One worker serves every tile. Loaded on
-// its own chunk, the first time a PDF tile is on screen.
 import { getDocument, GlobalWorkerOptions, PDFWorker } from "pdfjs-dist";
-// Vite's `?url`, the legacy build as `vite.config.ts` aliases the API (see `pdf-preview.tsx`).
 // oxlint-disable-next-line import/default
 import workerUrl from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 
@@ -27,14 +23,13 @@ export async function firstPages(
   headers: Record<string, string>,
   signal: AbortSignal,
   max = 3,
-): Promise<PdfPages> {
+) {
   worker ??= new PDFWorker();
   const task = getDocument({
     url,
     httpHeaders: headers,
     worker,
     disableAutoFetch: true,
-    // Without this, pdf.js streams the whole file alongside its range reads.
     disableStream: true,
     rangeChunkSize: 256 * 1024,
   });
@@ -48,11 +43,10 @@ export async function firstPages(
       const page = await pdf.getPage(n);
       const box = page.getViewport({ scale: 1 });
       if (n === 1) ratio = box.height / box.width;
-      // The pages behind the first show only their edges: half the pixels is plenty.
       const viewport = page.getViewport({ scale: (n === 1 ? width : width / 2) / box.width });
       pages.push(await draw(page, viewport));
     }
-    return { pages, ratio, count: pdf.numPages };
+    return { pages, ratio, count: pdf.numPages } satisfies PdfPages;
   } finally {
     signal.removeEventListener("abort", abort);
     await task.destroy();
@@ -61,7 +55,7 @@ export async function firstPages(
 
 type Page = Awaited<ReturnType<Awaited<ReturnType<typeof getDocument>["promise"]>["getPage"]>>;
 
-async function draw(page: Page, viewport: ReturnType<Page["getViewport"]>): Promise<Blob> {
+async function draw(page: Page, viewport: ReturnType<Page["getViewport"]>) {
   const canvas = document.createElement("canvas");
   canvas.width = Math.round(viewport.width);
   canvas.height = Math.round(viewport.height);
@@ -72,5 +66,5 @@ async function draw(page: Page, viewport: ReturnType<Page["getViewport"]>): Prom
       "image/webp",
       0.82,
     ),
-  );
+  ) satisfies Promise<Blob>;
 }

@@ -1,26 +1,16 @@
-// The desktop app (ADR 0043, docs/spec/desktop.md "Navigation changes in the web app"): the same
-// build, loaded by a Tauri window from this server's origin. This is the only file that knows
-// Tauri exists; everything else reads `desktop`. Tauri's JS API loads by dynamic import
-// (`desktop-bridge.ts`), so the browser bundle never carries it.
-//
-// What the window may call is the shell's remote capability (`REMOTE_PERMISSIONS` in
-// `apps/desktop/src-tauri/src/server.rs`). Anything not listed there fails here.
-
 export type DesktopPlatform = "mac" | "windows" | "linux";
 
-// Tauri injects its IPC object into every page its window loads, before any of ours runs.
 const inShell = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
-function readPlatform(): DesktopPlatform {
+const readPlatform: () => DesktopPlatform = () => {
   const agent = navigator.userAgent;
   if (/Mac OS X|Macintosh/.test(agent)) return "mac";
   if (/Windows/.test(agent)) return "windows";
   return "linux";
-}
+};
 
 const bridge = () => import("./desktop-bridge.ts");
 
-/** A failed call to the shell is logged, never thrown: the page works without it. */
 function run(what: string, call: (b: Awaited<ReturnType<typeof bridge>>) => Promise<unknown>) {
   void bridge()
     .then(call)
@@ -41,8 +31,8 @@ export const desktop = {
    * link opens in the default browser; the Worker sends the session there, and the shell puts it
    * in this window and reloads (ADR 0043 decision 5). Each call is a new, single-use state.
    */
-  signInCallback(): Promise<string> {
-    return bridge().then((b) => b.signInCallback());
+  signInCallback() {
+    return bridge().then((b) => b.signInCallback()) satisfies Promise<string>;
   },
 
   /**
@@ -63,10 +53,8 @@ export const desktop = {
   },
 };
 
-/** The title bar's height: the page headers' 48px row, which is also the window's drag region. */
 const TITLE_BAR_PX = 48;
 
-// What a press in the title bar row works instead of moving the window.
 const CONTROL = "button, a, input, textarea, select, label, [role], [contenteditable]";
 
 /**
@@ -88,7 +76,6 @@ function onTitleBarPress(event: MouseEvent) {
   else run("drag", (b) => b.startDragging());
 }
 
-/** Schemes the default browser or mail app should get rather than this window. */
 const OUTSIDE = new Set(["http:", "https:", "mailto:", "tel:"]);
 
 /**
@@ -96,7 +83,7 @@ const OUTSIDE = new Set(["http:", "https:", "mailto:", "tel:"]);
  * page. Links to another origin, and mail and phone links, open outside the app: the window is
  * the app, with no address bar or back button to return from someone else's site.
  */
-export function outsideLink(event: MouseEvent): string | null {
+export function outsideLink(event: MouseEvent) {
   if (event.defaultPrevented || event.button > 1) return null;
   const target = event.target instanceof Element ? event.target : null;
   const anchor = target?.closest<HTMLAnchorElement | SVGAElement>("a[href]");
@@ -120,8 +107,6 @@ export function outsideLink(event: MouseEvent): string | null {
  */
 export function routeOutsideLinks() {
   if (!inShell) return;
-  // Capture, so a link inside a component that stops propagation is still routed. Middle clicks
-  // arrive as `auxclick`.
   document.addEventListener("click", onLinkClick, true);
   document.addEventListener("auxclick", onLinkClick, true);
 }

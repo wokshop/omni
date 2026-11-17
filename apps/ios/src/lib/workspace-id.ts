@@ -1,5 +1,3 @@
-// The organization id every API call names (`omni-workspace`), kept apart from the queries in
-// `workspace.ts` so the API client can read it without importing them. Survives a relaunch.
 import * as SecureStore from "expo-secure-store";
 
 const KEY = "omni_workspace";

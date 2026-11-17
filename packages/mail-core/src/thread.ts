@@ -1,13 +1,10 @@
 import type { Address, ParsedMessage } from "./parse.ts";
 
-// Reply and forward prefixes across common clients and locales: Re, Fwd, Fw, AW (de),
-// WG (de), SV (sv/da/no), VS (fi), TR (fr), RV/RE (es), Enc (pt), Antw (nl), Odp (pl),
-// Ynt (tr), Res (pt). Optional counters like "Re[2]:" and full-width colons are allowed.
 const PREFIX =
   /^\s*(?:re|fwd?|aw|wg|sv|vs|tr|rv|enc|antw|odp|ynt|res)\s*(?:\[\d+\]|\(\d+\))?\s*[:：]/i;
 
 /** Subject with reply/forward prefixes removed, lowercased and whitespace-collapsed. */
-export function normalizeSubject(subject: string): string {
+export function normalizeSubject(subject: string) {
   let rest = subject.trim();
   for (let match = PREFIX.exec(rest); match; match = PREFIX.exec(rest)) {
     rest = rest.slice(match[0].length).trim();
@@ -47,8 +44,10 @@ export type ThreadDecision =
 const SUBJECT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
 /** Spec "Grouping messages into threads": reply headers, then subject + participants, else new. */
-export function decideThread(message: ParsedMessage, context: ThreadContext): ThreadDecision {
-  // In-Reply-To names the direct parent; References is oldest first, so walk it newest first.
+export const decideThread: (message: ParsedMessage, context: ThreadContext) => ThreadDecision = (
+  message,
+  context,
+) => {
   const replyIds = [message.inReplyTo, ...message.references.toReversed()].filter(
     (id): id is string => id !== null,
   );
@@ -59,8 +58,6 @@ export function decideThread(message: ParsedMessage, context: ThreadContext): Th
   if (context.relatedThreadId) return { kind: "headers", threadId: context.relatedThreadId };
 
   const subjectKey = normalizeSubject(message.subject);
-  // A reply whose parent we never saw starts a thread; subject matching is only for mail
-  // that carries no reply headers at all. An empty subject would match unrelated mail.
   if (replyIds.length > 0 || subjectKey === "" || message.sentAt === null) {
     return { kind: "new", subjectKey };
   }
@@ -78,12 +75,14 @@ export function decideThread(message: ParsedMessage, context: ThreadContext): Th
     .toSorted((a, b) => b.lastMessageAt.getTime() - a.lastMessageAt.getTime())[0];
 
   return match ? { kind: "subject", threadId: match.threadId } : { kind: "new", subjectKey };
-}
+};
 
 /** Lowercased addresses on From, To, Cc and Reply-To. */
-export function participants(message: ParsedMessage): string[] {
+export function participants(message: ParsedMessage) {
   const all = [message.from, ...message.to, ...message.cc, ...message.replyTo];
-  return [...new Set(all.filter((a): a is Address => a !== null).map((a) => a.address))];
+  return [
+    ...new Set(all.filter((a): a is Address => a !== null).map((a) => a.address)),
+  ] satisfies string[];
 }
 
 export { addedRecipients } from "./display.ts";

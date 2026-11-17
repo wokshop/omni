@@ -1,5 +1,3 @@
-// Large mail goes through temp files instead of memory: a 25 MB attachment fetched, parsed and
-// uploaded whole costs over ten times its size in RSS, more than the service's VM has.
 import { createHash, randomUUID } from "node:crypto";
 import { createWriteStream } from "node:fs";
 import { rm } from "node:fs/promises";
@@ -16,7 +14,7 @@ export interface SpooledFile {
 }
 
 /** Writes `content` to a new temp file, hashing it on the way. Remove it with `discard`. */
-export async function spool(content: Readable): Promise<SpooledFile> {
+export async function spool(content: Readable) {
   const path = join(tmpdir(), `omni-${randomUUID()}`);
   const hash = createHash("sha256");
   let size = 0;
@@ -33,10 +31,10 @@ export async function spool(content: Readable): Promise<SpooledFile> {
     await discard(path);
     throw error;
   }
-  return { path, size, sha256: hash.digest("hex") };
+  return { path, size, sha256: hash.digest("hex") } satisfies SpooledFile;
 }
 
-export async function discard(path: string): Promise<void> {
+export async function discard(path: string) {
   await rm(path, { force: true });
 }
 

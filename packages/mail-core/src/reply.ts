@@ -14,20 +14,12 @@ export interface StrippedText {
   forwarded: ForwardedMessage | null;
 }
 
-// Gmail "---------- Forwarded message ---------", Thunderbird "-------- Forwarded Message --------",
-// Apple Mail "Begin forwarded message:".
 const FORWARD_MARKER = /^(?:-{3,}\s*forwarded message\s*-{3,}|begin forwarded message:)\s*$/im;
 
-// Outlook (desktop and web) quotes with a header block instead of ">" lines:
-//   From: Ana <ana@example.com>
-//   Sent: Tuesday, October 28, 2026 10:14 AM
-// Bold markers survive from HTML-to-text ("*From:*"). Localized labels for the common locales;
-// some take two words: Spanish "Enviado el:", Brazilian Portuguese "Enviado em:".
 const OUTLOOK_FROM = /^\s*\*?(?:from|de|von|van|da|från|fra|od)\s*:\*?\s*\S/i;
 const OUTLOOK_SENT =
   /^\s*\*?(?:sent|date|enviad[oa](?:\s+e[lm])?|fecha|gesendet|datum|envoyé|verzonden|inviato|data|skickat|sendt|wysłano)\s*:\*?\s*\S/i;
 const OUTLOOK_LOOKAHEAD = 3;
-// Lines Outlook puts right above that block.
 const OUTLOOK_SEPARATOR = /^\s*(?:_{10,}|-{3,}\s*original message\s*-{3,})\s*$/i;
 
 const FORWARD_HEADER = /^\s*\*?(from|date|sent|subject|to|cc)\s*:\*?\s*(.*)$/i;
@@ -39,7 +31,10 @@ const FORWARD_HEADER = /^\s*\*?(from|date|sent|subject|to|cc)\s*:\*?\s*(.*)$/i;
 export const MAX_TEXT_LENGTH = 1_000_000;
 
 /** Splits plain text into new content and, for forwards, the forwarded message. */
-export function stripReply(text: string, subject = ""): StrippedText {
+export const stripReply: (text: string, subject?: string) => StrippedText = (
+  text,
+  subject = "",
+) => {
   const head =
     text.length > MAX_TEXT_LENGTH
       ? text.slice(0, text.lastIndexOf("\n", MAX_TEXT_LENGTH) + 1 || MAX_TEXT_LENGTH)
@@ -55,23 +50,22 @@ export function stripReply(text: string, subject = ""): StrippedText {
     };
   }
   return { cleanText: stripQuotes(lines), forwarded: null };
-}
+};
 
-function forwardStart(
+const forwardStart: (
   lines: string[],
   subject: string,
-): { noteEnd: number; headersStart: number } | null {
+) => { noteEnd: number; headersStart: number } | null = (lines, subject) => {
   const marker = lines.findIndex((line) => FORWARD_MARKER.test(line));
   if (marker !== -1) return { noteEnd: marker, headersStart: marker + 1 };
-  // Outlook forwards reuse the reply header block; only the subject tells them apart.
   if (/^\s*(?:fwd?|wg|tr|rv|enc|vs)\s*[:：]/i.test(subject)) {
     const block = outlookHeaderStart(lines);
     if (block !== null) return { noteEnd: block.cut, headersStart: block.from };
   }
   return null;
-}
+};
 
-function outlookHeaderStart(lines: string[]): { cut: number; from: number } | null {
+const outlookHeaderStart: (lines: string[]) => { cut: number; from: number } | null = (lines) => {
   for (let i = 0; i < lines.length; i++) {
     if (!OUTLOOK_FROM.test(lines[i] ?? "")) continue;
     const window = lines.slice(i + 1, i + 1 + OUTLOOK_LOOKAHEAD);
@@ -86,45 +80,36 @@ function outlookHeaderStart(lines: string[]): { cut: number; from: number } | nu
     return { cut, from: i };
   }
   return null;
-}
+};
 
-function stripQuotes(lines: string[]): string {
+function stripQuotes(lines: string[]) {
   const outlook = outlookHeaderStart(lines);
   return visibleText(outlook === null ? lines : lines.slice(0, outlook.cut))
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
 
-// The fragment rules of email-reply-parser (a port of GitHub's EmailReplyParser), kept in
-// house because its patterns backtrack catastrophically: 2,000 lines of "abc. x skrev x"
-// (30 KB) took 19 s, and it exports no way to swap them. Every pattern below runs on one
-// line at a time and scans it a bounded number of times.
-
-/** Lines longer than this are never quote headers; capping them keeps header checks cheap. */
 const MAX_HEADER_LINE = 500;
 
-// "On DATE, NAME <EMAIL> wrote:" and its translations: an opening word, anything, a verb.
 const HEADER_VERB_LAST =
   /^[-\s]*(?:On|Le|El|Il|Em|W\sdniu|Dnia|pe|In\sdata)\s.*\s(?:wrote|écrit|escribió|scritto|escreveu|pisze|napisał(?:\(a\))?|kirjoitti)\s?:?[-\s]*$/u;
-// "Am DATE schrieb NAME <EMAIL>:": the verb comes before the name.
 const HEADER_VERB_FIRST = /^\s*(?:Am|Op|Den)\s.*\s(?:schrieb|schreef|skrev)(?:\s.*)?:$/u;
 const QUOTE_HEADERS = [
   HEADER_VERB_LAST,
   HEADER_VERB_FIRST,
-  /^\s*(?:From|Von|De|Van|Da)\s?:[^<[]*[<[][^>\]]*[>\]]/, // From: NAME <EMAIL>
-  /^\s*ср,\s.*\sг\.\sв\s[^<[]*[<[][^>\]]*[>\]]:$/u, // ср, DATE г. в TIME, NAME <EMAIL>:
-  /^在.*写道：$/u, // 在 DATE, TIME, NAME 写道：
-  /^20\d{2}\..*\s작성:$/u, // DATE TIME NAME 작성:
-  /^20\d{2}\/.*のメッセージ:$/u, // DATE TIME、NAME のメッセージ:
-  /^[^<]*\s<[^<>]*>\sschrieb:$/, // NAME <EMAIL> schrieb:
-  /^20\d{2}-\d{2}.\d{2}.\d{2}:\d{2}.*>:$/, // 20YY-MM-DD HH:II GMT+01:00 NAME <EMAIL>:
-  /^\s*[a-z]{3,4}\.\s.*\sskrev\s.*:$/, // DATE skrev NAME <EMAIL>:
-  /^\d{2}.\d{2}.20\d{2}[^<]*<[^<>]*> *:$/, // DD.MM.20YY HH:II NAME <EMAIL>:
-  /^\d{2}:\d{2}[^<]*\d{4}[^<]*<[^<>]*> *:$/, // HH:II, DATE, NAME <EMAIL>:
+  /^\s*(?:From|Von|De|Van|Da)\s?:[^<[]*[<[][^>\]]*[>\]]/,
+  /^\s*ср,\s.*\sг\.\sв\s[^<[]*[<[][^>\]]*[>\]]:$/u,
+  /^在.*写道：$/u,
+  /^20\d{2}\..*\s작성:$/u,
+  /^20\d{2}\/.*のメッセージ:$/u,
+  /^[^<]*\s<[^<>]*>\sschrieb:$/,
+  /^20\d{2}-\d{2}.\d{2}.\d{2}:\d{2}.*>:$/,
+  /^\s*[a-z]{3,4}\.\s.*\sskrev\s.*:$/,
+  /^\d{2}.\d{2}.20\d{2}[^<]*<[^<>]*> *:$/,
+  /^\d{2}:\d{2}[^<]*\d{4}[^<]*<[^<>]*> *:$/,
   /^-{1,12} ?(?:original message|oprindelig besked|message d'origine|ursprüngliche nachricht) ?-{0,12}$/i,
 ];
-// "NAME on DATE at TIME wrote:": three free-form gaps, so it is checked with indexOf.
-function isOnAtWrote(line: string): boolean {
+function isOnAtWrote(line: string) {
   if (!line.endsWith(" wrote:")) return false;
   const on = line.indexOf(" on ");
   return on > 0 && line.indexOf(" at ", on) !== -1;
@@ -147,24 +132,22 @@ const SIGNATURES = [
   /^Bonne (?:journ.e|soir.e)!?$/i,
 ];
 
-function isQuoteHeader(line: string): boolean {
+function isQuoteHeader(line: string) {
   if (line.length > MAX_HEADER_LINE) return false;
   return QUOTE_HEADERS.some((pattern) => pattern.test(line)) || isOnAtWrote(line);
 }
 
-function isSignature(line: string): boolean {
+function isSignature(line: string) {
   return line.length <= MAX_HEADER_LINE && SIGNATURES.some((pattern) => pattern.test(line));
 }
 
 interface Fragment {
-  /** Bottom-up: the parser walks the message from its last line. */
   lines: string[];
   quoted: boolean;
   signature: boolean;
 }
 
-/** The lines a reader sees: no ">" quotes, no quote header with what follows it, no signature. */
-function visibleText(input: string[]): string {
+function visibleText(input: string[]) {
   const lines = joinWrappedHeaders(input);
   const fragments: Fragment[] = [];
   let fragment: Fragment | null = null;
@@ -207,8 +190,7 @@ function visibleText(input: string[]): string {
   return text;
 }
 
-/** Clients wrap long quote headers ("On … Ana <ana@…>\nwrote:"); rejoin them to one line. */
-function joinWrappedHeaders(lines: string[]): string[] {
+function joinWrappedHeaders(lines: string[]) {
   const joined: string[] = [];
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i] ?? "";
@@ -220,10 +202,10 @@ function joinWrappedHeaders(lines: string[]): string[] {
       joined.push(line);
     }
   }
-  return joined;
+  return joined satisfies string[];
 }
 
-function parseForwarded(lines: string[]): ForwardedMessage {
+function parseForwarded(lines: string[]) {
   const forwarded: ForwardedMessage = { from: null, date: null, subject: null, to: null, text: "" };
   let i = 0;
   while (i < lines.length && (lines[i] ?? "").trim() === "") i++;
@@ -239,5 +221,5 @@ function parseForwarded(lines: string[]): ForwardedMessage {
     else if (key === "to") forwarded.to = value;
   }
   forwarded.text = lines.slice(i).join("\n").trim();
-  return forwarded;
+  return forwarded satisfies ForwardedMessage;
 }

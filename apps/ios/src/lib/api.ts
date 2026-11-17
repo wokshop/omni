@@ -1,5 +1,3 @@
-// The app's one API and auth client, from `@omni/client` like the web app's. Native requests
-// carry the session the auth client keeps in the Keychain (SecureStore) as a `Cookie` header.
 import { expoClient } from "@better-auth/expo/client";
 import {
   WORKSPACE_HEADER,
@@ -30,17 +28,17 @@ export const auth = createAuth({
  */
 export const api = createApi({
   baseUrl: config.apiUrl,
-  headers: (): Record<string, string> => {
+  headers: () => {
+    const headers: Record<string, string> = {};
     const workspace = currentWorkspaceId();
-    return workspace ? { [WORKSPACE_HEADER]: workspace } : {};
+    if (workspace) headers[WORKSPACE_HEADER] = workspace;
+    return headers;
   },
   fetch: async (input, init) => {
-    // In a browser (Expo's web target) the session is a first-party cookie, as for the web app.
     if (Platform.OS === "web") return fetch(input, { ...init, credentials: "include" });
     const headers = new Headers(init?.headers);
     const cookie = await auth.getCookie();
     if (cookie) headers.set("cookie", cookie);
-    // The cookie is ours to send; the OS cookie store must not add or keep one.
     return fetch(input, { ...init, headers, credentials: "omit" });
   },
 });
@@ -72,9 +70,9 @@ export class ApiError extends Error {
 
 /** Awaits a Hono RPC call and returns its typed body, or throws `ApiError`. */
 // oxlint-disable-next-line typescript/no-explicit-any -- mirrors hono's own `parseResponse` bound
-export async function call<T extends ClientResponse<any>>(
+export const call: <T extends ClientResponse<any>>(
   request: Promise<T>,
-): ReturnType<typeof parseResponse<T>> {
+) => ReturnType<typeof parseResponse<T>> = async (request) => {
   try {
     return await parseResponse(request);
   } catch (error) {
@@ -85,7 +83,7 @@ export async function call<T extends ClientResponse<any>>(
     }
     throw new ApiError(0, error instanceof Error ? error.message : String(error));
   }
-}
+};
 
 /** True for "not signed in" or "not a member": retrying will not help. */
 export function isAuthError(error: unknown) {

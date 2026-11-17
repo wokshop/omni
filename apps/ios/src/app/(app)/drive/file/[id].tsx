@@ -13,7 +13,6 @@ import { colors, space } from "@/theme/tokens.ts";
 /** A file, previewed by iOS itself (PDFs, images, text, Office documents) in a web view. */
 export default function FilePreview() {
   const { id, name } = useLocalSearchParams<{ id: string; name?: string }>();
-  // The session cookie and workspace for the request the web view makes itself.
   const source = useQuery({ queryKey: keys.fileSource(id), queryFn: () => fileSource(id) });
   return (
     <>

@@ -1,5 +1,3 @@
-// The app's one API and auth client. The Worker serves this app and `/api` on the same origin
-// (ADR 0006), so the session cookie is first-party and there is nothing to configure.
 import { createApi, createAuth, toApiError, type ApiErrorInfo } from "@omni/client";
 import { DetailedError, parseResponse, type ClientResponse } from "hono/client";
 import { reportAnswer, reportNoAnswer } from "./connectivity.ts";
@@ -12,7 +10,6 @@ const origin = window.location.origin;
 /** Typed Hono RPC calls: `api.threads.$get({ query })`. Prefer `call()` to unwrap them. */
 export const api = createApi({
   baseUrl: origin,
-  // This tab's workspace (its URL's), not the session's, which every tab shares (ADR 0043).
   headers: workspaceHeaders,
   fetch: (input, init) => takeStartupResponse(input, init) ?? tracedFetch(input, init),
 });
@@ -54,9 +51,9 @@ export class ApiError extends Error {
  * aborts the request.
  */
 // oxlint-disable-next-line typescript/no-explicit-any -- mirrors hono's own `parseResponse` bound
-export async function call<T extends ClientResponse<any>>(
+export const call: <T extends ClientResponse<any>>(
   request: Promise<T>,
-): ReturnType<typeof parseResponse<T>> {
+) => ReturnType<typeof parseResponse<T>> = async (request) => {
   try {
     const body = await parseResponse(request);
     reportAnswer();
@@ -72,7 +69,7 @@ export async function call<T extends ClientResponse<any>>(
     reportNoAnswer();
     throw new ApiError(0, error instanceof Error ? error.message : String(error));
   }
-}
+};
 
 /** True for errors that mean "not signed in" or "not a member": retrying will not help. */
 export function isAuthError(error: unknown) {

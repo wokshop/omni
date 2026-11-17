@@ -1,6 +1,3 @@
-// Mail service writers for IMAP sync: folders, sync positions, message locations, mailboxes and
-// outbox bookkeeping. Like `writers.ts`, only trusted background code calls these, and each one
-// is idempotent so a repeated sync step converges.
 import { and, desc, eq, gte, inArray, ne, notInArray, sql } from "drizzle-orm";
 import { MAX_PRUNED_THREADS_PER_EVENT } from "@omni/contracts";
 import type { Db } from "../client.ts";
@@ -81,8 +78,6 @@ export async function replaceFolders(
 ) {
   const { orgId, mailboxId, folders } = input;
   await db.transaction(async (tx) => {
-    // Folders that are new or changed role. A role change moves threads in or out of the inbox
-    // (Junk stored as `other`, later detected as `junk`), so their messages are reconciled below.
     const changed: string[] = [];
     for (const folder of folders) {
       const rows = await tx
@@ -117,11 +112,11 @@ export async function replaceFolders(
 }
 
 /** Null until the folder's first sync recorded its UIDVALIDITY. */
-export async function getFolderPosition(
+export const getFolderPosition: (
   db: Db,
   mailboxId: string,
   path: string,
-): Promise<FolderPosition | null> {
+) => Promise<FolderPosition | null> = async (db, mailboxId, path) => {
   const [row] = await db
     .select({
       uidvalidity: mailboxFolders.uidvalidity,
@@ -136,7 +131,7 @@ export async function getFolderPosition(
     uidnext: row.uidnext ?? 0,
     highestModseq: row.highestModseq,
   };
-}
+};
 
 /** Saves where a folder's sync stopped. The folder row comes from `replaceFolders`. */
 export async function saveFolderPosition(
@@ -338,9 +333,6 @@ export async function addLocation(
       .update(messages)
       .set({ folderId: input.folderId, imapUid: input.uid, updatedAt: new Date() })
       .where(eq(messages.id, input.messageId));
-    // The message's first copy, unread: new mail, which turns its thread unread on a Google
-    // account (ADR 0044). Read from the rows, not from the caller, so a sync that stored the
-    // message, failed, and came back for its location still counts it as new.
     const [first] = input.flags.includes("\\Seen")
       ? []
       : await tx
@@ -361,7 +353,6 @@ export async function setLocationFlags(
   },
 ) {
   if (input.changes.length === 0) return 0;
-  // One statement for the whole batch: a CONDSTORE resync can report thousands of changes.
   const changes = JSON.stringify(
     input.changes.map((c) => ({
       uid: c.uid,
@@ -462,7 +453,7 @@ export function reconcileFolder(db: Db, input: { mailboxId: string; path: string
  * Messages of the mailbox with no IMAP copy left in any stored folder. A send still in the outbox
  * is not one: it was indexed when SMTP accepted it and its Sent copy is still to be filed.
  */
-export async function orphanedMessages(db: Db, mailboxId: string): Promise<string[]> {
+export async function orphanedMessages(db: Db, mailboxId: string) {
   const rows = await db
     .select({ id: messages.id })
     .from(messages)
@@ -480,7 +471,7 @@ export async function orphanedMessages(db: Db, mailboxId: string): Promise<strin
                 '<' || left(encode(sha256(convert_to('omni-send:' || a.idempotency_key, 'UTF8')), 'hex'), 32) || '@%')))`,
       ),
     );
-  return rows.map((row) => row.id);
+  return rows.map((row) => row.id) satisfies string[];
 }
 
 /**
@@ -490,12 +481,11 @@ export async function orphanedMessages(db: Db, mailboxId: string): Promise<strin
  * thread that lost a message, deleted or not. The caller decides when a
  * missing copy means deleted rather than mid-move (see `MailboxConnection.syncAll`).
  */
-export async function pruneMessages(
+export const pruneMessages: (
   db: Db,
   input: { mailboxId: string; messageIds: string[] },
-): Promise<{ messages: number; threads: number; threadIds: string[] }> {
+) => Promise<{ messages: number; threads: number; threadIds: string[] }> = async (db, input) => {
   if (input.messageIds.length === 0) return { messages: 0, threads: 0, threadIds: [] };
-  // One jsonb parameter, not one per id: a deleted folder can orphan more ids than Postgres binds.
   const anyOf = (ids: string[]) =>
     sql`any(array(select jsonb_array_elements_text(${JSON.stringify(ids)}::text::jsonb)))`;
   return db.transaction(async (tx) => {
@@ -528,9 +518,7 @@ export async function pruneMessages(
         updatedAt: new Date(),
       })
       .where(sql`${threads.id} = ${anyOf(threadIds)}`);
-    // A thread that keeps messages drops the addresses only the deleted ones had.
     await rederiveParticipants(tx, threadIds);
-    // Queued with the delete, so open apps drop these threads even if the service dies next.
     await queueMailEvents(
       tx,
       chunks(threadIds, MAX_PRUNED_THREADS_PER_EVENT).map((chunk) => ({
@@ -542,7 +530,7 @@ export async function pruneMessages(
     );
     return { messages: removed.length, threads: emptied.length, threadIds };
   });
-}
+};
 
 /**
  * Messages whose `message.created` the Worker has not accepted yet (`notify_pending`), oldest
@@ -563,7 +551,6 @@ export async function pendingNotifications(db: Db, limit: number) {
     .where(eq(messages.notifyPending, true))
     .orderBy(messages.id)
     .limit(limit);
-  // No folder yet: a reply indexed when SMTP accepted it (its Sent copy is not filed yet).
   return rows.map(({ role, ...row }) => ({ ...row, folderRole: role ?? ("sent" as const) }));
 }
 
@@ -628,13 +615,13 @@ export async function messageThread(db: Db, mailboxId: string, messageId: string
 }
 
 /** When the next pending outbox action is due (an undo-send window ends), or null. */
-export async function nextActionDue(db: Db): Promise<Date | null> {
+export const nextActionDue: (db: Db) => Promise<Date | null> = async (db) => {
   const [row] = await db
     .select({ at: sql<Date | null>`min(${mailActions.runAfter})` })
     .from(mailActions)
     .where(eq(mailActions.status, "pending"));
   return row?.at ? new Date(row.at) : null;
-}
+};
 
 /** Marks the folder for a full re-sync: no sync position and no stored copies. */
 export async function resetFolder(db: Db, mailboxId: string, path: string) {
@@ -677,7 +664,6 @@ export async function rescheduleAction(db: Db, id: string, error: string, retryA
         status: mailActions.status,
         requestId: mailActions.requestId,
       });
-    // The member who asked learns it failed; queued with the status, so it is never lost.
     if (row?.status === "failed") {
       await queueMailEvents(tx, [
         {
@@ -756,7 +742,6 @@ export async function saveMailbox(
     throw new Error("a shared mailbox needs someone on it");
   }
   return db.transaction(async (tx) => {
-    // Shared mailboxes are a company's (ADR 0024).
     if (input.kind === "shared") await assertCompany(tx, input.orgId, "a shared mailbox");
     const [row] = await tx
       .insert(mailboxes)
@@ -793,8 +778,6 @@ export async function saveMailbox(
           set: { role: "owner" },
         });
     }
-    // A shared mailbox's team is its access list (ADR 0008). A new one is seeded with the owner
-    // grant above; for one that already has a team, the team decides and the sync wins.
     if (input.kind === "shared") {
       await ensureMailboxTeam(tx, row!.id);
       await syncMailboxAccess(tx, row!.id);
@@ -804,12 +787,12 @@ export async function saveMailbox(
 }
 
 /** Members holding an owner grant on the mailbox. */
-export async function mailboxOwnerIds(db: Db, mailboxId: string): Promise<string[]> {
+export async function mailboxOwnerIds(db: Db, mailboxId: string) {
   const rows = await db
     .select({ memberId: mailboxAccess.memberId })
     .from(mailboxAccess)
     .where(and(eq(mailboxAccess.mailboxId, mailboxId), eq(mailboxAccess.role, "owner")));
-  return rows.map((row) => row.memberId);
+  return rows.map((row) => row.memberId) satisfies string[];
 }
 
 /** Gmail mailboxes at `address` in any workspace: one Google account syncs into one place. */
@@ -887,13 +870,12 @@ export async function moveMessageToThread(
         })
         .where(eq(threads.id, moved.from));
     }
-    // Its addresses follow it; the thread it left keeps only what its other messages have.
     await rederiveParticipants(tx, [moved.from, input.threadId]);
   });
 }
 
-function chunks<T>(items: T[], size: number): T[][] {
+function chunks<T>(items: T[], size: number) {
   const out: T[][] = [];
   for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
-  return out;
+  return out satisfies T[][];
 }

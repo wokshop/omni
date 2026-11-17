@@ -1,4 +1,3 @@
-// The workspace's CRM settings: today, the default currency.
 import { eq } from "drizzle-orm";
 import { crmSettings } from "../schema/crm.ts";
 import { isCurrency, type CrmMember, type Ex } from "./core.ts";
@@ -18,11 +17,15 @@ export async function getSettings(ex: Ex, member: CrmMember) {
   return { status: "ok" as const, settings: { defaultCurrency: row?.defaultCurrency ?? null } };
 }
 
-export async function putSettings(
+export const putSettings: (
   tx: Ex,
   member: CrmMember,
   input: { defaultCurrency: string | null },
-): Promise<{ status: "ok"; settings: CrmSettings } | { status: "invalid_currency" }> {
+) => Promise<{ status: "ok"; settings: CrmSettings } | { status: "invalid_currency" }> = async (
+  tx,
+  member,
+  input,
+) => {
   if (input.defaultCurrency !== null && !isCurrency(input.defaultCurrency)) {
     return { status: "invalid_currency" };
   }
@@ -32,4 +35,4 @@ export async function putSettings(
     .set({ defaultCurrency: input.defaultCurrency })
     .where(eq(crmSettings.orgId, member.orgId));
   return { status: "ok", settings: { defaultCurrency: input.defaultCurrency } };
-}
+};

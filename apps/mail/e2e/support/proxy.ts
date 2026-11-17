@@ -1,7 +1,3 @@
-// A real TCP relay between the service and GreenMail, for network faults GreenMail cannot make
-// by itself: drop every connection, refuse new ones, go silent without closing (a NAT that
-// forgot the flow), or stall new connections (a slow server). Bytes pass through untouched;
-// nothing about IMAP or SMTP is simulated.
 import { createServer, type Server, type Socket, connect } from "node:net";
 import type { AddressInfo } from "node:net";
 
@@ -9,9 +5,7 @@ interface Pair {
   client: Socket;
   upstream: Socket;
   silent: boolean;
-  /** Bytes held while the link is stalled, flushed in order by `restore()`. */
   held: { to: Socket; chunk: Buffer }[] | null;
-  /** The last bytes the client sent. */
   tail: string;
 }
 
@@ -21,6 +15,8 @@ export interface FaultyLink {
   readonly accepted: number;
   /** When each connection was accepted (`Date.now()`), including refused ones. */
   readonly acceptedAt: readonly number[];
+  /** Resolves once `count` connections have been accepted, including refused ones. */
+  accepting(count: number): Promise<void>;
   /** Connections relayed and still open. */
   readonly open: number;
   /** For each relayed connection that has closed: the last bytes its client sent. */
@@ -37,15 +33,19 @@ export interface FaultyLink {
   close(): Promise<void>;
 }
 
-export async function faultyLink(target: { host: string; port: number }): Promise<FaultyLink> {
+export const faultyLink: (target: { host: string; port: number }) => Promise<FaultyLink> = async (
+  target,
+) => {
   const pairs = new Set<Pair>();
   let refusing = false;
   let stalling = false;
   const acceptedAt: number[] = [];
   const closedTails: string[] = [];
+  const waiters = new Set<() => void>();
 
   const server: Server = createServer((client) => {
     acceptedAt.push(Date.now());
+    for (const waiter of waiters) waiter();
     if (refusing) {
       client.resetAndDestroy();
       return;
@@ -88,6 +88,13 @@ export async function faultyLink(target: { host: string; port: number }): Promis
       return acceptedAt.length;
     },
     acceptedAt,
+    async accepting(count) {
+      const reached = Promise.withResolvers<void>();
+      const check = () => acceptedAt.length >= count && reached.resolve();
+      waiters.add(check);
+      check();
+      await reached.promise.finally(() => waiters.delete(check));
+    },
     get open() {
       return pairs.size;
     },
@@ -116,4 +123,4 @@ export async function faultyLink(target: { host: string; port: number }): Promis
       await new Promise((resolve) => server.close(resolve));
     },
   };
-}
+};

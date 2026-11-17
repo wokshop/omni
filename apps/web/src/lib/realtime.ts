@@ -1,7 +1,3 @@
-// Live updates: the active workspace's websocket (the Durable Object is per org, and lists show
-// only the active workspace, ADR 0014 as amended), plus any other workspace the app follows for
-// a while (`follow`), turned into cache invalidations. Events say what changed, not its contents,
-// so this marks those queries stale and TanStack Query refetches only the ones on screen.
 import {
   connectRealtime,
   type Realtime,
@@ -25,11 +21,9 @@ import { applyPresence, clearPresence } from "./presence.ts";
 import { actionQuery } from "./mail-queries.ts";
 import { conversationFilterOf, filterOf, keys } from "./query-keys.ts";
 
-/** Bursts of new mail (an import, a busy thread) collapse into one refetch per window. */
 const FLUSH_MS = 150;
 
 let status: RealtimeStatus = "closed";
-/** The open sockets by org, so a message about a conversation goes to its workspace. */
 let sockets = new Map<string, Realtime>();
 const openListeners = new Set<(orgId: string) => void>();
 type MergedEvent = Extract<RealtimeEvent, { type: "merged" }>;
@@ -43,9 +37,7 @@ const isStorageEvent = (event: RealtimeEvent): event is StorageEvent =>
   event.type === "file.presence" || event.type.startsWith("doc.");
 
 function onStorageEvent(orgId: string, event: StorageEvent) {
-  // Someone has a Drive file open in their editor, or closed it.
   if (event.type === "file.presence") return applyFilePresence(orgId, event);
-  // A live document's record, or the answer to one this tab sent.
   for (const listener of docListeners) listener(event);
 }
 
@@ -74,7 +66,7 @@ export interface RealtimeConnections {
  * Opens the active org's socket and keeps the cache in step with it and with every org it is
  * told to `follow`. The status shown is the active org's socket.
  */
-export function startRealtime(client: QueryClient, activeOrgId: string): RealtimeConnections {
+export function startRealtime(client: QueryClient, activeOrgId: string) {
   const changedThreads = new Set<string>();
   const changedMailboxes = new Set<string>();
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -86,7 +78,6 @@ export function startRealtime(client: QueryClient, activeOrgId: string): Realtim
     changedThreads.clear();
     changedMailboxes.clear();
     for (const id of threads) void client.invalidateQueries({ queryKey: keys.thread(id) });
-    // A list filtered to another mailbox cannot have changed.
     void client.invalidateQueries({
       queryKey: keys.threadLists(),
       predicate: (query) => {
@@ -115,33 +106,24 @@ export function startRealtime(client: QueryClient, activeOrgId: string): Realtim
   const onEvent = (orgId: string, event: RealtimeEvent) => {
     if (isStorageEvent(event)) return onStorageEvent(orgId, event);
     switch (event.type) {
-      // New mail, or the conversation's status, assignee, priority, tags or snooze changed.
       case "changed":
       case "thread.changed":
         return changed(event.mailboxId, event.threadIds);
-      // A note is part of the thread's timeline (its queries sit under `keys.thread`).
       case "note.created":
         return changed(event.mailboxId, [event.threadId]);
-      // The thread's due times and the inbox's "SLA at risk" view and count moved.
       case "sla.at_risk":
       case "sla.breached":
         return changed(event.mailboxId, [event.threadId]);
-      // Threads became one: readers of the absorbed ones follow before their queries refetch
-      // (and 404), then every one of them refetches.
       case "merged":
         for (const listener of mergeListeners) listener(event);
         return changed(event.mailboxId, [event.intoThreadId, ...event.fromThreadIds]);
       case "presence":
         return applyPresence(orgId, event);
-      // You were assigned, mentioned, or a customer replied: refetch your notifications.
       case "notification":
-      // One you had was withdrawn (its note was deleted).
       case "notification.removed":
         return void client.invalidateQueries({ queryKey: keys.notifications() });
       case "action.succeeded": {
         settleOutstanding(event.actionId);
-        // A reply went out: refetch its thread now rather than waiting for the sync's event. (No
-        // sender emits this yet; outstanding sends are settled by `recheckOutstanding`.)
         const pending = allPending(client).find((p) => p.actionId === event.actionId);
         if (pending) changed(event.mailboxId, [pending.threadId]);
         return;
@@ -150,12 +132,8 @@ export function startRealtime(client: QueryClient, activeOrgId: string): Realtim
         if (event.status === "failed")
           onActionFailed(client, event.actionId, undefined, event.error);
         return;
-      // A domain's DNS was checked again (the DNS page's auto-check): refetch its verdicts.
       case "domain":
         return void client.invalidateQueries({ queryKey: keys.onboarding() });
-      // A teammate (or an agent) changed the CRM: what is on screen refetches. A contract's
-      // signing locked its file, so Storage refetches too. Only the active workspace's CRM is
-      // cached.
       case "crm.changed":
         if (orgId !== activeOrgId) return;
         if (event.kind === "contract") void client.invalidateQueries({ queryKey: keys.storage() });
@@ -172,21 +150,14 @@ export function startRealtime(client: QueryClient, activeOrgId: string): Realtim
     });
   const onStatus = (orgId: string, next: RealtimeStatus, reconnected: boolean) => {
     if (orgId === activeOrgId) setStatus(next);
-    // Teammates' `left` may be lost while the socket is down; they reappear on their next repeat.
     if (next === "closed") {
       clearPresence(orgId);
       clearFilePresence(orgId);
     }
     if (next !== "open") return;
     for (const listener of openListeners) listener(orgId);
-    // A send's result may have come while no socket of its org was open.
     void recheckOutstanding(client, orgId);
-    // The Worker answered. Going online resumes paused mutations and refetches stale queries.
     reportAnswer();
-    // Events sent while the socket was down are gone: mark all mail stale. Only queries on
-    // screen refetch now (the rest when next shown), and one already refetching because the
-    // app just came online is joined, not cancelled and sent again. Then ask the outbox about
-    // sends still waiting.
     if (reconnected) {
       void client.invalidateQueries({ queryKey: keys.mail() }, { cancelRefetch: false });
       void client.invalidateQueries({ queryKey: keys.crm() }, { cancelRefetch: false });
@@ -220,45 +191,47 @@ export function startRealtime(client: QueryClient, activeOrgId: string): Realtim
       clearFilePresence();
       setStatus("closed");
     },
-  };
+  } satisfies RealtimeConnections;
 }
 
 /**
  * Records every send the outbox takes (its answer names the action and its workspace) until its
  * result comes back, so that workspace's socket stays open for it. Returns the unsubscribe.
  */
-export function trackSends(client: QueryClient): () => void {
+export function trackSends(client: QueryClient) {
   return client.getMutationCache().subscribe((event) => {
     if (event.type !== "updated" || event.action.type !== "success") return;
     const data = event.action.data as { actionId?: unknown; orgId?: unknown } | undefined;
     if (typeof data?.actionId === "string" && typeof data.orgId === "string") {
       addOutstanding({ actionId: data.actionId, orgId: data.orgId });
     }
-  });
+  }) satisfies () => void;
 }
 
 /** Sends on the workspace's socket. False when it is not open (the message is dropped). */
-export function sendRealtime(orgId: string, message: RealtimeClientMessage): boolean {
+export function sendRealtime(orgId: string, message: RealtimeClientMessage) {
   return sockets.get(orgId)?.send(message) ?? false;
 }
 
 /** Calls `listener(event)` when threads are merged, before their queries refetch. */
-export function onThreadsMerged(listener: (event: MergedEvent) => void): () => void {
+export const onThreadsMerged: (listener: (event: MergedEvent) => void) => () => void = (
+  listener,
+) => {
   mergeListeners.add(listener);
   return () => mergeListeners.delete(listener);
-}
+};
 
 /** Calls `listener(event)` for every live document event (ADR 0043), from any workspace. */
-export function onDocEvent(listener: (event: DocEvent) => void): () => void {
+export const onDocEvent: (listener: (event: DocEvent) => void) => () => void = (listener) => {
   docListeners.add(listener);
   return () => docListeners.delete(listener);
-}
+};
 
 /** Calls `listener(orgId)` whenever a workspace's socket opens, including after a reconnect. */
-export function onRealtimeOpen(listener: (orgId: string) => void): () => void {
+export const onRealtimeOpen: (listener: (orgId: string) => void) => () => void = (listener) => {
   openListeners.add(listener);
   return () => openListeners.delete(listener);
-}
+};
 
 function onActionFailed(
   client: QueryClient,
@@ -267,8 +240,6 @@ function onActionFailed(
   error: string,
 ) {
   settleOutstanding(actionId);
-  // A failed reply shows on its pending bubble; anything else is reported as a failure, and the
-  // lists refetch because an optimistic archive or move may not have happened after all.
   if (!failPendingByAction(client, actionId, error)) {
     addFailure(client, { actionId, kind, error, at: new Date().toISOString() });
   }
@@ -285,14 +256,11 @@ export async function recheckPendingSends(client: QueryClient, threadId?: string
   await Promise.all(
     queued.map(async (actionId) => {
       try {
-        // Always ask the server: the point is to learn what happened while we were away.
         const action = await client.fetchQuery({ ...actionQuery(actionId), staleTime: 0 });
         if (action.status === "failed") {
           onActionFailed(client, action.id, action.kind, action.error ?? "Sending failed");
         }
-      } catch {
-        // Offline again; the next reconnect checks again.
-      }
+      } catch {}
     }),
   );
 }
@@ -307,15 +275,6 @@ export const SEND_SOCKET_MS = 2 * 60_000;
 export const RECHECK_SENDS_FAST_MS = 10_000;
 /** ...and after: retries back off to minutes, so this does too. */
 export const RECHECK_SENDS_SLOW_MS = 60_000;
-/**
- * When tracking gives up on a send. The outbox's longest retry chain (`apps/mail/src/outbox.ts`):
- * an undo window of at most 30 s, then 8 attempts, each up to the 5 min claim lease if it hangs
- * (40 min), with waits of `5 s + min(30 min, 5 s × 2^n)` between attempts 1 to 7 (at most 1,305 s,
- * about 22 min): about 63 min. 90 min covers it. A send deferred because its mailbox or domain is
- * unavailable spends no attempts and can wait longer: past this it is dropped as a reload would
- * drop it (a new email: nothing shows; a reply: its bubble stays as it is until the thread is
- * opened again or the socket reconnects, which ask again).
- */
 const TRACK_SENDS_MAX_MS = 90 * 60_000;
 
 /**
@@ -334,7 +293,6 @@ export async function recheckOutstanding(client: QueryClient, orgId?: string) {
           onActionFailed(client, action.id, action.kind, action.error ?? "Sending failed");
         }
       } catch (error) {
-        // Gone: undone inside its window. Anything else (offline): the next check asks again.
         if (error instanceof ApiError && error.status === 404) settleOutstanding(actionId);
       }
     }),

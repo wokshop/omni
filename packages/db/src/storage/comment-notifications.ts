@@ -1,8 +1,3 @@
-// Who hears about a new comment (ADR 0043 decision 4): the file's owner (My files) or uploader
-// (Shared), and everyone who already wrote in the comment's thread, each only while a member of
-// the file's workspace, since the notification opens the file from that workspace's Storage. The
-// author is never told about their own comment. One notification per comment per person, however
-// often it runs.
 import { and, eq, inArray, or } from "drizzle-orm";
 import { uuidv7 } from "uuidv7";
 import type { Db } from "../client.ts";
@@ -26,7 +21,7 @@ export interface CommentNotificationData {
 const EXCERPT = 140;
 
 /** Notifies who should hear about comment `commentId` on `node`. Returns who got one. */
-export async function notifyComment(
+export const notifyComment: (
   tx: Db,
   input: {
     node: NodeRow;
@@ -35,7 +30,7 @@ export async function notifyComment(
     authorMemberId: string;
     body: string;
   },
-): Promise<string[]> {
+) => Promise<string[]> = async (tx, input) => {
   const { node } = input;
   const owner = node.space === "personal" ? node.ownerMemberId : node.createdByMemberId;
   const writers = input.rootId
@@ -44,7 +39,6 @@ export async function notifyComment(
         .from(storageComments)
         .where(or(eq(storageComments.id, input.rootId), eq(storageComments.parentId, input.rootId)))
     : [];
-  // My files is its owner's alone: the thread's other writers reached it through a grant.
   const candidates = [owner, ...(node.space === "shared" ? writers.map((w) => w.id) : [])];
   const wanted = [
     ...new Set(candidates.filter((id): id is string => !!id && id !== input.authorMemberId)),
@@ -80,4 +74,4 @@ export async function notifyComment(
     .onConflictDoNothing()
     .returning({ memberId: notifications.memberId });
   return rows.map((r) => r.memberId);
-}
+};

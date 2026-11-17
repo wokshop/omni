@@ -1,13 +1,3 @@
-// The link door (ADR 0034 decisions 3, 4 and 6), under `/api/storage/shared/:shareId`: what
-// `/s/<shareId>` opens. A session is optional. Without one, only a link open to anyone answers,
-// and only to list and download. With one, a member of the item's workspace who reaches it there
-// gets in as a member, and a person it was shared with by the grant door bounded to this link;
-// both change what they may through the same routes a member uses (`changes.ts`). Everything else is `404`, a Restricted link
-// included: the answer never says whether a link exists.
-//
-// Mounted ahead of the member API, so the checks a member route gets from middleware are made
-// here: the rate limit is per IP (`RATE_LIMIT_STORAGE_LINK`), and a change needs the shared
-// node's workspace in good standing (ADR 0015), whatever workspace the person's own is.
 import { storageSharedQuerySchema, type StorageSharedResponse } from "@omni/contracts";
 import {
   forMember,
@@ -35,8 +25,10 @@ import {
   type SharedAccess,
 } from "./http.ts";
 
-/** A member's or a grantee's door as the link door's routes read through it. */
-function through(root: SharedAccess["root"], door: MemberStorage | SharedStorage): SharedAccess {
+const through: (root: SharedAccess["root"], door: MemberStorage | SharedStorage) => SharedAccess = (
+  root,
+  door,
+) => {
   return {
     root,
     node: door.node,
@@ -44,14 +36,12 @@ function through(root: SharedAccess["root"], door: MemberStorage | SharedStorage
     file: door.file,
     writer: door,
   };
-}
+};
 
-/**
- * What `shareId` opens for this request, by the first door that opens it: the member door of a
- * workspace the session may use (a teammate's link to something in Shared, or one's own file),
- * then a grant, then the link itself when it is open to anyone. Null when none does.
- */
-async function openShared(c: Context<AppEnv>, shareId: string): Promise<SharedAccess | null> {
+const openShared: (c: Context<AppEnv>, shareId: string) => Promise<SharedAccess | null> = async (
+  c,
+  shareId,
+) => {
   const { db } = c.var;
   const session = await resolveSession(c);
   if (session) {
@@ -75,7 +65,7 @@ async function openShared(c: Context<AppEnv>, shareId: string): Promise<SharedAc
     file: link.file,
     writer: null,
   };
-}
+};
 
 const open = createMiddleware<AppEnv>(async (c, next) => {
   const { db, config } = c.var;
@@ -88,7 +78,6 @@ const open = createMiddleware<AppEnv>(async (c, next) => {
   const { root } = shared;
 
   if (c.req.method !== "GET" && c.req.method !== "HEAD") {
-    // A link alone never writes: an anonymous editor would be an open upload endpoint.
     if (!shared.writer) return refused(c, "forbidden");
     if (!(await inGoodStanding(db, config, root.node.orgId))) {
       return apiError(c, "billing_inactive", READ_ONLY_MESSAGE);
@@ -100,7 +89,6 @@ const open = createMiddleware<AppEnv>(async (c, next) => {
 export const storageShared = new Hono<AppEnv>()
   .use("/:shareId/*", open)
 
-  /** The shared node, or `?node=` inside it, and a folder's contents. */
   .get("/:shareId", zValidator("query", storageSharedQuerySchema), async (c) => {
     const { node, cursor, limit } = c.req.valid("query");
     const shared = c.var.shared!;
@@ -125,7 +113,6 @@ export const storageShared = new Hono<AppEnv>()
     } satisfies StorageSharedResponse);
   })
 
-  /** A shared file's bytes: the same download a member gets. */
   .get("/:shareId/files/:id/content", async (c) =>
     download(c, await c.var.shared!.file(c.req.param("id"))),
   )

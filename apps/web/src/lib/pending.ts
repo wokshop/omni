@@ -1,6 +1,3 @@
-// Client-only state kept in the query cache: sends that have not arrived as messages yet, and
-// actions the outbox gave up on. Living in the cache means hooks subscribe to it like any query,
-// and an organization or account switch clears it with everything else.
 import type { QueryClient } from "@tanstack/react-query";
 import { keys } from "./query-keys.ts";
 
@@ -31,8 +28,8 @@ export interface ActionFailure {
   at: string;
 }
 
-export function pendingFor(client: QueryClient, threadId: string): PendingSend[] {
-  return client.getQueryData<PendingSend[]>(keys.pending(threadId)) ?? [];
+export function pendingFor(client: QueryClient, threadId: string) {
+  return (client.getQueryData<PendingSend[]>(keys.pending(threadId)) ?? []) satisfies PendingSend[];
 }
 
 export function addPending(client: QueryClient, pending: PendingSend) {
@@ -73,10 +70,10 @@ export function prunePending(
 }
 
 /** Every pending send in every thread. */
-export function allPending(client: QueryClient): PendingSend[] {
+export function allPending(client: QueryClient) {
   return client
     .getQueriesData<PendingSend[]>({ queryKey: keys.pendingAll() })
-    .flatMap(([, list]) => list ?? []);
+    .flatMap(([, list]) => list ?? []) satisfies PendingSend[];
 }
 
 /** Marks the pending send for this action failed. Returns false when no pending send has it. */

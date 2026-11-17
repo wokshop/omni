@@ -1,9 +1,3 @@
-// Everything Jev is asked, during triage and search, and the thresholds that read its answers.
-// Edit wording here and nowhere else. Each triage question is one judgment about the state built
-// in `jev.ts`; the truth tables in `decide.ts` turn the answers into a bucket. Who wrote the latest message is a
-// fact code knows, so it picks the question set: `TRIAGE_QUESTIONS` when someone else did,
-// `SENT_QUESTIONS` when the reader did.
-
 /** Pinned so an alias move can't shift answers under tuned thresholds. Override per client. */
 export const JEV_MODEL = "jev-1.14.0";
 
@@ -128,10 +122,6 @@ export const SENT_QUESTIONS = {
 export type SentJudgment = keyof typeof SENT_QUESTIONS;
 export const SENT_JUDGMENTS = Object.keys(SENT_QUESTIONS) as SentJudgment[];
 
-// Search: one Noul per candidate thread, "is this what the searcher is looking for?", over a
-// state that holds only the query and today's date (`search.ts`). Each candidate rides in its
-// own question's instructions, so no question has to look a thread up in a shared list.
-
 /** Shared facts for every relevance question. `{today}` is filled in by `search.ts`. */
 export const SEARCH_NOTE =
   "A person typed `query` into the search box of their email inbox to find an email thread. Today is {today}.";
@@ -147,11 +137,6 @@ export const RELEVANCE_CRITERIA = {
 
 /** Token budget for each candidate's `excerpt`. */
 export const SEARCH_EXCERPT_TOKENS = 300;
-
-// Helpdesk: asked beside the triage questions, in the same request, when the latest message on a
-// shared inbox came from a customer. The judgments below feed `PRIORITY_TABLE` in `helpdesk.ts`;
-// each of the inbox's tags is one more Noul (`tagQuestion`). The bucket questions above stay as
-// they are, so a shared inbox's noise is the same noise a personal inbox sees.
 
 export const PRIORITY_QUESTIONS = {
   sender_blocked: {
@@ -205,9 +190,9 @@ export const MAX_SUGGESTED_TAGS = 3;
  * `tag_1`, ...) are never sent to the model. A tag without a description asks exactly what it
  * asked before descriptions existed.
  */
-export function tagQuestion(name: string, description?: string | null): NoulQuestion {
+export function tagQuestion(name: string, description?: string | null) {
   const about = description?.trim();
-  return {
+  const result: NoulQuestion = {
     type: "noul",
     instructions: `Does the tag "${name}" describe what \`latest_message\` is about?`,
     criteria: {
@@ -217,6 +202,7 @@ export function tagQuestion(name: string, description?: string | null): NoulQues
       false: `The message is about something else, or only mentions "${name}" in passing.`,
     },
   };
+  return result;
 }
 
 /** At most this many teammates are asked about; members past it are left to people. */
@@ -226,7 +212,7 @@ export const MAX_TEAMMATE_QUESTIONS = 10;
  * One Noul per teammate with a described role: does this message fall under it? Code picks the
  * assignee from the answers (`pickAssignee`). Only the role is sent, never a name or address.
  */
-export function teammateQuestion(role: string): NoulQuestion {
+export const teammateQuestion: (role: string) => NoulQuestion = (role) => {
   return {
     type: "noul",
     instructions: `Is \`latest_message\` about work handled by the teammate whose role is: "${role}"?`,
@@ -236,4 +222,4 @@ export function teammateQuestion(role: string): NoulQuestion {
         "The sender asks for something that role does not cover, or mentions that work only in passing.",
     },
   };
-}
+};

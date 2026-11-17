@@ -1,6 +1,3 @@
-// Helpdesk conversations on shared inboxes: state, tags, assignees, and the changes to them.
-// Every change shows at once, rolls back if the request fails, and offers its inverse as undo
-// (`useUndo()` shows it; `z` runs it).
 import {
   useInfiniteQuery,
   useMutation,
@@ -80,8 +77,7 @@ const PRIORITY_LABELS: Record<Priority, string> = {
   low: "Low",
 };
 
-/** What a change did, for the undo toast and the screen reader. */
-function describe(change: ConversationChange, client: QueryClient, mailboxId?: string) {
+function describeChange(change: ConversationChange, client: QueryClient, mailboxId?: string) {
   const assignee = (memberId: string | null) =>
     memberId
       ? (client
@@ -106,10 +102,6 @@ function describe(change: ConversationChange, client: QueryClient, mailboxId?: s
   }
 }
 
-/**
- * `change(threadId, change, { tag? })`: the one entry point for conversation changes, used by
- * the named hooks below. Offers the inverse as undo unless `undo: false` (an undo itself).
- */
 function useChange() {
   const client = useQueryClient();
   const email = useSession().data?.user.email;
@@ -126,7 +118,7 @@ function useChange() {
     if (!inverse) return;
     const tag =
       inverse.type === "tag" ? before?.tags.find((t) => t.id === inverse.tagId) : undefined;
-    offerUndo(describe(change, client, before?.mailboxId), () =>
+    offerUndo(describeChange(change, client, before?.mailboxId), () =>
       mutation.mutate({ key: idempotencyKey(), threadId, change: inverse, tag, me }),
     );
   };
@@ -169,7 +161,6 @@ export function useClaim() {
   return {
     ...rest,
     mutate: ({ threadId, mailboxId }: { threadId: string; mailboxId: string }) =>
-      // Your member, for the optimistic avatar; the server assigns whoever asks anyway.
       run(
         threadId,
         { type: "claim", memberId: memberInInbox(client, mailboxId, email) },
@@ -278,7 +269,6 @@ export function useBulkChange() {
     const before = ids.map((id) => [id, cachedState(client, id)] as const);
     send(ids, change, mailboxId, tag);
     if (options.undo === false) return;
-    // Rows were in different states, so the undo is one bulk request per distinct inverse.
     const inverses = new Map<
       string,
       { change: ConversationChange; tag?: ConversationTag | undefined; ids: string[] }
@@ -296,7 +286,7 @@ export function useBulkChange() {
       inverses.set(group, entry);
     }
     if (!inverses.size) return;
-    offerUndo(options.undo ?? describe(change, client, mailboxId), () => {
+    offerUndo(options.undo ?? describeChange(change, client, mailboxId), () => {
       for (const inverse of inverses.values())
         send(inverse.ids, inverse.change, mailboxId, inverse.tag);
     });

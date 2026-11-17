@@ -19,7 +19,6 @@ const INSET = 64;
 /** A Drive page: a space's top, what was shared with you, or Trash. */
 export default function DriveHome() {
   const params = useLocalSearchParams<{ page?: string }>();
-  // Shared is a company's: a Personal space has none, as it has no CRM.
   const company = hasCrm(useWorkspace().active);
   const pages = ALL.filter((page) => company || !("company" in page));
   const page =

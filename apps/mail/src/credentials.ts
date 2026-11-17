@@ -1,5 +1,3 @@
-// What `mailboxes.credentials_enc` decrypts to: the login and the servers to use it on. Hosts
-// live inside the envelope so any IMAP/SMTP provider works without schema changes.
 import { decryptCredential, encryptCredential, type Keyring } from "@omni/crypto";
 import { z } from "zod";
 import type { MailAuth, ServerEndpoint } from "./mailbox-connection.ts";
@@ -11,7 +9,6 @@ const endpoint = z.object({
   secure: z.boolean(),
 });
 
-/** An app password (Purelymail, any IMAP host). */
 const passwordSchema = z.object({
   user: z.string().min(1),
   pass: z.string().min(1),
@@ -19,14 +16,11 @@ const passwordSchema = z.object({
   smtp: endpoint,
 });
 
-/** A Google account connected with OAuth (ADR 0023): logs in with XOAUTH2. */
 const googleSchema = z.object({
   oauth: z.literal("google"),
   user: z.string().min(1),
   refreshToken: z.string().min(1),
-  /** The access token the code exchange returned, so the first connect needs no refresh. */
   accessToken: z.string().min(1).optional(),
-  /** When `accessToken` expires, in epoch milliseconds. */
   accessTokenExpiresAt: z.number().int().optional(),
   imap: endpoint,
   smtp: endpoint,
@@ -58,20 +52,18 @@ export function sealCredentials(
   keyring: Keyring,
   mailboxId: string,
   credentials: MailboxCredentials,
-): Promise<string> {
+) {
   return encryptCredential(
     keyring,
     JSON.stringify(credentialsSchema.parse(credentials)),
     mailboxId,
-  );
+  ) satisfies Promise<string>;
 }
 
-export async function openCredentials(
-  keyring: Keyring,
-  mailboxId: string,
-  envelope: string,
-): Promise<MailboxCredentials> {
-  return credentialsSchema.parse(JSON.parse(await decryptCredential(keyring, envelope, mailboxId)));
+export async function openCredentials(keyring: Keyring, mailboxId: string, envelope: string) {
+  return credentialsSchema.parse(
+    JSON.parse(await decryptCredential(keyring, envelope, mailboxId)),
+  ) satisfies MailboxCredentials;
 }
 
 /** Google credentials need the OAuth client to refresh; without one they cannot log in. */
@@ -80,7 +72,10 @@ export class OAuthNotConfiguredError extends Error {
 }
 
 /** How a mailbox with these credentials logs in to IMAP and SMTP. */
-export function mailboxAuth(credentials: MailboxCredentials, google?: GoogleOAuth): MailAuth {
+export const mailboxAuth: (credentials: MailboxCredentials, google?: GoogleOAuth) => MailAuth = (
+  credentials,
+  google,
+) => {
   if (!("oauth" in credentials)) return { kind: "password", pass: credentials.pass };
   if (!google) {
     throw new OAuthNotConfiguredError(
@@ -88,4 +83,4 @@ export function mailboxAuth(credentials: MailboxCredentials, google?: GoogleOAut
     );
   }
   return { kind: "oauth2", token: googleTokenSource(google, credentials) };
-}
+};
