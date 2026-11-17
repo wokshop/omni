@@ -83,7 +83,15 @@ export async function openLiveDoc(options: LiveDocOptions): Promise<LiveDoc | nu
     const entries = await readAll(options.nodeId);
     if (!entries) return null;
     const live = new LiveDoc(options);
-    if (live.join(entries)) return live.start();
+    const joined = live.join(entries);
+    if (joined === true) return live.start();
+    if (joined !== false) {
+      // Saved since this tab read the file: open that version rather than seed an older one
+      // over everyone's newer page.
+      live.close();
+      options.onReplaced(joined);
+      return null;
+    }
     const tail = (entries.at(-1)?.seqNum ?? -1) + 1;
     // Someone else seeded first: read again and join theirs.
     if (await live.seed(tail)) return live.start();
@@ -131,8 +139,12 @@ export class LiveDoc {
     );
   }
 
-  /** Joins the latest epoch from the stream's records; false when there is none to join. */
-  join(entries: StorageLiveEntry[]) {
+  /**
+   * Joins the latest epoch from the stream's records: true when joined, false when there is none
+   * to join (none yet, or the file changed outside the live layer), or the content version the
+   * epoch was saved as when that is newer than the file this tab read.
+   */
+  join(entries: StorageLiveEntry[]): boolean | number {
     const start = entries.findLastIndex((entry) => entry.record.t === "seed");
     const seed = entries[start];
     if (!seed || seed.record.t !== "seed") return false;
@@ -140,6 +152,7 @@ export class LiveDoc {
     for (const entry of entries.slice(start + 1)) {
       if (entry.record.t === "fold" && entry.record.e === seed.seqNum) cv = entry.record.cv;
     }
+    if (cv > this.options.contentVersion) return cv;
     if (cv !== this.options.contentVersion) return false;
     this.epoch = seed.seqNum;
     this.next = seed.seqNum;

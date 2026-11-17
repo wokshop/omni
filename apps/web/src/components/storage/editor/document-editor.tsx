@@ -71,6 +71,8 @@ export interface LiveSetup {
 
 /** A moment after the last keystroke, the live document is saved. */
 const FOLD_MS = 2000;
+/** How long a save waits for the others to hear it was saved. */
+const FOLD_WAIT_MS = 5000;
 
 const isMarkdown = (node: StorageNode) =>
   fileType(node.name, node.mimeType).language === "markdown";
@@ -159,7 +161,9 @@ export function useEditSession(node: StorageNode, url: string, shareId: string |
       base.current = saved.contentVersion;
       // The others on the live document learn it is saved, and as which version.
       if (saved.contentVersion !== undefined && boundary !== undefined) {
-        await live.current?.folded(saved.contentVersion, boundary);
+        // Not past a while: with the socket down the fold waits for it, and the save is done.
+        const folded = live.current?.folded(saved.contentVersion, boundary);
+        await Promise.race([folded, new Promise((resolve) => setTimeout(resolve, FOLD_WAIT_MS))]);
       }
       // Typed while it saved: still unsaved, and not done.
       if (changes.current !== at) return false;
