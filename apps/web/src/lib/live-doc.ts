@@ -26,6 +26,11 @@ let nextRef = 1;
 const BATCH_MS = 60;
 /** A refused record (the socket's `editing` not checked yet) is sent again after this long. */
 const RETRY_MS = 400;
+/** An update the stream could not take for now is sent again after this long, longer each time. */
+const UNAVAILABLE_MS = 1000;
+const UNAVAILABLE_MAX_MS = 15_000;
+/** How long closing waits for this tab's changes to reach the stream. */
+const SETTLE_MS = 5000;
 
 const toBase64 = (bytes: Uint8Array) => {
   let text = "";
@@ -65,6 +70,8 @@ export interface LiveDocOptions {
   onReplaced: (contentVersion: number) => void;
   /** The epoch was saved as `contentVersion`, by this tab or another. */
   onFolded: (contentVersion: number) => void;
+  /** The stream took a change this tab made: whether to save is worth asking again. */
+  onAcked: () => void;
 }
 
 /**
@@ -175,11 +182,32 @@ export class LiveDoc {
     return this.last.mine && this.last.seqNum > this.lastFold && this.pending.size === 0;
   }
 
-  /** Records that the epoch, as it is now, was saved as `contentVersion`. */
-  async folded(contentVersion: number) {
-    const at = this.last.seqNum;
-    const answer = await this.send({ t: "fold", e: this.epoch, cv: contentVersion });
-    if (answer.type === "doc.appended") this.lastFold = Math.max(this.lastFold, at);
+  /**
+   * The last record the document holds all of, and all before it: a save of its text now holds
+   * them, and no more (a change after it, of anyone's, is saved by its own fold).
+   */
+  get boundary() {
+    return this.next - 1;
+  }
+
+  /** Records that the epoch up to `boundary` was saved as `contentVersion`. */
+  async folded(contentVersion: number, boundary: number) {
+    const answer = await this.send({ t: "fold", e: this.epoch, cv: contentVersion, s: boundary });
+    if (answer.type === "doc.appended") this.lastFold = Math.max(this.lastFold, boundary);
+  }
+
+  /** Sends this tab's changes now and waits (a while) for the stream to take them all. */
+  async settle() {
+    clearTimeout(this.timer);
+    this.flush();
+    const until = Date.now() + SETTLE_MS;
+    while (this.pendingUpdates() && Date.now() < until && !this.closed) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  }
+
+  private pendingUpdates() {
+    return [...this.pending.values()].some((item) => item.record.t === "update");
   }
 
   close() {
@@ -198,7 +226,9 @@ export class LiveDoc {
     const update = Y.mergeUpdates(this.batch);
     this.batch = [];
     void this.send({ t: "update", e: this.epoch, u: toBase64(update) }).then((answer) => {
-      if (answer.type === "doc.appended") this.last = { seqNum: answer.seqNum, mine: true };
+      if (answer.type !== "doc.appended") return;
+      this.last = { seqNum: answer.seqNum, mine: true };
+      this.options.onAcked();
     });
   }
 
@@ -207,12 +237,23 @@ export class LiveDoc {
     const ref = nextRef++;
     const item = { record, ...(matchSeqNum === undefined ? {} : { matchSeqNum }) };
     this.pending.set(ref, item);
+    let wait = UNAVAILABLE_MS;
     return new Promise<StorageDocEvent>((resolve) => {
       this.answers.set(ref, (event) => {
+        const again = (ms: number) =>
+          setTimeout(() => this.pending.has(ref) && this.transmit(ref, item), ms);
         // Not checked yet: presence lands first, then the record goes again.
         if (event.type === "doc.refused" && event.reason === "editing" && !this.closed) {
-          setTimeout(() => this.pending.has(ref) && this.transmit(ref, item), RETRY_MS);
+          again(RETRY_MS);
           return;
+        }
+        // A change of this tab's is never dropped: the others' next ones may build on it.
+        if (event.type === "doc.refused" && event.reason === "unavailable" && !this.closed) {
+          if (record.t === "update") {
+            again(wait);
+            wait = Math.min(wait * 2, UNAVAILABLE_MAX_MS);
+            return;
+          }
         }
         this.pending.delete(ref);
         this.answers.delete(ref);
@@ -249,7 +290,7 @@ export class LiveDoc {
     if (record.t === "seed" && seqNum !== this.epoch) return;
     if (record.t !== "seed" && record.e !== this.epoch) return this.markKnown(seqNum, false);
     if (record.t === "fold") {
-      this.lastFold = Math.max(this.lastFold, seqNum - 1);
+      this.lastFold = Math.max(this.lastFold, record.s);
       this.options.onFolded(record.cv);
     } else {
       Y.applyUpdate(this.doc, fromBase64(record.u), REMOTE);

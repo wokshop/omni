@@ -336,7 +336,7 @@ function parseCrmEvent(event: Record<string, unknown>): CrmChangedEvent | undefi
 
 const isSeqNum = (value: unknown): value is number =>
   typeof value === "number" && Number.isInteger(value) && value >= 0;
-const DOC_REFUSALS = new Set(["tail", "editing", "locked", "unavailable"]);
+const DOC_REFUSALS = new Set(["tail", "editing", "denied", "locked", "unavailable"]);
 
 /** One record of a live document's stream (ADR 0043 decision 3 step 2), or undefined. */
 function parseLiveRecord(value: unknown): StorageLiveRecord | undefined {
@@ -344,7 +344,8 @@ function parseLiveRecord(value: unknown): StorageLiveRecord | undefined {
   const { t, cv, e, u } = value as Record<string, unknown>;
   if (t === "seed" && isSeqNum(cv) && typeof u === "string") return { t, cv, u };
   if (t === "update" && isSeqNum(e) && typeof u === "string") return { t, e, u };
-  if (t === "fold" && isSeqNum(e) && isSeqNum(cv)) return { t, e, cv };
+  const { s } = value as Record<string, unknown>;
+  if (t === "fold" && isSeqNum(e) && isSeqNum(cv) && isSeqNum(s)) return { t, e, cv, s };
   return undefined;
 }
 

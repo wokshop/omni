@@ -115,7 +115,8 @@ test("a left sent while the editing check is still running wins", async () => {
 // Catches: a socket that appends to a file's live document without the access check its
 // `editing` made (anyone in the workspace writing into a file they cannot see), a record the
 // other editors never hear (or that reaches a socket not editing the file), and two editors
-// both seeding the document when they open it at once (the stream's tail is the referee).
+// both seeding the document when they open it at once (the stream's tail is the referee), and an
+// editor who lost access while the file was open still writing into it.
 test("only a socket editing the file appends to its live document, and the other editors hear it", async () => {
   const org = await stack.company(`live-${randomUUID().slice(0, 8)}`);
   const ana = await stack.member(org.id);
@@ -191,5 +192,24 @@ test("only a socket editing the file appends to its live document, and the other
     more: false,
   });
   expect((await stack.api(ana.jar, "GET", `/files/${bos.id}/live`)).status).toBe(404);
+
+  // Ana takes the file into her My files while Bo still has it open: once his check is stale,
+  // his next record is refused for good, and nothing of his reaches her document.
+  const moved = await stack.api(ana.jar, "PATCH", `/nodes/${doc.id}`, { space: "personal" });
+  expect(moved.status).toBe(200);
+  await new Promise((resolve) => setTimeout(resolve, 2100));
+  boSocket.append(doc.id, 3, update);
+  await quiet();
+  expect(ofDoc(boSocket.received).at(-1)).toEqual({
+    type: "doc.refused",
+    nodeId: doc.id,
+    ref: 3,
+    reason: "denied",
+  });
+  expect((await stack.api(ana.jar, "GET", `/files/${doc.id}/live?from=2`)).body).toEqual({
+    enabled: true,
+    entries: [],
+    more: false,
+  });
   for (const hears of [anaSocket, boSocket, cySocket]) hears.socket.close();
 });

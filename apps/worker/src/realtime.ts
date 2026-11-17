@@ -179,7 +179,7 @@ export class Realtime extends DurableObject<Env> {
       return;
     }
     if (message.type === "doc.append") {
-      await onDocAppend(this.ctx, this.env, socket, message);
+      await onDocAppend(this.ctx, this.env, socket, memberId, message);
       return;
     }
     const current = presenceOf(socket);

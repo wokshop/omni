@@ -112,7 +112,8 @@ browser never talks to S2 instead: each editor sends its records on the workspac
 socket, and the realtime Durable Object appends them to the file's stream (`docs/<nodeId>`) and
 relays them to the others editing the file. The access check is the one `editing` presence
 already makes (a socket may append only to the file its checked `editing` names, and not to a
-locked one). An editor that missed records reads them with `GET /files/:id/live`, under the usual
+locked one), redone at most every two seconds while it appends so that access lost with the file
+open ends there. An editor that missed records reads them with `GET /files/:id/live`, under the usual
 member access.
 
 The stream is a series of epochs. A `seed` record holds the whole editor state made from the

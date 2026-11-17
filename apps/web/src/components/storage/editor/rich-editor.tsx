@@ -83,6 +83,7 @@ function LivePage(props: EditorProps) {
       seed: seedFrom(props.text),
       onReplaced: live.onReplaced,
       onFolded: live.onFolded,
+      onAcked: live.onAcked,
     })
       .catch(() => null)
       .then((doc) => {

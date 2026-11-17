@@ -20,8 +20,10 @@ export interface Editing {
   nodeId: string;
   space: StorageSpace;
   ownerMemberId: string | null;
-  /** Locked when the editor opened (a signed contract): its live document takes no records. */
+  /** Locked when last checked (a signed contract): its live document takes no records. */
   locked?: boolean;
+  /** When the member's access was last checked (ms), so an append can tell a stale check. */
+  checkedAt?: number;
 }
 
 /** Everything a socket's attachment holds: its conversation presence's fields and its file. */
@@ -117,6 +119,34 @@ function withoutFile(socket: WebSocket) {
   return Object.keys(rest).length > 0 ? rest : null;
 }
 
+/** The file as `memberId` reaches it now, or null when they no longer do (or it is in Trash). */
+export async function checkEditing(
+  env: Env,
+  memberId: string,
+  nodeId: string,
+): Promise<Editing | null> {
+  const { db, close } = openDb(env, 1);
+  let found;
+  try {
+    found = await forMember(db, memberId).storage.file(nodeId);
+  } finally {
+    await close({ timeout: 0 });
+  }
+  if (found.status !== "ok" || found.file.trashedAt) return null;
+  return {
+    nodeId: found.file.id,
+    space: found.file.space,
+    ownerMemberId: found.file.ownerMemberId,
+    locked: !!found.file.lockedAt,
+    checkedAt: Date.now(),
+  };
+}
+
+/** Keeps a fresh check of the file the socket edits (its access, its drive, its lock). */
+export function setEditing(socket: WebSocket, at: Editing) {
+  socket.serializeAttachment({ ...withoutFile(socket), file: at });
+}
+
 /**
  * `editing`: checks the member reaches the file, tells the others who see it (again on each
  * heartbeat), and answers a newcomer with who already edits it. `left`: as `leaveFile`.
@@ -133,24 +163,17 @@ export async function onFilePresence(
     if (editingOf(socket)?.nodeId === message.nodeId) leaveFile(ctx, socket, memberId);
     return;
   }
-  const { db, close } = openDb(env, 1);
-  let found;
-  try {
-    found = await forMember(db, memberId).storage.file(message.nodeId);
-  } finally {
-    await close({ timeout: 0 });
-  }
-  if (latest.get(socket) !== turn || found.status !== "ok" || found.file.trashedAt) return;
+  const at = await checkEditing(env, memberId, message.nodeId);
+  if (latest.get(socket) !== turn) return;
   const current = editingOf(socket);
-  // A claim the member cannot make is dropped whole: it does not take them off their file.
+  if (!at) {
+    // The file they edit is no longer theirs to edit (moved to someone's My files, trashed): off
+    // it. A claim to another file they cannot reach is dropped whole.
+    if (current?.nodeId === message.nodeId) leaveFile(ctx, socket, memberId);
+    return;
+  }
   if (current && current.nodeId !== message.nodeId) leaveFile(ctx, socket, memberId);
-  const at: Editing = {
-    nodeId: found.file.id,
-    space: found.file.space,
-    ownerMemberId: found.file.ownerMemberId,
-    locked: !!found.file.lockedAt,
-  };
-  socket.serializeAttachment({ ...withoutFile(socket), file: at });
+  setEditing(socket, at);
   const others = audience(ctx, at).filter((other) => ctx.getTags(other)[0] !== memberId);
   sendAll(others, event(at.nodeId, memberId, "editing"));
   if (current?.nodeId === at.nodeId) return;

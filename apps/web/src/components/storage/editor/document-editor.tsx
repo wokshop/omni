@@ -37,6 +37,13 @@ export interface EditorProps {
   onChange: () => void;
 }
 
+/** The file's content version now, when a save was refused because someone saved since. */
+function conflictOf(error: unknown) {
+  if (!(error instanceof ApiError) || error.code !== "version_conflict") return undefined;
+  const now = Number(error.details?.contentVersion ?? NaN);
+  return Number.isFinite(now) ? now : undefined;
+}
+
 /** Whether a file opens in an editor: text, whole (the preview reads only its start), unlocked. */
 export function canEditFile(node: StorageNode) {
   return (
@@ -57,6 +64,8 @@ export interface LiveSetup {
   onReplaced: (contentVersion: number) => void;
   /** The document was saved as `contentVersion`. */
   onFolded: (contentVersion: number) => void;
+  /** The stream took one of this page's changes. */
+  onAcked: () => void;
 }
 
 /** A moment after the last keystroke, the live document is saved. */
@@ -119,6 +128,8 @@ export function useEditSession(node: StorageNode, url: string, shareId: string |
 
   const save = async () => {
     const text = read.current?.();
+    // What of the live document this text holds: its fold claims that much, not what lands later.
+    const boundary = live.current?.boundary;
     if (text === undefined || inFlight.current) return false;
     const at = changes.current;
     const mine = session.current;
@@ -145,7 +156,9 @@ export function useEditSession(node: StorageNode, url: string, shareId: string |
       if (session.current !== mine) return false;
       base.current = saved.contentVersion;
       // The others on the live document learn it is saved, and as which version.
-      if (saved.contentVersion !== undefined) await live.current?.folded(saved.contentVersion);
+      if (saved.contentVersion !== undefined && boundary !== undefined) {
+        await live.current?.folded(saved.contentVersion, boundary);
+      }
       // Typed while it saved: still unsaved, and not done.
       if (changes.current !== at) return false;
       setDirty(false);
@@ -153,17 +166,10 @@ export function useEditSession(node: StorageNode, url: string, shareId: string |
     } catch (error) {
       // An upload left open would count against the workspace's room until it expires.
       if (opened) void abortUpload(opened, shareId);
-      // An earlier session's file: it was not saved, and nothing of this session changes.
-      if (session.current !== mine) {
-        storageErrorToast(error, `“${node.name}” was not saved`);
-        return false;
-      }
-      const now = Number((error instanceof ApiError && error.details?.contentVersion) ?? NaN);
-      if (error instanceof ApiError && error.code === "version_conflict" && Number.isFinite(now)) {
-        setConflict(now);
-      } else {
-        storageErrorToast(error, `“${node.name}” was not saved`);
-      }
+      // An earlier session's file was not saved, and nothing of this session changes.
+      const now = session.current === mine ? conflictOf(error) : undefined;
+      if (now === undefined) storageErrorToast(error, `“${node.name}” was not saved`);
+      else setConflict(now);
       return false;
     } finally {
       inFlight.current = false;
@@ -179,6 +185,11 @@ export function useEditSession(node: StorageNode, url: string, shareId: string |
     }, FOLD_MS);
   };
   useEffect(() => () => clearTimeout(foldTimer.current), []);
+  // The live document keeps the callbacks of the render that opened it: this one is always now's.
+  const latestFold = useRef(fold);
+  useEffect(() => {
+    latestFold.current = fold;
+  });
   const reopen = (contentVersion: number) => {
     base.current = contentVersion;
     changes.current = 0;
@@ -205,7 +216,9 @@ export function useEditSession(node: StorageNode, url: string, shareId: string |
     /** Saves what is unsaved, then closes the editor. */
     done: async () => {
       clearTimeout(foldTimer.current);
-      const unsaved = live.current ? live.current.needsFold : dirty;
+      // This tab's changes reach the others first: closing would drop those still on their way.
+      await live.current?.settle();
+      const unsaved = dirty || !!live.current?.needsFold;
       if (!unsaved || (await save())) setEditing(false);
     },
     /** Saves over the newer version: the person's text wins. */
@@ -245,6 +258,8 @@ export function useEditSession(node: StorageNode, url: string, shareId: string |
                 live.current = doc;
               },
               onReplaced: reopen,
+              // A change the stream took late (after a drop) is saved as one typed now would be.
+              onAcked: () => latestFold.current(),
               onFolded: (contentVersion: number) => {
                 base.current = contentVersion;
                 if (!live.current?.needsFold) setDirty(false);

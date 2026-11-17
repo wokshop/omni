@@ -531,7 +531,7 @@ export const storageFilePresenceEventSchema = z.object({
  * Live co-editing (ADR 0043 decision 3 step 2): an open document is one S2 stream of these
  * records, `docs/<nodeId>`. A `seed` starts an epoch: the editor's whole state, made from the file
  * at `contentVersion`. Each `update` (an editor update, base64) and `fold` names its epoch by the
- * seed's sequence number; a `fold` says the epoch was saved as `contentVersion`. An editor joins
+ * seed's sequence number; a `fold` says the epoch up to record `s` was saved as `contentVersion`. An editor joins
  * the latest epoch when the file's content version is that epoch's last one, and seeds a new one
  * otherwise (the file changed outside the live layer).
  */
@@ -542,6 +542,8 @@ export const storageLiveRecordSchema = z.discriminatedUnion("t", [
     t: z.literal("fold"),
     e: z.number().int().nonnegative(),
     cv: z.number().int().nonnegative(),
+    /** The last record the saved text held, with every one before it. */
+    s: z.number().int().nonnegative(),
   }),
 ]);
 
@@ -574,7 +576,7 @@ export const storageLiveReadResponseSchema = z.union([
  * own number for it. The sender hears `doc.appended` with its sequence number, or `doc.refused`
  * with why: `tail` (a `matchSeqNum` that was no longer the tail: read the stream again),
  * `editing` (the socket's `editing` has not been checked yet, or it is not editing the file: try
- * again after it), `locked`, or `unavailable` (the live layer is off or failed). The others
+ * again after it), `denied` (the member no longer reaches the file), `locked`, or `unavailable` (the live layer is off or failed). The others
  * editing the file hear `doc.record`. Records can arrive out of
  * order and a dropped socket misses some: read the gap with `GET /files/:id/live`.
  */
@@ -589,7 +591,7 @@ export const storageDocEventSchema = z.discriminatedUnion("type", [
     type: z.literal("doc.refused"),
     nodeId: id,
     ref: z.number().int(),
-    reason: z.enum(["tail", "editing", "locked", "unavailable"]),
+    reason: z.enum(["tail", "editing", "denied", "locked", "unavailable"]),
   }),
   z.object({
     type: z.literal("doc.record"),
