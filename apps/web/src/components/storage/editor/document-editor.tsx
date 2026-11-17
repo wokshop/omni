@@ -17,6 +17,7 @@ import { fileType, TEXT_PREVIEW_BYTES } from "@/lib/file-kind.ts";
 import { storageChanged, type StorageNode } from "@/lib/storage.ts";
 import { previewTextQuery } from "@/lib/storage-preview.ts";
 import { abortUpload, uploadFile } from "@/lib/storage-upload.ts";
+import { identityChecks, identityOf } from "@/lib/storage-uploads.ts";
 import { NoPreview, StageLoading } from "../preview/shared.tsx";
 import { storageErrorToast } from "../storage-errors.ts";
 
@@ -94,6 +95,8 @@ export function useEditSession(node: StorageNode, url: string, shareId: string |
   const changes = useRef(0);
   /** Which editing session this is: a save that ends after it closed changes nothing of the next. */
   const session = useRef(0);
+  /** Who opened the editor: a save goes out as them or not at all (`identityOf`). */
+  const identity = useRef<string | null>(null);
   /** The file's live document while the page is on it. */
   const live = useRef<LiveDoc | null>(null);
   const foldTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -148,9 +151,8 @@ export function useEditSession(node: StorageNode, url: string, shareId: string |
           opened = uploadId;
         },
         onProgress: () => {},
-        // Saved from the open tab, now: no queued upload whose session could have changed.
-        guard: () => {},
-        confirm: async () => {},
+        // Another tab may have switched the account or workspace since the editor opened.
+        ...identityChecks(client, shareId, identity.current, new AbortController().signal),
       });
       void storageChanged(client);
       if (session.current !== mine) return false;
@@ -206,6 +208,7 @@ export function useEditSession(node: StorageNode, url: string, shareId: string |
     leaving,
     start: () => {
       session.current += 1;
+      identity.current = identityOf(client, shareId);
       base.current = node.contentVersion;
       changes.current = 0;
       setOpened(`${node.updatedAt}#${Date.now()}`);
@@ -279,7 +282,14 @@ export function DocumentEditor(props: { session: EditSession; onDownload: () => 
   const kind = fileType(node.name, node.mimeType).kind;
   // Read afresh for each opening, never from the preview's cache: it may be an older version.
   const text = useQuery(previewTextQuery({ url, version: `edit:${opened}`, size: node.size }));
-  if (text.isError || text.data?.binary || text.data?.partial) {
+  // Not UTF-8 (a replacement character where a byte did not decode): a save would write the
+  // replacement in place of what was there.
+  if (
+    text.isError ||
+    text.data?.binary ||
+    text.data?.partial ||
+    text.data?.text.includes("\uFFFD")
+  ) {
     return <NoPreview kind={kind} onDownload={props.onDownload} />;
   }
   const loading = (
