@@ -1,7 +1,8 @@
 // A Markdown file as a page (ADR 0043): Tiptap edits headings, lists, checklists, quotes, code
 // and links, and saves the page back as Markdown. With the live layer (decision 3 step 2) the page
-// is the file's live document, shared with everyone editing it. Its own chunk, loaded when a .md
-// file is edited.
+// is the file's live document, shared with everyone editing it. A file with more than the page
+// shows (a table, an image, HTML) edits as text instead, so a save never drops it. Its own chunk,
+// loaded when a .md file is edited.
 import { Collaboration, isChangeOrigin } from "@tiptap/extension-collaboration";
 import { TaskItem, TaskList } from "@tiptap/extension-list";
 import { Markdown } from "@tiptap/markdown";
@@ -11,6 +12,7 @@ import { useEffect, useMemo, useState } from "react";
 import type * as Y from "yjs";
 import { openLiveDoc, type LiveDoc } from "@/lib/live-doc.ts";
 import type { EditorProps } from "./document-editor.tsx";
+import SourceEditor from "./source-editor.tsx";
 import "./rich-editor.css";
 
 /**
@@ -43,9 +45,31 @@ function seedFrom(markdown: string) {
   };
 }
 
+/**
+ * The letters and digits of a Markdown text, in order, leaving out list numbers. Markdown the page
+ * writes back differently (`*` for `-`, renumbered lists, escapes) keeps them; anything it drops
+ * (a table's cells, an image's address, HTML) loses some.
+ */
+const words = (markdown: string) =>
+  markdown.replace(/^\s*\d+[.)]\s/gm, "").replace(/[^\p{L}\p{N}]+/gu, "");
+
+/** Whether the page keeps every word of `markdown` when it saves it back. */
+function roundTrips(markdown: string) {
+  const editor = new Editor({ extensions: EXTENSIONS, content: markdown, contentType: "markdown" });
+  const back = editor.getMarkdown();
+  editor.destroy();
+  return words(back) === words(markdown);
+}
+
 type Phase = { kind: "opening" } | { kind: "live"; doc: LiveDoc } | { kind: "off" };
 
 export default function RichEditor(props: EditorProps) {
+  const page = useMemo(() => roundTrips(props.text), [props.text]);
+  // As text, alone: a live page would carry only what the page shows.
+  return page ? <LivePage {...props} /> : <SourceEditor {...props} live={undefined} />;
+}
+
+function LivePage(props: EditorProps) {
   const { live, nodeId } = props;
   const [phase, setPhase] = useState<Phase>(live ? { kind: "opening" } : { kind: "off" });
   useEffect(() => {

@@ -390,6 +390,44 @@ test("a Markdown file is edited as a page, saved as Markdown, and a newer save i
   await expect.poll(() => editor.count()).toBe(0);
 }, 120_000);
 
+// Catches: a Markdown file with what the page cannot show (a table, an image) opening as a page,
+// whose save would write the file back without them.
+test("a Markdown file the page cannot keep whole edits as text, and saves every line", async () => {
+  const page = await signedIn(`edit-table-${Date.now()}@gmail.test`, "/files/my");
+  await page
+    .getByRole("button", { name: "Upload", exact: true })
+    .first()
+    .waitFor({ timeout: 15_000 });
+  const text = "# Prices\n\n| Plan | Price |\n| --- | --- |\n| Pro | 9 |\n\n![logo](logo.png)\n";
+  await page
+    .locator("input[type=file]")
+    .first()
+    .setInputFiles({ name: "prices.md", mimeType: "text/markdown", buffer: Buffer.from(text) });
+  await page.getByRole("row", { name: /prices\.md/ }).click();
+  await page.getByRole("button", { name: "Edit" }).click();
+  const source = page.locator(".cm-content");
+  await source.getByText("| Pro | 9 |").waitFor({ timeout: 15_000 });
+  expect(await page.locator(".ProseMirror").count()).toBe(0);
+  await source.getByText("| Pro | 9 |").click();
+  await page.keyboard.press("End");
+  await page.keyboard.type(" (monthly)");
+  await page.getByRole("button", { name: "Save" }).click();
+  const [file] = await db
+    .select({ id: schema.storageNodes.id })
+    .from(schema.storageNodes)
+    .where(eq(schema.storageNodes.name, "prices.md"));
+  await expect
+    .poll(
+      () =>
+        page.evaluate(
+          async (at) => (await fetch(at)).text(),
+          `/api/storage/files/${file?.id ?? ""}/content`,
+        ),
+      { timeout: 15_000 },
+    )
+    .toBe(text.replace("| Pro | 9 |", "| Pro | 9 | (monthly)"));
+}, 120_000);
+
 /** Signed in as `email` (a magic link, so a new address signs up), on `path`. */
 async function signedIn(email: string, path: string) {
   const origin = String(worker.url);
