@@ -157,6 +157,8 @@ export const keys = {
   storageNode: (nodeId: string) => [...storage(), "node", nodeId] as const,
   /** Who a file or folder is shared with, and its link. */
   storageSharing: (nodeId: string) => [...storage(), "sharing", nodeId] as const,
+  /** Every node's sharing. */
+  storageSharings: () => [...storage(), "sharing"] as const,
   storageVersions: (nodeId: string) => [...storage(), "versions", nodeId] as const,
   storageComments: (nodeId: string) => [...storage(), "comments", nodeId] as const,
   /** A file's signature requests (ADR 0043 decision 6). */

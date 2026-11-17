@@ -89,8 +89,8 @@ const touching = (client: QueryClient, id: string) =>
   lists(client).flatMap(([key, data]) => (shows(data, id) || within(data, id) ? [key] : []));
 
 /**
- * Asked again, in the background: the change already shows. Every Search and every shared
- * link's view too, by their prefixes.
+ * Asked again, in the background: the change already shows. Every Search, shared link's view
+ * and sharing panel too, by their prefixes.
  */
 const refresh = (client: QueryClient, queryKeys: QueryKey[]) =>
   Promise.all([
@@ -98,6 +98,8 @@ const refresh = (client: QueryClient, queryKeys: QueryKey[]) =>
     client.invalidateQueries({ queryKey: keys.storageSearches() }),
     // A shared link's view of the same folders sits under its own keys.
     client.invalidateQueries({ queryKey: keys.storageLinks() }),
+    // Who has access is inherited from the folders above: a move changes it beneath the node.
+    client.invalidateQueries({ queryKey: keys.storageSharings() }),
   ]);
 
 /**
