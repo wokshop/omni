@@ -13,7 +13,7 @@ import { ApiError } from "@/lib/api.ts";
 import { fileType, TEXT_PREVIEW_BYTES } from "@/lib/file-kind.ts";
 import { storageChanged, type StorageNode } from "@/lib/storage.ts";
 import { previewTextQuery } from "@/lib/storage-preview.ts";
-import { uploadFile } from "@/lib/storage-upload.ts";
+import { abortUpload, uploadFile } from "@/lib/storage-upload.ts";
 import { NoPreview, StageLoading } from "../preview/shared.tsx";
 import { storageErrorToast } from "../storage-errors.ts";
 
@@ -95,6 +95,7 @@ export function useEditSession(node: StorageNode, url: string, shareId: string |
     const at = changes.current;
     const mine = session.current;
     setSaving(true);
+    let opened: string | undefined;
     try {
       const saved = await uploadFile({
         file: new File([text], node.name, { type: node.mimeType ?? "text/plain" }),
@@ -103,7 +104,9 @@ export function useEditSession(node: StorageNode, url: string, shareId: string |
         ifContentVersion: base.current,
         shareId,
         signal: new AbortController().signal,
-        onOpened: () => {},
+        onOpened: (uploadId) => {
+          opened = uploadId;
+        },
         onProgress: () => {},
         // Saved from the open tab, now: no queued upload whose session could have changed.
         guard: () => {},
@@ -117,6 +120,8 @@ export function useEditSession(node: StorageNode, url: string, shareId: string |
       setDirty(false);
       return true;
     } catch (error) {
+      // An upload left open would count against the workspace's room until it expires.
+      if (opened) void abortUpload(opened, shareId);
       // An earlier session's file: it was not saved, and nothing of this session changes.
       if (session.current !== mine) {
         storageErrorToast(error, `“${node.name}” was not saved`);
