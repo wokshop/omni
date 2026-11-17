@@ -129,12 +129,16 @@ test("a left sent while the editing check is still running wins", async () => {
   // The editing check reads the file, so a lock on the table holds it in flight until the left
   // is in: the doc.append behind the left is refused only once the left has been handled.
   const held = Promise.withResolvers<void>();
+  const taken = Promise.withResolvers<void>();
   const locked = stack.db.transaction(async (tx) => {
     await tx.execute(sql`lock table storage_nodes in access exclusive mode`);
+    taken.resolve();
     await held.promise;
   });
+  locked.catch(taken.reject);
   let check: number;
   try {
+    await taken.promise;
     anaHears.editing(doc.id, "editing");
     check = await stuckCheck();
     anaHears.editing(doc.id, "left");
