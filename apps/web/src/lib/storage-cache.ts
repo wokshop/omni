@@ -88,11 +88,16 @@ const within = (data: ListData | undefined, id: string) =>
 const touching = (client: QueryClient, id: string) =>
   lists(client).flatMap(([key, data]) => (shows(data, id) || within(data, id) ? [key] : []));
 
-/** Asked again, in the background: the change already shows. Every Search too, by its prefix. */
+/**
+ * Asked again, in the background: the change already shows. Every Search and every shared
+ * link's view too, by their prefixes.
+ */
 const refresh = (client: QueryClient, queryKeys: QueryKey[]) =>
   Promise.all([
     ...queryKeys.map((queryKey) => client.invalidateQueries({ queryKey, exact: true })),
     client.invalidateQueries({ queryKey: keys.storageSearches() }),
+    // A shared link's view of the same folders sits under its own keys.
+    client.invalidateQueries({ queryKey: keys.storageLinks() }),
   ]);
 
 /**

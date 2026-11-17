@@ -167,6 +167,8 @@ export const keys = {
   /** What a link opens: the shared node, or a folder inside it. */
   storageLink: (shareId: string, nodeId: string | undefined) =>
     [...storage(), "link", shareId, nodeId ?? null] as const,
+  /** Every shared link's views. */
+  storageLinks: () => [...storage(), "link"] as const,
 
   /** The CRM (ADR 0036): every list, record, timeline and the stages. */
   crm: () => crm(),
