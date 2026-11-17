@@ -75,7 +75,6 @@ export const useAccountPages: () => PageDefinition[] = () => {
         icon: glyph(IconForward),
         terms: ["crm", "attio", "hubspot", "bcc", "forwarding address", "copy"],
       },
-      // Only in the desktop app with a sync provider: it switches this computer's Omni folder.
       ...(canSyncDrive
         ? [
             {

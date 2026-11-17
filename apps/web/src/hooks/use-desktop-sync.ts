@@ -1,5 +1,3 @@
-// Drive sync on this computer (ADR 0043): which workspaces the desktop app keeps in the system's
-// Omni folder, read from and switched in the shell. Nothing here outside the desktop app.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { desktop } from "@/lib/desktop.ts";
 import { keys } from "@/lib/query-keys.ts";
@@ -12,7 +10,6 @@ export function useDesktopSync() {
     queryKey: keys.desktopSync(),
     queryFn: desktop.sync.status,
     enabled: canSyncDrive,
-    // Sign-in for sync leaves this page and comes back: read it again then.
     refetchOnWindowFocus: true,
   });
 }

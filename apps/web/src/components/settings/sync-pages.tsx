@@ -1,5 +1,3 @@
-// Drive sync: which workspaces this computer keeps in its Omni folder (ADR 0043). A switch per
-// workspace the person belongs to; the desktop shell does the work. Only listed in the macOS app.
 import { Skeleton, SkeletonBox } from "skullet/react";
 import { appToast } from "@/components/ui/toast";
 import { canSyncDrive, useDesktopSync, useSetDesktopSync } from "@/hooks/use-desktop-sync.ts";
