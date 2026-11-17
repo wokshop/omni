@@ -111,10 +111,13 @@ const FOOTER = [
 const keysOf = (id: ShortcutId) => (SHORTCUTS[id].keys[0] ?? []).flatMap(keyLabel);
 
 // Rows match on their keywords (title, sender), not on their value, which is just a unique id.
-// Smart search always matches: it searches the server for whatever was typed.
+// Smart search always matches: it searches the server for whatever was typed. Records are
+// already the matches for the text (`useCommandSearch`), some by a field the row doesn't show
+// (a company's domain), so they aren't filtered again.
 const SMART = "smart-search";
+const RECORD = /^(node|company|person|deal|thread):/;
 const filter = (value: string, search: string, keywords?: string[]) =>
-  value === SMART ? 1 : defaultFilter("", search, keywords);
+  value === SMART || RECORD.test(value) ? 1 : defaultFilter("", search, keywords);
 
 /** Mounted once by the workspace shell: binds `/` and ⌘K and renders the menu. */
 export function CommandMenu() {
