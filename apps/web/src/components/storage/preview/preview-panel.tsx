@@ -247,8 +247,7 @@ function usePreviewTools(node: StorageNode, shareId: string | undefined) {
             setDraft(box);
             setDraftVersion(data.contentVersion);
             setDrawing(false);
-            // After the drag's own click, which would count as a press outside and close it.
-            setTimeout(() => setComposing(true));
+            setComposing(true);
           },
         }
       : null;
@@ -256,9 +255,9 @@ function usePreviewTools(node: StorageNode, shareId: string | undefined) {
   const rail: Parameters<typeof PreviewRail>[0] = {
     comment: data && {
       open: composing,
-      onOpenChange: (open) => {
-        setComposing(open);
-        if (!open) setDraft(null);
+      onToggle: () => {
+        setComposing(!composing);
+        setDraft(null);
       },
       composer: (
         <CommentComposer
@@ -266,7 +265,10 @@ function usePreviewTools(node: StorageNode, shareId: string | undefined) {
           shareId={shareId}
           draft={draft}
           contentVersion={draftVersion}
-          onClearDraft={() => setDraft(null)}
+          onClose={() => {
+            setComposing(false);
+            setDraft(null);
+          }}
           onSent={() => {
             setComposing(false);
             setDraft(null);

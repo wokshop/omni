@@ -1,14 +1,9 @@
-// Writing a comment from the preview's island: a small popover over the Comment tool. Opened by
-// the tool for a comment on the whole file, or by a box drawn with the area tool for a comment on
-// that part of the page. Reading threads is the comments sidebar's job, not this one's.
-//
-// Geometry: an 18rem popover, 12px in from its edges; the box's page as a tag above the field,
-// then the field and Send on one row.
-import { useState } from "react";
-import { IconSend, IconX } from "@/components/icons/central";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
+// The comment bar the preview's island shows: the app's chat box alone (`ChatBox`, as the
+// comments sidebar writes in), floating over the island. A comment on the whole file, or, once a
+// box is drawn with the area tool, on that part of the page; the box itself shows which. Esc
+// closes it. Reading threads is the comments sidebar's job.
+import { useEffect, useRef, useState } from "react";
+import { ChatBox } from "@/components/chat/chat-box";
 import { useAddComment } from "@/hooks/use-storage.ts";
 import type { PdfBox } from "./pdf-marks.tsx";
 
@@ -19,13 +14,17 @@ export function CommentComposer(props: {
   draft: PdfBox | null;
   /** The file's content the box was drawn on; the API's 409 if it was replaced since. */
   contentVersion?: number | undefined;
-  onClearDraft: () => void;
+  onClose: () => void;
   onSent: () => void;
 }) {
   // A failure shows the app's own toast.
   const add = useAddComment();
   const [text, setText] = useState("");
+  const field = useRef<HTMLTextAreaElement>(null);
   const { draft } = props;
+
+  // Opened to write: straight to the text, and again for each new box.
+  useEffect(() => field.current?.focus(), [draft]);
 
   const send = () => {
     const body = text.trim();
@@ -52,44 +51,21 @@ export function CommentComposer(props: {
   };
 
   return (
-    <div className="flex w-72 flex-col gap-2 p-3">
-      {draft && (
-        <div className="flex items-center gap-1">
-          <Badge intent="secondary" className="tabular-nums">
-            Page {draft.page} area
-          </Badge>
-          <Button intent="plain" size="sq-xs" aria-label="Remove area" onPress={props.onClearDraft}>
-            <IconX />
-          </Button>
-        </div>
-      )}
-      <div className="flex items-end gap-2">
-        <Textarea
-          // oxlint-disable-next-line jsx-a11y/no-autofocus -- the popover opens to write in it.
-          autoFocus
-          aria-label="Comment"
-          placeholder="Comment"
-          value={text}
-          onChange={(event) => setText(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-              event.preventDefault();
-              send();
-            }
-          }}
-          className="max-h-40 min-h-9"
-        />
-        <Button
-          intent="primary"
-          size="sq-md"
-          aria-label="Send"
-          isPending={add.isPending}
-          isDisabled={!text.trim()}
-          onPress={send}
-        >
-          <IconSend />
-        </Button>
-      </div>
-    </div>
+    <ChatBox
+      textareaRef={field}
+      value={text}
+      onChange={setText}
+      onKeyDown={(event) => {
+        if (event.key !== "Escape") return;
+        event.preventDefault();
+        event.stopPropagation();
+        props.onClose();
+      }}
+      label="Comment"
+      placeholder="Add a comment…"
+      sendLabel="Send"
+      canSend={!!text.trim() && !add.isPending}
+      onSend={send}
+    />
   );
 }

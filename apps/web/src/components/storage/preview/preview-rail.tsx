@@ -14,7 +14,6 @@ import {
 } from "@/components/icons/central";
 import { Button } from "@/components/ui/button";
 import { Menu, MenuItem, MenuLabel, MenuTrigger } from "@/components/ui/menu";
-import { Popover, PopoverTrigger } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -35,10 +34,8 @@ const WHEN = new Intl.DateTimeFormat(undefined, {
 });
 
 export function PreviewRail(props: {
-  /** Comment opens `composer` over the island; the area tool opens it too, once a box is drawn. */
-  comment?:
-    | { open: boolean; onOpenChange: (open: boolean) => void; composer: ReactNode }
-    | undefined;
+  /** Comment shows `composer` over the island; the area tool shows it too, once a box is drawn. */
+  comment?: { open: boolean; onToggle: () => void; composer: ReactNode } | undefined;
   area?: { on: boolean; onToggle: () => void; isDisabled: boolean } | undefined;
   versions?:
     | {
@@ -57,15 +54,9 @@ export function PreviewRail(props: {
     groups.push(
       <>
         {comment && (
-          <PopoverTrigger isOpen={comment.open} onOpenChange={comment.onOpenChange}>
-            {/* The button itself, so the popover finds its trigger to sit over. */}
-            <Button intent="ghost" size="sq-xs" aria-label="Comment" aria-pressed={comment.open}>
-              <IconCommentPlain />
-            </Button>
-            <Popover placement="top" offset={10}>
-              {comment.composer}
-            </Popover>
-          </PopoverTrigger>
+          <Tool label="Comment" pressed={comment.open} onPress={comment.onToggle}>
+            <IconCommentPlain />
+          </Tool>
         )}
         {area && (
           <Tool
@@ -83,8 +74,14 @@ export function PreviewRail(props: {
   if (props.versions) groups.push(<Versions {...props.versions} />);
   if (groups.length === 0) return null;
   return (
-    // In flow under the stage, on its fill, so it never covers the file's last lines.
-    <div className="flex shrink-0 justify-center px-5 pb-2.5">
+    // In flow under the stage, on its fill, so it never covers the file's last lines. The comment
+    // bar floats 8px over it, alone (no card around it), on the overlay shadow so it reads over the page.
+    <div className="relative flex shrink-0 justify-center px-5 pb-2.5">
+      {comment?.open && (
+        <div className="absolute inset-x-5 bottom-full mx-auto mb-2 max-w-md rounded-[12px] shadow-(--shadow-overlay)">
+          {comment.composer}
+        </div>
+      )}
       <div
         role="toolbar"
         aria-label="File tools"

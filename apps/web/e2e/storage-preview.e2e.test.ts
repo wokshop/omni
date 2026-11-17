@@ -77,11 +77,11 @@ test("a box drawn on a PDF page is saved as that page's fractions and shows afte
   await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.3, { steps: 4 });
   await page.mouse.up();
 
-  const composer = page.getByRole("dialog", { name: "Comment" });
-  await composer.getByRole("textbox", { name: "Comment" }).fill("Move this chart up");
-  await composer.getByRole("button", { name: "Send" }).click();
-  // Sent: the popover closes.
-  await composer.waitFor({ state: "hidden" });
+  const field = page.getByRole("textbox", { name: "Comment" });
+  await field.fill("Move this chart up");
+  await page.getByRole("button", { name: "Send" }).click();
+  // Sent: the comment bar closes.
+  await field.waitFor({ state: "hidden" });
 
   const [row] = await db.select().from(schema.storageComments);
   expect(row?.body).toBe("Move this chart up");
