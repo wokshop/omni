@@ -258,7 +258,7 @@ function parseEvent(data: string): RealtimeEvent | undefined {
       : undefined;
   }
   const record = value as Record<string, unknown>;
-  return parseCrmEvent(record) ?? parseHelpdeskEvent(record);
+  return parseCrmEvent(record) ?? parseHelpdeskEvent(record) ?? parseStorageEvent(record);
 }
 
 // Checked by hand rather than with the contracts' zod schemas: this runs in the web app's entry
@@ -307,6 +307,20 @@ function parseCrmEvent(event: Record<string, unknown>): CrmChangedEvent | undefi
   if (typeof kind !== "string" || !Object.hasOwn(CRM_CHANGED_KINDS, kind)) return undefined;
   if (!Array.isArray(ids) || !ids.every(isId)) return undefined;
   return { type: "crm.changed", kind: kind as CrmChangedKind, ids };
+}
+
+/** Drive (ADR 0043): who is editing a file. */
+function parseStorageEvent(event: Record<string, unknown>): StorageFilePresenceEvent | undefined {
+  const { nodeId } = event;
+  if (!isId(nodeId)) return undefined;
+  switch (event.type) {
+    case "file.presence": {
+      const { memberId, state } = event;
+      if (!isId(memberId) || (state !== "editing" && state !== "left")) return;
+      return { type: "file.presence", nodeId, memberId, state };
+    }
+  }
+  return undefined;
 }
 
 function parseHelpdeskEvent(event: Record<string, unknown>): HelpdeskRealtimeEvent | undefined {
