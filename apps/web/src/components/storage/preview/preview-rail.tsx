@@ -1,8 +1,9 @@
 // The preview's tools on a small island under the stage: Mail's closed-sidebar island turned on
 // its side (`sidebar-island.tsx`: the sidebar's fill and border, lines edge to edge between
-// groups), kept small: 2px round 26px squares. Comment (a popover to write one) and the
-// area tool first, then the file's versions as "‹ v3 ›", whose label lists every version, and
-// Restore while an older one is shown.
+// groups), kept small: 2px round 26px squares. On a PDF, Cursor (just reading) and the area tool
+// (a drag on a page opens the comment bar at its box) first; Comment (the bar for the whole file,
+// over the island) next, then the file's versions as "‹ v3 ›", whose label lists every version,
+// and Restore while an older one is shown.
 import { Fragment, type ReactNode } from "react";
 import {
   IconChevronLeft,
@@ -10,6 +11,7 @@ import {
   IconClock3,
   IconCommentPlain,
   IconCommentArea,
+  IconCursor,
   IconRestore,
 } from "@/components/icons/central";
 import { Button } from "@/components/ui/button";
@@ -34,11 +36,12 @@ const WHEN = new Intl.DateTimeFormat(undefined, {
 });
 
 export function PreviewRail(props: {
-  /** Comment shows `composer` over the island; the area tool shows it too, once a box is drawn. */
+  /** Comment shows `composer` over the island, for the whole file. */
   comment?:
     | { open: boolean; onToggle: () => void; isDisabled: boolean; composer: ReactNode }
     | undefined;
-  area?: { on: boolean; onToggle: () => void; isDisabled: boolean } | undefined;
+  /** Cursor or the area tool: which one the pointer is on a PDF's pages. */
+  area?: { on: boolean; onChange: (on: boolean) => void; isDisabled: boolean } | undefined;
   versions?:
     | {
         /** Newest first; the current content leads. */
@@ -55,6 +58,21 @@ export function PreviewRail(props: {
   if (comment || area) {
     groups.push(
       <>
+        {area && (
+          <>
+            <Tool label="Cursor" pressed={!area.on} onPress={() => area.onChange(false)}>
+              <IconCursor />
+            </Tool>
+            <Tool
+              label="Comment on an area"
+              pressed={area.on}
+              isDisabled={area.isDisabled}
+              onPress={() => area.onChange(!area.on)}
+            >
+              <IconCommentArea />
+            </Tool>
+          </>
+        )}
         {comment && (
           <Tool
             label="Comment"
@@ -63,16 +81,6 @@ export function PreviewRail(props: {
             onPress={comment.onToggle}
           >
             <IconCommentPlain />
-          </Tool>
-        )}
-        {area && (
-          <Tool
-            label="Comment on an area"
-            pressed={area.on}
-            isDisabled={area.isDisabled}
-            onPress={area.onToggle}
-          >
-            <IconCommentArea />
           </Tool>
         )}
       </>,

@@ -20,6 +20,7 @@ import {
   outstandingSends,
   settleOutstanding,
 } from "./pending.ts";
+import { applyFilePresence, clearFilePresence } from "./file-presence.ts";
 import { applyPresence, clearPresence } from "./presence.ts";
 import { actionQuery } from "./mail-queries.ts";
 import { conversationFilterOf, filterOf, keys } from "./query-keys.ts";
@@ -33,7 +34,20 @@ let sockets = new Map<string, Realtime>();
 const openListeners = new Set<(orgId: string) => void>();
 type MergedEvent = Extract<RealtimeEvent, { type: "merged" }>;
 const mergeListeners = new Set<(event: MergedEvent) => void>();
+type DocEvent = Extract<RealtimeEvent, { type: "doc.record" | "doc.appended" | "doc.refused" }>;
+const docListeners = new Set<(event: DocEvent) => void>();
 const listeners = new Set<() => void>();
+
+type StorageEvent = DocEvent | Extract<RealtimeEvent, { type: "file.presence" }>;
+const isStorageEvent = (event: RealtimeEvent): event is StorageEvent =>
+  event.type === "file.presence" || event.type.startsWith("doc.");
+
+function onStorageEvent(orgId: string, event: StorageEvent) {
+  // Someone has a Drive file open in their editor, or closed it.
+  if (event.type === "file.presence") return applyFilePresence(orgId, event);
+  // A live document's record, or the answer to one this tab sent.
+  for (const listener of docListeners) listener(event);
+}
 
 function setStatus(next: RealtimeStatus) {
   status = next;
@@ -99,6 +113,7 @@ export function startRealtime(client: QueryClient, activeOrgId: string): Realtim
   };
 
   const onEvent = (orgId: string, event: RealtimeEvent) => {
+    if (isStorageEvent(event)) return onStorageEvent(orgId, event);
     switch (event.type) {
       // New mail, or the conversation's status, assignee, priority, tags or snooze changed.
       case "changed":
@@ -158,7 +173,10 @@ export function startRealtime(client: QueryClient, activeOrgId: string): Realtim
   const onStatus = (orgId: string, next: RealtimeStatus, reconnected: boolean) => {
     if (orgId === activeOrgId) setStatus(next);
     // Teammates' `left` may be lost while the socket is down; they reappear on their next repeat.
-    if (next === "closed") clearPresence(orgId);
+    if (next === "closed") {
+      clearPresence(orgId);
+      clearFilePresence(orgId);
+    }
     if (next !== "open") return;
     for (const listener of openListeners) listener(orgId);
     // A send's result may have come while no socket of its org was open.
@@ -189,6 +207,7 @@ export function startRealtime(client: QueryClient, activeOrgId: string): Realtim
         connection.close();
         connections.delete(id);
         clearPresence(id);
+        clearFilePresence(id);
       }
       for (const id of wanted) if (!connections.has(id)) connections.set(id, connect(id));
     },
@@ -198,6 +217,7 @@ export function startRealtime(client: QueryClient, activeOrgId: string): Realtim
       if (sockets === connections) sockets = new Map();
       for (const connection of connections.values()) connection.close();
       clearPresence();
+      clearFilePresence();
       setStatus("closed");
     },
   };
@@ -226,6 +246,12 @@ export function sendRealtime(orgId: string, message: RealtimeClientMessage): boo
 export function onThreadsMerged(listener: (event: MergedEvent) => void): () => void {
   mergeListeners.add(listener);
   return () => mergeListeners.delete(listener);
+}
+
+/** Calls `listener(event)` for every live document event (ADR 0043), from any workspace. */
+export function onDocEvent(listener: (event: DocEvent) => void): () => void {
+  docListeners.add(listener);
+  return () => docListeners.delete(listener);
 }
 
 /** Calls `listener(orgId)` whenever a workspace's socket opens, including after a reconnect. */

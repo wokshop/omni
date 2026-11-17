@@ -1,8 +1,17 @@
 // Box comments on a PDF's pages (ADR 0043 decision 4): each open thread's box drawn over its page,
-// and, while the area tool is on, a layer that takes a drag and hands back the box in fractions
-// of the page, so it holds at any zoom. The panel provides them through `PdfMarksContext`; the
-// PDF renderer only places `<PageMarks>` on each page.
-import { createContext, use, useEffect, useRef, useState, type PointerEvent } from "react";
+// and, while the area tool is on, a layer that takes a drag (under the "+" cursor) and hands back
+// the box in fractions of the page, so it holds at any zoom. The comment bar for a drawn box sits
+// at the box: under it, or over it near the page's foot. The panel provides them through
+// `PdfMarksContext`; the PDF renderer only places `<PageMarks>` on each page.
+import {
+  createContext,
+  use,
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent,
+  type ReactNode,
+} from "react";
 
 export interface PdfBox {
   page: number;
@@ -19,6 +28,8 @@ export interface PdfMarks {
   /** The area tool is on: a drag on a page draws a box. */
   drawing: boolean;
   onDraw: (box: PdfBox) => void;
+  /** The comment bar for the drawn box, shown at it. */
+  composer?: ReactNode;
   /** Picking a box; without it the boxes only show. */
   onSelect?: ((id: string) => void) | undefined;
 }
@@ -34,6 +45,7 @@ export function PageMarks({ page }: { page: number }) {
   const marks = use(PdfMarksContext);
   if (!marks) return null;
   const boxes = marks.boxes.filter((box) => box.page === page);
+  const draft = marks.composer ? boxes.find((box) => box.id === "draft") : undefined;
   return (
     <div className="pointer-events-none absolute inset-0 z-10">
       {boxes.map((box) => (
@@ -47,6 +59,7 @@ export function PageMarks({ page }: { page: number }) {
         />
       ))}
       {marks.drawing && <DrawLayer page={page} onDraw={marks.onDraw} />}
+      {draft && <AtBox box={draft}>{marks.composer}</AtBox>}
     </div>
   );
 }
@@ -73,6 +86,25 @@ function Mark(props: {
         selected || box.id === "draft" ? "bg-primary/20" : "bg-primary/8"
       }`}
     />
+  );
+}
+
+/** Below the box, or above it when the box is near the page's foot; kept 8px inside the page. */
+function AtBox(props: { box: PdfBox; children: ReactNode }) {
+  const { box } = props;
+  const above = box.y + box.height > 0.75;
+  return (
+    <div
+      style={{
+        left: `clamp(8px, ${box.x * 100}%, calc(100% - min(20rem, 100% - 16px) - 8px))`,
+        ...(above
+          ? { bottom: `calc(${(1 - box.y) * 100}% + 8px)` }
+          : { top: `calc(${(box.y + box.height) * 100}% + 8px)` }),
+      }}
+      className="pointer-events-auto absolute z-20 w-80 max-w-[calc(100%-16px)] rounded-[12px] shadow-(--shadow-overlay)"
+    >
+      {props.children}
+    </div>
   );
 }
 

@@ -30,6 +30,7 @@ import {
   refused,
   wireView,
 } from "./http.ts";
+import { storageLive } from "./live.ts";
 import { storageSharing } from "./sharing.ts";
 import { storageSigningMember } from "./signing.ts";
 
@@ -87,6 +88,12 @@ export const storageReads = new Hono<AppEnv>()
 
 export const storage = new Hono<AppEnv>()
   .route("/", storageReads)
+  /** One node the member reaches, where it is now: a notification about it opens its folder. */
+  .get("/nodes/:id", async (c) => {
+    const view = await memberStorage(c).node(c.req.param("id"));
+    if (!view || view.inTrash) return refused(c, "not_found");
+    return c.json({ node: wireNode(view.node) } satisfies StorageNodeResponse);
+  })
 
   .post("/nodes/:id/restore", async (c) => {
     const restored = await memberStorage(c).restore(c.req.param("id"));
@@ -115,6 +122,7 @@ export const storage = new Hono<AppEnv>()
     } satisfies StorageTrashResponse);
   })
 
+  .route("/", storageLive)
   .route("/", storageSharing)
   .route("/", storageSigningMember)
   .route("/", storageChanges);

@@ -1,15 +1,17 @@
 // The open file beside its folder, as an open thread sits beside the inbox: a 48px top bar (the
-// name, cut in its middle, then Previous, Next, Download, the file's menu, Full screen and
-// Close), the stage with the tools' island under it (Comment, the area tool on a PDF, the
-// versions), and the file's details on one line at the foot. Open threads' boxes show over a
-// PDF's pages; reading the threads is the comments sidebar's.
+// name, cut in its middle, then who is editing it, Edit or Save and Done, Previous, Next,
+// Download, the file's menu, Full screen and Close), the stage with the tools' island under it
+// (Comment, the area tool on a PDF, the versions), and the file's details on one line at the
+// foot. Open threads' boxes show over a PDF's pages; reading the threads is the comments sidebar's.
 import { useState, type ReactNode } from "react";
 import {
+  IconCheck,
   IconChevronLeft,
   IconChevronRight,
   IconDownload,
   IconMaximize,
   IconMinimize,
+  IconPencil,
   IconX,
 } from "@/components/icons/central";
 import {
@@ -23,10 +25,14 @@ import {
   DescriptionList,
   DescriptionTerm,
 } from "@/components/ui/description-list";
+import { Avatar } from "@/components/ui/avatar";
 import { Heading } from "@/components/ui/heading";
 import { MiddleTruncate } from "@/components/ui/middle-truncate";
 import { useRestoreVersion, useStorageComments, useStorageVersions } from "@/hooks/use-storage.ts";
 import { Tooltip, TooltipTrigger } from "@/components/ui/tooltip";
+import { useFileEditors } from "@/hooks/use-file-presence.ts";
+import { useMembers } from "@/hooks/use-organization.ts";
+import { useMember } from "@/hooks/use-session.ts";
 import { fileType } from "@/lib/file-kind.ts";
 import { formatBytes, type StorageNode } from "@/lib/storage.ts";
 import { storageVersionUrl, type StorageVersions } from "@/lib/storage-versions.ts";
@@ -35,6 +41,7 @@ import { DAY } from "../file-table.tsx";
 import { storageErrorToast } from "../storage-errors.ts";
 import { CommentComposer } from "./comment-composer.tsx";
 import { PdfMarksContext, type PdfBox, type PdfMarks } from "./pdf-marks.tsx";
+import { canEditFile, DocumentEditor, useEditSession } from "../editor/document-editor.tsx";
 import { PreviewBody } from "./preview-body.tsx";
 import { PreviewRail, type RailVersion } from "./preview-rail.tsx";
 
@@ -52,7 +59,9 @@ export function PreviewPanel(props: {
   onFullScreen: () => void;
   /** False outside the app shell (a shared link's page): no sidebar toggle. */
   shell: boolean;
-  /** Opened through a shared link: its door for versions and comments. */
+  /** The person may change the file: Edit, for a text file. */
+  canWrite: boolean;
+  /** Opened through a shared link: its door for versions, comments and editing. */
   shareId?: string | undefined;
 }) {
   const { node } = props;
@@ -60,6 +69,9 @@ export function PreviewPanel(props: {
   const shown = tools.shown;
   // An older version on the stage downloads that version, not the current content.
   const download = shown ? () => window.location.assign(shown.url) : props.onDownload;
+  const session = useEditSession(node, props.url, props.shareId);
+  // Only the current content is edited, never an older version on the stage.
+  const canEdit = props.canWrite && canEditFile(node) && !shown;
   return (
     <section aria-label={node.name} className="flex min-w-0 flex-1 flex-col bg-background">
       {/* One row with the folder's header beside it: the same height and bottom line, 10px from
@@ -72,6 +84,29 @@ export function PreviewPanel(props: {
           <MiddleTruncate text={node.name} />
         </Heading>
         <div className="flex shrink-0 items-center gap-1">
+          {props.shell && <FileEditors nodeId={node.id} />}
+          {session.editing ? (
+            <>
+              <Button
+                intent="outline"
+                size="sm"
+                isDisabled={!session.dirty}
+                isPending={session.saving}
+                onPress={() => void session.save()}
+              >
+                Save
+              </Button>
+              <Action label="Done" isDisabled={session.saving} onPress={() => void session.done()}>
+                <IconCheck />
+              </Action>
+            </>
+          ) : (
+            canEdit && (
+              <Action label="Edit" onPress={session.start}>
+                <IconPencil />
+              </Action>
+            )
+          )}
           <Action
             label="Previous"
             isDisabled={!props.previous}
@@ -89,7 +124,10 @@ export function PreviewPanel(props: {
           <Action label="Download" onPress={download}>
             <IconDownload />
           </Action>
-          <SettingsRowMenu label={`Actions for ${node.name}`} items={props.menu} />
+          {/* Moving, renaming or trashing the file would drop what is not saved: save first. */}
+          {!session.dirty && (
+            <SettingsRowMenu label={`Actions for ${node.name}`} items={props.menu} />
+          )}
           <Action
             label={props.fullScreen ? "Side by side" : "Full screen"}
             onPress={props.onFullScreen}
@@ -104,15 +142,11 @@ export function PreviewPanel(props: {
       <div
         className={`flex min-h-0 flex-1 flex-col bg-surface ${props.fullScreen ? "" : "border-s"}`}
       >
-        <PdfMarksContext value={tools.marks}>
-          <PreviewBody
-            key={shown?.key ?? "current"}
-            node={shown?.node ?? node}
-            url={shown?.url ?? props.url}
-            onDownload={download}
-          />
-        </PdfMarksContext>
-        <PreviewRail {...tools.rail} />
+        {session.editing ? (
+          <DocumentEditor session={session} onDownload={props.onDownload} />
+        ) : (
+          <Stage node={node} url={props.url} tools={tools} onDownload={download} />
+        )}
       </div>
       <Details node={shown?.node ?? node} border={!props.fullScreen} />
     </section>
@@ -144,6 +178,35 @@ function Details(props: { node: StorageNode; border: boolean }) {
   );
 }
 
+/** The others editing the file: their pictures, each named on hover. */
+function FileEditors(props: { nodeId: string }) {
+  const me = useMember().member.id;
+  const editors = useFileEditors(props.nodeId).filter((editor) => editor.memberId !== me);
+  const members = useMembers().data?.members ?? [];
+  if (editors.length === 0) return null;
+  return (
+    <div className="me-1 flex items-center -space-x-1">
+      {editors.map((editor) => {
+        const member = members.find((m) => m.id === editor.memberId);
+        const name = member?.user.name || member?.user.email || "Someone";
+        return (
+          <TooltipTrigger key={editor.memberId} delay={400}>
+            <Button intent="plain" size="sq-sm" aria-label={`${name} is editing`}>
+              <Avatar
+                size="xs"
+                src={member?.user.image ?? null}
+                initials={name.slice(0, 1).toUpperCase()}
+                className="bg-accent text-foreground outline-2 outline-background"
+              />
+            </Button>
+            <Tooltip>{name} is editing</Tooltip>
+          </TooltipTrigger>
+        );
+      })}
+    </div>
+  );
+}
+
 function Action(props: {
   label: string;
   onPress: () => void;
@@ -163,6 +226,29 @@ function Action(props: {
       </Button>
       <Tooltip>{props.label}</Tooltip>
     </TooltipTrigger>
+  );
+}
+
+/** The file, or the older version picked, with the PDF's boxes over it and the island under it. */
+function Stage(props: {
+  node: StorageNode;
+  url: string;
+  tools: ReturnType<typeof usePreviewTools>;
+  onDownload: () => void;
+}) {
+  const { shown, marks, rail } = props.tools;
+  return (
+    <>
+      <PdfMarksContext value={marks}>
+        <PreviewBody
+          key={shown?.key ?? "current"}
+          node={shown?.node ?? props.node}
+          url={shown?.url ?? props.url}
+          onDownload={props.onDownload}
+        />
+      </PdfMarksContext>
+      <PreviewRail {...rail} />
+    </>
   );
 }
 
@@ -227,6 +313,21 @@ function usePreviewTools(node: StorageNode, shareId: string | undefined) {
     },
   };
 
+  const close = () => {
+    setComposing(false);
+    setDraft(null);
+  };
+  const composer = (
+    <CommentComposer
+      fileId={node.id}
+      shareId={shareId}
+      draft={draft}
+      contentVersion={draftVersion}
+      onClose={close}
+      onSent={close}
+    />
+  );
+
   const data = comments.data;
   // Open threads made on the content on the stage; a box on replaced content points nowhere.
   const boxes = (data?.comments ?? []).flatMap((comment) =>
@@ -243,44 +344,39 @@ function usePreviewTools(node: StorageNode, shareId: string | undefined) {
           boxes: [...boxes, ...(draft ? [{ id: "draft", ...draft }] : [])],
           selected: null,
           drawing,
+          // The area tool stays on until Cursor: each drag moves the bar to its box.
           onDraw: (box) => {
             setDraft(box);
             setDraftVersion(data.contentVersion);
-            setDrawing(false);
-            setComposing(true);
+            setComposing(false);
           },
+          composer: draft && composer,
         }
       : null;
 
   const rail: Parameters<typeof PreviewRail>[0] = {
     comment: data && {
-      open: composing,
+      // The whole file's bar, over the island; a box's bar sits at the box instead.
+      open: composing && !draft,
       // A comment belongs to the current content: none while an older version is on the stage.
       isDisabled: !!shown,
       onToggle: () => {
         setComposing(!composing);
         setDraft(null);
       },
-      composer: (
-        <CommentComposer
-          fileId={node.id}
-          shareId={shareId}
-          draft={draft}
-          contentVersion={draftVersion}
-          onClose={() => {
-            setComposing(false);
-            setDraft(null);
-          }}
-          onSent={() => {
-            setComposing(false);
-            setDraft(null);
-          }}
-        />
-      ),
+      composer,
     },
     area:
       data && isPdf
-        ? { on: drawing, isDisabled: !!shown, onToggle: () => setDrawing((on) => !on) }
+        ? {
+            on: drawing,
+            isDisabled: !!shown,
+            onChange: (on: boolean) => {
+              setDrawing(on);
+              // Cursor is for reading: a box's comment not sent goes with it.
+              if (!on) setDraft(null);
+            },
+          }
         : undefined,
     versions: list && {
       list,

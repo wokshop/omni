@@ -81,10 +81,12 @@ function LazyPage(props: {
       ref={ref}
       aria-label={`Page ${props.number}`}
       style={{ width: props.width, minHeight: props.height }}
-      className="relative overflow-hidden rounded-sm border bg-background shadow-raised"
+      // Not clipped: a box's comment bar may reach past the page's edge. The page clips itself.
+      className="relative rounded-sm border bg-background shadow-raised"
     >
       {near && (
         <Page
+          className="overflow-hidden rounded-[3px]"
           pageNumber={props.number}
           width={props.width}
           renderAnnotationLayer={false}

@@ -50,8 +50,8 @@ afterAll(async () => {
 });
 
 // Catches: the area tool storing the box in pixels, against the wrong page, or offset by the
-// stage's padding (so it lands elsewhere at another zoom), and a thread's box not drawn again
-// over its page once the comments load.
+// stage's padding (so it lands elsewhere at another zoom), the comment bar opening away from the
+// box, and a thread's box not drawn again over its page once the comments load.
 test("a box drawn on a PDF page is saved as that page's fractions and shows after a reload", async () => {
   const page = await signedIn(`preview-${Date.now()}@gmail.test`, "/files/my");
   await page
@@ -78,6 +78,11 @@ test("a box drawn on a PDF page is saved as that page's fractions and shows afte
   await page.mouse.up();
 
   const field = page.getByRole("textbox", { name: "Comment" });
+  // The bar opens at the box, just under it, not down on the island.
+  const bar = await field.boundingBox();
+  if (!bar) throw new Error("no comment bar");
+  expect(bar.y).toBeGreaterThan(box.y + box.height * 0.3);
+  expect(bar.y).toBeLessThan(box.y + box.height * 0.5);
   await field.fill("Move this chart up");
   await page.getByRole("button", { name: "Send" }).click();
   // Sent: the comment bar closes.
