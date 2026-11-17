@@ -16,10 +16,12 @@ export const filePresenceMessage = z.object({
 export type FilePresenceMessage = z.infer<typeof filePresenceMessage>;
 
 /** The file a socket is editing, and the drive that says who may hear it. */
-interface Editing {
+export interface Editing {
   nodeId: string;
   space: StorageSpace;
   ownerMemberId: string | null;
+  /** Locked when the editor opened (a signed contract): its live document takes no records. */
+  locked?: boolean;
 }
 
 /** Everything a socket's attachment holds: its conversation presence's fields and its file. */
@@ -56,7 +58,7 @@ const nextTurn = (socket: WebSocket) => {
   return turn;
 };
 
-const editingOf = (socket: WebSocket) => attachmentOf(socket)?.file ?? null;
+export const editingOf = (socket: WebSocket) => attachmentOf(socket)?.file ?? null;
 
 const event = (nodeId: string, memberId: string, state: "editing" | "left") =>
   JSON.stringify({
@@ -67,7 +69,7 @@ const event = (nodeId: string, memberId: string, state: "editing" | "left") =>
   } satisfies StorageFilePresenceEvent);
 
 /** The app sockets that see the drive: everyone's for Shared, the owner's for My files. */
-function audience(ctx: DurableObjectState, at: Editing) {
+export function audience(ctx: DurableObjectState, at: Editing) {
   const sockets = at.ownerMemberId ? ctx.getWebSockets(at.ownerMemberId) : ctx.getWebSockets();
   return sockets.filter((socket) => !ctx.getTags(socket)[0]?.startsWith("sync:"));
 }
@@ -143,6 +145,7 @@ export async function onFilePresence(
     nodeId: found.file.id,
     space: found.file.space,
     ownerMemberId: found.file.ownerMemberId,
+    locked: !!found.file.lockedAt,
   };
   socket.serializeAttachment({ ...withoutFile(socket), file: at });
   const others = audience(ctx, at).filter((other) => ctx.getTags(other)[0] !== memberId);
