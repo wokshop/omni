@@ -112,6 +112,14 @@ export const storageTrashResponseSchema = z.object({
   nextCursor: z.string().nullable(),
 });
 
+/** `GET /search?q=`: what a name holds, ignoring case. */
+export const storageSearchQuerySchema = z.object({ q: z.string().trim().min(1).max(255) });
+/**
+ * Drive's `GET /search`, folders first, then by name: live nodes across the member's My files
+ * and, in a company, Shared. Not paged.
+ */
+export const storageFindResponseSchema = z.object({ nodes: z.array(storageNodeSchema) });
+
 const sha256 = z.string().regex(/^[0-9a-f]{64}$/);
 
 /** `POST /uploads`: opens an upload of `size` bytes. `sha256` is the bytes' hash, if known. */
@@ -585,6 +593,7 @@ export type StorageNodeView = z.infer<typeof storageNodeViewSchema>;
 export type StorageListResponse = z.infer<typeof storageListResponseSchema>;
 export type StorageNodeResponse = z.infer<typeof storageNodeResponseSchema>;
 export type StorageTrashResponse = z.infer<typeof storageTrashResponseSchema>;
+export type StorageFindResponse = z.infer<typeof storageFindResponseSchema>;
 export type StorageCreateFolderBody = z.infer<typeof storageCreateFolderBodySchema>;
 export type StorageChangeNodeBody = z.infer<typeof storageChangeNodeBodySchema>;
 export type StorageOpenUploadBody = z.infer<typeof storageOpenUploadBodySchema>;

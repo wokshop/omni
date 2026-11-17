@@ -8,7 +8,7 @@
 //   │        · thread(id) ─ conversation · search(q) · action(id) · tags(mailbox)
 //   │        · assignees(mailbox) · conversations(filter) · conversation-counts
 //   │        · notifications ─ { unread } · sla(mailbox)
-//   ├─ storage ─ list(place) · trash · usage · sharing(id) · versions(id) · shared-with-me · link(share, node)
+//   ├─ storage ─ list(place) · trash · search(q) · usage · sharing(id) · versions(id) · shared-with-me · link(share, node)
 //   │                                                                  (ADR 0034)
 //   ├─ crm ─ companies(q) · people(q) · deals(q) · company(id) · person(id) · deal(id) · stages
 //   │        · timeline(kind, id) · contracts(where) · find(q)                  (ADR 0036)
@@ -143,6 +143,8 @@ export const keys = {
   storageList: (place: { space: string } | { parentId: string }) =>
     [...storage(), "list", place] as const,
   storageTrash: () => [...storage(), "trash"] as const,
+  /** Drive's Search for one query. */
+  storageSearch: (q: string) => [...storage(), "search", q] as const,
   storageUsage: () => [...storage(), "usage"] as const,
   /** Who a file or folder is shared with, and its link. */
   storageSharing: (nodeId: string) => [...storage(), "sharing", nodeId] as const,

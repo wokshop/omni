@@ -1,4 +1,4 @@
-// Storage (ADR 0034): a folder's contents, Trash, the changes, and uploads.
+// Storage (ADR 0034): a folder's contents, Trash, Search, the changes, and uploads.
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo, useSyncExternalStore } from "react";
 import {
@@ -27,6 +27,7 @@ import {
   uploadsStore,
   type UploadTarget,
 } from "../lib/storage-uploads.ts";
+import { storageSearchQuery } from "../lib/storage-find.ts";
 import { restoreVersionMutation, storageVersionsQuery } from "../lib/storage-versions.ts";
 import { useSession } from "./use-session.ts";
 import { useCurrentWorkspace } from "./use-workspaces.ts";
@@ -46,6 +47,12 @@ export function useStorageTrash() {
   const query = useInfiniteQuery(storageTrashQuery());
   const nodes = useMemo(() => query.data?.pages.flatMap((page) => page.nodes) ?? [], [query.data]);
   return { ...query, nodes };
+}
+
+/** Drive's Search: files and folders whose name holds `q`; idle while `q` is blank. */
+export function useStorageSearch(q: string) {
+  const query = useQuery({ ...storageSearchQuery(q), placeholderData: (previous) => previous });
+  return { ...query, nodes: query.data?.nodes ?? [] };
 }
 
 /** True in a company workspace: only those have Shared (a Personal space has My files alone). */

@@ -28,7 +28,7 @@ const EMPTY = {
 } as const;
 
 /** A link inside Storage, keeping the mailbox the switcher shows for the way back to mail. */
-function useStorageHref() {
+export function useStorageHref() {
   const { mailbox } = useSearch({ strict: false }) as { mailbox?: string };
   const { href } = useWorkspacePaths();
   return useCallback(
