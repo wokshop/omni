@@ -291,11 +291,15 @@ test("a Markdown file is edited as a page, saved as Markdown, and a newer save i
   await page
     .locator("input[type=file]")
     .first()
-    .setInputFiles({
-      name: "plan.md",
-      mimeType: "text/markdown",
-      buffer: Buffer.from("# Plan\n\n- First point\n"),
-    });
+    .setInputFiles([
+      {
+        name: "plan.md",
+        mimeType: "text/markdown",
+        buffer: Buffer.from("# Plan\n\n- First point\n"),
+      },
+      // A neighbour that ← and → would step to, were they not the editor's.
+      { name: "zz.txt", mimeType: "text/plain", buffer: Buffer.from("next") },
+    ]);
   await page.getByRole("row", { name: /plan\.md/ }).click();
   await page.getByRole("button", { name: "Edit" }).click();
   const editor = page.locator("[contenteditable=true]");
@@ -366,6 +370,24 @@ test("a Markdown file is edited as a page, saved as Markdown, and a newer save i
   expect(await content()).toBe("# Theirs\n");
   await conflict.getByRole("button", { name: "Keep mine" }).click();
   await expect.poll(content, { timeout: 15_000 }).toContain("- Second **point** mine");
+
+  // Arrows move the caret, not to the next file; closing with unsaved text asks, and saves it.
+  await editor.getByText("mine").click();
+  await page.keyboard.press("End");
+  await caretAtEndOf("Second point mine");
+  await page.keyboard.type(" again");
+  const leaving = page.getByRole("alertdialog", { name: "Save your changes?" });
+  for (const key of ["ArrowRight", "ArrowLeft", "Escape"]) {
+    await page.keyboard.press(key);
+    // Long enough for a step to another file to have asked.
+    await page.waitForTimeout(300);
+    expect(await leaving.count()).toBe(0);
+  }
+  await editor.getByText("mine again").waitFor();
+  await page.getByRole("button", { name: "Close", exact: true }).click();
+  await leaving.getByRole("button", { name: "Save", exact: true }).click();
+  await expect.poll(content, { timeout: 15_000 }).toContain("- Second **point** mine again");
+  await expect.poll(() => editor.count()).toBe(0);
 }, 120_000);
 
 /** Signed in as `email` (a magic link, so a new address signs up), on `path`. */
