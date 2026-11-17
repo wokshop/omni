@@ -4,6 +4,7 @@
 // empty folder is one dashed card. The contents come from the folder's own first page, read once
 // the card nears the screen, so opening the folder afterwards finds it cached.
 import { useRef, useState, type CSSProperties } from "react";
+import { IconFolderFilled } from "@/components/icons/central";
 import { useStorageList } from "@/hooks/use-storage.ts";
 import { useThumbnail } from "@/hooks/use-storage-preview.ts";
 import { fileType } from "@/lib/file-kind.ts";
@@ -13,20 +14,21 @@ import { FileGlyph } from "./file-glyph.tsx";
 
 type Spot = readonly [left: number, top: number, width: number, height: number];
 
-// Where each card sits (percent of the square), by how many there are, the front card first.
-// Close enough to read as one stack, each card overlapping its neighbours by about a quarter,
-// while every card's middle, where its glyph sits, stays mostly in view.
+// Where each card sits (percent of the square), by how many there are, the front card first:
+// one card centred; two on a diagonal; three as two behind, mirrored about the middle, and one
+// in front between them. The back right card sits a little lower than the back left, so the
+// pair doesn't read as a flat shelf.
 const EMPTY: Spot = [27, 22, 46, 50];
 const STACK: readonly (readonly Spot[])[] = [
   [EMPTY],
   [
-    [40, 40, 40, 40],
-    [20, 18, 42, 42],
+    [38, 36, 40, 40],
+    [22, 20, 40, 40],
   ],
   [
-    [30, 41, 40, 38],
-    [16, 18, 40, 37],
-    [44, 16, 40, 37],
+    [30, 40, 40, 38],
+    [14, 18, 40, 38],
+    [46, 24, 40, 38],
   ],
 ];
 
@@ -83,7 +85,12 @@ function Card(props: { node: StorageNode; url: string; style: CSSProperties }) {
       style={props.style}
       className="absolute flex items-center justify-center overflow-hidden rounded-md border bg-background shadow-raised"
     >
-      <FileGlyph kind={type?.kind ?? "folder"} className="size-6 text-muted-foreground" />
+      {type ? (
+        <FileGlyph kind={type.kind} className="size-6 text-muted-foreground" />
+      ) : (
+        // A subfolder: the filled folder in the brand blue, so it reads apart from files.
+        <IconFolderFilled className="size-6 text-primary" />
+      )}
       {type?.preview === "image" && type.raster && (
         <CardImage node={node} url={props.url} raster={type.raster} />
       )}
