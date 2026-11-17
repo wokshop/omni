@@ -8,8 +8,7 @@ import { FileGlyph } from "@/components/storage/file-glyph.tsx";
 import { CommandDetail, CommandGroup, CommandItem } from "@/components/ui/command";
 import type { CrmCompany, CrmDeal, CrmPerson } from "@/lib/crm.ts";
 import { fileType } from "@/lib/file-kind.ts";
-import type { StorageNode } from "@/lib/storage.ts";
-import type { CommandHits } from "@/hooks/use-command-search.ts";
+import type { CommandHits, FileHit } from "@/hooks/use-command-search.ts";
 import { senderLabel } from "@/lib/threads.ts";
 import type { ThreadSummary } from "@/lib/types.ts";
 
@@ -22,7 +21,7 @@ export function RecordGroups(props: {
   query: string;
   hits: CommandHits;
   inbox: readonly ThreadSummary[];
-  onNode: (node: StorageNode) => void;
+  onNode: (node: FileHit) => void;
   onPath: (path: string) => void;
   onThread: (threadId: string) => void;
 }) {
@@ -42,11 +41,11 @@ export function RecordGroups(props: {
   );
 }
 
-const nodeKind = (node: StorageNode) =>
+const nodeKind = (node: FileHit) =>
   node.kind === "folder" ? "folder" : fileType(node.name, node.mimeType).kind;
 
 /** Files and folders by name; each opens its folder, a file in the folder's preview. */
-export function FileGroup(props: { nodes: StorageNode[]; onOpen: (node: StorageNode) => void }) {
+export function FileGroup(props: { nodes: FileHit[]; onOpen: (node: FileHit) => void }) {
   if (!props.nodes.length) return null;
   return (
     <CommandGroup heading="Files">

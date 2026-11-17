@@ -44,7 +44,7 @@ import { runShortcut, useAvailableShortcuts, useShortcut } from "@/hooks/use-sho
 import { useWorkspaceSlug } from "@/hooks/use-workspaces.ts";
 import { searchQuery } from "@/lib/mail-queries.ts";
 import { COMMAND_IDS, keyLabel, SHORTCUTS, type ShortcutId } from "@/lib/shortcuts.ts";
-import type { StorageNode } from "@/lib/storage.ts";
+import type { FileHit } from "@/hooks/use-command-search.ts";
 import { workspaceHref } from "@/lib/workspaces.ts";
 import { CRM_PAGES, drivePages, MAIL_PAGES, type Page } from "./command-pages";
 import { RecordGroups, ResultBones } from "./command-results.tsx";
@@ -215,8 +215,13 @@ function MenuPanel({ seed, onClose }: { seed?: SearchSeed | undefined; onClose: 
     const to = inInbox ? "/$workspace/mail/inbox/$threadId" : "/$workspace/mail/all/$threadId";
     void navigate({ to, params: { workspace, threadId } });
   };
-  const openNode = (node: StorageNode) => {
+  const openNode = (node: FileHit) => {
     onClose();
+    // Shared with the member from elsewhere: its link opens it.
+    if (node.shareId) {
+      void router.navigate({ href: `/s/${encodeURIComponent(node.shareId)}` });
+      return;
+    }
     if (node.kind === "folder") {
       void router.navigate({ href: storageHref(node.space, node.id) });
       return;

@@ -25,8 +25,14 @@ const LIMIT = 8;
 /** How long typing pauses before the server is asked: short, as the local hits already show. */
 const SERVER_DELAY_MS = 120;
 
+/** A file or folder; one shared with the member from elsewhere carries the link that opens it. */
+export type FileHit = StorageNode & { shareId?: string };
+
+/** What Shared with me lists: the node, and its `/s/<shareId>` link (none: it can't be opened). */
+type SharedItem = { node: StorageNode; shareId: string | null };
+
 export interface CommandHits {
-  files: StorageNode[];
+  files: FileHit[];
   companies: CrmCompany[];
   people: CrmPerson[];
   deals: CrmDeal[];
@@ -178,7 +184,9 @@ export function useCommandSearch(text: string, company: boolean): CommandHits {
       files: pick(
         [
           ...cached<StorageNode>(client, [...keys.storage(), "list"], "nodes"),
-          ...cached<StorageNode>(client, keys.storageSharedWithMe(), "nodes"),
+          ...cached<SharedItem>(client, keys.storageSharedWithMe(), "items").flatMap((item) =>
+            item.shareId ? [{ ...item.node, shareId: item.shareId }] : [],
+          ),
           ...(drive.stale?.nodes ?? []),
         ],
         drive.found?.nodes,
