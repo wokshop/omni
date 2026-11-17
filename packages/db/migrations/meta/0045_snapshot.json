@@ -1,5 +1,5 @@
 {
-  "id": "ac375a55-313b-45ee-bafc-353838b6087a",
+  "id": "68a1b37a-9bc5-46c5-892b-56b5f8d652fe",
   "prevId": "9fb6d8aa-c055-4c50-9cbe-e52e5bc3f0f5",
   "version": "7",
   "dialect": "postgresql",
@@ -8613,12 +8613,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
-        },
-        "icon": {
-          "name": "icon",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -12236,7 +12230,8 @@
         "sla_at_risk",
         "sla_breached",
         "note",
-        "member_joined"
+        "member_joined",
+        "comment"
       ]
     },
     "public.theme": {
