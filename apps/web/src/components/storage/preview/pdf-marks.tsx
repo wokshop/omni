@@ -15,6 +15,7 @@ import {
   type ReactNode,
 } from "react";
 import { Avatar } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipTrigger } from "@/components/ui/tooltip";
 import { pictureUrl } from "@/lib/urls.ts";
 
@@ -42,6 +43,8 @@ export interface PdfMarks {
   /** The area tool is on: a drag on a page draws a box. */
   drawing: boolean;
   onDraw: (box: PdfBox) => void;
+  /** The stage shows no preview to draw on after all; Comment falls back to the whole file. */
+  onUnshown?: (() => void) | undefined;
   /** Picking a pin; without it the pins only show. */
   onSelect?: ((id: string) => void) | undefined;
 }
@@ -102,25 +105,26 @@ function Pin(props: { pin: PdfPin; selected: boolean; onSelect: (() => void) | u
         />
       )}
       <TooltipTrigger delay={200}>
-        <button
+        <Button
           ref={ref}
-          type="button"
+          intent="plain"
+          size="sq-sm"
           data-testid="comment-pin"
           aria-label={`Comment by ${pin.authorName}`}
-          onClick={props.onSelect}
+          onPress={props.onSelect ?? (() => {})}
           onPointerEnter={() => setHover(true)}
           onPointerLeave={() => setHover(false)}
           // The picture's bottom left corner on the box's top right one.
           style={{ left: `${(pin.x + pin.width) * 100}%`, bottom: `${(1 - pin.y) * 100}%` }}
-          className="pointer-events-auto absolute rounded-full rounded-bl-xs bg-white p-0.5 shadow-(--shadow-overlay)"
+          className="pointer-events-auto absolute rounded-full rounded-bl-xs bg-background p-0.5 shadow-(--shadow-overlay)"
         >
           <Avatar
             size="sm"
             src={pictureUrl(pin.authorImage)}
             initials={pin.authorName.slice(0, 1).toUpperCase()}
-            className="bg-accent text-foreground outline-0 *:rounded-bl-xs rounded-bl-xs"
+            className="rounded-bl-xs bg-accent text-foreground outline-0 *:rounded-bl-xs"
           />
-        </button>
+        </Button>
         <Tooltip className="max-w-64">
           <span className="font-medium">{pin.authorName}</span> {pin.body}
         </Tooltip>
@@ -131,7 +135,8 @@ function Pin(props: { pin: PdfPin; selected: boolean; onSelect: (() => void) | u
 
 /**
  * The comment bar beside the box: up and to the right of it, moved left where the page runs out
- * and under the box where it sits near the page's top; kept 8px inside the page.
+ * and under the box where it sits near the page's top; kept 8px inside the page where it fits.
+ * Always its full width, so a small image still gets a bar to type in.
  */
 function AtBox(props: { box: PdfBox; children: ReactNode }) {
   const { box } = props;
@@ -145,7 +150,7 @@ function AtBox(props: { box: PdfBox; children: ReactNode }) {
   return (
     <div
       style={style}
-      className="pointer-events-auto absolute z-20 w-80 max-w-[calc(100%-16px)] rounded-[12px] shadow-(--shadow-overlay)"
+      className="pointer-events-auto absolute z-20 w-80 rounded-[12px] shadow-(--shadow-overlay)"
     >
       {props.children}
     </div>

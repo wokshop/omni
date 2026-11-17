@@ -2,10 +2,10 @@
 // `blob:` URL, never under the type it was uploaded with (ADR 0040). It is sized to the stage in
 // script, so the comment pins and the box being drawn (`PageMarks`, page 1) sit on the image
 // itself, not on the stage around it.
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { use, useEffect, useRef, useState, type RefObject } from "react";
 import { useFileImage } from "@/hooks/use-storage-preview.ts";
 import type { PreviewSource } from "@/lib/storage-preview.ts";
-import { PageMarks } from "./pdf-marks.tsx";
+import { PageMarks, PdfMarksContext } from "./pdf-marks.tsx";
 import { NoPreview, StageLoading } from "./shared.tsx";
 
 export function ImagePreview(props: {
@@ -19,7 +19,12 @@ export function ImagePreview(props: {
   const stage = useRef<HTMLDivElement>(null);
   const room = useRoom(stage, !!image.data);
   const [natural, setNatural] = useState<{ width: number; height: number } | null>(null);
-  if (image.isError || broken) return <NoPreview kind="image" onDownload={props.onDownload} />;
+  const failed = image.isError || broken;
+  const onUnshown = use(PdfMarksContext)?.onUnshown;
+  useEffect(() => {
+    if (failed) onUnshown?.();
+  }, [failed, onUnshown]);
+  if (failed) return <NoPreview kind="image" onDownload={props.onDownload} />;
   if (!image.data) return <StageLoading label="Loading image" />;
   // Never past its own size; until it has loaded, the browser's own fit.
   const scale =
