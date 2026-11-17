@@ -22,6 +22,10 @@ import { storageErrorToast } from "./storage-errors.ts";
 export const DROP_TARGET =
   "data-drive-target:bg-primary/10 data-drive-target:inset-ring data-drive-target:inset-ring-primary";
 
+/** A folder card a drag would drop into: its preview alone, as Finder marks a folder's icon. */
+export const CARD_DROP_TARGET =
+  "data-drive-target:bg-transparent! data-drive-target:**:data-[slot=folder-art]:border-primary data-drive-target:**:data-[slot=folder-art]:bg-primary/10";
+
 /**
  * Where a lifted item was: its content hidden and a dashed edge where its hover fill sits, in the
  * same rounding; while it lands, nothing.

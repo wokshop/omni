@@ -24,11 +24,13 @@ import { Tooltip, TooltipTrigger } from "@/components/ui/tooltip";
 import { useFluidHoverList } from "@/hooks/use-fluid-hover-list";
 import { usePrefetchFolder } from "@/hooks/use-storage.ts";
 import type { FolderDraft } from "@/hooks/use-folder-drafts.ts";
+import type { InlineRename } from "@/hooks/use-inline-rename.ts";
 import { useStorageView, type StorageSection, type StorageView } from "@/hooks/use-storage-view.ts";
 import { fileType } from "@/lib/file-kind.ts";
 import { formatBytes, type StorageNode } from "@/lib/storage.ts";
 import { CARDS_LAYOUT, CardsLayout } from "./cards-layout.ts";
 import { FileCard, FileCardBones, KEEP_IN_MENU } from "./file-card.tsx";
+import { NodeName, type ItemName } from "./name-field.tsx";
 import { DraftCard, DraftRow, type DraftHandlers } from "./folder-draft.tsx";
 import { TypeBadge } from "./file-glyph.tsx";
 import { RowTile } from "./row-tile.tsx";
@@ -47,6 +49,8 @@ export interface FileSectionsProps {
   loadMore?: (() => void) | undefined;
   /** New folders not yet in the list, first in Folders (`use-folder-drafts.ts`). */
   drafts?: Drafts | undefined;
+  /** The item whose name is a field (`use-inline-rename.ts`). */
+  rename?: InlineRename | undefined;
   /** Folder cards show a few of their files; off through a shared link's door. */
   peek?: boolean | undefined;
   /** Dragging items onto folders (`node-drag.tsx`); off without it. */
@@ -79,6 +83,7 @@ export const FileSections = memo(function FileSections(props: FileSectionsProps)
               label={`${props.label} folders`}
               nodes={folders}
               drafts={props.drafts}
+              rename={props.rename}
               href={props.href}
               fileUrl={props.fileUrl}
               menu={props.menu}
@@ -96,6 +101,7 @@ export const FileSections = memo(function FileSections(props: FileSectionsProps)
               view={view}
               label={`${props.label} files`}
               nodes={files}
+              rename={props.rename}
               href={props.href}
               fileUrl={props.fileUrl}
               menu={props.menu}
@@ -203,6 +209,7 @@ function Items(props: {
   label: string;
   nodes: StorageNode[];
   drafts?: Drafts | undefined;
+  rename?: InlineRename | undefined;
   href: (node: StorageNode) => string;
   fileUrl: (node: StorageNode) => string;
   menu: (node: StorageNode) => SettingsRowMenuItem[];
@@ -225,17 +232,24 @@ function Items(props: {
     : nodes;
   const top = useRevealDraft(drafts.find((d) => d.step === "naming")?.key);
   const shifting = useShifting();
+  // The item being renamed here, if it is one of this section's.
+  const renaming = props.rename?.renaming;
+  const named =
+    renaming?.at === "list" && props.nodes.some((n) => n.id === renaming.id) ? renaming : null;
+  const nameOf = (node: StorageNode): ItemName | undefined =>
+    named?.id === node.id && props.rename ? { ...named, finish: props.rename.finish } : undefined;
+  const typing = drafts.some((d) => d.step === "naming") || named?.step === "naming";
   const list = {
     "aria-label": props.label,
     items,
     disabledKeys: [GAP_KEY],
     // A file is picked as the press ends, not as it starts: picking it up to drag it opens nothing.
     shouldSelectOnPressUp: true,
+    // Items render again when the name being changed does (they are cached by their node).
+    dependencies: [named],
     ...props.selection,
     // While a name is typed, arrows and Home/End stay in its field rather than the list's.
-    ...(drafts.some((d) => d.step === "naming")
-      ? { keyboardNavigationBehavior: "tab" as const }
-      : {}),
+    ...(typing ? { keyboardNavigationBehavior: "tab" as const } : {}),
   };
   if (props.view === "cards") {
     return (
@@ -258,6 +272,7 @@ function Items(props: {
                   fileUrl={props.fileUrl}
                   peek={props.peek}
                   menu={props.menu(node)}
+                  name={nameOf(node)}
                   drag={props.drag}
                 />
               )
@@ -289,6 +304,7 @@ function Items(props: {
                 url={props.fileUrl(node)}
                 menu={props.menu(node)}
                 prefetch={props.peek !== false}
+                name={nameOf(node)}
                 drag={props.drag}
               />
             )
@@ -307,6 +323,8 @@ function FileRow(props: {
   /** Folders read their contents on hover; off through a shared link's door. */
   prefetch: boolean;
   menu: SettingsRowMenuItem[];
+  /** Its name as a field, while it is renamed. */
+  name?: ItemName | undefined;
   drag: NodeDrag | undefined;
 }) {
   const { node } = props;
@@ -327,7 +345,7 @@ function FileRow(props: {
       className={`mx-2.5 h-12 gap-3 rounded-lg ps-2 pe-1 selected:bg-accent ${DROP_TARGET} ${LIFTED}`}
     >
       <RowTile node={node} url={props.url} />
-      <span className="min-w-0 flex-1 truncate text-foreground">{node.name}</span>
+      <NodeName node={node} name={props.name} />
       {/* The secondary columns, muted, in tabular figures; they leave as the list narrows, and
           a lifted row leaves them behind. */}
       <span data-drag-trim className="w-16 shrink-0 @max-xl:hidden">
@@ -400,7 +418,7 @@ function useShifting() {
 }
 
 /** One hover highlight springs between the rows (mail's `RowHover`). */
-function RowHover({ children }: { children: ReactNode }) {
+export function RowHover({ children }: { children: ReactNode }) {
   const hover = useFluidHoverList({
     itemSelector: "[role='row']",
     highlightedSelector: "[data-focus-visible]",
@@ -428,7 +446,7 @@ function useRevealDraft(naming: string | undefined) {
 }
 
 /** Rows are 48px, as `FileRow` draws them. */
-const ROWS_LAYOUT = { rowSize: 48, loaderSize: 0 };
+export const ROWS_LAYOUT = { rowSize: 48, loaderSize: 0 };
 
 /** Asks for the folder's next page when this nears the screen (two screens ahead). */
 function LoadMore(props: { onLoadMore: () => void }) {

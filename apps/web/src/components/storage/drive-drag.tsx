@@ -104,7 +104,10 @@ export function DriveDragProvider({ children }: { children: ReactNode }) {
       return;
     }
     const rect = aim.over
-      ? (document.querySelector(`[data-drive-target]`)?.getBoundingClientRect() ?? null)
+      ? ((
+          document.querySelector("[data-drive-target] [data-slot=folder-art]") ??
+          document.querySelector("[data-drive-target]")
+        )?.getBoundingClientRect() ?? null)
       : nearestGap();
     end({ aim, rect, into: aim.over !== null });
   };
@@ -305,7 +308,7 @@ function Lifted(props: {
       animate={landing ? rest : lifted}
       transition={props.reduce ? { duration: 0 } : { type: "spring", duration: 0.3, bounce: 0.2 }}
       style={{ height: grip.height, transformOrigin: `${grip.grab.x}px ${grip.grab.y}px` }}
-      className={`overflow-hidden bg-surface shadow-overlay ${ROUNDING[look]}`}
+      className={`overflow-hidden border bg-surface shadow-overlay ${ROUNDING[look]}`}
     >
       <div ref={mount} inert className="size-full *:m-0! *:size-full" />
     </motion.div>
