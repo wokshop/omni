@@ -1,27 +1,27 @@
-// A folder's page, whichever door it is opened through (a member's My files or Shared, or a
-// shared link): the folder as a list or a grid, files dropped anywhere on it uploaded here, the
-// upload actions for whoever may write, the dialogs its rows open, and the open file's preview
-// beside it (ADR 0040). The open file is the URL's `?file=`, so Back closes it.
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { SettingsRowMenuItem } from "@/components/settings/kit/settings-row-menu";
 import { ResizeGrip, useStoredWidth } from "@/components/ui/resize-grip";
 import { useFullScreen } from "@/hooks/use-full-screen.ts";
 import { useFolderDrafts } from "@/hooks/use-folder-drafts.ts";
+import { useInlineRename, type RenameAt } from "@/hooks/use-inline-rename.ts";
 import { useIsMobile } from "@/hooks/use-mobile.ts";
 import { useUploads } from "@/hooks/use-storage.ts";
 import type { StorageNode, StoragePlace } from "@/lib/storage.ts";
-import { MoveDialog, RenameDialog, type MoveScope } from "./file-dialogs.tsx";
+import { MoveDialog, type MoveScope } from "./file-dialogs.tsx";
+import { FolderIconDialog } from "./folder-icons.tsx";
 import { FolderBody, HeaderActions } from "./folder-body.tsx";
 import { PreviewPanel } from "./preview/preview-panel.tsx";
 import { ShareDialog } from "./share-dialog.tsx";
+import { SignaturesDialog } from "./signatures-dialog.tsx";
 import { storageErrorToast } from "./storage-errors.ts";
 import { StorageFrame } from "./storage-frame.tsx";
 import { UploadsPanel } from "./uploads-panel.tsx";
 import { VersionsDialog } from "./versions-dialog.tsx";
+import { CommentsPanel } from "./comments-panel.tsx";
 
 export type FolderDialog = {
-  dialog: "rename" | "move" | "share" | "versions";
+  dialog: "rename" | "move" | "share" | "versions" | "comments" | "signatures" | "icon";
   node: StorageNode;
 } | null;
 
@@ -53,12 +53,11 @@ export interface FolderSource {
   empty: { title: string; description?: string };
 }
 
-// The preview keeps the width the person dragged it to (560px until then); the folder takes the
-// rest, never under 320px, as the inbox does beside an open thread.
 const PREVIEW_WIDTH = 560;
 const PREVIEW_MIN = 360;
 const PREVIEW_MAX = 4096;
 const FOLDER_MIN = 320;
+const COMMENTS_WIDTH = 360;
 
 export function FolderView(props: {
   title: ReactNode;
@@ -77,7 +76,7 @@ export function FolderView(props: {
       storageErrorToast(error, `“${name}” was not uploaded`),
     );
   const open = useOpenFile(source.list);
-  // New folder shows the folder at once, its name ready to type (Finder's way, not a dialog).
+  const comments = useCommentsPanel(source.list);
   const folders = useFolderDrafts({
     place: source.place,
     shareId: source.shareId,
@@ -88,18 +87,26 @@ export function FolderView(props: {
     () => ({ list: folders.drafts, handlers: { finish: folders.finish, onType: folders.onType } }),
     [folders.drafts, folders.finish, folders.onType],
   );
-  const menu = useCallback(
-    (node: StorageNode) => source.menu(node, setDialog),
+  const { rename, start: startRename } = useInlineRename({
+    shareId: source.shareId,
+    nodes: source.list.nodes,
+  });
+  const menuAt = useCallback(
+    (at: RenameAt) => (node: StorageNode) =>
+      source.menu(node, (next) => {
+        if (next?.dialog === "comments") comments.select(next.node.id);
+        else if (next?.dialog === "rename") startRename(next.node, at);
+        else setDialog(next);
+      }),
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- the menu builder is the dependency
-    [source.menu],
+    [source.menu, startRename],
   );
+  const menu = useMemo(() => menuAt("list"), [menuAt]);
 
-  // Beside the preview, the folder keeps at least its minimum; full screen or on a phone the
-  // preview takes the whole width.
   const [fullScreen, toggleFullScreen] = useFullScreen();
   const phone = useIsMobile();
   const node = open.node;
-  const hideFolder = !!node && (fullScreen || phone);
+  const hideFolder = (!!node && (fullScreen || phone)) || (!!comments.node && phone);
   const split = !!node && !hideFolder;
   const preview = useStoredWidth(
     "omni:file-preview-width",
@@ -118,7 +125,7 @@ export function FolderView(props: {
     >
       <div
         ref={folderRef}
-        className={`flex min-w-0 flex-1 flex-col ${split ? "min-w-80" : ""} ${hideFolder ? "hidden" : ""}`}
+        className={`flex min-w-0 flex-1 flex-col ${split || comments.node ? "min-w-80" : ""} ${hideFolder ? "hidden" : ""}`}
       >
         <StorageFrame
           title={props.title}
@@ -132,6 +139,7 @@ export function FolderView(props: {
             menu={menu}
             open={open}
             drafts={drafts}
+            rename={rename}
             onNewFolder={folders.start}
             onFiles={send}
           />
@@ -139,13 +147,10 @@ export function FolderView(props: {
         </StorageFrame>
       </div>
       {node && (
-        // Split, a fixed width that still gives way to the folder's minimum in a narrow window.
         <div
           style={split ? { width: preview.width } : undefined}
           className={`relative flex min-w-0 ${split ? "shrink" : "flex-1"}`}
           onKeyDown={(event) => {
-            // ← and → step through the folder's files, Esc closes; not while a control (a
-            // video's scrubber, a menu) has them.
             if (event.defaultPrevented || isControl(event.target)) return;
             const step = { ArrowLeft: open.previous, ArrowRight: open.next }[event.key];
             if (step) open.select(step.id, true);
@@ -173,10 +178,26 @@ export function FolderView(props: {
             onOpen={(other) => open.select(other.id, true)}
             onClose={() => open.select(null)}
             onDownload={() => source.download(node)}
-            menu={menu(node)}
+            menu={menuAt("preview")(node)}
+            rename={rename}
             fullScreen={hideFolder}
             onFullScreen={toggleFullScreen}
             shell={shell}
+            canWrite={source.canWrite}
+            shareId={source.shareId}
+          />
+        </div>
+      )}
+      {comments.node && (
+        <div
+          style={phone ? undefined : { width: COMMENTS_WIDTH }}
+          className={`flex min-w-0 ${phone ? "flex-1" : "shrink"}`}
+        >
+          <CommentsPanel
+            key={comments.node.id}
+            node={comments.node}
+            shareId={source.shareId}
+            onClose={() => comments.select(null)}
           />
         </div>
       )}
@@ -185,20 +206,24 @@ export function FolderView(props: {
   );
 }
 
-/** The dialog a row's action opened, if any. */
 function FolderDialogs(props: { dialog: FolderDialog; source: FolderSource; onClose: () => void }) {
   const { dialog, source, onClose } = props;
   if (!dialog) return null;
   const { node } = dialog;
   switch (dialog.dialog) {
-    case "rename":
-      return <RenameDialog node={node} shareId={source.shareId} onClose={onClose} />;
     case "move":
       return <MoveDialog node={node} scope={source.move} onClose={onClose} />;
     case "share":
       return <ShareDialog node={node} onClose={onClose} />;
     case "versions":
       return <VersionsDialog node={node} shareId={source.shareId} onClose={onClose} />;
+    case "icon":
+      return <FolderIconDialog node={node} onClose={onClose} />;
+    case "comments":
+    case "rename":
+      return null;
+    case "signatures":
+      return <SignaturesDialog node={node} onClose={onClose} />;
   }
 }
 
@@ -211,23 +236,20 @@ export interface OpenFile {
   select: (id: string | null, replace?: boolean) => void;
 }
 
-/**
- * The URL's open file, the files either side of it, and the way to change it. A file past the
- * folder's loaded pages (a bookmarked or shared `?file=`) loads the next pages until it is found.
- */
-function useOpenFile(list: FolderSource["list"]): OpenFile {
-  const { nodes, hasNextPage, isFetchingNextPage, fetchNextPage } = list;
+const useOpenFile: (list: FolderSource["list"]) => OpenFile = (list) => {
+  const { nodes } = list;
   const { file } = useSearch({ strict: false }) as { file?: string };
-  const loaded = !file || nodes.some((n) => n.id === file);
-  useEffect(() => {
-    if (!loaded && hasNextPage && !isFetchingNextPage) void fetchNextPage();
-  }, [loaded, hasNextPage, isFetchingNextPage, fetchNextPage]);
+  useLoadUntilFound(list, file);
   const navigate = useNavigate();
   const select = useCallback(
     (id: string | null, replace = false) =>
       void navigate({
         to: ".",
-        search: ((prev: Record<string, unknown>) => ({ ...prev, file: id ?? undefined })) as never,
+        search: ((prev: Record<string, unknown>) => ({
+          ...prev,
+          file: id ?? undefined,
+          comments: undefined,
+        })) as never,
         replace,
       }),
     [navigate],
@@ -243,12 +265,42 @@ function useOpenFile(list: FolderSource["list"]): OpenFile {
       select,
     };
   }, [nodes, file, select]);
+};
+
+function useLoadUntilFound(list: FolderSource["list"], id: string | undefined) {
+  const { nodes, hasNextPage, isFetchingNextPage, fetchNextPage } = list;
+  const loaded = !id || nodes.some((n) => n.id === id);
+  useEffect(() => {
+    if (!loaded && hasNextPage && !isFetchingNextPage) void fetchNextPage();
+  }, [loaded, hasNextPage, isFetchingNextPage, fetchNextPage]);
 }
 
-/** Keys inside these belong to them: fields, media controls and open menus. */
+function useCommentsPanel(list: FolderSource["list"]) {
+  const { nodes } = list;
+  const { comments } = useSearch({ strict: false }) as { comments?: string };
+  useLoadUntilFound(list, comments);
+  const navigate = useNavigate();
+  const select = useCallback(
+    (id: string | null) =>
+      void navigate({
+        to: ".",
+        search: ((prev: Record<string, unknown>) => ({
+          ...prev,
+          file: undefined,
+          comments: id ?? undefined,
+        })) as never,
+      }),
+    [navigate],
+  );
+  const node = comments ? nodes.find((n) => n.id === comments && n.kind === "file") : undefined;
+  return { node, select };
+}
+
 function isControl(target: EventTarget) {
   return (
     target instanceof Element &&
-    !!target.closest("input, textarea, select, video, audio, [role=menu], [role=slider]")
+    !!target.closest(
+      "input, textarea, select, [contenteditable=true], video, audio, [role=menu], [role=slider]",
+    )
   );
 }

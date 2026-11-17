@@ -1,10 +1,3 @@
-// What helpdesk triage changes on a shared conversation (ADR 0022, ADR 0033): priority, tags, the
-// assignee, and resolving noise. Trusted background code (the AI queue), so no member access
-// check. Each change goes through the workflow's own `applyConversationChange` with no actor and
-// `source: "ai"`, and none goes over a person: a priority a member set holds, a tag a member
-// removed is not added back, a conversation a member ever assigned (or unassigned) is not handed
-// out again, and a status a member changed after the message arrived is left alone.
-
 import { and, asc, eq, gt, isNotNull, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { Db } from "../client.ts";
@@ -70,10 +63,6 @@ export interface AiHelpdeskChanges {
 }
 
 export type AiHelpdeskOutcome =
-  /**
-   * Not a shared conversation, `messageId` is no longer its latest message, or a teammate
-   * re-sorted that message while the model ran.
-   */
   | { applied: false }
   | {
       applied: true;
@@ -83,7 +72,6 @@ export type AiHelpdeskOutcome =
       notified: string[];
     };
 
-/** A member (not the AI, not the system) wrote an event of `kind` on the conversation. */
 async function personDid(
   tx: Tx,
   threadId: string,
@@ -112,9 +100,9 @@ async function personDid(
 export async function applyAiHelpdeskTriage(
   db: Db,
   input: { threadId: string; messageId: string; changes: AiHelpdeskChanges; now?: Date },
-): Promise<AiHelpdeskOutcome> {
+) {
   const { threadId, messageId, changes } = input;
-  return db.transaction(async (tx): Promise<AiHelpdeskOutcome> => {
+  return db.transaction<AiHelpdeskOutcome>(async (tx) => {
     const [thread] = await tx
       .select({
         kind: mailboxes.kind,
@@ -127,13 +115,14 @@ export async function applyAiHelpdeskTriage(
       .innerJoin(mailboxes, eq(mailboxes.id, threads.mailboxId))
       .where(eq(threads.id, threadId))
       .for("update", { of: threads });
-    if (thread?.kind !== "shared") return { applied: false };
-    // A teammate re-sorted this message while the model ran: their call stands, and none of the
-    // model's changes follow from a bucket they overruled.
-    if (thread.triageSource === "person" && thread.triageMessageId === messageId) {
-      return { applied: false };
+    if (thread?.kind !== "shared") {
+      const value: AiHelpdeskOutcome = { applied: false };
+      return value;
     }
-    // Same order as `loadThreadForAi`: nothing in the thread sorts after `messageId`.
+    if (thread.triageSource === "person" && thread.triageMessageId === messageId) {
+      const value: AiHelpdeskOutcome = { applied: false };
+      return value;
+    }
     const triaged = alias(messages, "triaged");
     const [latest] = await tx
       .select({
@@ -144,7 +133,10 @@ export async function applyAiHelpdeskTriage(
       })
       .from(triaged)
       .where(and(eq(triaged.id, messageId), eq(triaged.threadId, threadId)));
-    if (!latest || latest.newer) return { applied: false };
+    if (!latest || latest.newer) {
+      const value: AiHelpdeskOutcome = { applied: false };
+      return value;
+    }
 
     let changed = false;
     let queuedActions = 0;
@@ -175,7 +167,6 @@ export async function applyAiHelpdeskTriage(
       );
       if (!removed) await apply({ type: "tag", tagId, add: true, source: "ai" });
     }
-    // Round-robin (or a person) got there first, or a person has had their say on who owns it.
     if (
       changes.assigneeId &&
       !thread.assigneeMemberId &&
@@ -190,7 +181,6 @@ export async function applyAiHelpdeskTriage(
       });
     }
     if (changes.resolveNoise) {
-      // A teammate who reopened or moved it since this message arrived has the last word.
       const touched = await personDid(
         tx,
         threadId,
@@ -199,6 +189,7 @@ export async function applyAiHelpdeskTriage(
       );
       if (!touched) await apply({ type: "resolve", reason: "ai_noise" });
     }
-    return { applied: true, changed, queuedActions, notified };
+    const value: AiHelpdeskOutcome = { applied: true, changed, queuedActions, notified };
+    return value;
   });
 }

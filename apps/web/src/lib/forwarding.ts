@@ -1,5 +1,3 @@
-// CRM forwarding address (ADR 0032): each personal mailbox you own, in any workspace, can send
-// copies of its mail to a CRM's forwarding address (Attio, HubSpot, ...).
 import { mutationOptions, queryOptions, type QueryClient } from "@tanstack/react-query";
 import { api, call } from "./api.ts";
 import { keys } from "./query-keys.ts";
@@ -15,6 +13,7 @@ const settle = (client: QueryClient) => client.invalidateQueries({ queryKey: key
 
 export const setForwardingMutation = (client: QueryClient) =>
   mutationOptions({
+    meta: { handlesError: true },
     mutationFn: (vars: { mailboxId: string; address: string; scope: ForwardScope }) =>
       call(
         api.mailboxes[":id"].forwarding.$put({
@@ -27,6 +26,7 @@ export const setForwardingMutation = (client: QueryClient) =>
 
 export const clearForwardingMutation = (client: QueryClient) =>
   mutationOptions({
+    meta: { handlesError: true },
     mutationFn: (mailboxId: string) =>
       call(api.mailboxes[":id"].forwarding.$delete({ param: { id: mailboxId } })),
     onSettled: () => settle(client),

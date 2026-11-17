@@ -1,5 +1,3 @@
-// The notifications panel beside the sidebar: the bell toggles it, a desktop notification about
-// the workspace opens it. One store, so every opener reaches it without props.
 import { useSyncExternalStore } from "react";
 
 let open = false;
@@ -15,7 +13,7 @@ export const openNotificationsPanel = () => set(true);
 export const closeNotificationsPanel = () => set(false);
 export const toggleNotificationsPanel = () => set(!open);
 
-export function useNotificationsPanel(): boolean {
+export function useNotificationsPanel() {
   return useSyncExternalStore(
     (notify) => {
       listeners.add(notify);

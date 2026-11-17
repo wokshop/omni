@@ -1,6 +1,3 @@
-// The workspace admin surface for inboxes (ADR 0026), for owners and admins: who is here and what
-// each can open, issuing a personal inbox, shared inboxes and their people, inboxes a former member
-// left behind, and inviting someone with their inbox. Facts about mailboxes only, never their mail.
 import { mutationOptions, queryOptions, type QueryClient } from "@tanstack/react-query";
 import { api, call } from "./api.ts";
 import { keys } from "./query-keys.ts";
@@ -36,7 +33,6 @@ function placementJson({ domainId, localPart, password, servers }: InboxPlacemen
   };
 }
 
-/** What changes when an inbox appears, moves or goes: every list that shows inboxes or people. */
 const settle = (client: QueryClient) =>
   Promise.all([
     client.invalidateQueries({ queryKey: keys.workspaceMembers() }),
@@ -50,6 +46,7 @@ const settle = (client: QueryClient) =>
 /** A personal inbox for `memberId`; the issuer gets no access. Idempotent per address. */
 export const issueInboxMutation = (client: QueryClient) =>
   mutationOptions({
+    meta: { handlesError: true },
     mutationFn: ({ memberId, ...placement }: InboxPlacement & { memberId: string }) =>
       call(
         api.workspace.members[":memberId"].inboxes.$post({
@@ -63,6 +60,7 @@ export const issueInboxMutation = (client: QueryClient) =>
 /** A shared inbox seen by exactly `memberIds`. Idempotent per address. */
 export const createSharedInboxMutation = (client: QueryClient) =>
   mutationOptions({
+    meta: { handlesError: true },
     mutationFn: ({ memberIds, ...placement }: InboxPlacement & { memberIds: string[] }) =>
       call(
         api.workspace["shared-inboxes"].$post({
@@ -75,6 +73,7 @@ export const createSharedInboxMutation = (client: QueryClient) =>
 /** Gives a former member's inbox to `memberId`: theirs from now on, old mail included. */
 export const giveInboxMutation = (client: QueryClient) =>
   mutationOptions({
+    meta: { handlesError: true },
     mutationFn: ({ mailboxId, memberId }: { mailboxId: string; memberId: string }) =>
       call(
         api.workspace.inboxes[":id"].owner.$post({ param: { id: mailboxId }, json: { memberId } }),
@@ -85,6 +84,7 @@ export const giveInboxMutation = (client: QueryClient) =>
 /** Turns a former member's inbox into a shared inbox seen by `memberIds`. */
 export const shareInboxMutation = (client: QueryClient) =>
   mutationOptions({
+    meta: { handlesError: true },
     mutationFn: ({ mailboxId, memberIds }: { mailboxId: string; memberIds: string[] }) =>
       call(
         api.workspace.inboxes[":id"].shared.$post({
@@ -98,6 +98,7 @@ export const shareInboxMutation = (client: QueryClient) =>
 /** Removes an inbox from the workspace (its mail stays at the host). 204, so no body to parse. */
 export const removeInboxMutation = (client: QueryClient) =>
   mutationOptions({
+    meta: { handlesError: true },
     mutationFn: async (mailboxId: string) => {
       const response = await api.workspace.inboxes[":id"].$delete({ param: { id: mailboxId } });
       if (!response.ok) await call(Promise.resolve(response));
@@ -108,6 +109,7 @@ export const removeInboxMutation = (client: QueryClient) =>
 /** Invites `email` with a personal inbox (`inbox`) and/or shared inboxes to be on. */
 export const inviteWithInboxMutation = (client: QueryClient) =>
   mutationOptions({
+    meta: { handlesError: true },
     mutationFn: (input: {
       email: string;
       role?: "member" | "admin";

@@ -1,37 +1,43 @@
-// A file's marks, by what it is (`lib/file-kind.ts`): its glyph, the tile the glyph sits in, and
-// the type badge. The tile is the list rows' 32px square from the Figma list frame and the grid's
-// larger one, on our tokens: a raised background square, the border and the crisp drop.
+import {
+  MicrosoftExcel,
+  MicrosoftPowerPoint,
+  MicrosoftWord,
+  PDF,
+} from "@ridemountainpig/svgl-react";
 import type { ComponentType } from "react";
 import {
   IconAudio,
+  IconPaperclip,
   IconCode,
   IconFile,
-  IconFilePdf,
   IconFileText,
   IconFileZip,
   IconFolder,
   IconImage,
-  IconSlides,
   IconTable,
   IconVideo,
 } from "@/components/icons/central";
 import { Badge } from "@/components/ui/badge";
-import type { FileKind } from "@/lib/file-kind.ts";
+import { fileType, type FileKind } from "@/lib/file-kind.ts";
 
 type Glyph = ComponentType<{ className?: string }>;
 
+const BRAND = {
+  pdf: PDF,
+  document: MicrosoftWord,
+  spreadsheet: MicrosoftExcel,
+  presentation: MicrosoftPowerPoint,
+} satisfies Partial<Record<FileKind, Glyph>>;
+
 const GLYPH: Record<FileKind | "folder", Glyph> = {
+  ...BRAND,
   folder: IconFolder,
   image: IconImage,
   video: IconVideo,
   audio: IconAudio,
-  pdf: IconFilePdf,
   code: IconCode,
   text: IconFileText,
   csv: IconTable,
-  spreadsheet: IconTable,
-  document: IconFileText,
-  presentation: IconSlides,
   archive: IconFileZip,
   other: IconFile,
 };
@@ -41,10 +47,16 @@ export function FileGlyph(props: { kind: FileKind | "folder"; className?: string
   return <Glyph className={props.className} />;
 }
 
+/** An attachment chip's mark: the brand's for a PDF or an Office file, else the paperclip. */
+export function AttachmentGlyph(props: { name: string; mimeType?: string | null }) {
+  const brands: Partial<Record<FileKind, Glyph>> = BRAND;
+  const Brand = brands[fileType(props.name, props.mimeType ?? null).kind];
+  return Brand ? <Brand /> : <IconPaperclip />;
+}
+
 const TILE = {
-  // The list's 32px square, its 15px glyph centred.
+  xs: "size-6 rounded-md *:size-3.5",
   sm: "size-8 rounded-lg *:size-icon",
-  // The grid's and the preview's 88px square, a 32px glyph.
   lg: "size-22 rounded-xl *:size-8",
 } as const;
 

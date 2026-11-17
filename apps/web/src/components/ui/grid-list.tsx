@@ -48,7 +48,11 @@ export function GridListHeader({
   );
 }
 
-export function GridListItem({ className, children, ...props }: GridListItemProps) {
+export function GridListItem({
+  className,
+  children,
+  ...props
+}: GridListItemProps & { ref?: React.Ref<HTMLDivElement> }) {
   const textValue = typeof children === "string" ? children : undefined;
   return (
     <GridListItemPrimitive
@@ -64,8 +68,6 @@ export function GridListItem({ className, children, ...props }: GridListItemProp
       {(values) => (
         <>
           {values.allowsDragging && (
-            // The whole item drags with a pointer; the handle is for the keyboard and screen
-            // readers (an item with a link needs one), so it shows only while focused.
             <Button
               slot="drag"
               className="sr-only shrink-0 rounded-sm text-muted-foreground outline-hidden focus-visible:not-sr-only focus-visible:text-foreground"

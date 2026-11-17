@@ -1,7 +1,3 @@
-// TypeSafe's Jev over plain fetch, so it runs in a Worker with no Node APIs. One request per
-// thread: the state below plus one question set from `questions.ts`, answered in parallel. Who
-// wrote the latest message picks the set (and the state's framing); code knows that fact.
-
 import { z } from "zod";
 import { decide, decideSent, type Decision } from "./decide.ts";
 import {
@@ -45,15 +41,14 @@ export function createJevClient(options: {
   model?: string;
   baseUrl?: string;
   fetch?: typeof fetch;
-}): JevClient {
+}) {
   return {
     provider: "jev",
     apiKey: options.apiKey,
     model: options.model ?? JEV_MODEL,
     baseUrl: options.baseUrl ?? TYPESAFE_API_URL,
-    // Bound so a Worker's global fetch keeps its `this`.
     fetch: options.fetch ?? ((...args) => fetch(...args)),
-  };
+  } satisfies JevClient;
 }
 
 /** A failed Jev call. Thrown, never turned into an answer, so the queue retries the job. */
@@ -66,7 +61,6 @@ export class JevError extends Error {
   }
 }
 
-/** The newest few earlier messages, each named by who wrote it. Left out when there are none. */
 function earlierMessages(input: TriageInput) {
   const earlier = (input.earlierMessages ?? []).slice(-JEV_EARLIER_MESSAGES);
   if (earlier.length === 0) return {};
@@ -86,8 +80,6 @@ function earlierMessages(input: TriageInput) {
  */
 export function triageState(input: TriageInput) {
   const list = input.list ?? {};
-  // Absent facts are left out rather than sent as null or [], which the model could read as a
-  // signal.
   return {
     reader_note: READER_NOTE,
     sender: input.from.name
@@ -174,7 +166,7 @@ export async function ask(client: JevClient, body: unknown, signal?: AbortSignal
 }
 
 /** Triage through Jev's judgments and the truth table. Errors throw; there is no fallback. */
-export async function triageWithJev(client: JevClient, input: TriageInput): Promise<TriageResult> {
+export async function triageWithJev(client: JevClient, input: TriageInput) {
   const response = await ask(client, jevTriageRequest(input, client.model));
   const nouls = (keys: readonly string[]) => {
     const judgments: Record<string, number> = {};
@@ -213,5 +205,5 @@ export async function triageWithJev(client: JevClient, input: TriageInput): Prom
       ),
     };
   }
-  return result;
+  return result satisfies TriageResult;
 }

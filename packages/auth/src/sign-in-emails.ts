@@ -1,5 +1,3 @@
-// How Better Auth sees a person's extra sign-in emails (ADR 0014). Better Auth knows one address
-// per user (`users.email`); these seams make every verified address mean the same user.
 import { noteSignInAddress } from "./session-scope.ts";
 import { findUserIdByExtraEmail, schema, type Db } from "@omni/db";
 import type {
@@ -15,7 +13,6 @@ import { and, eq, sql } from "drizzle-orm";
 
 type AdapterFactory = ReturnType<typeof drizzleAdapter>;
 
-/** The address when a lookup is exactly "the user whose email is X", else undefined. */
 function emailLookup(where: Where[] | undefined) {
   const [clause, ...rest] = where ?? [];
   if (!clause || rest.length > 0) return undefined;
@@ -32,36 +29,36 @@ function emailLookup(where: Where[] | undefined) {
  * `internalAdapter.findUserByEmail` discards a user whose `email` differs from the one asked for,
  * so `withSignInEmails` below covers that path.
  */
-export function resolveSignInEmails(factory: AdapterFactory, db: Db): AdapterFactory {
-  const withLookup = <A extends DBTransactionAdapter>(adapter: A): A => ({
-    ...adapter,
-    findOne: async (args: Parameters<DBTransactionAdapter["findOne"]>[0]) => {
-      const found = await adapter.findOne(args);
-      const email = args.model === "user" ? emailLookup(args.where) : undefined;
-      if (found || email === undefined) return found;
-      const userId = await findUserIdByExtraEmail(db, email);
-      return userId ? adapter.findOne({ ...args, where: [{ field: "id", value: userId }] }) : null;
-    },
-  });
-  const wrap = (adapter: DBAdapter): DBAdapter => ({
-    ...withLookup(adapter),
-    transaction: (callback) => adapter.transaction((trx) => callback(withLookup(trx))),
-  });
+export function resolveSignInEmails(factory: AdapterFactory, db: Db) {
+  const withLookup = <A extends DBTransactionAdapter>(adapter: A) => {
+    const result: A = {
+      ...adapter,
+      findOne: async (args: Parameters<DBTransactionAdapter["findOne"]>[0]) => {
+        const found = await adapter.findOne(args);
+        const email = args.model === "user" ? emailLookup(args.where) : undefined;
+        if (found || email === undefined) return found;
+        const userId = await findUserIdByExtraEmail(db, email);
+        return userId
+          ? adapter.findOne({ ...args, where: [{ field: "id", value: userId }] })
+          : null;
+      },
+    };
+    return result;
+  };
+  const wrap = (adapter: DBAdapter) =>
+    ({
+      ...withLookup(adapter),
+      transaction: (callback) => adapter.transaction((trx) => callback(withLookup(trx))),
+    }) satisfies DBAdapter;
   return ((options) => wrap(factory(options))) as AdapterFactory;
 }
 
 type InternalAdapter = AuthContext["internalAdapter"];
 const WRAPPED = Symbol("omni-sign-in-emails");
 
-/**
- * `findUserByEmail` (magic-link verify, the Google callback, sign-up checks) answers for a verified
- * extra address with its owner, found by asking Better Auth again for that owner's primary. Asking
- * by the primary keeps Better Auth's own result shape (accounts included) and its email check.
- */
-function withSignInEmails(internal: InternalAdapter, db: Db): InternalAdapter {
+const withSignInEmails: (internal: InternalAdapter, db: Db) => InternalAdapter = (internal, db) => {
   if ((internal as { [WRAPPED]?: true })[WRAPPED]) return internal;
   const findUserByEmail: InternalAdapter["findUserByEmail"] = async (email, options) => {
-    // The address a magic link (or a new Google account) signs in with (ADR 0024).
     noteSignInAddress(email);
     const found = await internal.findUserByEmail(email, options);
     if (found) return found;
@@ -70,13 +67,8 @@ function withSignInEmails(internal: InternalAdapter, db: Db): InternalAdapter {
     return owner ? internal.findUserByEmail(owner.email, options) : null;
   };
   return Object.assign({ ...internal, findUserByEmail }, { [WRAPPED]: true as const });
-}
+};
 
-/**
- * Better Auth rebuilds `context.internalAdapter` after every plugin's `init` runs, so returning a
- * replacement from `init` would be overwritten. An accessor instead wraps whatever adapter is
- * assigned, now or later. Per-request context clones copy the accessor, so they share it.
- */
 function resolveSignInEmailsInContext(context: AuthContext, db: Db) {
   let current = withSignInEmails(context.internalAdapter, db);
   Object.defineProperty(context, "internalAdapter", {

@@ -1,5 +1,3 @@
-// Postgres side of the mail e2e suites: one throwaway, migrated database per file (from
-// `@omni/db/testing`), plus readers that show what the service stored.
 import { enqueueAction, schema, type MailActionRequest } from "@omni/db";
 import { createMember, createOrg, createTestDatabase } from "@omni/db/testing";
 import { and, asc, eq } from "drizzle-orm";
@@ -119,7 +117,7 @@ export async function actionRow(db: TestDb, id: string) {
 }
 
 /** The row as a fresh claim would hand it to the executor, without claiming it. */
-export async function asClaimed(db: TestDb, id: string): Promise<MailAction> {
+export async function asClaimed(db: TestDb, id: string) {
   const row = await actionRow(db, id);
   return {
     id: row.id,

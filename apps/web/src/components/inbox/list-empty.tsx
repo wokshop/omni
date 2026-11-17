@@ -1,9 +1,6 @@
-// What an empty list says and offers, per view: a title, one short line on what lands there, and
-// the way out. A filtered list offers to clear its filters first (primary); the next place worth
-// going follows as a tertiary (outline) button.
 import { useNavigate } from "@tanstack/react-router";
 import { EmptyState } from "@/components/empty/empty-state";
-import { openSearch } from "@/components/search/search-popover";
+import { openSearch } from "@/components/search/command-menu";
 import { Button } from "@/components/ui/button";
 import { useOpenCompose } from "@/hooks/use-compose-pane.ts";
 import type { ConversationFilter, HelpdeskView, ThreadFilter, ThreadView } from "@/lib/types.ts";
@@ -24,7 +21,6 @@ const VIEW_TEXT: Record<ThreadView, { title: string; description?: string }> = {
     title: "No mail yet",
     description: "Mail from your connected accounts shows up here once it syncs.",
   },
-  // No frame for these yet: a title only, no copy of our own.
   sent: { title: "Nothing sent yet" },
   trash: { title: "Trash is empty" },
   spam: { title: "No spam" },
@@ -61,7 +57,6 @@ export function ThreadListEmpty(props: { filter: ThreadFilter }) {
   const text = (view === "inbox" && lane && LANE_TEXT[lane]) || VIEW_TEXT[view];
   const filtered = !!(mailbox || lane);
   const clear = () => void navigate({ to: VIEW_PATH[view], params: { workspace }, search: {} });
-  // Where to go next: All mail from the Inbox and Archive, the Inbox from Later and Done.
   const next =
     view === "all"
       ? { label: "Compose", go: openCompose }

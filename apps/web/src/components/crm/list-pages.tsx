@@ -1,9 +1,7 @@
-// The Companies, People and Deals lists (ADR 0039 decision 1): archived records hidden, `?q=`
-// searched on the server, and a New action each. Deals open on the board; the toggle beside
-// search switches it to the list.
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { IconBoard, IconList } from "@/components/icons/central";
+import { byAddress } from "@/components/avatar/sender-avatar";
 import { Badge } from "@/components/ui/badge";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useCrmCompanies, useCrmDeals, useCrmPeople, useCrmStages } from "@/hooks/use-crm.ts";
@@ -29,7 +27,6 @@ import { useWorkspacePaths } from "@/hooks/use-workspaces.ts";
 
 const day = (iso: string | null) => (iso ? DAY.format(new Date(iso)) : null);
 
-/** When the record was last written to or from, else when it was added. */
 const lastContactedColumn = {
   title: "Last contacted",
   className: "w-36 max-md:hidden",
@@ -61,23 +58,26 @@ const PEOPLE_COLUMNS: RecordColumn<CrmPerson>[] = [
   { title: "Added", className: "w-32", cell: (person) => <Muted>{day(person.createdAt)}</Muted> },
 ];
 
-const dealColumns = (stages: CrmStage[]): RecordColumn<CrmDeal>[] => [
-  {
-    title: "Stage",
-    className: "w-40",
-    cell: (deal) => <StageBadge stage={stages.find((s) => s.id === deal.stageId)} deal={deal} />,
-  },
-  {
-    title: "Value",
-    className: "w-36 max-sm:hidden",
-    cell: (deal) => <Muted>{formatMoney(deal.valueMinor, deal.valueCurrency)}</Muted>,
-  },
-  {
-    title: "Added",
-    className: "w-32 max-md:hidden",
-    cell: (deal) => <Muted>{day(deal.createdAt)}</Muted>,
-  },
-];
+const dealColumns = (stages: CrmStage[]) => {
+  const result: RecordColumn<CrmDeal>[] = [
+    {
+      title: "Stage",
+      className: "w-40",
+      cell: (deal) => <StageBadge stage={stages.find((s) => s.id === deal.stageId)} deal={deal} />,
+    },
+    {
+      title: "Value",
+      className: "w-36 max-sm:hidden",
+      cell: (deal) => <Muted>{formatMoney(deal.valueMinor, deal.valueCurrency)}</Muted>,
+    },
+    {
+      title: "Added",
+      className: "w-32 max-md:hidden",
+      cell: (deal) => <Muted>{day(deal.createdAt)}</Muted>,
+    },
+  ];
+  return result;
+};
 
 /** A stage's name, coloured by its kind: open neutral, won and done green, lost red. */
 export function StageBadge({ stage, deal }: { stage: CrmStage | undefined; deal: CrmDeal }) {
@@ -90,7 +90,6 @@ export function StageBadge({ stage, deal }: { stage: CrmStage | undefined; deal:
   );
 }
 
-/** What the list needs of an infinite query. */
 interface PagedQuery {
   isPending: boolean;
   isError: boolean;
@@ -123,7 +122,13 @@ export function CompaniesPage({ q }: { q: string }) {
         search={{ ...search, q }}
         source={sourceOf(list, list.companies)}
         columns={COMPANY_COLUMNS}
-        mark={(company) => <RecordMark name={company.name} square />}
+        mark={(company) => (
+          <RecordMark
+            name={company.name}
+            square
+            who={company.domain ? { domain: company.domain } : null}
+          />
+        )}
         href={(company) => inWorkspace(`/crm/companies/${encodeURIComponent(company.id)}`)}
         onNew={() => setAdding(true)}
       />
@@ -145,7 +150,9 @@ export function PeoplePage({ q }: { q: string }) {
         search={{ ...search, q }}
         source={sourceOf(list, list.people)}
         columns={PEOPLE_COLUMNS}
-        mark={(person) => <RecordMark name={person.name} />}
+        mark={(person) => (
+          <RecordMark name={person.name} who={byAddress(person.addresses[0]?.address)} />
+        )}
         href={(person) => inWorkspace(`/crm/people/${encodeURIComponent(person.id)}`)}
         onNew={() => setAdding(true)}
       />

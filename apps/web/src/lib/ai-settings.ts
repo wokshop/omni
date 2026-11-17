@@ -1,5 +1,3 @@
-// The workspace's AI settings (ADR 0033), for owners and admins: what each member handles, which
-// triage reads to assign a shared inbox's conversations, and what each shared inbox's tags are for.
 import { mutationOptions, queryOptions, type QueryClient } from "@tanstack/react-query";
 import { api, call } from "./api.ts";
 import { keys } from "./query-keys.ts";
@@ -17,6 +15,7 @@ export type AiSettings = Awaited<
 /** A blank role clears it. */
 export const setRoleMutation = (client: QueryClient) =>
   mutationOptions({
+    meta: { handlesError: true },
     mutationFn: ({ memberId, description }: { memberId: string; description: string }) =>
       call(
         api.workspace.ai.members[":memberId"].role.$put({
@@ -33,6 +32,7 @@ export const setRoleMutation = (client: QueryClient) =>
  */
 export const setTagDescriptionMutation = (client: QueryClient) =>
   mutationOptions({
+    meta: { handlesError: true },
     mutationFn: ({
       mailboxId,
       tagId,

@@ -1,4 +1,3 @@
-// Storage (ADR 0034): a folder's contents, Trash, the changes, and uploads.
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo, useSyncExternalStore } from "react";
 import {
@@ -10,7 +9,9 @@ import {
   storageTrashQuery,
   storageUsageQuery,
   trashNodeMutation,
+  type StorageNode,
   type StoragePlace,
+  type StorageSpace,
 } from "../lib/storage.ts";
 import {
   putPersonMutation,
@@ -27,6 +28,14 @@ import {
   uploadsStore,
   type UploadTarget,
 } from "../lib/storage-uploads.ts";
+import {
+  addCommentMutation,
+  changeCommentMutation,
+  deleteCommentMutation,
+  storageCommentsQuery,
+  storageNodeQuery,
+} from "../lib/storage-comments.ts";
+import { storageFolderIconsQuery } from "../lib/storage-find.ts";
 import { restoreVersionMutation, storageVersionsQuery } from "../lib/storage-versions.ts";
 import { useSession } from "./use-session.ts";
 import { useCurrentWorkspace } from "./use-workspaces.ts";
@@ -41,11 +50,33 @@ export function useStorageList(place: StoragePlace, options: { enabled?: boolean
   return { ...query, nodes, folder: query.data?.pages[0]?.folder ?? null };
 }
 
+/**
+ * Starts reading a folder's first page as the pointer rests on its row, so opening it finds it
+ * cached. A card's stack already reads it as the card nears the screen; a fresh page is not
+ * asked again.
+ */
+export function usePrefetchFolder() {
+  const client = useQueryClient();
+  return useCallback(
+    (node: StorageNode) => {
+      if (node.kind === "folder")
+        void client.prefetchInfiniteQuery(storageListQuery({ parentId: node.id }));
+    },
+    [client],
+  );
+}
+
 /** What you may restore from Trash, newest first. */
 export function useStorageTrash() {
   const query = useInfiniteQuery(storageTrashQuery());
   const nodes = useMemo(() => query.data?.pages.flatMap((page) => page.nodes) ?? [], [query.data]);
   return { ...query, nodes };
+}
+
+/** A drive's cluster glyphs by folder id; empty until they load, or if they fail to. */
+export function useFolderIcons(space: StorageSpace) {
+  const query = useQuery(storageFolderIconsQuery(space));
+  return { icons: query.data?.icons ?? {}, isLoaded: query.isSuccess };
 }
 
 /** True in a company workspace: only those have Shared (a Personal space has My files alone). */
@@ -85,8 +116,6 @@ export function useDeleteForever() {
  */
 export function useUploads() {
   const client = useQueryClient();
-  // Each upload is bound to the session it is queued under (`storage-uploads.ts`): keep it
-  // cached here too, on the link page outside the app shell.
   useSession();
   const uploads = useSyncExternalStore(uploadsStore.subscribe, uploadsStore.get);
   const upload = useCallback(
@@ -105,6 +134,42 @@ export function useStorageVersions(nodeId: string, shareId?: string) {
 /** `mutate({ id, versionId, shareId? })` makes a kept version the file's content again. */
 export function useRestoreVersion() {
   return useMutation(restoreVersionMutation(useQueryClient()));
+}
+
+/** A file's comments (a member, an Editor or a Commenter only). */
+export function useStorageComments(nodeId: string, shareId?: string) {
+  return useQuery(storageCommentsQuery(nodeId, shareId));
+}
+
+/**
+ * Asks where a file is now (its space and folder), or null when the reader no longer reaches it.
+ * For a notification that leads to a file that may have moved.
+ */
+export function useFilePlace() {
+  const client = useQueryClient();
+  return useCallback(
+    (id: string) =>
+      client
+        .fetchQuery(storageNodeQuery(id))
+        .then(({ node }) => ({ space: node.space, folderId: node.parentId }))
+        .catch(() => null),
+    [client],
+  );
+}
+
+/** `mutate({ id, shareId?, body })` starts a thread, or replies with `parentId`. */
+export function useAddComment() {
+  return useMutation(addCommentMutation(useQueryClient()));
+}
+
+/** `mutate({ id, commentId, shareId?, change })` edits (`body`) or resolves (`resolved`). */
+export function useChangeComment() {
+  return useMutation(changeCommentMutation(useQueryClient()));
+}
+
+/** `mutate({ id, commentId, shareId? })` deletes one's own comment. */
+export function useDeleteComment() {
+  return useMutation(deleteCommentMutation(useQueryClient()));
 }
 
 /** Bytes stored, the limit and the allowance, and whether uploads are blocked. */

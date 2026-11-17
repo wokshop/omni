@@ -51,7 +51,6 @@ export const requestScope = createMiddleware<AppEnv>(async (c, next) => {
       ...config.auth,
       billingLog: (event, fields) => c.var.log.error(event, fields),
       modules,
-      // Agents' OAuth only where it is used (ADR 0029): it costs a query each time it starts.
       oauthProvider: usesOAuthProvider(new URL(c.req.url).pathname),
       sendMagicLink: async ({ email, url }) => {
         devLog(config, { kind: "magic-link", email, url });
@@ -99,29 +98,24 @@ export interface SessionUser {
  * (`omni-workspace`, ADR 0043), else in the session's active org (or the user's first org).
  * Both lookups run in one round trip.
  */
-export async function resolveSession(
+export const resolveSession: (
   c: {
     req: { raw: Request };
     var: { auth: Auth; db: Db };
     header: (name: string, value: string, options?: { append?: boolean }) => void;
   },
   threadId?: string,
-): Promise<{ user: SessionUser; member: Member | null } | null> {
+) => Promise<{ user: SessionUser; member: Member | null } | null> = async (c, threadId) => {
   const { headers, response: session } = await c.var.auth.api.getSession({
     headers: c.req.raw.headers,
     returnHeaders: true,
   });
-  // The session cookie cache (packages/auth) is renewed by Set-Cookie. Pass it on, or once the
-  // cached cookie expires every request reads the session from the database again.
   for (const cookie of headers.getSetCookie()) c.header("set-cookie", cookie, { append: true });
   if (!session) return null;
-  // The workspace the request names (the web app's URL, per tab) wins over the session's, which
-  // every tab shares; a workspace the user is not a member of finds no member (403).
   const activeOrg =
     c.req.raw.headers.get(WORKSPACE_HEADER) ||
     new URL(c.req.raw.url).searchParams.get(WORKSPACE_PARAM) ||
     (session.session as { activeOrganizationId?: string | null }).activeOrganizationId;
-  // A session deleted since its cookie was cached is signed out (ADR 0024).
   const access = await sessionAccess(c.var.db, session.session.id);
   if (!access) return null;
   const { scopeOrgId } = access;
@@ -133,19 +127,19 @@ export async function resolveSession(
     user: { id: session.user.id, email: session.user.email, scopeOrgId },
     member: ofThread ?? active,
   };
-}
+};
 
 /**
  * `userId`'s member in `orgId`, or null. Without `orgId`, their oldest company membership, or their
  * Personal space when they are in no company (ADR 0024). A session scoped to a company
  * (`scopeOrgId`) finds only its member there, whatever `orgId` asks for.
  */
-export async function findMember(
+export const findMember: (
   db: Db,
   userId: string,
   orgId?: string,
   scopeOrgId?: string | null,
-): Promise<Member | null> {
+) => Promise<Member | null> = async (db, userId, orgId, scopeOrgId) => {
   if (scopeOrgId && orgId && orgId !== scopeOrgId) return null;
   if (scopeOrgId) orgId = scopeOrgId;
   const [member] = await db
@@ -162,14 +156,13 @@ export async function findMember(
         orgId ? eq(schema.members.organizationId, orgId) : undefined,
       ),
     )
-    // Without `orgId`: the oldest company, else the Personal space (ADR 0024).
     .orderBy(
       sql`case when ${isCompany(db, schema.members.organizationId)} then 0 else 1 end`,
       asc(schema.members.createdAt),
     )
     .limit(1);
   return member ?? null;
-}
+};
 
 /**
  * Every member the session may act as: the user's member in each workspace they belong to, or
@@ -191,7 +184,6 @@ export async function findMemberIds(db: Db, userId: string, scopeOrgId?: string 
 
 function memberMiddleware(threadParam?: string) {
   return createMiddleware<AppEnv>(async (c, next) => {
-    // Already resolved by `requireThreadMember` on this request: no second lookup.
     if (c.get("member")) return next();
     const resolved = await resolveSession(c, threadParam ? c.req.param(threadParam) : undefined);
     if (!resolved) throw new HTTPException(401, { message: "sign in first" });
@@ -199,8 +191,6 @@ function memberMiddleware(threadParam?: string) {
       throw new HTTPException(403, { message: "not a member of any organization" });
     c.set("user", resolved.user);
     c.set("member", resolved.member);
-    // Which workspace answered, so a client can tell an answer for another tab's workspace (a
-    // preload sent before it knew its own) from one for its own (ADR 0043).
     c.header(WORKSPACE_HEADER, resolved.member.orgId);
     await next();
   });
@@ -232,7 +222,6 @@ export function systemMailSender(scope: { email: SendEmail; config: Config; log:
         text: message.text,
       });
     } catch (error) {
-      // The code says why (for example E_SENDER_NOT_VERIFIED); never the message's link.
       scope.log.error("system_mail.failed", { code: (error as { code?: string }).code, error });
       throw error;
     }
@@ -251,16 +240,11 @@ function invitationText(invite: InvitationMessage, appName: string) {
   ].join("\n");
 }
 
-/**
- * Local sign-in without digging the link out of GreenMail. Only under ENVIRONMENT=development:
- * these URLs are bearer credentials, so production and test never log them.
- */
 function devLog(config: Config, link: { kind: string; email: string; url: string }) {
   if (config.ENVIRONMENT !== "development") return;
   console.log(JSON.stringify({ event: "auth.dev_link", ...link }));
 }
 
-/** The mailbox a request names, in its query or JSON body. */
 async function requestedMailbox(c: {
   req: {
     query(name: string): string | undefined;
@@ -274,7 +258,6 @@ async function requestedMailbox(c: {
   if (c.req.method === "GET" || !c.req.header("content-type")?.includes("application/json")) {
     return undefined;
   }
-  // Parsed once and cached by Hono, so the route's validator reads the same body.
   const body = (await c.req.json().catch(() => null)) as { mailboxId?: unknown } | null;
   return typeof body?.mailboxId === "string" ? body.mailboxId : undefined;
 }
@@ -287,8 +270,6 @@ async function requestedMailbox(c: {
  */
 export const requireMailboxMember = createMiddleware<AppEnv>(async (c, next) => {
   const reader = forUser(c.var.db, c.var.user.id, c.var.user.scopeOrgId);
-  // A draft or an outbox action names its mailbox through its own row: autosaving or sending a
-  // draft, and undoing a send, follow it to its workspace too.
   const resource = /^\/api\/(drafts|actions)\/([^/]+)/.exec(c.req.path);
   const mailboxId = resource ? undefined : await requestedMailbox(c);
   const member = resource

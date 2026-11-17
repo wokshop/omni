@@ -1,13 +1,11 @@
-// Signing (ADR 0043 decision 6, the flow of ADR 0037 decision 4) over the real Worker, Postgres,
-// local R2 and Email Sending, with real sign-ins: a member sends a PDF, people outside Omni read
-// and sign it by address with a mailed code, and the request completes on the last signature.
 import { randomUUID } from "node:crypto";
 import { STORAGE_SIGNING_CONSENT, type StorageNode } from "@omni/contracts";
 import { schema } from "@omni/db";
 import { eq } from "drizzle-orm";
+import { PDFDocument } from "pdf-lib";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { sha256, startStorageStack, type Person, type StorageStack } from "./storage-support.ts";
-import { CookieJar, sentMail, signIn, WEB_ORIGIN } from "./support.ts";
+import { CookieJar, sentMail, signIn, WEB_ORIGIN, workerEvents } from "./support.ts";
 
 let stack: StorageStack;
 beforeAll(async () => {
@@ -41,7 +39,6 @@ async function pdf(
 const send = (person: Person, file: StorageNode, signers: { email: string; name: string }[]) =>
   stack.api(person.jar, "POST", `/files/${file.id}/signatures`, { signers });
 
-/** The code in the newest signing-code mail to `to`. */
 async function mailedCode(to: string) {
   const mails = (await sentMail(stack.worker, to)).filter((m) => m.subject.startsWith("Your code"));
   const code = mails.at(-1)?.text.match(/^(\d{6})$/m)?.[1];
@@ -56,10 +53,6 @@ const sign = (jar: CookieJar, requestId: string, code: string, typedName: string
     consentVersion: STORAGE_SIGNING_CONSENT.version,
   });
 
-// Catches: a hash taken from the uploader's claim instead of the bytes, a file sent without its
-// lock, a signer reached by someone the request does not name, another signer's address shown to
-// a signer, a signature without the mailed code (or with a wrong one that is not counted), a
-// request completed before its last signer, and an audit trail missing a step.
 test("a sent PDF is locked and hashed, each signer signs by mailed code, and the last signature completes it", async () => {
   const { ana } = await owner();
   const file = await pdf(ana);
@@ -88,7 +81,6 @@ test("a sent PDF is locked and hashed, each signer signs by mailed code, and the
   expect(more).toEqual([]);
   expect(invite!.text).toContain(`${WEB_ORIGIN}/sign/${requestId}\n`);
 
-  // Someone the request does not name reaches nothing of it.
   const eve = await signedIn(address("eve"));
   expect((await stack.api(eve, "GET", `/signing/${requestId}`)).status).toBe(404);
   expect((await stack.get(eve, `/signing/${requestId}/content`)).status).toBe(404);
@@ -111,7 +103,6 @@ test("a sent PDF is locked and hashed, each signer signs by mailed code, and the
   const document = await stack.get(bobJar, `/signing/${requestId}/content`);
   expect(Buffer.from(await document.arrayBuffer()).equals(PDF)).toBe(true);
 
-  // No code asked for: nothing to sign with. Then a wrong code, then the mailed one.
   expect((await sign(bobJar, requestId, "000000", "Bob Client")).body.code).toBe("INVALID_CODE");
   expect((await stack.api(bobJar, "POST", `/signing/${requestId}/code`)).status).toBe(200);
   const code = await mailedCode(bob);
@@ -127,7 +118,6 @@ test("a sent PDF is locked and hashed, each signer signs by mailed code, and the
       { name: "Carol Client", signed: false },
     ],
   });
-  // A code is used once, and a signer signs once.
   expect((await sign(bobJar, requestId, code, "Bob Client")).body.code).toBe("ALREADY_SIGNED");
 
   const carolJar = await signedIn(carol);
@@ -171,9 +161,6 @@ test("a sent PDF is locked and hashed, each signer signs by mailed code, and the
   }
 });
 
-// Catches: a file that only claims to be a PDF sent anyway (or locked on the way to refusing),
-// one file out to sign twice at once, a voided request a signer can still read or get a code
-// for, and a void that leaves no way to send the file again.
 test("only a real PDF is sent, once at a time, and a voided request closes to its signer", async () => {
   const { ana } = await owner();
   const bob = address("bob");
@@ -204,6 +191,99 @@ test("only a real PDF is sent, once at a time, and a voided request closes to it
     "SIGNATURE_CLOSED",
   );
 
-  // Still locked, and sent again as a new request.
   expect((await send(ana, file, signers)).status).toBe(201);
+});
+
+async function sealedRequest(person: Person, fileId: string) {
+  for (let tries = 0; tries < 50; tries++) {
+    const listed = await stack.api(person.jar, "GET", `/files/${fileId}/signatures`);
+    const [request] = listed.body.requests;
+    if (request?.sealedNodeId) return request;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  const logs = workerEvents(stack.worker).filter((line) => String(line.event).includes("seal"));
+  throw new Error(`never sealed: ${JSON.stringify(logs)}`);
+}
+
+const signedMail = async (to: string) =>
+  (await sentMail(stack.worker, to)).filter((mail) => mail.subject.endsWith("is signed"));
+
+async function signAll(person: Person, file: StorageNode, signers: string[]) {
+  const sent = await send(
+    person,
+    file,
+    signers.map((email) => ({ email, name: email.split("@")[0]! })),
+  );
+  const requestId = sent.body.request.id as string;
+  const jars: CookieJar[] = [];
+  for (const email of signers) {
+    const jar = await signedIn(email);
+    await stack.api(jar, "POST", `/signing/${requestId}/code`);
+    expect((await sign(jar, requestId, await mailedCode(email), email)).status).toBe(200);
+    jars.push(jar);
+  }
+  return { requestId, jars };
+}
+
+test("the last signature seals: a locked signed copy beside the original with an audit page, mailed once to everyone", async () => {
+  const { org, ana } = await owner();
+  const doc = await PDFDocument.create();
+  doc.addPage().drawText("Services agreement");
+  const original = Buffer.from(await doc.save());
+  const file = await pdf(ana, "contract.pdf", original);
+  const bob = address("bob");
+  const { requestId, jars } = await signAll(ana, file, [bob]);
+
+  const request = await sealedRequest(ana, file.id);
+  const listed = await stack.api(ana.jar, "GET", `/nodes?space=shared`);
+  expect(listed.body.nodes).toMatchObject([
+    { id: request.sealedNodeId, name: "contract (signed).pdf", lockedAt: expect.any(String) },
+    { id: file.id, name: "contract.pdf", lockedAt: expect.any(String) },
+  ]);
+  const sealedBytes = Buffer.from(
+    await (await stack.download(ana.jar, request.sealedNodeId)).arrayBuffer(),
+  );
+  expect(sha256(sealedBytes)).toBe(request.sealedSha256);
+  expect((await PDFDocument.load(sealedBytes)).getPageCount()).toBe(2);
+  const kept = Buffer.from(await (await stack.download(ana.jar, file.id)).arrayBuffer());
+  expect(kept.equals(original)).toBe(true);
+  expect(await stack.usedBytes(org.id)).toBe(original.length + sealedBytes.length);
+
+  const signerView = await stack.api(jars[0]!, "GET", `/signing/${requestId}`);
+  expect(signerView.body.item.sealed).toBe(true);
+  const fetched = await stack.get(jars[0]!, `/signing/${requestId}/sealed`);
+  expect(Buffer.from(await fetched.arrayBuffer()).equals(sealedBytes)).toBe(true);
+  expect(await signedMail(bob)).toHaveLength(1);
+  expect(await signedMail(ana.email)).toHaveLength(1);
+
+  expect(await stack.cron("* * * * *")).toBe("ok");
+  expect((await stack.api(ana.jar, "GET", `/nodes?space=shared`)).body.nodes).toHaveLength(2);
+  expect(await signedMail(bob)).toHaveLength(1);
+
+  expect((await stack.api(ana.jar, "DELETE", `/nodes/${request.sealedNodeId}/lock`)).status).toBe(
+    200,
+  );
+  const forged = Buffer.from("%PDF-1.7 a different certificate");
+  const opened = await stack.api(ana.jar, "POST", `/files/${request.sealedNodeId}/versions`, {
+    size: forged.length,
+    mimeType: "application/pdf",
+    sha256: request.sealedSha256,
+  });
+  await (await stack.putPart(ana.jar, opened.body.upload.id, 1, forged)).body?.cancel();
+  const replaced = await stack.api(ana.jar, "POST", `/uploads/${opened.body.upload.id}/complete`);
+  expect(replaced.status).toBe(200);
+  expect((await stack.get(jars[0]!, `/signing/${requestId}/sealed`)).status).toBe(404);
+  expect((await stack.api(ana.jar, "DELETE", `/nodes/${request.sealedNodeId}`)).status).toBe(200);
+  const gone = await stack.api(ana.jar, "DELETE", `/nodes/${request.sealedNodeId}?forever=1`);
+  expect(gone.status).toBe(204);
+  expect(await stack.cron("* * * * *")).toBe("ok");
+  expect((await stack.api(ana.jar, "GET", `/nodes?space=shared`)).body.nodes).toHaveLength(1);
+  expect(await signedMail(bob)).toHaveLength(1);
+
+  const broken = await pdf(ana, "broken.pdf", Buffer.from("%PDF-1.7 not really"));
+  await signAll(ana, broken, [address("carol")]);
+  const brokenSeal = await sealedRequest(ana, broken.id);
+  const certificate = await stack.download(ana.jar, brokenSeal.sealedNodeId);
+  const pages = (await PDFDocument.load(await certificate.arrayBuffer())).getPageCount();
+  expect(pages).toBe(1);
 });

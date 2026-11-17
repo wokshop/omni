@@ -1,7 +1,3 @@
-// `crm_write`: add or change one CRM record, or add a note (ADR 0036 decision 7). It never
-// deletes and never archives. Writes go through the member door as the token's user in one
-// company workspace, pass the same read-only gate as the app, announce `crm.changed` to the
-// workspace's open apps and leave an audit row naming the agent.
 import type { McpServer } from "@modelcontextprotocol/server";
 import { schema, type CrmCompany, type CrmDeal, type CrmPerson } from "@omni/db";
 import { z } from "zod";
@@ -119,11 +115,11 @@ type Written = { output: Output; kind: RecordKind | "note"; id: string } | { err
 
 const refusal = (r: { status: string }) => ({ error: refusalText(r) });
 
-async function writePerson(
+const writePerson: (
   context: ToolContext,
   workspace: CrmWorkspace,
   input: NonNullable<Input["person"]>,
-): Promise<Written> {
+) => Promise<Written> = async (context, workspace, input) => {
   const crm = crmOf(context, workspace);
   let person: CrmPerson;
   let outcome: Output["result"];
@@ -140,7 +136,6 @@ async function writePerson(
     const added = await crm.addPerson({
       name: input.name,
       address: input.email,
-      // Null is no company; left out, the company comes from the email's domain.
       companyId: input.company_id,
       jobTitle: input.job_title,
       phone: input.phone,
@@ -169,13 +164,13 @@ async function writePerson(
     kind: "person",
     id: person.id,
   };
-}
+};
 
-async function writeCompany(
+const writeCompany: (
   context: ToolContext,
   workspace: CrmWorkspace,
   input: NonNullable<Input["company"]>,
-): Promise<Written> {
+) => Promise<Written> = async (context, workspace, input) => {
   const crm = crmOf(context, workspace);
   let company: CrmCompany;
   if (input.id === undefined) {
@@ -202,38 +197,44 @@ async function writeCompany(
     kind: "company",
     id: company.id,
   };
-}
+};
 
-/** A stage named by id or by name, in any letter case. */
-async function stageId(
+const stageId: (
   context: ToolContext,
   workspace: CrmWorkspace,
   wanted: string,
-): Promise<{ id: string } | { error: string }> {
+) => Promise<{ id: string } | { error: string }> = async (context, workspace, wanted) => {
   const stages = await crmOf(context, workspace).stages();
   if (stages.status !== "ok") return { error: refusalText(stages) };
   const match = stages.stages.find(
     (s) => s.id === wanted || s.name.toLowerCase() === wanted.trim().toLowerCase(),
   );
   if (match) return { id: match.id };
-  // A workspace that has never used its CRM has its starting stages from its first deal.
   if (!stages.stages.length) return { error: "Add the deal first; it starts in the first stage." };
-  return { error: `No stage "${wanted}". Stages: ${stages.stages.map((s) => s.name).join(", ")}.` };
-}
+  return {
+    error: `No stage "${wanted}". Stages: ${stages.stages.map((s) => s.name).join(", ")}.`,
+  };
+};
 
 async function writeDeal(
   context: ToolContext,
   workspace: CrmWorkspace,
   input: NonNullable<Input["deal"]>,
-): Promise<Written> {
+) {
   const crm = crmOf(context, workspace);
   const stage =
     input.stage === undefined ? undefined : await stageId(context, workspace, input.stage);
-  if (stage && "error" in stage) return stage;
+  if (stage && "error" in stage) {
+    const value: Written = stage;
+    return value;
+  }
   let ownerMemberId: string | null | undefined = input.owner === null ? null : undefined;
   if (input.owner) {
     ownerMemberId = await teammate(context, workspace, input.owner);
-    if (ownerMemberId === null) return { error: `${input.owner} is not in this workspace.` };
+    if (ownerMemberId === null) {
+      const value: Written = { error: `${input.owner} is not in this workspace.` };
+      return value;
+    }
   }
   const fields = {
     companyId: input.company_id,
@@ -245,34 +246,43 @@ async function writeDeal(
   };
   let deal: CrmDeal;
   if (input.id === undefined) {
-    if (input.name === undefined) return { error: "Adding a deal needs `name`." };
+    if (input.name === undefined) {
+      const value: Written = { error: "Adding a deal needs `name`." };
+      return value;
+    }
     const added = await crm.createDeal({ name: input.name, ...fields });
-    if (added.status !== "ok") return refusal(added);
+    if (added.status !== "ok") {
+      const value: Written = refusal(added);
+      return value;
+    }
     deal = added.deal;
   } else {
     const changed = await crm.updateDeal(input.id, { name: input.name, ...fields });
-    if (changed.status !== "ok") return refusal(changed);
+    if (changed.status !== "ok") {
+      const value: Written = refusal(changed);
+      return value;
+    }
     deal = changed.deal;
   }
   const rows = await rowContext(context, workspace, [deal]);
-  return {
+  const value: Written = {
     output: { result: input.id ? "changed" : "added", deal: dealRow(deal, rows) },
     kind: "deal",
     id: deal.id,
   };
+  return value;
 }
 
-async function writeNote(
+const writeNote: (
   context: ToolContext,
   workspace: CrmWorkspace,
   input: NonNullable<Input["note"]>,
-): Promise<Written> {
+) => Promise<Written> = async (context, workspace, input) => {
   const { kind, id } = input.record;
   const record =
     kind === "person" ? { personId: id } : kind === "company" ? { companyId: id } : { dealId: id };
   const made = await crmOf(context, workspace).createNote({ record, body: input.text });
   if (made.status !== "ok") return refusal(made);
-  // The record's timeline has the note too.
   await announce(context, workspace, kind, [id]);
   return {
     output: {
@@ -282,7 +292,7 @@ async function writeNote(
     kind: "note",
     id: made.note.id,
   };
-}
+};
 
 async function write(context: ToolContext, input: Input) {
   const given = (["person", "company", "deal", "note"] as const).filter((k) => input[k]);

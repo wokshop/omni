@@ -1,7 +1,3 @@
-// One file or folder as a card, the same for both: a square preview (an image's thumbnail, else
-// its kind's glyph on the card's surface), then the name with its menu beside it, and under it
-// what it is ("585 KB · PNG", "Folder"). Hovered the card washes; the open file's card keeps the
-// accent fill; a press squeezes it a touch (cards squeeze least).
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { SkeletonBox } from "skullet/react";
 import {
@@ -13,6 +9,10 @@ import { useThumbnail } from "@/hooks/use-storage-preview.ts";
 import { fileType } from "@/lib/file-kind.ts";
 import { formatBytes, type StorageNode } from "@/lib/storage.ts";
 import { FileGlyph } from "./file-glyph.tsx";
+import { FolderArt } from "./folder-art.tsx";
+import { CARD_DROP_TARGET, LIFTED, useSurfaceDrag, type NodeDrag } from "./node-drag.tsx";
+import { NodeName, type ItemName } from "./name-field.tsx";
+import { PdfStack } from "./pdf-stack.tsx";
 
 const stop = (event: { stopPropagation: () => void }) => event.stopPropagation();
 /**
@@ -33,27 +33,42 @@ export function FileCard(props: {
   /** Where its bytes are read, for an image's thumbnail. */
   url: string;
   menu: SettingsRowMenuItem[];
+  /** Where a folder's contents' bytes are read, for the sheets in its pocket. */
+  fileUrl?: (node: StorageNode) => string;
+  /** False through a shared link's door: its folders draw the bare pocket. */
+  peek?: boolean | undefined;
+  /** Its name as a field, while it is renamed. */
+  name?: ItemName | undefined;
+  /** Lifting it onto folders, and folders taking drops (`node-drag.tsx`); off without it. */
+  drag?: NodeDrag | undefined;
 }) {
   const { node } = props;
   const type = node.kind === "file" ? fileType(node.name, node.mimeType) : null;
+  const lift = useSurfaceDrag(node, "card", props.drag);
   return (
     <GridListItem
+      ref={lift.ref}
+      {...lift.props}
       id={node.id}
       href={props.href}
       textValue={node.name}
-      // 6px around the square and the caption, so the hover and open fills frame both.
-      className="flex-col items-stretch gap-2 rounded-xl p-1.5 transition-[background-color,scale] duration-150 ease-out hover:bg-hover active:scale-[.99] selected:bg-accent motion-reduce:transition-none"
+      className={`flex-col items-stretch gap-2 rounded-xl p-1.5 transition-[background-color,scale] duration-150 ease-out hover:bg-hover active:scale-[.99] selected:bg-accent motion-reduce:transition-none ${CARD_DROP_TARGET} ${LIFTED}`}
     >
-      <div className="relative flex aspect-square items-center justify-center overflow-hidden rounded-lg border bg-surface shadow-raised">
-        {type?.preview === "image" && type.raster ? (
-          <Thumbnail node={node} url={props.url} raster={type.raster} />
-        ) : (
-          <FileGlyph kind={type?.kind ?? "folder"} className="size-8 text-muted-foreground" />
-        )}
-      </div>
-      {/* The body's 13px over the 11px meta, 4px apart: two sizes, as the rows use. */}
+      {node.kind === "folder" ? (
+        <FolderArt node={node} peek={props.peek} fileUrl={props.fileUrl} />
+      ) : (
+        <div className="relative flex aspect-square items-center justify-center overflow-hidden rounded-lg border bg-surface shadow-raised">
+          {type?.preview === "image" && type.raster ? (
+            <Thumbnail node={node} url={props.url} raster={type.raster} />
+          ) : type?.preview === "pdf" ? (
+            <PdfStack node={node} url={props.url} />
+          ) : (
+            <FileGlyph kind={type?.kind ?? "folder"} className="size-8 text-muted-foreground" />
+          )}
+        </div>
+      )}
       <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-1 gap-y-1 ps-0.5">
-        <span className="truncate text-sm text-foreground">{node.name}</span>
+        <NodeName node={node} name={props.name} card />
         <span {...KEEP_IN_MENU} className="row-span-2 self-start">
           <SettingsRowMenu label={`Actions for ${node.name}`} items={props.menu} lazy />
         </span>
@@ -65,14 +80,12 @@ export function FileCard(props: {
   );
 }
 
-/** An image's thumbnail, faded in over its glyph once it has decoded. */
 function Thumbnail(props: { node: StorageNode; url: string; raster: string }) {
-  // Fetched only once the card nears the screen: a mounted card off screen fetches nothing.
   const anchor = useRef<HTMLSpanElement>(null);
   const near = useSeen(anchor);
   const thumb = useThumbnail(
     { url: props.url, version: props.node.updatedAt, size: props.node.size },
-    props.raster,
+    { raster: props.raster },
     near,
   );
   const [shown, setShown] = useState(false);
@@ -95,13 +108,12 @@ function Thumbnail(props: { node: StorageNode; url: string; raster: string }) {
 }
 
 /** True once the element comes within a screen of the viewport, and from then on. */
-function useSeen(ref: RefObject<HTMLElement | null>) {
+export function useSeen(ref: RefObject<HTMLElement | null>) {
   const [seen, setSeen] = useState(false);
   useEffect(() => {
     const element = ref.current;
     if (!element || seen) return;
     const observer = new IntersectionObserver(
-      // Any entry: a busy page gets several at once, and one that came into view counts.
       (entries) => {
         if (entries.some((entry) => entry.isIntersecting)) setSeen(true);
       },
@@ -116,7 +128,7 @@ function useSeen(ref: RefObject<HTMLElement | null>) {
 /** Cards while they load: skullet's squares and captions on the cards' own grid. */
 export function FileCardBones(props: { count: number }) {
   return (
-    <div className="grid grid-cols-[repeat(auto-fill,minmax(10.5rem,1fr))] gap-x-3 gap-y-4 px-3.5">
+    <div className="grid grid-cols-[repeat(auto-fill,11.5rem)] gap-x-3 gap-y-4 px-3.5">
       {Array.from({ length: props.count }, (_, i) => (
         <div key={i} className="flex flex-col gap-2 p-1.5">
           <div className="aspect-square">

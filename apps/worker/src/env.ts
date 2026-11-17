@@ -1,8 +1,6 @@
 import { authEnvSchema } from "@omni/auth";
 import { z } from "zod";
 
-// Secrets are not in wrangler.jsonc, so `wrangler types` cannot see them. Documented in
-// `.dev.vars.example`.
 declare global {
   namespace Cloudflare {
     interface Env {
@@ -26,7 +24,6 @@ const optionalText = z
 
 const optionalGb = z.coerce.number<string | undefined>().positive().optional();
 
-/** `<count>/<seconds>`, e.g. `5/900` for five per 15 minutes; `off` disables the rule. */
 function rateLimit(fallback: string) {
   return z
     .string()
@@ -50,46 +47,29 @@ const configSchema = z
   .object({
     MAIL_SERVICE_URL: z.url(),
     MAIL_SERVICE_HMAC_SECRET: z.string().min(32),
-    /**
-     * The address auth and notice mail is sent from, through Cloudflare Email Sending (its domain
-     * must be onboarded there). Required to sign in by email.
-     */
     SYSTEM_MAIL_FROM: optionalText.pipe(z.email().optional()),
     SENTRY_DSN: optionalText.pipe(z.url().optional()),
-    /** Empty with no TYPESAFE_API_KEY: no triage beyond the wordless-reply rule. */
     ANTHROPIC_API_KEY: optionalText,
-    /** Triage and search relevance on TypeSafe's Jev when set. */
     TYPESAFE_API_KEY: optionalText,
-    /** `jev` or `claude`; defaults to Jev when TYPESAFE_API_KEY is set. */
     TRIAGE_PROVIDER: optionalText.pipe(z.enum(["jev", "claude"]).optional()),
     JEV_MODEL: optionalText,
-    /** TypeSafe API base URL; defaults to https://api.typesafe.ai. */
     TYPESAFE_API_URL: optionalText.pipe(z.url().optional()),
-    /** Send Expo push notifications to members with no app open. Off by default. */
     EXPO_PUSH_ENABLED: z
       .enum(["true", "false", ""])
       .optional()
       .transform((v) => v === "true"),
-    /** DNS-over-HTTPS (JSON) resolver the image proxy uses to refuse private addresses. */
     IMAGE_PROXY_DOH_URL: z.url().default("https://cloudflare-dns.com/dns-query"),
-    /**
-     * `production` by default. `test` (e2e suites) unlocks test-only switches; `development`
-     * also logs magic-link and invitation URLs to the console for local sign-in.
-     */
+    SENDER_LOGO_ICON_SERVICE: optionalText.pipe(
+      z.string().default("https://www.google.com/s2/favicons?domain={domain}&sz=128"),
+    ),
+    SENDER_LOGO_GRAVATAR: optionalText.pipe(
+      z.string().default("https://gravatar.com/avatar/{hash}?s=160&d=404"),
+    ),
     ENVIRONMENT: z.enum(["production", "development", "test"]).default("production"),
-    /** Test-only: one origin exempt from the proxy's address checks. Refused unless ENVIRONMENT=test. */
     IMAGE_PROXY_TEST_ALLOW_ORIGIN: optionalText.pipe(z.url().optional()),
-    /**
-     * Domain Connect (ADR 0011): the provider id our templates are published under. Empty keeps
-     * "Set up automatically" off; members add records by hand.
-     */
     DOMAIN_CONNECT_PROVIDER_ID: optionalText,
-    /** Host of the TXT record holding our public key, for templates that require signed requests. */
     DOMAIN_CONNECT_KEY_HOST: optionalText,
-    /** PKCS#8 PEM private key that signs apply URLs. Needs DOMAIN_CONNECT_KEY_HOST. */
     DOMAIN_CONNECT_PRIVATE_KEY: optionalText,
-    /** Largest file one upload may stage for a send, in bytes. 25 MB by default (Gmail's limit). */
-    // Empty (as `.dev.vars.example` ships it) means the default, not 0.
     UPLOAD_MAX_BYTES: optionalText.pipe(
       z.coerce
         .number<string | undefined>()
@@ -97,7 +77,6 @@ const configSchema = z
         .positive()
         .default(25 * 1024 * 1024),
     ),
-    /** Largest file Storage accepts, in bytes (ADR 0034). 5 GB by default. */
     STORAGE_MAX_FILE_BYTES: optionalText.pipe(
       z.coerce
         .number<string | undefined>()
@@ -105,35 +84,27 @@ const configSchema = z
         .positive()
         .default(5 * 1024 ** 3),
     ),
-    /** Most a Personal space may store, in GB (1024³ bytes). Empty: no cap. */
     STORAGE_PERSONAL_GB: optionalText.pipe(optionalGb),
-    /** Ceiling on what any one workspace may store, in GB. Empty: none. */
     STORAGE_MAX_GB: optionalText.pipe(optionalGb),
-    /** Optional: required only if the Expo project enforces push security. */
+    S2_BASIN_URL: optionalText.pipe(z.url().optional()),
+    S2_BASIN: optionalText,
+    S2_ACCESS_TOKEN: optionalText,
     EXPO_ACCESS_TOKEN: optionalText,
-    // Rate limits (see rate-limiter.ts). Defaults leave room for real use; tighten per deploy.
-    /** Per IP: every sign-in step (magic link, passkey, Google, verify links). */
     RATE_LIMIT_AUTH: rateLimit("60/60"),
-    /** Per email address: magic-link requests, each of which sends mail. */
     RATE_LIMIT_MAGIC_LINK: rateLimit("5/900"),
-    /** Per inviting user: invitations sent or resent. */
     RATE_LIMIT_INVITE: rateLimit("30/3600"),
-    /** Per member: full-text searches. */
     RATE_LIMIT_SEARCH: rateLimit("60/60"),
-    /** Per member: new mail and replies. */
     RATE_LIMIT_SEND: rateLimit("100/3600"),
-    /** Per member: other outbox writes (read state, done, defer, archive, move). */
     RATE_LIMIT_ACTIONS: rateLimit("300/60"),
-    /** Per member: creating mailboxes (a mail service call). Domains have their own limiters. */
     RATE_LIMIT_PROVISION: rateLimit("30/3600"),
-    /** Per member: image proxy fetches of images not already cached. */
     RATE_LIMIT_IMAGE_PROXY: rateLimit("300/60"),
-    /** Per member: people added to a Storage item, each of whom is sent mail (ADR 0034). */
     RATE_LIMIT_STORAGE_SHARE: rateLimit("60/3600"),
-    /** Per IP: requests to Storage's link door, `/api/storage/shared/*`. */
     RATE_LIMIT_STORAGE_LINK: rateLimit("300/60"),
-    /** Per person and client: requests to the desktop sync API, `/api/storage/sync/*`. */
     RATE_LIMIT_STORAGE_SYNC: rateLimit("600/60"),
+  })
+  .refine((env) => !env.S2_BASIN_URL || !!env.S2_BASIN, {
+    path: ["S2_BASIN"],
+    message: "is required with S2_BASIN_URL",
   })
   .refine((env) => !env.IMAGE_PROXY_TEST_ALLOW_ORIGIN || env.ENVIRONMENT === "test", {
     path: ["IMAGE_PROXY_TEST_ALLOW_ORIGIN"],
@@ -146,17 +117,16 @@ export type Config = z.output<typeof configSchema>;
 const cache = new WeakMap<object, Config>();
 
 /** Validates the Worker's vars and secrets once per isolate; throws naming every bad variable. */
-export function loadConfig(env: Env): Config {
+export function loadConfig(env: Env) {
   let config = cache.get(env);
   if (!config) {
     const parsed = configSchema.safeParse({ ...env, auth: env });
     if (!parsed.success) {
-      // Names only: values may be secrets.
       const problems = parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`);
       throw new Error(`invalid Worker config:\n  ${problems.join("\n  ")}`);
     }
     config = parsed.data;
     cache.set(env, config);
   }
-  return config;
+  return config satisfies Config;
 }

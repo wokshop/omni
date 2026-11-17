@@ -1,4 +1,3 @@
-// Identity: the session, signing in and out, organizations, invitations.
 import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { useRouter } from "@tanstack/react-router";
 import { invitationQuery, organizationsQuery } from "../lib/org-queries.ts";
@@ -94,13 +93,17 @@ export function useAcceptInvitation() {
   const client = useQueryClient();
   const router = useRouter();
   return useMutation({
+    meta: { handlesError: true },
     mutationFn: (invitationId: string) => acceptInvitation(client, router, invitationId),
   });
 }
 
 /** `mutate(invitationId)`. */
 export function useRejectInvitation() {
-  return useMutation({ mutationFn: (invitationId: string) => rejectInvitation(invitationId) });
+  return useMutation({
+    meta: { handlesError: true },
+    mutationFn: (invitationId: string) => rejectInvitation(invitationId),
+  });
 }
 
 /** Accounts signed in on this browser; add one by signing in again from `/login`. */

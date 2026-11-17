@@ -1,8 +1,3 @@
-// The app's glyphs: Central Icons (round outlined, radius 3, stroke 1.5). Each export keeps the
-// name its call sites use, so swapping a glyph is a one-line change here; size and colour come from
-// the caller's classes. Decorative by default (aria-hidden): name the control around it instead.
-// Licensed for closed-source use only: never publish this package's glyphs in public code.
-
 export { IconAiBotHead as IconAi } from "central-icons-outlined/IconAiBotHead";
 export { IconArrowLeft } from "central-icons-outlined/IconArrowLeft";
 export { IconArrowRotateClockwise } from "central-icons-outlined/IconArrowRotateClockwise";
@@ -35,10 +30,24 @@ export { IconMailbox } from "central-icons-outlined/IconMailbox";
 export { IconPencil } from "central-icons-outlined/IconPencil";
 export { IconPlusMedium as IconPlus } from "central-icons-outlined/IconPlusMedium";
 export { IconPaperPlane as IconSend } from "central-icons-outlined/IconPaperPlane";
+export { IconSignature } from "central-icons-outlined/IconSignature";
 export { IconSettingsGear2 as IconSettings } from "central-icons-outlined/IconSettingsGear2";
 export { IconShield } from "central-icons-outlined/IconShield";
 export { IconPhone as IconSmartphone } from "central-icons-outlined/IconPhone";
 export { IconStar } from "central-icons-outlined/IconStar";
+export { IconAnalytics } from "central-icons-outlined/IconAnalytics";
+export { IconBook } from "central-icons-outlined/IconBook";
+export { IconBrush } from "central-icons-outlined/IconBrush";
+export { IconCoins } from "central-icons-outlined/IconCoins";
+export { IconHeart } from "central-icons-outlined/IconHeart";
+export { IconHome } from "central-icons-outlined/IconHome";
+export { IconLightBulb } from "central-icons-outlined/IconLightBulb";
+export { IconMegaphone } from "central-icons-outlined/IconMegaphone";
+export { IconPackage } from "central-icons-outlined/IconPackage";
+export { IconRocket } from "central-icons-outlined/IconRocket";
+export { IconSparkle } from "central-icons-outlined/IconSparkle";
+export { IconTarget } from "central-icons-outlined/IconTarget";
+export { IconTrophy } from "central-icons-outlined/IconTrophy";
 export { IconTablet } from "central-icons-outlined/IconTablet";
 export { IconTrashCanSimple as IconTrash } from "central-icons-outlined/IconTrashCanSimple";
 export { IconExclamationTriangle as IconTriangleAlert } from "central-icons-outlined/IconExclamationTriangle";
@@ -64,6 +73,7 @@ export { IconBell } from "central-icons-outlined/IconBell";
 export { IconNoteText as IconNote } from "central-icons-outlined/IconNoteText";
 export { IconArrowUp } from "central-icons-outlined/IconArrowUp";
 export { IconAt } from "central-icons-outlined/IconAt";
+export { IconBubbleText as IconComment } from "central-icons-outlined/IconBubbleText";
 export { IconArrowShareLeft as IconReply } from "central-icons-outlined/IconArrowShareLeft";
 export { IconArrowUndoUp as IconReplyAll } from "central-icons-outlined/IconArrowUndoUp";
 export { IconArrowShareRight as IconForward } from "central-icons-outlined/IconArrowShareRight";
@@ -95,11 +105,12 @@ export { IconTable } from "central-icons-outlined/IconTable";
 export { IconSlidesWide as IconSlides } from "central-icons-outlined/IconSlidesWide";
 export { IconAlignmentJustify as IconRows } from "central-icons-outlined/IconAlignmentJustify";
 export { IconGrid as IconCards } from "central-icons-outlined/IconGrid";
-// Filled: the module marks only (a white glyph on the module's colour reads solid, not as a line).
 export { IconEmail1 as IconMailFilled } from "central-icons-filled/IconEmail1";
 export { IconFolder1 as IconFolderFilled } from "central-icons-filled/IconFolder1";
+export { IconFolderOpen as IconFolderOpenFilled } from "central-icons-filled/IconFolderOpen";
 export { IconHandshake as IconHandshakeFilled } from "central-icons-filled/IconHandshake";
 export { IconArrowUpCircle as IconUpgrade } from "central-icons-outlined/IconArrowUpCircle";
 export { IconConnectors1 as IconConnections } from "central-icons-outlined/IconConnectors1";
-// Filled: the current choice's mark in a menu, in the brand colour.
+export { IconChatBubbleSimple as IconCommentPlain } from "central-icons-outlined/IconChatBubbleSimple";
+export { IconCursor1 as IconCursor } from "central-icons-outlined/IconCursor1";
 export { IconCircleCheck as IconCircleCheckFilled } from "central-icons-filled/IconCircleCheck";

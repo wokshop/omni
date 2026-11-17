@@ -1,5 +1,3 @@
-// Workspace setup: the onboarding status, creating the workspace, its domain and its mailboxes.
-// Inviting people is `useInviteWithInbox` (use-workspace-admin.ts).
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import {
@@ -25,7 +23,10 @@ export function useOnboarding() {
 export function useCreateWorkspace() {
   const client = useQueryClient();
   const router = useRouter();
-  return useMutation({ mutationFn: (name: string) => createWorkspace(client, router, name) });
+  return useMutation({
+    meta: { handlesError: true },
+    mutationFn: (name: string) => createWorkspace(client, router, name),
+  });
 }
 
 /** `mutate(domain)`: the domain with the DNS records to add (Purelymail) or none (own host). */

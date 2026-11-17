@@ -1,8 +1,3 @@
-// Domain claims (ADR 0010): proving an org controls a domain before it is locked to that org, and
-// keeping that proof current. Routes and the scheduled re-check share this module; the mail
-// service answers the DNS questions (it can ask a zone's nameservers directly) and does the
-// provider work. Every step is safe to repeat: the database writes are conditional, and a check
-// that changes nothing records nothing.
 import {
   DNS_LOOKUP_PATH,
   dnsLookupResultSchema,
@@ -73,27 +68,24 @@ export function advanceDomainStep(db: Db, orgId: string, view: { verified: boole
   return advanceOrgSetup(db, orgId, view.verified ? "dns_verified" : "domain_added");
 }
 
-/**
- * The two states a domain's setup can be in: `claimed` (waiting for its challenge, no lock yet) or
- * `locked` to the org (with its claim, or without one for a legacy lock).
- */
 type DomainPhase =
   | { kind: "claimed"; claim: DomainClaim }
   | { kind: "locked"; claim: DomainClaim | null; lock: MailDomain };
 
-function phaseOf(setup: DomainSetup): DomainPhase {
+const phaseOf: (setup: DomainSetup) => DomainPhase = (setup) => {
   if (setup.claim === null) return { kind: "locked", claim: null, lock: setup.lock };
   if (setup.lock) return { kind: "locked", claim: setup.claim, lock: setup.lock };
   return { kind: "claimed", claim: setup.claim };
-}
+};
 
-/** `pending` until the claim is locked, `expired` if it ran out first. */
-function domainStatus(phase: DomainPhase, now: Date): "pending" | "verified" | "expired" {
+const domainStatus: (phase: DomainPhase, now: Date) => "pending" | "verified" | "expired" = (
+  phase,
+  now,
+) => {
   if (phase.kind === "locked") return "verified";
   return phase.claim.expiresAt <= now ? "expired" : "pending";
-}
+};
 
-/** Omni's ownership record. Its value is shown once, when it is made; null for legacy locks. */
 function challengeView(setup: DomainSetup, value: string | undefined) {
   const { claim, lock } = setup;
   if (!claim) return null;
@@ -102,12 +94,10 @@ function challengeView(setup: DomainSetup, value: string | undefined) {
     name: challengeRecordName(claim.domain),
     value: value ?? null,
     verified: claim.status === "verified" && lock?.dnsLostAt == null,
-    /** Why it is not passing yet, as the domain's nameservers answered at the last check. */
     diagnostic: claim.lastCheck?.challenge ?? null,
   };
 }
 
-/** The provider's records, each with the last check's verdict. */
 function recordViews(setup: DomainSetup) {
   const records = setup.lock?.dnsRecords ?? setup.claim?.dnsRecords ?? [];
   const checked = setup.claim?.lastCheck?.records ?? [];
@@ -117,7 +107,6 @@ function recordViews(setup: DomainSetup) {
   }));
 }
 
-/** Facts that come from the lock, or from the claim while there is no lock yet. */
 function phaseFacts(phase: DomainPhase) {
   if (phase.kind === "locked") {
     const { claim, lock } = phase;
@@ -157,41 +146,27 @@ export function domainView(
   const facts = phaseFacts(phase);
   const check = setup.claim?.lastCheck ?? null;
   return {
-    /** The claim's id; the lock shares it. A legacy lock (no claim) has only its own. */
     id: facts.id,
     domain: facts.domain,
-    /** `pending`: waiting for the challenge. `verified`: locked to this workspace. */
     status: domainStatus(phase, options.now ?? new Date()),
-    /** `purelymail`: records to add below. `imap`: mailboxes are existing logins on your host. */
     provider: facts.provider,
     challenge: challengeView(setup, options.challengeValue),
     records: recordViews(setup),
-    /** Who serves the domain's DNS, with where to add records there, when it is a host we know. */
     dnsHost: check?.host ?? null,
-    /**
-     * One-click setup at the DNS host (Domain Connect), when it has our template. `url` is set
-     * only while the challenge value is in hand; without it, make a new value to get one.
-     */
     domainConnect: check?.domainConnect
       ? { providerName: check.domainConnect.providerName, url: options.domainConnectUrl ?? null }
       : null,
-    /** The provider accepted the domain, so mailboxes can be created on it. */
     added: lock?.addedAt != null,
-    /** Locked and every provider record passed at the last check. */
     verified: lock?.verifiedAt != null,
-    /** The challenge left DNS: sending from the domain is paused until it is back. */
     dnsLost: lock?.dnsLostAt != null,
     checkedAt: facts.checkedAt?.toISOString() ?? null,
-    /** When a pending claim stops waiting. */
     expiresAt: facts.expiresAt,
-    /** Why the provider would not add it yet, in its words (usually: no ownership record). */
     ...(options.addError ? { addError: options.addError } : {}),
   };
 }
 
 export type DomainView = ReturnType<typeof domainView>;
 
-/** Whether the challenge TXT is in DNS: `null` when DNS gave no answer (says nothing either way). */
 async function challengeInDns(scope: MailServiceScope, domain: string, hash: string) {
   const name = challengeRecordName(domain);
   const result = await lookupDns(scope, { domain, queries: [{ name, type: "TXT" }] });
@@ -208,7 +183,6 @@ export async function claimDomain(
   deps: DomainDeps,
   member: { id: string; orgId: string },
   domain: string,
-  /** `gmail`: the domain's mail stays at Google (ADR 0024); only its ownership is proven. */
   host?: "gmail",
 ) {
   const { db } = deps;
@@ -221,8 +195,6 @@ export async function claimDomain(
         : `${domain} is under ${conflict.domain}, which another workspace set up`,
     );
   }
-  // The provider's records first: a failure here must not leave a claim whose one-time
-  // challenge value was never shown.
   const provision =
     host === "gmail"
       ? { provider: "gmail" as const }
@@ -258,7 +230,10 @@ export async function claimDomain(
  * Runs a check of the claim's DNS and stores it on the claim. Best effort: a claim whose DNS
  * cannot be read yet is still a claim, and the next check tries again.
  */
-export async function withCheck(deps: DomainDeps, claim: DomainClaim): Promise<DomainClaim> {
+export const withCheck: (deps: DomainDeps, claim: DomainClaim) => Promise<DomainClaim> = async (
+  deps,
+  claim,
+) => {
   try {
     const { check } = await inspectDomain(deps, {
       domain: claim.domain,
@@ -273,17 +248,17 @@ export async function withCheck(deps: DomainDeps, claim: DomainClaim): Promise<D
     deps.log.warn("domains.inspect_failed", { orgId: claim.orgId, error });
     return claim;
   }
-}
+};
 
 /**
  * Checks a domain: its challenge (locking it on the first pass), then the provider's records.
  * Returns the setup as it now stands and the provider's refusal, if any.
  */
-export async function checkDomain(
+export const checkDomain: (
   deps: DomainDeps,
   member: { id: string; orgId: string },
   setup: DomainSetup,
-): Promise<{ setup: DomainSetup; addError?: string }> {
+) => Promise<{ setup: DomainSetup; addError?: string }> = async (deps, member, setup) => {
   const { db } = deps;
   let { claim, lock } = setup;
   const domain = (claim?.domain ?? lock?.domain)!;
@@ -318,7 +293,6 @@ export async function checkDomain(
     lock = result.lock;
     claim = { ...claim, status: "verified" };
   } else if (claim && lock) {
-    // Locked already: the challenge must stay, or sending pauses (ADR 0010).
     const { check, challengeFound } = await inspectDomain(deps, {
       domain,
       challengeHash: claim.challengeHash,
@@ -334,18 +308,15 @@ export async function checkDomain(
   }
 
   return addAtProvider(deps, claim, lock!);
-}
+};
 
-/**
- * Adds a locked domain at the mail host and saves its records. A domain whose mail stays at
- * Google never reaches the mail host: there is nothing to add or check.
- */
-async function addAtProvider(
-  deps: DomainDeps,
-  claim: DomainClaim | null,
-  lock: MailDomain,
-): Promise<{ setup: DomainSetup; addError?: string }> {
-  if (lock.provider === "gmail") return { setup: { claim, lock } as DomainSetup };
+async function addAtProvider(deps: DomainDeps, claim: DomainClaim | null, lock: MailDomain) {
+  if (lock.provider === "gmail") {
+    const result: { setup: DomainSetup; addError?: string } = {
+      setup: { claim, lock } as DomainSetup,
+    };
+    return result;
+  }
   const { db } = deps;
   const domain = lock.domain;
   const provision = await callMailService(
@@ -365,13 +336,13 @@ async function addAtProvider(
       provision.provider === "imap" || (provision.added && records.every((r) => r.verified)),
   });
   if (!saved) throw new DomainError(409, `${domain} is no longer set up by this workspace`);
-  return {
+  const result: { setup: DomainSetup; addError?: string } = {
     setup: { claim, lock: saved } as DomainSetup,
     addError: provision.provider === "purelymail" ? provision.addError : undefined,
   };
+  return result;
 }
 
-/** Records a lost or restored challenge once per change, with an audit event and owner mail. */
 async function applyChallengeState(
   deps: DomainDeps,
   actorMemberId: string | null,

@@ -1,16 +1,12 @@
-// The CRM's lists (Companies, People, Deals), after Attio's record tables: Storage's frame (a
-// 48px header with the title, then search and New 10px from the right edge) over the table's
-// `page` variant, one 44px row per record, paged by the server's cursor as the table scrolls.
-// The name leads each row with its mark; the other columns are muted, in tabular figures.
-import { useNavigate } from "@tanstack/react-router";
-import { useEffect, useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { TableLoadMoreItem } from "react-aria-components/Table";
 import { Skeleton, SkeletonBox } from "skullet/react";
 import { EmptyState } from "@/components/empty/empty-state";
 import { IconPlus } from "@/components/icons/central";
 import { ListFailed } from "@/components/inbox/thread-list";
 import { StorageFrame } from "@/components/storage/storage-frame";
-import { Avatar } from "@/components/ui/avatar";
+import { SenderAvatar } from "@/components/avatar/sender-avatar";
+import type { SenderLogoFor } from "@/lib/sender-logo";
 import { Button } from "@/components/ui/button";
 import { Heading } from "@/components/ui/heading";
 import { SearchField, SearchInput } from "@/components/ui/search-field";
@@ -22,7 +18,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useDebouncedValue } from "@/hooks/use-debounced-value.ts";
 import { useIsMobile } from "@/hooks/use-mobile.ts";
 
 export const DAY = new Intl.DateTimeFormat(undefined, {
@@ -48,13 +43,22 @@ export interface RecordListSource<T> {
   isFetchingNextPage: boolean;
 }
 
-/** A record's mark: its initial on a square (a company) or a disc (a person, a deal). */
-export function RecordMark(props: { name: string; square?: boolean; size?: number }) {
+/**
+ * A record's mark on a square (a company) or a disc (a person, a deal): the company's logo or the
+ * person's picture when `who` finds one, otherwise its initial.
+ */
+export function RecordMark(props: {
+  name: string;
+  square?: boolean;
+  size?: number;
+  who?: SenderLogoFor | null;
+}) {
   const size = props.size ?? 20;
   return (
-    <Avatar
+    <SenderAvatar
+      who={props.who ?? null}
+      name={props.name}
       isSquare={props.square}
-      initials={props.name.trim().slice(0, 1).toUpperCase() || "?"}
       className="bg-secondary text-muted-foreground outline-0"
       style={{ "--avatar-size": `${size}px` } as React.CSSProperties}
     />
@@ -70,26 +74,7 @@ export function Muted({ children }: { children: ReactNode }) {
   );
 }
 
-/**
- * The search box's text, written to the URL's `q` once typing pauses, so the list it filters can
- * be linked and survives a reload.
- */
-export function useListSearch(q: string) {
-  const navigate = useNavigate();
-  const [text, setText] = useState(q);
-  const settled = useDebouncedValue(text.trim(), 250);
-  useEffect(() => {
-    if (settled === q) return;
-    void navigate({
-      to: ".",
-      search: (prev: Record<string, unknown>) => ({ ...prev, q: settled || undefined }),
-      replace: true,
-    });
-    // Only a new settled text writes the URL; the URL changing (back, a link) leaves the box.
-    // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [settled]);
-  return { text, setText };
-}
+export { useListSearch } from "@/hooks/use-list-search.ts";
 
 export function RecordList<T extends { id: string; name: string }>(props: {
   title: string;
@@ -207,7 +192,6 @@ function Body<T extends { id: string; name: string }>(props: Parameters<typeof R
   );
 }
 
-/** The table while its rows load: skullet's boxes on the rows' own grid. */
 function ListBones() {
   return (
     <div>

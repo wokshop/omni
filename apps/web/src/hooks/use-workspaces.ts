@@ -1,4 +1,3 @@
-// The workspace and account switcher: every workspace with its mailboxes, and opening either.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useParams, useRouter } from "@tanstack/react-router";
 import { useCallback, useEffect } from "react";
@@ -56,6 +55,7 @@ export function useOpenWorkspace() {
   const client = useQueryClient();
   const router = useRouter();
   return useMutation({
+    meta: { handlesError: true },
     mutationFn: (workspace: Pick<Workspace, "id" | "slug" | "role" | "setup">) =>
       openWorkspace(client, router, workspace),
   });
@@ -65,6 +65,7 @@ export function useOpenWorkspace() {
 export function useOpenMailbox() {
   const router = useRouter();
   return useMutation({
+    meta: { handlesError: true },
     mutationFn: (target: { workspace: Pick<Workspace, "slug">; mailboxId: string }) =>
       openMailbox(router, target),
   });

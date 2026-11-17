@@ -1,10 +1,13 @@
 import { createFileRoute, notFound, Outlet, redirect, useLocation } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { ComposeDialog } from "../../components/compose/compose-pane.tsx";
+import { ModuleBoundary } from "../../components/errors/error-boundary.tsx";
 import { ListSweepProvider } from "../../components/inbox/list-sweep.tsx";
 import { SettingsNav } from "../../components/settings/settings-nav.tsx";
 import { AppSidebar } from "../../components/shell/app-sidebar.tsx";
+import { DriveDragProvider } from "../../components/storage/drive-drag.tsx";
 import { TitleBar } from "../../components/shell/title-bar.tsx";
+import { CommandMenu } from "../../components/search/command-menu.tsx";
 import { KeyboardShortcuts } from "../../components/shell/keyboard-shortcuts.tsx";
 import { NotificationsPanel } from "../../components/shell/notifications.tsx";
 import {
@@ -52,29 +55,22 @@ export const Route = createFileRoute("/_authed/$workspace")({
     const workspace = workspaceBySlug(workspaces, params.workspace);
     if (!workspace) {
       const home = homeWorkspace(workspaces);
-      // No workspace at all: the member guard knows where to go (join, onboarding, sign-in).
       if (!home) await requireMember(client, location);
       const moved = home && legacyPath(home.slug, location.pathname);
       const href = moved ? `${moved}${location.searchStr}` : home && workspaceHome(home.slug);
       throw redirect({ href: href ?? "/", replace: true });
     }
-    // A mailbox (`?mailbox=`) or thread of another of the user's workspaces is opened there:
-    // the Worker would read it as that workspace's member, under this one's name.
     const { mailbox } = location.search as { mailbox?: string };
     const owner = mailbox && workspaceOfMailbox(workspaces, mailbox);
     if (owner && owner.id !== workspace.id) {
       throw redirect({ href: inOtherWorkspace(location.href, owner.slug), replace: true });
     }
-    // A link into another workspace is not preloaded: entering it is what a click does, and
-    // a hover must not move this tab (TanStack Router drops a preload that is not found).
     if (preload && workspace.id !== currentWorkspaceId()) throw notFound();
     await enterWorkspace(client, workspace);
     const { member } = await requireMember(client, location);
     return { member, workspace };
   },
   loader: ({ context }) => {
-    // Not awaited: settings' nav shows Billing only where the install bills, and this has the
-    // answer ready long before anyone opens settings.
     void context.queryClient.prefetchQuery(billingQuery());
     return Promise.all([
       context.queryClient.ensureQueryData(mailboxesQuery()),
@@ -97,19 +93,19 @@ function Shell() {
   const settings = useSettingsLocation();
   useShortcut("settings", useToggleSettings());
   return (
-    // The page itself never scrolls: it is the window's size, and the list and the open thread
-    // scroll on their own inside it.
     <ResizableSidebarProvider className="h-svh overflow-hidden">
-      {/* Above the sidebar too: its search sweeps the list when smart search runs. */}
       <ListSweepProvider>
-        {/* Settings is a page: its nav takes the sidebar's place. */}
-        {settings ? <SettingsNav /> : <AppSidebar />}
-        <NotificationsPanel />
-        {/* Starts after the closed sidebar's island, while it shows. */}
-        <SidebarInset className="ps-(--sidebar-island-width)">
-          <SidebarResizeGrip />
-          <Outlet />
-        </SidebarInset>
+        <DriveDragProvider>
+          {settings ? <SettingsNav /> : <AppSidebar />}
+          <NotificationsPanel />
+          <CommandMenu />
+          <SidebarInset className="ps-(--sidebar-island-width)">
+            <SidebarResizeGrip />
+            <ModuleBoundary>
+              <Outlet />
+            </ModuleBoundary>
+          </SidebarInset>
+        </DriveDragProvider>
       </ListSweepProvider>
       <TitleBar />
       <KeyboardShortcuts />
@@ -118,7 +114,6 @@ function Shell() {
   );
 }
 
-/** Whether a settings page is open; anywhere else is remembered as where its Back returns. */
 function useSettingsLocation() {
   const { pathname, href } = useLocation();
   const settings = isSettingsPath(pathname);

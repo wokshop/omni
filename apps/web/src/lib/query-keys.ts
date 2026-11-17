@@ -1,24 +1,3 @@
-// Every query key in the app, in one tree, so invalidation can target a branch:
-//
-//   omni
-//   ├─ session · device-sessions · sessions · sign-in-methods · sign-in-emails · workspaces
-//   ├─ org ─ organizations · members · invitations · invitation(id) · passkeys · onboarding
-//   │        · billing · billing-cards · billing-invoices
-//   ├─ mail ─ mailboxes(·all) · google-accounts · workspace-mailboxes · mailbox-members(id) · counts · threads(filter)
-//   │        · thread(id) ─ conversation · search(q) · action(id) · tags(mailbox)
-//   │        · assignees(mailbox) · conversations(filter) · conversation-counts
-//   │        · notifications ─ { unread } · sla(mailbox)
-//   ├─ storage ─ list(place) · trash · usage · sharing(id) · versions(id) · shared-with-me · link(share, node)
-//   │                                                                  (ADR 0034)
-//   ├─ crm ─ companies(q) · people(q) · deals(q) · company(id) · person(id) · deal(id) · stages
-//   │        · timeline(kind, id) · contracts(where) · find(q)                  (ADR 0036)
-//   ├─ preview ─ (kind, file, version)   a file's preview bytes; outside `storage` so a list's
-//   │                                    refetch never refetches them (ADR 0040)
-//   └─ local ─ pending(threadId) · failures       (client-only state, never fetched)
-//
-// The `org`, `mail`, `storage` and `crm` branches sit under the workspace's id
-// (`["omni", <orgId>, "mail", …]`, ADR 0043); the rest is the person's. Switching account clears
-// the whole cache (see `session.ts`).
 import { currentWorkspaceId } from "./current-workspace.ts";
 import type { ConversationFilter, ThreadFilter } from "./types.ts";
 
@@ -27,10 +6,6 @@ export interface NotificationFilter {
 }
 
 const root = ["omni"] as const;
-/**
- * A workspace's data sits under its id (this tab's, ADR 0043): two workspaces never share a key,
- * so one's answers can never show in the other's screens, and switching back is instant.
- */
 const scoped = <const B extends string>(branch: B) =>
   [...root, currentWorkspaceId() ?? "", branch] as const;
 const mail = () => scoped("mail");
@@ -40,13 +15,12 @@ const crm = () => scoped("crm");
 const local = [...root, "local"] as const;
 const preview = [...root, "preview"] as const;
 
-/** A filter with absent fields dropped, so `{ mailbox: undefined }` and `{}` share a key. */
-function normalize(filter: ThreadFilter): ThreadFilter {
+function normalize(filter: ThreadFilter) {
   return {
     view: filter.view,
     ...(filter.mailbox ? { mailbox: filter.mailbox } : {}),
     ...(filter.lane ? { lane: filter.lane } : {}),
-  };
+  } satisfies ThreadFilter;
 }
 
 export const keys = {
@@ -62,6 +36,8 @@ export const keys = {
   join: () => [...root, "join"] as const,
   /** Drive sync on this computer, as the desktop shell reports it (ADR 0043). */
   desktopSync: () => [...root, "desktop-sync"] as const,
+  /** A sender's avatar picture and its edge, by address or company domain. The same everywhere. */
+  senderLogo: (who: string) => [...root, "sender-logo", who] as const,
   /** An agent asking to connect over OAuth (ADR 0029). */
   oauthClients: () => [...root, "oauth-clients"] as const,
 
@@ -144,11 +120,23 @@ export const keys = {
   /** One folder's contents: a space's root, or a folder by id. */
   storageList: (place: { space: string } | { parentId: string }) =>
     [...storage(), "list", place] as const,
+  /** Every folder's contents. */
+  storageLists: () => [...storage(), "list"] as const,
   storageTrash: () => [...storage(), "trash"] as const,
+  /** Drive's Search for one query. */
+  storageSearch: (q: string) => [...storage(), "search", q] as const,
+  storageIcons: (space: string) => [...storage(), "icons", space] as const,
   storageUsage: () => [...storage(), "usage"] as const,
+  /** Where a node is now: its folder and space. */
+  storageNode: (nodeId: string) => [...storage(), "node", nodeId] as const,
   /** Who a file or folder is shared with, and its link. */
   storageSharing: (nodeId: string) => [...storage(), "sharing", nodeId] as const,
   storageVersions: (nodeId: string) => [...storage(), "versions", nodeId] as const,
+  storageComments: (nodeId: string) => [...storage(), "comments", nodeId] as const,
+  /** A file's signature requests (ADR 0043 decision 6). */
+  storageSignatures: (nodeId: string) => [...storage(), "signatures", nodeId] as const,
+  /** A request the signed-in person was asked to sign. */
+  signing: (requestId: string) => [...storage(), "signing", requestId] as const,
   storageSharedWithMe: () => [...storage(), "shared-with-me"] as const,
   /** What a link opens: the shared node, or a folder inside it. */
   storageLink: (shareId: string, nodeId: string | undefined) =>
@@ -174,8 +162,11 @@ export const keys = {
    * A file's preview (ADR 0040): `image`, `thumbnail`, `text` or `sheets`, by the URL it is read
    * through and the file's `updatedAt`, so a new version is a new key.
    */
-  storagePreview: (kind: "image" | "thumbnail" | "text" | "sheets", url: string, version: string) =>
-    [...preview, kind, url, version] as const,
+  storagePreview: (
+    kind: "image" | "thumbnail" | "pdf-thumbnail" | "text" | "sheets",
+    url: string,
+    version: string,
+  ) => [...preview, kind, url, version] as const,
 
   /** App-only state, never fetched (`query-client.ts` keeps it forever). */
   local: () => local,
@@ -185,19 +176,23 @@ export const keys = {
 };
 
 /** Reads the filter back out of a `keys.threads(...)` key. */
-export function filterOf(queryKey: readonly unknown[]): ThreadFilter | undefined {
+export const filterOf: (queryKey: readonly unknown[]) => ThreadFilter | undefined = (queryKey) => {
   const filter = queryKey[4];
   return typeof filter === "object" && filter !== null ? (filter as ThreadFilter) : undefined;
-}
+};
 
 /** Reads the filter back out of a `keys.conversations(...)` key. */
-export function conversationFilterOf(queryKey: readonly unknown[]): ConversationFilter | undefined {
+export const conversationFilterOf: (
+  queryKey: readonly unknown[],
+) => ConversationFilter | undefined = (queryKey) => {
   const filter = queryKey[4];
   return typeof filter === "object" && filter !== null ? (filter as ConversationFilter) : undefined;
-}
+};
 
 /** Reads the filter back out of a `keys.notificationList(...)` key. */
-export function notificationFilterOf(queryKey: readonly unknown[]): NotificationFilter | undefined {
+export const notificationFilterOf: (
+  queryKey: readonly unknown[],
+) => NotificationFilter | undefined = (queryKey) => {
   const filter = queryKey[4];
   return typeof filter === "object" && filter !== null ? (filter as NotificationFilter) : undefined;
-}
+};

@@ -1,5 +1,3 @@
-// Storage (ADR 0034): the active workspace's My files and Shared, Trash, usage, and the changes,
-// by the member's door or a shared link's. Lists are paged by the server's cursor. Nothing here is realtime in v1: every change refetches the lists.
 import {
   infiniteQueryOptions,
   mutationOptions,
@@ -10,6 +8,7 @@ import type { Api } from "@omni/client";
 import type { InferResponseType } from "hono/client";
 import { api, call } from "./api.ts";
 import { keys } from "./query-keys.ts";
+import { storageFolderMade, storageNodeChanged, storageNodeRemoved } from "./storage-cache.ts";
 
 export type StorageListPage = InferResponseType<Api["storage"]["nodes"]["$get"], 200>;
 export type StorageNode = StorageListPage["nodes"][number];
@@ -18,8 +17,14 @@ export type StorageSpace = StorageNode["space"];
 /** Where a listing, a new folder or an upload goes: a space's root, or inside a folder. */
 export type StoragePlace = { space: StorageSpace } | { parentId: string };
 
-// `startup-fetch.ts` asks for a folder's first page at startup with this size too.
 const PAGE_SIZE = "100";
+
+/** A folder's sidebar glyph, as `PATCH /nodes/:id` takes it. */
+export type StorageFolderIcon = Extract<
+  NonNullable<Parameters<Api["storage"]["nodes"][":id"]["$patch"]>[0]["json"]>,
+  { icon: unknown }
+>["icon"] &
+  string;
 
 /** A folder's contents, folders first, then by name. The first page carries the folder itself. */
 export const storageListQuery = (place: StoragePlace) =>
@@ -57,20 +62,19 @@ export const storageTrashQuery = () =>
     getNextPageParam: (page) => page.nextCursor,
   });
 
-/** Every change moves rows between lists (a folder, Trash), so all of Storage refetches. */
+/**
+ * A change whose answer does not say what moved (a link's door, a version, a signature): all of
+ * Storage refetches.
+ */
 export const storageChanged = (client: QueryClient) =>
   client.invalidateQueries({ queryKey: keys.storage() });
 
-/**
- * Changes go through one of two doors: the member's own (`shareId` absent), or a shared link's
- * (`/api/storage/shared/:shareId/...`), where an Editor changes what is inside the shared folder.
- * The link door takes places by `parentId` alone: a link has no space.
- */
 const sharedDoor = () => api.storage.shared[":shareId"];
 
 /** `mutate({ name, place, shareId? })` makes a folder; a taken name gets a number. */
 export const createFolderMutation = (client: QueryClient) =>
   mutationOptions({
+    meta: { handlesError: true },
     mutationFn: ({
       name,
       place,
@@ -83,47 +87,70 @@ export const createFolderMutation = (client: QueryClient) =>
       shareId
         ? call(sharedDoor().folders.$post({ param: { shareId }, json: { name, ...place } }))
         : call(api.storage.folders.$post({ json: { name, ...place } })),
-    onSuccess: () => storageChanged(client),
+    onSuccess: ({ node }, { shareId }) => {
+      if (shareId) return storageChanged(client);
+      storageFolderMade(client, node);
+      return storageNodeChanged(client, node);
+    },
   });
 
 /** `mutate({ id, name })` renames; `mutate({ id, place })` moves within the workspace. */
 export const changeNodeMutation = (client: QueryClient) =>
   mutationOptions({
+    meta: { handlesError: true },
     mutationFn: ({
       shareId,
       ...change
-    }: { id: string; shareId?: string } & ({ name: string } | { place: StoragePlace })) => {
-      const json = "name" in change ? { name: change.name } : change.place;
+    }: { id: string; shareId?: string } & (
+      | { name: string }
+      | { place: StoragePlace }
+      | { icon: StorageFolderIcon | null }
+    )) => {
+      const json =
+        "name" in change
+          ? { name: change.name }
+          : "icon" in change
+            ? { icon: change.icon }
+            : change.place;
       return shareId
         ? call(sharedDoor().nodes[":id"].$patch({ param: { shareId, id: change.id }, json }))
         : call(api.storage.nodes[":id"].$patch({ param: { id: change.id }, json }));
     },
-    onSuccess: () => storageChanged(client),
+    onSuccess: ({ node }, change) =>
+      change.shareId
+        ? storageChanged(client)
+        : "icon" in change
+          ? client.invalidateQueries({ queryKey: keys.storageIcons(node.space) })
+          : storageNodeChanged(client, node),
   });
 
 /** `mutate({ id, shareId? })` moves a file or folder to Trash. */
 export const trashNodeMutation = (client: QueryClient) =>
   mutationOptions({
+    meta: { handlesError: true },
     mutationFn: ({ id, shareId }: { id: string; shareId?: string }) =>
       shareId
         ? call(sharedDoor().nodes[":id"].$delete({ param: { shareId, id }, query: {} }))
         : call(api.storage.nodes[":id"].$delete({ param: { id }, query: {} })),
-    onSuccess: () => storageChanged(client),
+    onSuccess: (_, { id, shareId }) =>
+      shareId ? storageChanged(client) : storageNodeRemoved(client, id),
   });
 
 /** `mutate(id)` puts a trashed file or folder back where it was. */
 export const restoreNodeMutation = (client: QueryClient) =>
   mutationOptions({
+    meta: { handlesError: true },
     mutationFn: (id: string) => call(api.storage.nodes[":id"].restore.$post({ param: { id } })),
-    onSuccess: () => storageChanged(client),
+    onSuccess: ({ node }) => storageNodeChanged(client, node),
   });
 
 /** `mutate(id)` deletes something in Trash for good. */
 export const deleteForeverMutation = (client: QueryClient) =>
   mutationOptions({
+    meta: { handlesError: true },
     mutationFn: (id: string) =>
       call(api.storage.nodes[":id"].$delete({ param: { id }, query: { forever: "1" } })),
-    onSuccess: () => storageChanged(client),
+    onSuccess: (_, id) => storageNodeRemoved(client, id),
   });
 
 /** Bytes stored, the limit and the allowance (`GET /usage`). */
@@ -144,6 +171,5 @@ export function formatBytes(bytes: number) {
     unit += 1;
   }
   const digits = unit > 0 && value < 10 ? 1 : 0;
-  // "1 GB", not "1.0 GB".
   return `${Number(value.toFixed(digits))} ${UNITS[unit]}`;
 }

@@ -1,5 +1,3 @@
-// What others shared with the signed-in person (ADR 0034 decision 4), in any workspace, newest
-// first: each row opens its link page.
 import { TableLoadMoreItem } from "react-aria-components/Table";
 import { Skeleton } from "skullet/react";
 import { EmptyState } from "@/components/empty/empty-state";
@@ -16,8 +14,9 @@ import {
 import { useSharedWithMe } from "@/hooks/use-storage.ts";
 import { COLUMN, DAY, FileTableBones, Muted, NameCell } from "./file-table.tsx";
 import { StorageFrame } from "./storage-frame.tsx";
+import { UploadsPanel } from "./uploads-panel.tsx";
 
-const ROLE = { viewer: "Viewer", editor: "Editor" } as const;
+const ROLE = { viewer: "Viewer", commenter: "Commenter", editor: "Editor" } as const;
 
 export function SharedWithMe() {
   const shared = useSharedWithMe();
@@ -82,6 +81,7 @@ export function SharedWithMe() {
           </Table>
         )}
       </div>
+      <UploadsPanel />
     </StorageFrame>
   );
 }

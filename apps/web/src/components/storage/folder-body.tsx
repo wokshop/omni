@@ -1,6 +1,3 @@
-// What a folder page shows under its header: its folders and files in their sections (or their
-// skeleton, the failed load, the empty folder), all inside one drop target; and the header's
-// actions.
 import { useMemo, type ReactNode } from "react";
 import { Skeleton } from "skullet/react";
 import { EmptyState } from "@/components/empty/empty-state";
@@ -9,10 +6,12 @@ import type { SettingsRowMenuItem } from "@/components/settings/kit/settings-row
 import { Button } from "@/components/ui/button";
 import { DropZone } from "@/components/ui/drop-zone";
 import { FileTrigger } from "@/components/ui/file-trigger";
+import type { InlineRename } from "@/hooks/use-inline-rename.ts";
 import type { StorageNode } from "@/lib/storage.ts";
 import { FileSections, FileSectionsBones, type Drafts } from "./file-sections.tsx";
 import type { FolderSource, OpenFile } from "./folder-view.tsx";
 import { NodeMenu } from "./node-menu.tsx";
+import { dropOperation, useDropInto, useRoomDrop, type NodeDrag } from "./node-drag.tsx";
 
 interface Actions {
   onNewFolder: () => void;
@@ -25,29 +24,41 @@ export function FolderBody(
     menu: (node: StorageNode) => SettingsRowMenuItem[];
     open: OpenFile;
     drafts: Drafts;
+    rename: InlineRename;
   },
 ) {
   const { source } = props;
+  const drag = useFolderDrag(source);
+  const into = useDropInto();
+  const room = useRoomDrop("page", drag.here);
   return (
-    // The whole page under the header takes a drop, the empty folder included, and scrolls.
     <DropZone
       bare
       aria-label={`Upload to ${source.label}`}
       isDisabled={!source.canWrite}
-      // A block that scrolls: content starts at the top, not centred by the drop zone's flex.
       className="block min-h-0 min-w-0 flex-1 overflow-y-auto"
-      onDrop={(event) =>
-        void Promise.all(
-          event.items.flatMap((item) => (item.kind === "file" ? [item.getFile()] : [])),
-        ).then(props.onFiles)
-      }
+      getDropOperation={() => (drag.here ? dropOperation(drag.here) : "cancel")}
+      onDrop={(event) => {
+        if (drag.here) void into(drag.here, event.items);
+      }}
     >
-      <Content {...props} />
+      <div ref={room} className="flex min-h-full flex-col">
+        <Content {...props} drag={drag} />
+      </div>
     </DropZone>
   );
 }
 
-function Content(props: Parameters<typeof FolderBody>[0]) {
+const useFolderDrag: (source: FolderSource) => NodeDrag = (source) => {
+  const { place, shareId, canWrite } = source;
+  return useMemo(() => {
+    const door = { shareId, canWrite };
+    return { door, here: { ...door, place } };
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [shareId, canWrite, "parentId" in place ? place.parentId : place.space]);
+};
+
+function Content(props: Parameters<typeof FolderBody>[0] & { drag: NodeDrag }) {
   const { source, open } = props;
   const { list } = source;
   const { select } = open;
@@ -85,9 +96,12 @@ function Content(props: Parameters<typeof FolderBody>[0]) {
         nodes={list.nodes}
         href={source.folderHref}
         fileUrl={source.fileUrl}
+        peek={!source.shareId}
         open={selected}
         menu={props.menu}
         drafts={props.drafts}
+        rename={props.rename}
+        drag={props.drag}
         loadMore={list.hasNextPage && !list.isFetchingNextPage ? fetchNext(list) : undefined}
       />
     </NodeMenu>
@@ -95,7 +109,6 @@ function Content(props: Parameters<typeof FolderBody>[0]) {
 }
 
 const nextPage = new WeakMap<object, () => void>();
-/** The list's next-page call, stable per query result so the sections stay memoized. */
 function fetchNext(list: FolderSource["list"]) {
   let next = nextPage.get(list.fetchNextPage);
   if (!next) {
@@ -105,12 +118,10 @@ function fetchNext(list: FolderSource["list"]) {
   return next;
 }
 
-/** Fills the page under the header, so an empty state sits where the mail lists' do. */
 function Centered({ children }: { children: ReactNode }) {
-  return <div className="flex h-full flex-col">{children}</div>;
+  return <div className="flex flex-1 flex-col">{children}</div>;
 }
 
-/** An empty folder's way on, as the mail lists' empty states offer theirs: Upload first. */
 function EmptyActions(props: Actions) {
   return (
     <>

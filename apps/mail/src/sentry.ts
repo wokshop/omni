@@ -1,8 +1,3 @@
-// Error reporting for the mail service: Sentry when SENTRY_DSN is set, nothing otherwise.
-// Errors only (no tracing). The SDK collects no headers, cookies, bodies, query strings or user
-// info (`PRIVATE_DATA_COLLECTION`), and every event and breadcrumb is scrubbed of mail content,
-// addresses and credentials before it leaves (`@omni/mail-core/telemetry`). Local variables stay
-// off: an IMAP or SMTP frame can hold a password or a message.
 import * as Sentry from "@sentry/node";
 import {
   PRIVATE_DATA_COLLECTION,
@@ -14,9 +9,9 @@ import type { Config } from "./config.ts";
 import type { LoggerOptions } from "./log.ts";
 
 /** Starts Sentry when configured; returns the logger hook that reports `error` lines. */
-export function initErrorReporting(
+export const initErrorReporting: (
   config: Pick<Config, "SENTRY_DSN" | "SENTRY_ENVIRONMENT">,
-): LoggerOptions["report"] {
+) => LoggerOptions["report"] = (config) => {
   if (!config.SENTRY_DSN) return undefined;
   Sentry.init({
     dsn: config.SENTRY_DSN,
@@ -36,9 +31,9 @@ export function initErrorReporting(
     if (error instanceof Error) Sentry.captureException(error, context);
     else Sentry.captureMessage(event, { level: "error", ...context });
   };
-}
+};
 
 /** Sends what is queued before the process exits. */
-export async function flushErrorReporting(timeoutMs = 2_000): Promise<void> {
+export async function flushErrorReporting(timeoutMs = 2_000) {
   if (Sentry.getClient()) await Sentry.flush(timeoutMs);
 }

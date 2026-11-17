@@ -1,21 +1,21 @@
 import type { ThreadSummary, ThreadView } from "./types.ts";
 
-/**
- * The lists a member's triage action takes a thread out of (ADR 0007). The optimistic cache and
- * the list's keyboard cursor both read this, so the row the cursor skips is the row that goes.
- */
 const LEAVES = {
   done: ["inbox", "later"],
   undone: ["done"],
   later: ["inbox", "done"],
   unlater: ["later"],
   archive: ["inbox", "later"],
-  // Every copy moves to Trash, the sent and junk ones too.
   trash: ["inbox", "later", "sent", "spam"],
 } as const satisfies Record<string, readonly ThreadView[]>;
 
 export function leavesView(action: keyof typeof LEAVES, view: ThreadView | undefined) {
   return (LEAVES[action] as readonly (ThreadView | undefined)[]).includes(view);
+}
+
+/** The address behind the label's first name, whose picture stands for the thread. */
+export function senderAddress(thread: Pick<ThreadSummary, "participants" | "latestFrom">) {
+  return (thread.participants[0] ?? thread.latestFrom)?.address;
 }
 
 /** One sender: their name. Several: first names, in the order they wrote. */

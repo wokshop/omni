@@ -1,6 +1,3 @@
-// The record pages at `/crm/companies/$id`, `/crm/people/$id` and `/crm/deals/$id` (ADR 0039
-// decision 1): details edited in place (each change a `PATCH` of that one field), related
-// records, and the tabs. A company and a deal have Files and Contracts; a person has the timeline.
 import { useState } from "react";
 import { IconPencil, IconPlus } from "@/components/icons/central";
 import { Button } from "@/components/ui/button";
@@ -23,6 +20,7 @@ import { NewDealDialog, NewPersonDialog } from "./new-records.tsx";
 import { AddDomainDialog, AddPersonDialog, ChooseCompanyDialog } from "./record-dialogs.tsx";
 import { ChoiceValue, LinkValue, PlainValue, TextValue } from "./record-fields.tsx";
 import { RecordFiles } from "./record-files.tsx";
+import { byAddress } from "@/components/avatar/sender-avatar";
 import { DetailSection, NoneRow, RecordLayout, RecordState, RelatedRow } from "./record-layout.tsx";
 import { DAY } from "./record-list.tsx";
 import { Timeline } from "./timeline.tsx";
@@ -48,8 +46,6 @@ function EditButton(props: { label: string; onPress: () => void }) {
   );
 }
 
-// Company -------------------------------------------------------------------------------------
-
 export function CompanyPage({ id }: { id: string }) {
   const query = useCrmCompany(id);
   const update = useUpdateCompany();
@@ -65,6 +61,7 @@ export function CompanyPage({ id }: { id: string }) {
         list="companies"
         name={company.name}
         square
+        who={domains[0] ? { domain: domains[0] } : null}
         subtitle={domains[0]}
         details={
           <>
@@ -109,6 +106,7 @@ export function CompanyPage({ id }: { id: string }) {
                     kind="people"
                     id={person.id}
                     name={person.name}
+                    who={byAddress(person.addresses[0]?.address)}
                     meta={person.jobTitle}
                   />
                 ))
@@ -171,14 +169,11 @@ function DealsSection(props: { deals: CrmDealDetail["deal"][]; onAdd?: () => voi
   );
 }
 
-/** A company's name by id, for a person's or a deal's company field. */
 function useCompanyName(companyId: string | null) {
   const company = useCrmCompany(companyId ?? "", { enabled: !!companyId });
   if (!companyId) return null;
   return company.data ? { id: companyId, name: company.data.company.name } : null;
 }
-
-// Person --------------------------------------------------------------------------------------
 
 export function PersonPage({ id }: { id: string }) {
   const query = useCrmPerson(id);
@@ -196,6 +191,7 @@ export function PersonPage({ id }: { id: string }) {
       <RecordLayout
         list="people"
         name={person.name}
+        who={byAddress(primary)}
         subtitle={person.jobTitle ?? primary}
         details={
           <DetailSection title="Details">
@@ -253,8 +249,6 @@ export function PersonPage({ id }: { id: string }) {
     </>
   );
 }
-
-// Deal ----------------------------------------------------------------------------------------
 
 export function DealPage({ id }: { id: string }) {
   const query = useCrmDeal(id);
@@ -326,6 +320,7 @@ export function DealPage({ id }: { id: string }) {
                     kind="people"
                     id={person.id}
                     name={person.name}
+                    who={byAddress(person.addresses[0]?.address)}
                     meta={person.jobTitle}
                   />
                 ))

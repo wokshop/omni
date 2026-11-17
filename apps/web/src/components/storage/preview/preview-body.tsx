@@ -1,7 +1,5 @@
-// The stage: the file through the renderer its kind calls for (ADR 0040). PDF, code, CSV and XLSX
-// renderers load on their own chunks (pdf.js, Shiki, Papa Parse and SheetJS stay off the app's
-// entry), and each is keyed by the file, so stepping to the next file starts it fresh.
 import { lazy, Suspense } from "react";
+import { Contain } from "@/components/errors/error-boundary.tsx";
 import { fileType, IMAGE_PREVIEW_MAX_BYTES, SHEET_PREVIEW_MAX_BYTES } from "@/lib/file-kind.ts";
 import type { StorageNode } from "@/lib/storage.ts";
 import { ImagePreview } from "./image-preview.tsx";
@@ -46,33 +44,41 @@ export function PreviewBody(props: { node: StorageNode; url: string; onDownload:
       );
     case "pdf":
       return (
-        <Suspense fallback={<StageLoading label="Loading PDF" />}>
-          <PdfPreview key={node.id} url={url} onDownload={onDownload} />
-        </Suspense>
+        <Contain fallback={none}>
+          <Suspense fallback={<StageLoading label="Loading PDF" />}>
+            <PdfPreview key={node.id} url={url} onDownload={onDownload} />
+          </Suspense>
+        </Contain>
       );
     case "text":
       return (
-        <Suspense fallback={<StageLoading label="Loading file" />}>
-          <CodePreview
-            key={node.id}
-            source={source}
-            kind={type.kind}
-            language={type.language}
-            onDownload={onDownload}
-          />
-        </Suspense>
+        <Contain fallback={none}>
+          <Suspense fallback={<StageLoading label="Loading file" />}>
+            <CodePreview
+              key={node.id}
+              source={source}
+              kind={type.kind}
+              language={type.language}
+              onDownload={onDownload}
+            />
+          </Suspense>
+        </Contain>
       );
     case "csv":
       return (
-        <Suspense fallback={<StageLoading label="Loading table" />}>
-          <CsvPreview key={node.id} source={source} onDownload={onDownload} />
-        </Suspense>
+        <Contain fallback={none}>
+          <Suspense fallback={<StageLoading label="Loading table" />}>
+            <CsvPreview key={node.id} source={source} onDownload={onDownload} />
+          </Suspense>
+        </Contain>
       );
     case "sheet":
       return node.size <= SHEET_PREVIEW_MAX_BYTES ? (
-        <Suspense fallback={<StageLoading label="Loading spreadsheet" />}>
-          <XlsxPreview key={node.id} source={source} onDownload={onDownload} />
-        </Suspense>
+        <Contain fallback={none}>
+          <Suspense fallback={<StageLoading label="Loading spreadsheet" />}>
+            <XlsxPreview key={node.id} source={source} onDownload={onDownload} />
+          </Suspense>
+        </Contain>
       ) : (
         none
       );

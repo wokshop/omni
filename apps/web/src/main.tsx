@@ -2,7 +2,9 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { appToast } from "./components/ui/toast.tsx";
 import { routeOutsideLinks, routeTitleBarDrags } from "./lib/desktop.ts";
+import { reloadForUpdate } from "./lib/failure.ts";
 import { createQueryClient } from "./lib/query-client.ts";
 import { resetSession } from "./lib/session.ts";
 import { dropStartupResponses } from "./lib/startup-fetch.ts";
@@ -14,34 +16,45 @@ initErrorReporting();
 routeOutsideLinks();
 routeTitleBarDrags();
 
-let resetting = false;
-const queryClient = createQueryClient(() => {
-  // Many queries can 401 at once; reset once. The guards then redirect to /login.
-  if (resetting) return;
-  resetting = true;
-  void resetSession(queryClient, router).finally(() => {
-    resetting = false;
-  });
+window.addEventListener("vite:preloadError", (event) => {
+  if (reloadForUpdate()) event.preventDefault();
 });
+
+let resetting = false;
+const queryClient = createQueryClient(
+  () => {
+    if (resetting) return;
+    resetting = true;
+    void resetSession(queryClient, router).finally(() => {
+      resetting = false;
+    });
+  },
+  (message, failure) => appToast.error(message, { id: `failure-${failure.kind}` }),
+);
 const router = createAppRouter(queryClient);
 
-// The landing screen's code starts loading now, beside the session check its guards wait on,
-// rather than once they pass.
 for (const route of router.getMatchedRoutes(window.location.pathname)[0]) {
-  router.loadRouteChunk(route)?.catch(() => {}); // The navigation retries and reports it.
+  router.loadRouteChunk(route)?.catch(() => {});
 }
-// By the first screen's arrival its requests have all gone out: preloads left over are for a
-// screen nobody opened (a sign-in page, a redirect) and must not answer later requests.
 const stopDropping = router.subscribe("onResolved", () => {
   stopDropping();
   dropStartupResponses();
+  hideLoadingScreen();
 });
+
+function hideLoadingScreen() {
+  const screen = document.getElementById("app-loading");
+  if (!screen) return;
+  requestAnimationFrame(() => {
+    screen.dataset.done = "";
+    screen.addEventListener("transitionend", () => screen.remove(), { once: true });
+    setTimeout(() => screen.remove(), 300);
+  });
+}
 
 const root = document.getElementById("root");
 if (!root) throw new Error("index.html has no #root");
 
-// Web Vitals go where errors go (Sentry, when the build has a DSN) or to the console in dev.
-// Loaded after the first render, and not at all when neither applies.
 if (import.meta.env.DEV || import.meta.env.VITE_SENTRY_DSN) {
   void import("./lib/web-vitals.ts").then((m) => m.reportWebVitals());
 }

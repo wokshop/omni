@@ -1,86 +1,223 @@
-// Storage's sidebar below its places, after Skiff Drive's: a space's folders as a tree in the
-// sidebar's own rows. A folder links to its page and its chevron opens it in place (its contents
-// load the first time); a file inside links to its folder with the file open in the preview.
-import { useLocation } from "@tanstack/react-router";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, type ReactNode } from "react";
+import { useDrop } from "react-aria-components/useDrop";
 import { SidebarTreeBones, SidebarTreeRow } from "@/components/shell/sidebar-tree-row";
 import { SidebarSection } from "@/components/ui/sidebar";
 import { useSidebarExpanded } from "@/hooks/use-sidebar-expanded.ts";
-import { useStorageList } from "@/hooks/use-storage.ts";
-import { fileType } from "@/lib/file-kind.ts";
+import { useFolderIcons, useStorageList } from "@/hooks/use-storage.ts";
 import type { StorageNode, StorageSpace } from "@/lib/storage.ts";
-import { FileGlyph } from "./file-glyph.tsx";
-import { SPACE_PATH } from "./storage-nav.tsx";
+import { FolderIcon } from "./folder-icons.tsx";
+import { GAP_MS, useDriveDrag } from "./drive-drag-state.ts";
+import {
+  GAP,
+  dropOperation,
+  placeKey,
+  useDropInto,
+  useGapAt,
+  useNodeDrag,
+  type DragSource,
+  type DropData,
+  type DropPlace,
+} from "./node-drag.tsx";
+import { SPACE_ICON, SPACE_LABEL, SPACE_PATH } from "./storage-nav.tsx";
 import { useWorkspacePaths } from "@/hooks/use-workspaces.ts";
 
-/** A level shows this many items; the folder's page has the rest. */
 const SHOWN = 40;
 
-export function SidebarTree(props: { space: StorageSpace; label: string; search: string }) {
-  const root = useStorageList({ space: props.space });
-  const folders = root.nodes.filter((node) => node.kind === "folder");
-  if (!root.isPending && folders.length === 0) return null;
+export function SidebarGroup(props: { space: StorageSpace; search: string }) {
+  const { space } = props;
+  const closed = useSidebarExpanded("drive-groups-closed", space);
+  const open = { value: !closed.value, toggle: closed.toggle };
+  const { place: pathname, href } = useWorkspacePaths();
+  const to = useMemo<DropPlace>(() => ({ place: { space }, canWrite: true }), [space]);
   return (
-    <SidebarSection label={props.label}>
-      {root.isPending ? (
-        <SidebarTreeBones depth={0} />
-      ) : (
-        folders
-          .slice(0, SHOWN)
-          .map((node) => <Folder key={node.id} node={node} depth={0} search={props.search} />)
-      )}
+    <SidebarSection className="pb-1">
+      <DragRow to={to} expand={open}>
+        <SidebarTreeRow
+          href={href(SPACE_PATH[space] + props.search)}
+          isCurrent={pathname === SPACE_PATH[space]}
+          depth={0}
+          icon={SPACE_ICON[space]}
+          label={SPACE_LABEL[space]}
+          expand={open}
+          onPress={() => !open.value && open.toggle()}
+        />
+      </DragRow>
+      {open.value && <Clusters space={space} search={props.search} />}
     </SidebarSection>
   );
 }
 
-function Folder(props: { node: StorageNode; depth: number; search: string }) {
-  const { node, depth } = props;
-  const open = useSidebarExpanded("drive", node.id);
-  const { place: pathname, href: inWorkspace } = useWorkspacePaths();
-  const href = `${SPACE_PATH[node.space]}/${encodeURIComponent(node.id)}`;
+function Clusters(props: { space: StorageSpace; search: string }) {
+  const root = useStorageList({ space: props.space });
+  const { icons } = useFolderIcons(props.space);
+  const shown = folders(root.nodes);
+  const gap = useGapAt(root.isPending ? null : { space: props.space }, shown, "folder");
+  if (root.isPending) return <SidebarTreeBones depth={1} />;
+  return (
+    <WithGap
+      gap={gap}
+      rows={shown.map((node) => (
+        <Cluster key={node.id} node={node} icon={icons[node.id]} search={props.search} />
+      ))}
+    />
+  );
+}
+
+function Cluster(props: { node: StorageNode; icon: string | undefined; search: string }) {
+  const open = useSidebarExpanded("drive", props.node.id);
   return (
     <>
-      <SidebarTreeRow
-        href={inWorkspace(href + props.search)}
-        isCurrent={pathname === href}
-        depth={depth}
-        icon={<FileGlyph kind="folder" className="size-icon" />}
-        label={node.name}
+      <FolderRow
+        node={props.node}
+        icon={props.icon}
+        depth={1}
+        search={props.search}
         expand={open}
       />
-      {open.value && <Contents node={node} depth={depth + 1} search={props.search} />}
+      {open.value && <ClusterFolders node={props.node} search={props.search} />}
     </>
   );
 }
 
-/** An open folder's folders, then its files. */
-function Contents(props: { node: StorageNode; depth: number; search: string }) {
+function ClusterFolders(props: { node: StorageNode; search: string }) {
   const list = useStorageList({ parentId: props.node.id });
-  if (list.isPending) return <SidebarTreeBones depth={props.depth} />;
-  return list.nodes
-    .slice(0, SHOWN)
-    .map((node) =>
-      node.kind === "folder" ? (
-        <Folder key={node.id} node={node} depth={props.depth} search={props.search} />
-      ) : (
-        <File key={node.id} node={node} depth={props.depth} search={props.search} />
-      ),
-    );
-}
-
-function File(props: { node: StorageNode; depth: number; search: string }) {
-  const { node } = props;
-  const { searchStr } = useLocation();
-  const { place: pathname, href: inWorkspace } = useWorkspacePaths();
-  const folder = `${SPACE_PATH[node.space]}${node.parentId ? `/${encodeURIComponent(node.parentId)}` : ""}`;
-  const query = new URLSearchParams(props.search);
-  query.set("file", node.id);
+  const shown = folders(list.nodes);
+  const gap = useGapAt(list.isPending ? null : { parentId: props.node.id }, shown, "folder");
+  if (list.isPending) return <SidebarTreeBones depth={2} />;
   return (
-    <SidebarTreeRow
-      href={inWorkspace(`${folder}?${query}`)}
-      isCurrent={pathname === folder && new URLSearchParams(searchStr).get("file") === node.id}
-      depth={props.depth}
-      icon={<FileGlyph kind={fileType(node.name, node.mimeType).kind} className="size-icon" />}
-      label={node.name}
+    <WithGap
+      gap={gap}
+      rows={shown.map((node) => (
+        <FolderRow key={node.id} node={node} depth={2} search={props.search} cluster={props.node} />
+      ))}
     />
   );
 }
+
+function FolderRow(props: {
+  node: StorageNode;
+  icon?: string | undefined;
+  depth: number;
+  search: string;
+  expand?: { value: boolean; toggle: () => void };
+  cluster?: StorageNode;
+}) {
+  const { node, cluster } = props;
+  const { place: pathname, href: inWorkspace } = useWorkspacePaths();
+  const href = `${SPACE_PATH[node.space]}/${encodeURIComponent(node.id)}`;
+  const to = useMemo<DropPlace>(
+    () => ({
+      place: { parentId: node.id },
+      space: node.space,
+      canWrite: true,
+      within: cluster ? [cluster.id] : undefined,
+    }),
+    [node.id, node.space, cluster],
+  );
+  const beside = useMemo<DropPlace>(
+    () =>
+      cluster
+        ? { place: { parentId: cluster.id }, space: node.space, canWrite: true }
+        : { place: { space: node.space }, canWrite: true },
+    [cluster, node.space],
+  );
+  return (
+    <DragRow to={to} beside={beside} node={node} expand={props.expand}>
+      <SidebarTreeRow
+        href={inWorkspace(href + props.search)}
+        isCurrent={pathname === href}
+        depth={props.depth}
+        icon={<FolderIcon icon={props.icon} className="size-icon" />}
+        label={node.name}
+        {...(props.expand ? { expand: props.expand } : {})}
+        onPress={() => props.expand && !props.expand.value && props.expand.toggle()}
+      />
+    </DragRow>
+  );
+}
+
+const DROP_TARGET =
+  "data-drop-target:**:data-[slot=sidebar-item]:bg-primary/10 data-drive-target:**:data-[slot=sidebar-item]:bg-primary/10 data-drive-target:**:data-[slot=sidebar-item]:inset-ring data-drive-target:**:data-[slot=sidebar-item]:inset-ring-primary";
+
+const LIFTED =
+  "data-lifted:**:data-[slot=sidebar-item]:bg-transparent! data-lifted:**:data-[slot=sidebar-item]:*:invisible data-lifted:**:[button]:invisible data-[lifted=origin]:**:data-[slot=sidebar-item]:outline-1 data-[lifted=origin]:**:data-[slot=sidebar-item]:-outline-offset-1 data-[lifted=origin]:**:data-[slot=sidebar-item]:outline-dashed data-[lifted=origin]:**:data-[slot=sidebar-item]:outline-border";
+
+const OPEN_AFTER_MS = 600;
+
+function DragRow(props: {
+  to: DropPlace;
+  beside?: DropPlace | undefined;
+  node?: StorageNode;
+  expand?: { value: boolean; toggle: () => void } | undefined;
+  children: ReactNode;
+}) {
+  const { to, beside, node, expand } = props;
+  const ref = useRef<HTMLDivElement>(null);
+  const into = useDropInto();
+  const { dropProps, isDropTarget } = useDrop({
+    ref,
+    getDropOperation: () => dropOperation(to),
+    onDrop: (event) => void into(to, event.items),
+    onDropActivate: () => expand && !expand.value && expand.toggle(),
+  });
+  const source = useMemo<DragSource | null>(() => (node ? { node, look: "tree" } : null), [node]);
+  const drop = useMemo<DropData>(() => ({ to, folder: true, beside }), [to, beside]);
+  const lift = useNodeDrag(`tree:${placeKey(to.place)}`, source, drop);
+  const held = lift.props["data-drive-target"] === true;
+  const closed = !!expand && !expand.value;
+  const open = useEffectEvent(() => expand && !expand.value && expand.toggle());
+  useEffect(() => {
+    if (!held || !closed) return;
+    const timer = setTimeout(open, OPEN_AFTER_MS);
+    return () => clearTimeout(timer);
+  }, [held, closed]);
+  const { "aria-describedby": _described, ...rowDropProps } = dropProps;
+  const { onPointerDown, ...liftProps } = lift.props;
+  const setRef = useCallback(
+    (element: HTMLDivElement | null) => {
+      ref.current = element;
+      lift.ref(element);
+    },
+    [lift.ref],
+  );
+  return (
+    <div
+      ref={setRef}
+      {...rowDropProps}
+      {...liftProps}
+      onPointerDownCapture={onPointerDown}
+      data-drop-target={isDropTarget || undefined}
+      className={`${DROP_TARGET} ${LIFTED}`}
+    >
+      {props.children}
+    </div>
+  );
+}
+
+function TreeGap() {
+  const { phase } = useDriveDrag();
+  const reduce = useReducedMotion();
+  const instant = reduce || phase !== "origin";
+  return (
+    <motion.div
+      data-drive-gap
+      initial={{ height: instant ? 32 : 0 }}
+      animate={{ height: 32 }}
+      exit={{ height: 0 }}
+      transition={instant ? { duration: 0 } : { duration: GAP_MS / 1000, ease: "easeOut" }}
+      className="overflow-hidden"
+    >
+      <div className={`h-8 ${GAP}`} />
+    </motion.div>
+  );
+}
+
+function WithGap(props: { gap: number | null; rows: ReactNode[] }) {
+  const rows = [...props.rows];
+  if (props.gap !== null) rows.splice(props.gap, 0, <TreeGap key="drive-drag-gap" />);
+  return <AnimatePresence initial={false}>{rows}</AnimatePresence>;
+}
+
+const folders = (nodes: StorageNode[]) =>
+  nodes.filter((node) => node.kind === "folder").slice(0, SHOWN);

@@ -1,8 +1,4 @@
-// URL search params per route. Invalid values fall back instead of throwing, so a hand-edited or
-// stale link still opens. `zod/mini` because these load with the app's entry chunk on every
-// route, and full zod is most of that chunk's weight.
 import * as z from "zod/mini";
-// `z.catch`, renamed: a parsing fallback, not a promise handler.
 import { catch as fallback } from "zod/mini";
 import { HELPDESK_VIEWS, LANES } from "./types.ts";
 
@@ -30,6 +26,9 @@ export const inboxSearch = z.object({
 
 export const listSearch = z.object({ mailbox: optionalId });
 
+/** Drive's Search: `q` matches file and folder names on the server. */
+export const fileSearchSearch = z.object({ mailbox: optionalId, q: optional(z.string()) });
+
 /** A CRM list (ADR 0039): `q` searches it on the server. */
 export const crmListSearch = z.object({ mailbox: optionalId, q: optional(z.string()) });
 
@@ -39,8 +38,15 @@ export const crmDealsSearch = z.object({
   q: optional(z.string()),
   view: optional(z.enum(["board", "list"])),
 });
-/** A Storage folder's page: the mailbox the switcher keeps, and the file open in the preview. */
-export const filesSearch = z.object({ mailbox: optionalId, file: optionalId });
+/**
+ * A Storage folder's page: the mailbox the switcher keeps, and the file open in the preview or the
+ * file whose comments are open (one panel at a time).
+ */
+export const filesSearch = z.object({
+  mailbox: optionalId,
+  file: optionalId,
+  comments: optionalId,
+});
 
 export const draftsSearch = z.object({
   mailbox: optionalId,
@@ -62,6 +68,5 @@ export const composeSearch = z.object({
 /** The confirmation link mailed to a new sign-in email (ADR 0014). */
 export const verifySignInEmailSearch = z.object({ token: optional(z.string()) });
 
-/** A shared link's page: `node`, a folder inside what was shared. */
 /** A shared link: the folder inside it (`node`), and the file open in the preview. */
-export const linkSearch = z.object({ node: optionalId, file: optionalId });
+export const linkSearch = z.object({ node: optionalId, file: optionalId, comments: optionalId });

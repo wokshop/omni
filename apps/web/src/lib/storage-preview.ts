@@ -1,6 +1,3 @@
-// A file's preview bytes (ADR 0040), read through the same download route as Download: the start
-// of a text file, an image re-typed as an allow-listed raster, and grid thumbnails downscaled once
-// in the browser. Object URLs live in the query cache and are revoked when it drops them.
 import { queryOptions, type QueryClient } from "@tanstack/react-query";
 import { THUMBNAIL_MAX_BYTES, TEXT_PREVIEW_BYTES } from "./file-kind.ts";
 import { keys } from "./query-keys.ts";
@@ -27,15 +24,12 @@ async function bytes(url: string, signal: AbortSignal, range?: number) {
   const response = await fetch(url, {
     signal,
     credentials: "same-origin",
-    // The tab's workspace, as every API call names it (ADR 0043).
     headers: { ...workspaceHeaders(), ...(range ? { range: `bytes=0-${range - 1}` } : {}) },
   });
   if (!response.ok) throw new PreviewError(response.status);
   return response;
 }
 
-// Previews are a version's bytes: they never go stale, and a few stay cached after their panel
-// closes, so stepping back to a file is instant.
 const KEEP = { staleTime: Infinity, gcTime: 5 * 60_000, retry: 1 } as const;
 
 export interface TextPreview {
@@ -50,12 +44,16 @@ export interface TextPreview {
 export const previewTextQuery = (source: PreviewSource) =>
   queryOptions({
     queryKey: keys.storagePreview("text", source.url, source.version),
-    queryFn: async ({ signal }): Promise<TextPreview> => {
+    queryFn: async ({ signal }) => {
       const partial = source.size > TEXT_PREVIEW_BYTES;
       const response = await bytes(source.url, signal, partial ? TEXT_PREVIEW_BYTES : undefined);
       const buffer = new Uint8Array(await response.arrayBuffer());
       const binary = buffer.subarray(0, 8000).includes(0);
-      return { text: binary ? "" : new TextDecoder().decode(buffer), partial, binary };
+      return {
+        text: binary ? "" : new TextDecoder().decode(buffer),
+        partial,
+        binary,
+      } satisfies TextPreview;
     },
     ...KEEP,
   });
@@ -88,13 +86,10 @@ export interface PreviewSheet {
 
 export type SheetsResult = { sheets: PreviewSheet[] } | { error: true };
 
-/** Rows and columns read from each sheet: a preview, not a spreadsheet. */
 const SHEET_ROWS = 500;
 const SHEET_COLUMNS = 100;
-/** A workbook that takes longer than this to read (a zip bomb, a huge sheet) shows no preview. */
 const SHEET_TIMEOUT = 20_000;
 
-/** Parses off the main thread, in a worker of our own origin; ended when done or abandoned. */
 function readSheets(buffer: ArrayBuffer, signal: AbortSignal) {
   return new Promise<PreviewSheet[]>((done, fail) => {
     const worker = new Worker(new URL("./xlsx-worker.ts", import.meta.url), { type: "module" });
@@ -134,14 +129,12 @@ export const previewSheetsQuery = (source: PreviewSource) =>
     retry: false,
   });
 
-/** The grid's tiles are at most ~300px wide; this covers them on a 2x screen. */
 const THUMBNAIL_WIDTH = 640;
-/** Originals fetched at once for thumbnails, so a folder of photos doesn't flood the Worker. */
 const THUMBNAIL_CONCURRENCY = 4;
 
 let running = 0;
 const waiting: (() => void)[] = [];
-async function slot<T>(work: () => Promise<T>): Promise<T> {
+async function slot<T>(work: () => Promise<T>) {
   if (running >= THUMBNAIL_CONCURRENCY) await new Promise<void>((go) => waiting.push(go));
   running += 1;
   try {
@@ -152,8 +145,7 @@ async function slot<T>(work: () => Promise<T>): Promise<T> {
   }
 }
 
-/** Decodes at the thumbnail's width (never wider than the original) and re-encodes small. */
-async function downscale(blob: Blob, raster: string): Promise<Blob> {
+async function downscale(blob: Blob, raster: string) {
   const full = await createImageBitmap(new Blob([blob], { type: raster }));
   const scale = Math.min(1, THUMBNAIL_WIDTH / full.width);
   const width = Math.max(1, Math.round(full.width * scale));
@@ -169,7 +161,7 @@ async function downscale(blob: Blob, raster: string): Promise<Blob> {
       "image/webp",
       0.82,
     ),
-  );
+  ) satisfies Promise<Blob>;
 }
 
 /** A small copy of an image for a grid tile; originals over 20 MB get none. */
@@ -183,7 +175,27 @@ export const thumbnailQuery = (source: PreviewSource, raster: string) =>
         return { url: URL.createObjectURL(await downscale(blob, raster)) };
       }),
     enabled: source.size > 0 && source.size <= THUMBNAIL_MAX_BYTES,
-    // Thumbnails are small: keep a folder's worth for the session.
+    staleTime: Infinity,
+    gcTime: 30 * 60_000,
+    retry: false,
+  });
+
+/**
+ * A PDF's tile: its first page as `url` (what a folder's stack shows), the next two as `more`,
+ * and the first page's shape. pdf.js reads only those pages' bytes, so no size cap.
+ */
+export const pdfThumbnailQuery = (source: PreviewSource) =>
+  queryOptions({
+    queryKey: keys.storagePreview("pdf-thumbnail", source.url, source.version),
+    queryFn: ({ signal }) =>
+      slot(async () => {
+        signal.throwIfAborted();
+        const { firstPages } = await import("./pdf-thumbnail.ts");
+        const pdf = await firstPages(source.url, THUMBNAIL_WIDTH, workspaceHeaders(), signal);
+        const [url = "", ...more] = pdf.pages.map((page) => URL.createObjectURL(page));
+        return { url, more, ratio: pdf.ratio, count: pdf.count };
+      }),
+    enabled: source.size > 0,
     staleTime: Infinity,
     gcTime: 30 * 60_000,
     retry: false,
@@ -197,7 +209,8 @@ export function revokePreviewUrls(client: QueryClient) {
   tracked.add(client);
   client.getQueryCache().subscribe((event) => {
     if (event.type !== "removed" || event.query.queryKey[1] !== "preview") return;
-    const data = event.query.state.data as { url?: unknown } | undefined;
+    const data = event.query.state.data as { url?: unknown; more?: unknown } | undefined;
     if (typeof data?.url === "string") URL.revokeObjectURL(data.url);
+    if (Array.isArray(data?.more)) for (const url of data.more) URL.revokeObjectURL(String(url));
   });
 }

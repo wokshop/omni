@@ -1,21 +1,19 @@
-// Which rows of a sidebar tree are open (Drive's folders, the CRM's companies), kept for the tab
-// so a tree survives moving between pages. One store per tree, so every row and page agree.
 import { useCallback, useSyncExternalStore } from "react";
 
 const listeners = new Set<() => void>();
 const trees = new Map<string, ReadonlySet<string>>();
 
-function read(tree: string): ReadonlySet<string> {
+function read(tree: string) {
   let open = trees.get(tree);
   if (!open) {
     try {
       open = new Set(JSON.parse(sessionStorage.getItem(`omni:tree:${tree}`) ?? "[]") as string[]);
     } catch {
-      open = new Set(); // Storage unavailable: open rows last for the page.
+      open = new Set();
     }
     trees.set(tree, open);
   }
-  return open;
+  return open satisfies ReadonlySet<string>;
 }
 
 function subscribe(listener: () => void) {
@@ -33,9 +31,7 @@ export function useSidebarExpanded(tree: string, id: string) {
     trees.set(tree, next);
     try {
       sessionStorage.setItem(`omni:tree:${tree}`, JSON.stringify([...next]));
-    } catch {
-      // Kept for the page only.
-    }
+    } catch {}
     for (const listener of listeners) listener();
   }, [tree, id]);
   return { value, toggle };

@@ -42,7 +42,6 @@ import { twJoin, cn } from "cn";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cx } from "@/lib/primitive";
 
-// #region Chart Types
 export type ChartType = "default" | "stacked" | "percent";
 export type ChartLayout = "horizontal" | "vertical" | "radial";
 export type IntervalType = "preserveStartEnd" | "equidistantPreserveStart";
@@ -94,10 +93,7 @@ export function valueToPercent(value: number) {
   return `${(value * 100).toFixed(0)}%`;
 }
 
-export function constructCategoryColors(
-  categories: string[],
-  colors: readonly ChartColorKeys[],
-): Map<string, ChartColorKeys> {
+export function constructCategoryColors(categories: string[], colors: readonly ChartColorKeys[]) {
   const categoryColors = new Map<string, ChartColorKeys>();
 
   categories.forEach((category, index) => {
@@ -107,10 +103,10 @@ export function constructCategoryColors(
     }
   });
 
-  return categoryColors;
+  return categoryColors satisfies Map<string, ChartColorKeys>;
 }
 
-export function getColorValue(color?: string): string {
+export function getColorValue(color?: string) {
   if (!color) {
     return "var(--chart-1)";
   }
@@ -172,7 +168,6 @@ export interface BaseChartProps extends React.HTMLAttributes<HTMLDivElement> {
   xAxisProps?: XAxisPropsPrimitive;
   yAxisProps?: YAxisPrimitiveProps;
 
-  // XAxis
   displayEdgeLabelsOnly?: boolean;
 
   hideGridLines?: boolean;

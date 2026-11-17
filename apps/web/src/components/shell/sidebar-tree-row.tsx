@@ -1,8 +1,3 @@
-// A row of a sidebar tree (Drive's folders and files, the CRM's companies and deals), in the
-// sidebar's own row: its glyph and label, stepped in 16px a level, so a child's glyph sits under
-// its parent's name. A row that opens has a chevron at its end, shown on the row's hover and
-// while open (always for keyboard and touch); the row and its chevron are siblings, since a button
-// can't sit inside a link.
 import type { ReactNode } from "react";
 import { SkeletonBox } from "skullet/react";
 import { IconChevronRight } from "@/components/icons/central";
@@ -20,6 +15,8 @@ export function SidebarTreeRow(props: {
   /** Trailing detail before the chevron (a count). */
   detail?: ReactNode;
   expand?: { value: boolean; toggle: () => void };
+  /** Pressing the row itself, as it follows its link. */
+  onPress?: () => void;
 }) {
   const { expand } = props;
   return (
@@ -27,6 +24,7 @@ export function SidebarTreeRow(props: {
       <SidebarItem
         href={props.href}
         isCurrent={props.isCurrent}
+        onPress={props.onPress}
         style={{ paddingInlineStart: 8 + props.depth * INDENT_PX }}
         className={expand ? "pe-8" : undefined}
       >

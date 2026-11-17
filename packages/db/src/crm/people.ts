@@ -1,5 +1,3 @@
-// People and their addresses. An address is one person in a workspace, and adding one that
-// already has a person returns that person (ADR 0036 decision 4: add once, then automatic).
 import { companyFromAddress, parseAddress } from "@omni/mail-core/addresses";
 import { and, asc, eq, exists, inArray, sql } from "drizzle-orm";
 import { crmPeople, crmPersonEmails } from "../schema/crm.ts";
@@ -87,7 +85,6 @@ export type UpdatePersonResult =
 export async function listPeople(ex: Ex, member: CrmMember, input: ListPeopleInput) {
   const limit = pageSize(input.limit);
   const words = input.q?.trim() ? input.q : undefined;
-  // A query also matches the start of an address.
   const byAddress = words
     ? exists(
         ex
@@ -124,12 +121,11 @@ export async function listPeople(ex: Ex, member: CrmMember, input: ListPeopleInp
   };
 }
 
-export async function getPerson(ex: Ex, member: CrmMember, id: string): Promise<PersonResult> {
+export async function getPerson(ex: Ex, member: CrmMember, id: string) {
   const person = await loadPerson(ex, member.orgId, id);
-  return person ? { status: "ok", person } : NOT_FOUND;
+  return (person ? { status: "ok", person } : NOT_FOUND) satisfies PersonResult;
 }
 
-/** The person holding `address` in the workspace, or null. */
 async function personWithAddress(ex: Ex, orgId: string, address: string) {
   const [row] = await ex
     .select({ personId: crmPersonEmails.personId })
@@ -145,11 +141,11 @@ async function personWithAddress(ex: Ex, orgId: string, address: string) {
  * Two adds of one address at once make one person: the address's unique key decides, and the
  * loser removes its own row and returns the winner's.
  */
-export async function addPerson(
+export const addPerson: (
   tx: Ex,
   member: CrmMember,
   input: AddPersonInput,
-): Promise<AddPersonResult> {
+) => Promise<AddPersonResult> = async (tx, member, input) => {
   const name = cleanName(input.name);
   if (!name) return { status: "invalid_name" };
   const address = parseAddress(input.address);
@@ -190,11 +186,10 @@ export async function addPerson(
   }
   await appendEvent(tx, member, { personId: person!.id }, "created", { address });
   return { status: "ok", person: (await loadPerson(tx, member.orgId, person!.id))!, created: true };
-}
+};
 
 const normalizeAll = (list: string[] = []) => list.map((raw) => parseAddress(raw));
 
-/** Applies an address change list; refuses (rolling back) an address another person holds. */
 async function changeAddresses(
   tx: Ex,
   member: CrmMember,
@@ -242,7 +237,6 @@ async function changeAddresses(
   return setPrimary(tx, person.id, primary ?? undefined);
 }
 
-/** Makes `address` the primary one, or keeps one primary when the old primary was removed. */
 async function setPrimary(tx: Ex, personId: string, address?: string) {
   const rows = await tx
     .select({ address: crmPersonEmails.address, isPrimary: crmPersonEmails.isPrimary })
@@ -269,12 +263,12 @@ async function setPrimary(tx: Ex, personId: string, address?: string) {
 
 type PersonFields = Pick<CrmPerson, "name" | "companyId" | "jobTitle" | "phone">;
 
-export async function updatePerson(
+export const updatePerson: (
   tx: Ex,
   member: CrmMember,
   id: string,
   patch: UpdatePersonInput,
-): Promise<UpdatePersonResult> {
+) => Promise<UpdatePersonResult> = async (tx, member, id, patch) => {
   const person = await loadPerson(tx, member.orgId, id, true);
   if (!person) return NOT_FOUND;
   const next: Partial<PersonFields> = {};
@@ -307,23 +301,31 @@ export async function updatePerson(
     await appendEvent(tx, member, { personId: id }, "updated", { fields });
   }
   return { status: "ok", person: (await loadPerson(tx, member.orgId, id))! };
-}
+};
 
-export async function archivePerson(tx: Ex, member: CrmMember, id: string): Promise<PersonResult> {
+export const archivePerson: (
+  tx: Ex,
+  member: CrmMember,
+  id: string,
+) => Promise<PersonResult> = async (tx, member, id) => {
   const person = await loadPerson(tx, member.orgId, id, true);
   if (!person) return NOT_FOUND;
   if (person.archivedAt) return { status: "ok", person };
   await tx.update(crmPeople).set({ archivedAt: new Date() }).where(eq(crmPeople.id, id));
   await appendEvent(tx, member, { personId: id }, "archived");
   return { status: "ok", person: (await loadPerson(tx, member.orgId, id))! };
-}
+};
 
 /** Deletes for good with its addresses, deal links, notes and events. Owners and admins only. */
-export async function deletePerson(tx: Ex, member: CrmMember, id: string): Promise<DeleteResult> {
+export const deletePerson: (
+  tx: Ex,
+  member: CrmMember,
+  id: string,
+) => Promise<DeleteResult> = async (tx, member, id) => {
   if (!member.admin) return FORBIDDEN;
   const deleted = await tx
     .delete(crmPeople)
     .where(and(eq(crmPeople.orgId, member.orgId), eq(crmPeople.id, id)))
     .returning({ id: crmPeople.id });
   return deleted.length > 0 ? { status: "ok" } : NOT_FOUND;
-}
+};

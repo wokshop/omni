@@ -1,10 +1,3 @@
-// The Worker's error answers (ADR 0038). A client that sends `omni-error-format: 2` gets the
-// nested shape, `{ error: { code, message, category, retryable, requestId, ... } }`; any other
-// request gets the legacy one, `{ error: "<message>", code, requestId, ... }`, which web tabs and
-// iOS builds from before ADR 0038 read. Better Auth (`/api/auth/*`) and MCP keep their own.
-// No zod here: clients import this from `@omni/contracts/errors` into the web app's entry chunk,
-// which stays free of full zod. The zod schemas of both shapes are in `error-schemas.ts`.
-
 /** Sent by a client that reads the nested shape. Any other value, or none, gets the legacy one. */
 export const ERROR_FORMAT_HEADER = "omni-error-format";
 export const ERROR_FORMAT_VERSION = "2";
@@ -73,10 +66,8 @@ export const ERROR_CODES = {
   internal_server_error: spec(500, "internal"),
   bad_gateway: spec(502, "unavailable", true),
   gateway_timeout: spec(504, "unavailable", true),
-  // Billing (ADR 0015): the workspace has no plan in good standing.
   billing_inactive: spec(402, "billing"),
   billing_required: spec(402, "billing"),
-  // Storage (ADR 0034).
   storage_full: spec(402, "quota"),
   file_too_large: spec(413, "payload_too_large"),
   invalid_name: spec(400, "validation"),
@@ -112,7 +103,6 @@ export const ERROR_CODES = {
   consent_changed: spec(409, "conflict"),
   /** A sync cursor older than tombstone retention: enumerate the drive again from the start. */
   cursor_expired: spec(410, "not_found"),
-  // CRM (ADR 0036).
   /** A Personal space has no CRM. */
   no_crm: spec(404, "not_found"),
   /** Another person holds the address; `personId` beside the error names them. */
@@ -144,8 +134,8 @@ for (const [code, { status }] of Object.entries(ERROR_CODES) as [ErrorCode, Erro
 }
 
 /** The generic code for a status; an unknown one reads as an internal error. */
-export function codeForStatus(status: number): ErrorCode {
-  return BY_STATUS.get(status) ?? "internal_server_error";
+export function codeForStatus(status: number) {
+  return (BY_STATUS.get(status) ?? "internal_server_error") satisfies ErrorCode;
 }
 
 /** A rate limit's state when the Worker refused: Vercel's `limit` object. */
@@ -175,13 +165,13 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const FIELDS = { string: ["code", "category", "requestId", "param"], boolean: ["retryable"] };
 
-/** The fields of `source` that have their declared type; anything else is dropped. */
-function pick(source: Record<string, unknown>): Omit<ApiErrorInfo, "message"> {
+function pick(source: Record<string, unknown>) {
   const info: Record<string, unknown> = {};
   for (const key of FIELDS.string) if (typeof source[key] === "string") info[key] = source[key];
   for (const key of FIELDS.boolean) if (typeof source[key] === "boolean") info[key] = source[key];
   for (const key of ["details", "limit"]) if (isRecord(source[key])) info[key] = source[key];
-  return info;
+  const picked: Omit<ApiErrorInfo, "message"> = info;
+  return picked;
 }
 
 /**
@@ -195,7 +185,7 @@ export const legacyCode = (code: ErrorCode) => code.toUpperCase();
  * is neither (a proxy's HTML page, an empty body). The code always comes back in lower case,
  * whichever shape carried it.
  */
-export function toApiError(body: unknown, fallback: string): ApiErrorInfo {
+export const toApiError: (body: unknown, fallback: string) => ApiErrorInfo = (body, fallback) => {
   if (!isRecord(body)) return { message: fallback };
   const { error } = body;
   if (isRecord(error) && typeof error.message === "string") {
@@ -207,4 +197,4 @@ export function toApiError(body: unknown, fallback: string): ApiErrorInfo {
     return { ...info, message: error };
   }
   return { message: fallback };
-}
+};

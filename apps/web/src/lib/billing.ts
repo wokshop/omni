@@ -1,6 +1,3 @@
-// The workspace's plan (`GET /api/billing`, ADR 0015) and the two ways out to Stripe: Checkout to
-// start the trial or subscribe, the customer portal to manage it. Both answer with a Stripe URL;
-// the browser leaves the app for it and Stripe sends it back to `returnPath`.
 import { mutationOptions, queryOptions, type QueryClient } from "@tanstack/react-query";
 import { api, call } from "./api.ts";
 import { keys } from "./query-keys.ts";
@@ -23,6 +20,7 @@ export type Interval = "month" | "year";
  */
 export const startTrialMutation = (client: QueryClient) =>
   mutationOptions({
+    meta: { handlesError: true },
     mutationFn: (interval: Interval) => call(api.billing.trial.$post({ json: { interval } })),
     onSuccess: () =>
       Promise.all([
@@ -43,6 +41,7 @@ export interface CheckoutChoice {
  */
 export const checkoutMutation = () =>
   mutationOptions({
+    meta: { handlesError: true },
     mutationFn: async (choice: CheckoutChoice) => {
       const { url } = await call(api.billing.checkout.$post({ json: choice }));
       window.location.assign(url);
@@ -52,6 +51,7 @@ export const checkoutMutation = () =>
 /** `mutate(returnPath)` leaves for the Stripe customer portal: card, interval, invoices, cancel. */
 export const portalMutation = () =>
   mutationOptions({
+    meta: { handlesError: true },
     mutationFn: async (returnPath: string) => {
       const { url } = await call(api.billing.portal.$post({ json: { returnPath } }));
       window.location.assign(url);
@@ -89,19 +89,20 @@ export type Invoice = Awaited<
   ReturnType<NonNullable<ReturnType<typeof billingInvoicesQuery>["queryFn"]>>
 >["invoices"][number];
 
-/** Each card change answers with the cards as they are now; the cache takes them as they come. */
 const cardsChanged = (client: QueryClient) => (cards: Cards) =>
   client.setQueryData(keys.billingCards(), cards);
 
 /** `mutateAsync()` asks for a SetupIntent: the secret and key Stripe.js needs to take a card. */
 export const cardSetupMutation = () =>
   mutationOptions({
+    meta: { handlesError: true },
     mutationFn: () => call(api.billing.cards.setup.$post()),
   });
 
 /** `mutate(setupIntentId)` after Stripe confirmed it: the card is listed (and charged if first). */
 export const cardAddedMutation = (client: QueryClient) =>
   mutationOptions({
+    meta: { handlesError: true },
     mutationFn: (setupIntent: string) => call(api.billing.cards.$post({ json: { setupIntent } })),
     onSuccess: cardsChanged(client),
   });
@@ -109,6 +110,7 @@ export const cardAddedMutation = (client: QueryClient) =>
 /** `mutate(cardId)` makes the plan charge this card from now on. */
 export const defaultCardMutation = (client: QueryClient) =>
   mutationOptions({
+    meta: { handlesError: true },
     mutationFn: (id: string) => call(api.billing.cards[":id"].default.$post({ param: { id } })),
     onSuccess: cardsChanged(client),
   });
@@ -116,6 +118,7 @@ export const defaultCardMutation = (client: QueryClient) =>
 /** `mutate(cardId)` removes the card from Stripe; the last one stays while the plan needs it. */
 export const removeCardMutation = (client: QueryClient) =>
   mutationOptions({
+    meta: { handlesError: true },
     mutationFn: (id: string) => call(api.billing.cards[":id"].$delete({ param: { id } })),
     onSuccess: cardsChanged(client),
   });

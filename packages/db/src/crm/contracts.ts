@@ -1,8 +1,3 @@
-// Contracts on a deal or a company (ADR 0036 decision 6): a title, a status, three dates and one
-// file. The status rules are `changeContract`; marking a contract signed locks its file through
-// Storage's member door opened on this transaction (ADR 0035 decision 4), so the two land
-// together or not at all. Storage tables are never read here: a document is checked and locked
-// only through the door.
 import { and, desc, eq, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
 import { crmContracts } from "../schema/crm.ts";
@@ -97,13 +92,12 @@ const contractColumns = {
   updatedAt: crmContracts.updatedAt,
 };
 
-const invalid = (param: string): InvalidContract => ({ status: "invalid_contract", param });
+const invalid = (param: string) =>
+  ({ status: "invalid_contract", param }) satisfies InvalidContract;
 
-/** A calendar day as Postgres's `date` takes it, or false. */
 const isDay = (value: string) =>
   /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`));
 
-/** Why the dates cannot be stored, or null. */
 function datesRefusal(effectiveOn: string | null, expiresOn: string | null) {
   if (effectiveOn !== null && !isDay(effectiveOn)) return invalid("effectiveOn");
   if (expiresOn !== null && !isDay(expiresOn)) return invalid("expiresOn");
@@ -111,7 +105,6 @@ function datesRefusal(effectiveOn: string | null, expiresOn: string | null) {
   return null;
 }
 
-/** A live file in Shared the member reaches through Storage's door. */
 async function usableDocument(tx: Ex, member: CrmMember, nodeId: string) {
   const found = await memberStorage(tx as Db, member.id).node(nodeId);
   return Boolean(
@@ -119,9 +112,12 @@ async function usableDocument(tx: Ex, member: CrmMember, nodeId: string) {
   );
 }
 
-/** The record a contract's events are written on: its deal, else its company. */
-const eventRecord = (contract: { dealId: string | null; companyId: string | null }): CrmRecordRef =>
-  contract.dealId ? { dealId: contract.dealId } : { companyId: contract.companyId! };
+const eventRecord = (contract: { dealId: string | null; companyId: string | null }) => {
+  const result: CrmRecordRef = contract.dealId
+    ? { dealId: contract.dealId }
+    : { companyId: contract.companyId! };
+  return result;
+};
 
 async function contractEvent(
   tx: Ex,
@@ -163,11 +159,11 @@ export async function lockRecords(
 }
 
 /** The record's contracts, newest first. A company's include those on its deals. */
-export async function listContracts(
+export const listContracts: (
   ex: Ex,
   member: CrmMember,
   input: ListContractsInput,
-): Promise<ContractListResult> {
+) => Promise<ContractListResult> = async (ex, member, input) => {
   const record =
     "dealId" in input
       ? await loadDeal(ex, member.orgId, input.dealId)
@@ -194,9 +190,8 @@ export async function listContracts(
     contracts,
     nextCursor: rows.length > limit && last ? { createdAt: last.createdAt, id: last.id } : null,
   };
-}
+};
 
-/** The company and deal a new contract is on, or why not. */
 async function recordsOf(tx: Ex, member: CrmMember, input: ContractInput) {
   let companyId = input.companyId ?? null;
   const dealId = input.dealId ?? null;
@@ -211,11 +206,11 @@ async function recordsOf(tx: Ex, member: CrmMember, input: ContractInput) {
 }
 
 /** A draft on a deal or a company. */
-export async function createContract(
+export const createContract: (
   tx: Ex,
   member: CrmMember,
   input: ContractInput,
-): Promise<ContractResult> {
+) => Promise<ContractResult> = async (tx, member, input) => {
   const title = cleanName(input.title);
   if (!title) return invalid("title");
   const effectiveOn = input.effectiveOn ?? null;
@@ -243,9 +238,8 @@ export async function createContract(
     .returning(contractColumns);
   await contractEvent(tx, member, contract!, "contract_created", { documentNodeId });
   return { status: "ok", contract: contract! };
-}
+};
 
-/** The title and dates a patch leaves, or why not. */
 function fieldsOf(current: CrmContract, patch: ContractPatch) {
   const title = patch.title === undefined ? current.title : cleanName(patch.title);
   if (!title) return invalid("title");
@@ -260,13 +254,12 @@ function fieldsOf(current: CrmContract, patch: ContractPatch) {
  * Changes title, dates, status or document. Marking it signed locks its file in this
  * transaction; when Storage refuses the lock, the whole change rolls back.
  */
-export async function updateContract(
+export const updateContract: (
   tx: Ex,
   member: CrmMember,
   id: string,
   patch: ContractPatch,
-): Promise<ContractResult> {
-  // Its records first, then the contract, in the order a delete for good takes them.
+) => Promise<ContractResult> = async (tx, member, id, patch) => {
   const seen = await loadContract(tx, member.orgId, id);
   if (!seen || !(await lockRecords(tx, member.orgId, seen))) return NOT_FOUND;
   const current = await loadContract(tx, member.orgId, id, true);
@@ -291,8 +284,6 @@ export async function updateContract(
     .returning(contractColumns);
   if (move.lock) {
     const locked = await memberStorage(tx as Db, member.id).lock(move.lock);
-    // Gone, in Trash, out of reach, a folder, or moved out of Shared since it was attached (the
-    // node is read under Storage's tree lock, so no move lands between): nothing is kept.
     if (locked.status !== "ok" || locked.node.space !== "shared") {
       refuse(invalid("documentNodeId"));
     }
@@ -310,21 +301,21 @@ export async function updateContract(
     });
   }
   return { status: "ok", contract: contract! };
-}
+};
 
 /** Deletes a contract that was never signed. */
-export async function deleteContract(
+export const deleteContract: (
   tx: Ex,
   member: CrmMember,
   id: string,
-): Promise<{ status: "ok" } | NotFound | ContractSigned> {
+) => Promise<{ status: "ok" } | NotFound | ContractSigned> = async (tx, member, id) => {
   const current = await loadContract(tx, member.orgId, id, true);
   if (!current) return NOT_FOUND;
   if (wasSigned(current.status)) return CONTRACT_SIGNED;
   await tx.delete(crmContracts).where(eq(crmContracts.id, id));
   await contractEvent(tx, member, current, "contract_deleted");
   return { status: "ok" };
-}
+};
 
 /**
  * Whether the record holds a signed (or ended) contract, which outlives it: deleting the record

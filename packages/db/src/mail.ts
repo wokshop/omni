@@ -1,5 +1,3 @@
-// Mail (ADR 0035): the module's surface. Everything outside `mail/` reaches mail code through this
-// file; `for-member.ts` spreads its member and user doors into `forMember` and `forUser`.
 export {
   memberMail,
   userMail,
@@ -37,6 +35,7 @@ export * from "./mail/inbox-admin.ts";
 export * from "./mail/compose.ts";
 export * from "./mail/library.ts";
 export * from "./mail/customers.ts";
+export * from "./mail/arrivals.ts";
 export * from "./mail/drafts.ts";
 export * from "./mail/conversations.ts";
 export * from "./mail/handoff.ts";

@@ -17,7 +17,7 @@ Status: draft. Each unit adds its required services, bindings, and variables her
 
 ```bash
 pnpm install
-pnpm stack:up                         # Postgres, GreenMail, S3-compatible object store
+pnpm stack:up                         # Postgres, GreenMail, S3-compatible object store, s2-lite
 cp packages/db/.env.example packages/db/.env
 pnpm --filter @omni/db db:migrate     # create the schema
 cp apps/mail/.env.example apps/mail/.env
@@ -297,7 +297,7 @@ Bindings:
 
 | Binding                                      | Kind                    | Setup                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | -------------------------------------------- | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `HYPERDRIVE`                                 | Hyperdrive              | `wrangler hyperdrive create omni --connection-string=postgres://... --origin-connection-limit=<n>` (see "Connection budget" below), then put the id in `wrangler.jsonc`. Locally, `localConnectionString` is the stack's Postgres.                                                                                                                                                                                                                                                                 |
+| `HYPERDRIVE`                                 | Hyperdrive              | `wrangler hyperdrive create omni --connection-string=postgres://... --origin-connection-limit=<n> --caching-disabled` (see "Connection budget" below), then put the id in `wrangler.jsonc`. Caching stays off: the app reads again right after each write, and a cached read would answer with the rows from before it. Locally, `localConnectionString` is the stack's Postgres.                                                                                                                  |
 | `MAIL_BUCKET`                                | R2                      | The bucket the mail service writes raw mail and attachments to (`wrangler r2 bucket create <name>`). The Worker reads attachments from it and stores profile pictures and workspace logos under `pictures/`.                                                                                                                                                                                                                                                                                       |
 | `STORAGE_BUCKET`                             | R2                      | The bucket Storage keeps people's files in (ADR 0034): `wrangler r2 bucket create omni-storage`, or your own name in `wrangler.jsonc`. Separate from `MAIL_BUCKET` because these files cannot be rebuilt from the mail host: back it up, and never give it a lifecycle rule that expires objects. One bucket per database: never point two installs (staging and production, say) at the same bucket, because the daily sweep deletes the files of every workspace its own database does not know. |
 | `DESKTOP_BUCKET`                             | R2                      | Desktop app releases: the updater manifest and installers, served at `/desktop/latest.json`, `/desktop/download/macos` and `/desktop/releases/*` (`wrangler r2 bucket create omni-desktop`). Filled by `apps/desktop/scripts/release-macos.sh`; empty, those routes answer 404 and installed apps simply never update.                                                                                                                                                                             |
@@ -344,11 +344,14 @@ to `.dev.vars`.
 | `DOMAIN_CONNECT_KEY_HOST`    | var    | no       | TXT host of the public key, for templates that require signed requests.                                                                                                                     |
 | `DOMAIN_CONNECT_PRIVATE_KEY` | secret | no       | PKCS#8 PEM key that signs Domain Connect apply URLs.                                                                                                                                        |
 | `IMAGE_PROXY_DOH_URL`        | var    | no       | DNS-over-HTTPS (JSON) resolver the image proxy uses to refuse hosts that point at private addresses. Default Cloudflare's.                                                                  |
+| `SENDER_LOGO_ICON_SERVICE`   | var    | no       | Icon service for a sender's company logo when the site links no large icon; `{domain}` is replaced. Default Google's favicon service; `off` skips it.                                       |
+| `SENDER_LOGO_GRAVATAR`       | var    | no       | Picture for webmail senders; `{hash}` is the address's SHA-256. Default Gravatar; `off` leaves their initials.                                                                              |
 | `STORAGE_MAX_FILE_BYTES`     | var    | no       | Largest file Storage accepts, in bytes. Default 5 GB (`5368709120`).                                                                                                                        |
 | `STORAGE_PERSONAL_GB`        | var    | no       | Most a Personal space may store, in GB (1024³ bytes; decimals allowed). Past it uploads answer `402 STORAGE_FULL`. Empty: no cap.                                                           |
 | `STORAGE_MAX_GB`             | var    | no       | Ceiling on what any one workspace may store, in GB. Empty: none.                                                                                                                            |
 | `ENVIRONMENT`                | var    | no       | `production` (default). `development` (local only) also logs magic-link and invitation URLs. `test` (e2e suites) is the only value that allows `IMAGE_PROXY_TEST_ALLOW_ORIGIN`.             |
 
+| `S2_BASIN_URL`, `S2_BASIN`, `S2_ACCESS_TOKEN` | both | no | Live co-editing of Markdown files (ADR 0043). See [Live co-editing](#live-co-editing-optional). |
 | `RATE_LIMIT_*` | var | no | Rate limits, `<count>/<seconds>` or `off`. See [Rate limits](#rate-limits). |
 | `STRIPE_*`, `BILLING_*` | both | no | Optional billing. Leave unset to self-host with no plan and no limits. See [Billing](#billing-optional). |
 
@@ -395,6 +398,24 @@ The browser lands on `<WEB_APP_URL>/settings/accounts?google=connected&mailboxId
 `?google=error&reason=expired|denied|failed|in_use`. `GET /api/connect/google` says whether
 Google is configured and lists the connected accounts; `DELETE /api/connect/google/:mailboxId`
 disconnects one.
+
+#### Live co-editing (optional)
+
+With an S2 basin, everyone editing a Markdown file in Drive types into the same page (ADR 0043
+decision 3 step 2, as amended). Without one, each editor saves on its own and a save that someone
+else's beat is refused, never overwritten. The browser never reaches S2: the Worker reads and
+appends for it.
+
+- **Self-hosted:** run `s2-lite` (`ghcr.io/s2-streamstore/s2`, `s2 lite`; `compose.yml` has the
+  local one) and give it a basin that creates streams on first append and read
+  (`create_stream_on_append`, `create_stream_on_read`). Set `S2_BASIN_URL` to its `/v1` URL and
+  `S2_BASIN` to the basin's name. It must be reachable from your Worker.
+- **S2 (s2.dev):** create the basin with the same two settings, set `S2_BASIN_URL` to
+  `https://<basin>.b.aws.s2.dev/v1` and `S2_BASIN`, and store an access token scoped to that
+  basin as the `S2_ACCESS_TOKEN` secret.
+
+A file's stream holds its live edits until the basin's retention drops them; the Markdown file
+stays the truth, and a stream lost early costs at most the edits since the last save.
 
 #### Rate limits
 
