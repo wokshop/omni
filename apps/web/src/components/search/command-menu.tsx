@@ -35,6 +35,7 @@ import {
   CommandScopes,
   CommandShortcut,
 } from "@/components/ui/command";
+import { EmptyState } from "@/components/empty/empty-state";
 import { Loader } from "@/components/ui/loader";
 import { useStorageHref } from "@/components/storage/file-list.tsx";
 import { useCommandSearch, useWarmCommandSearch } from "@/hooks/use-command-search.ts";
@@ -263,7 +264,14 @@ function MenuPanel({ seed, onClose }: { seed?: SearchSeed | undefined; onClose: 
         }}
       />
       <CommandList>
-        <CommandEmpty>{hits.searching ? <ResultBones /> : "No results found."}</CommandEmpty>
+        {/* Nothing found fills the list, centred, as every empty state in the app is. */}
+        <CommandEmpty className={hits.searching ? undefined : "absolute inset-0 flex py-0"}>
+          {hits.searching ? (
+            <ResultBones />
+          ) : (
+            <EmptyState figure="loupe" title="Nothing matches" className="p-4 pb-10" />
+          )}
+        </CommandEmpty>
         {show.mail && <PageGroup heading="Mail" pages={MAIL_PAGES} onOpen={openPage} />}
         {show.files && <PageGroup heading="Drive" pages={drivePages(company)} onOpen={openPage} />}
         {show.crm && company && <PageGroup heading="CRM" pages={CRM_PAGES} onOpen={openPage} />}
