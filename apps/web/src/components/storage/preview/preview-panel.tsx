@@ -255,6 +255,8 @@ function usePreviewTools(node: StorageNode, shareId: string | undefined) {
   const rail: Parameters<typeof PreviewRail>[0] = {
     comment: data && {
       open: composing,
+      // A comment belongs to the current content: none while an older version is on the stage.
+      isDisabled: !!shown,
       onToggle: () => {
         setComposing(!composing);
         setDraft(null);

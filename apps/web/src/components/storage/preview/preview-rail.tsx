@@ -35,7 +35,9 @@ const WHEN = new Intl.DateTimeFormat(undefined, {
 
 export function PreviewRail(props: {
   /** Comment shows `composer` over the island; the area tool shows it too, once a box is drawn. */
-  comment?: { open: boolean; onToggle: () => void; composer: ReactNode } | undefined;
+  comment?:
+    | { open: boolean; onToggle: () => void; isDisabled: boolean; composer: ReactNode }
+    | undefined;
   area?: { on: boolean; onToggle: () => void; isDisabled: boolean } | undefined;
   versions?:
     | {
@@ -54,7 +56,12 @@ export function PreviewRail(props: {
     groups.push(
       <>
         {comment && (
-          <Tool label="Comment" pressed={comment.open} onPress={comment.onToggle}>
+          <Tool
+            label="Comment"
+            pressed={comment.open}
+            isDisabled={comment.isDisabled}
+            onPress={comment.onToggle}
+          >
             <IconCommentPlain />
           </Tool>
         )}
@@ -77,7 +84,7 @@ export function PreviewRail(props: {
     // In flow under the stage, on its fill, so it never covers the file's last lines. The comment
     // bar floats 8px over it, alone (no card around it), on the overlay shadow so it reads over the page.
     <div className="relative flex shrink-0 justify-center px-5 pb-2.5">
-      {comment?.open && (
+      {comment?.open && !comment.isDisabled && (
         <div className="absolute inset-x-5 bottom-full mx-auto mb-2 max-w-md rounded-[12px] shadow-(--shadow-overlay)">
           {comment.composer}
         </div>
