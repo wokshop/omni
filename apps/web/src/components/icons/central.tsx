@@ -64,6 +64,7 @@ export { IconBell } from "central-icons-outlined/IconBell";
 export { IconNoteText as IconNote } from "central-icons-outlined/IconNoteText";
 export { IconArrowUp } from "central-icons-outlined/IconArrowUp";
 export { IconAt } from "central-icons-outlined/IconAt";
+export { IconBubbleText as IconComment } from "central-icons-outlined/IconBubbleText";
 export { IconArrowShareLeft as IconReply } from "central-icons-outlined/IconArrowShareLeft";
 export { IconArrowUndoUp as IconReplyAll } from "central-icons-outlined/IconArrowUndoUp";
 export { IconArrowShareRight as IconForward } from "central-icons-outlined/IconArrowShareRight";
@@ -98,8 +99,6 @@ export { IconGrid as IconCards } from "central-icons-outlined/IconGrid";
 // Filled: the module marks only (a white glyph on the module's colour reads solid, not as a line).
 export { IconEmail1 as IconMailFilled } from "central-icons-filled/IconEmail1";
 export { IconFolder1 as IconFolderFilled } from "central-icons-filled/IconFolder1";
-export { IconUser as IconUserRoundFilled } from "central-icons-filled/IconUser";
-export { IconUserDuo as IconUsersFilled } from "central-icons-filled/IconUserDuo";
 export { IconHandshake as IconHandshakeFilled } from "central-icons-filled/IconHandshake";
 export { IconArrowUpCircle as IconUpgrade } from "central-icons-outlined/IconArrowUpCircle";
 export { IconConnectors1 as IconConnections } from "central-icons-outlined/IconConnectors1";

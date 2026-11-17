@@ -14,8 +14,7 @@ Top to bottom: Upload, Search, Shared with me, Trash; then, under a Folders sect
 a **Team** group (a company's
 Shared; a Personal space has none) and a **Personal** group (My files). The spaces are named Team
 and Personal everywhere the app shows them (sidebar, breadcrumbs, the Move dialog). A group's row
-links to its space and starts open, its filled coal glyph on a grey tile so it stands
-out from the folders under it; the chevron closes it.
+links to its space and starts open; the chevron closes it.
 
 Upload, an action in a sidebar of places, is there because it was asked for: it uploads into the
 folder on screen, or Personal's top anywhere else.

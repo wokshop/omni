@@ -1,14 +1,8 @@
 // Storage's sidebar (ADR 0034 decision 8), shown alone while Files is open (ADR 0035), after
 // Skiff Drive's: Upload and the places (Search, Shared with me, Trash); then, under Folders (mail's
-// section label), two groups, each glyph on a tile so they stand out from their folders: Team (a
-// company's Shared: a Personal space has none) and Personal (My files).
+// section label), two groups: Team (a company's Shared: a Personal space has none) and Personal (My files).
 import type { ReactNode } from "react";
-import {
-  IconFolderShared,
-  IconUpload,
-  IconUserRoundFilled,
-  IconUsersFilled,
-} from "@/components/icons/central";
+import { IconFolderShared, IconUpload, IconUserRound, IconUsers } from "@/components/icons/central";
 import { IconSearch, IconTrash } from "@/components/icons/sidebar";
 import { FileTrigger } from "@/components/ui/file-trigger";
 import {
@@ -29,35 +23,11 @@ import { useWorkspacePaths } from "@/hooks/use-workspaces.ts";
 export const SPACE_LABEL = { personal: "Personal", shared: "Team" } as const;
 export const SPACE_PATH = { personal: "/files/my", shared: "/files/shared" } as const;
 export const SPACE_ICON = {
-  personal: (
-    <GroupMark>
-      <IconUserRoundFilled className="size-3.5 text-tooltip" />
-    </GroupMark>
-  ),
-  shared: (
-    <GroupMark>
-      <IconUsersFilled className="size-3.5 text-tooltip" />
-    </GroupMark>
-  ),
+  personal: <IconUserRound className="size-icon" />,
+  shared: <IconUsers className="size-icon" />,
 } as const;
 
 type Row = { label: string; path: string; icon: ReactNode; company?: boolean };
-
-/**
- * A group's filled glyph, in coal, on a grey tile: the module switcher's mark, quieter, so the
- * groups stand out from the folders under them. 20px, pulled 2.5px into the gap on each side, so
- * its label starts where the 15px glyphs' rows do.
- */
-function GroupMark({ children }: { children: ReactNode }) {
-  return (
-    <span
-      aria-hidden
-      className="-mx-[2.5px] grid size-5 shrink-0 place-items-center rounded-md bg-secondary"
-    >
-      {children}
-    </span>
-  );
-}
 
 const PLACES: Row[] = [
   {

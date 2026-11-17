@@ -20,6 +20,7 @@ export function SidebarTreeRow(props: {
   /** Trailing detail before the chevron (a count). */
   detail?: ReactNode;
   expand?: { value: boolean; toggle: () => void };
+  /** Pressing the row itself, as it follows its link. */
   onPress?: () => void;
 }) {
   const { expand } = props;

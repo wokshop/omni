@@ -21,7 +21,8 @@ export function SidebarGroup(props: { space: StorageSpace; search: string }) {
   const open = { value: !closed.value, toggle: closed.toggle };
   const { place: pathname, href } = useWorkspacePaths();
   return (
-    <SidebarSection>
+    // 4px under a group's last row, so Team and Personal read as two groups.
+    <SidebarSection className="pb-1">
       <SidebarTreeRow
         href={href(SPACE_PATH[space] + props.search)}
         isCurrent={pathname === SPACE_PATH[space]}
