@@ -165,8 +165,12 @@ export function useEditSession(node: StorageNode, url: string, shareId: string |
         const folded = live.current?.folded(saved.contentVersion, boundary);
         await Promise.race([folded, new Promise((resolve) => setTimeout(resolve, FOLD_WAIT_MS))]);
       }
-      // Typed while it saved: still unsaved, and not done.
-      if (changes.current !== at) return false;
+      // Typed while it saved: still unsaved, and not done. On a live document the save that
+      // came due meanwhile was skipped for this one, so the next is scheduled here.
+      if (changes.current !== at) {
+        if (live.current) latestFold.current();
+        return false;
+      }
       setDirty(false);
       return true;
     } catch (error) {
