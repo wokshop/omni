@@ -1,7 +1,3 @@
-// The one way the Worker answers an error (ADR 0038). Every route, middleware and `onError` goes
-// through `apiError`, which picks the shape the caller reads (`omni-error-format: 2` gets the
-// nested one), takes the status from `ERROR_CODES` and always carries the request's ID. Better
-// Auth's own answers under `/api/auth/*` and MCP's JSON-RPC and OAuth errors are not ours.
 import {
   codeForStatus,
   ERROR_CODES,
@@ -52,13 +48,14 @@ export function errorBody(
   code: ErrorCode,
   message: string,
   extras: ErrorExtras = {},
-): ErrorBodyV2 | LegacyErrorBody {
+) {
   const { category, retryable } = ERROR_CODES[code];
   const fields = { category, retryable, requestId: c.var.requestId, ...extras };
-  if (wantsNestedErrors(c)) return { error: { code, message, ...fields } };
-  // Upper case, as shipped: a tab opened before this format matches `STORAGE_FULL`, not
-  // `storage_full`, to choose its message and whether to offer Retry.
-  return { error: message, code: legacyCode(code), ...fields };
+  if (wantsNestedErrors(c))
+    return { error: { code, message, ...fields } } satisfies ErrorBodyV2 | LegacyErrorBody;
+  return { error: message, code: legacyCode(code), ...fields } satisfies
+    | ErrorBodyV2
+    | LegacyErrorBody;
 }
 
 /** The error answer for `code`, with its status from the table. */
@@ -71,8 +68,7 @@ export function apiError(
   return c.json(errorBody(c, code, message, extras), ERROR_CODES[code].status);
 }
 
-/** Errors that carry only a status: Hono's, and the mail-domain and mail-service refusals. */
-function statusOf(error: unknown): number | undefined {
+function statusOf(error: unknown) {
   if (error instanceof HTTPException) return error.status;
   if (error instanceof DomainError || error instanceof MailServiceError) return error.status;
   return undefined;
@@ -83,7 +79,6 @@ export function answerThrown(error: Error, c: Context<AppEnv>) {
   if (error instanceof ApiFailure) return apiError(c, error.code, error.message, error.extras);
   const status = statusOf(error);
   if (status !== undefined) return apiError(c, codeForStatus(status), error.message);
-  // Hono catches it before `withSentry` could, so the logger reports it.
   (c.var.log ?? createLogger()).error("http.error", { error, orgId: c.var.member?.orgId });
   return apiError(c, "internal_server_error", "internal error");
 }

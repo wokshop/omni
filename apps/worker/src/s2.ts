@@ -1,6 +1,3 @@
-// S2, the durable stream store behind live co-editing (ADR 0043 decision 3 step 2), over its REST
-// API: S2 itself, or s2-lite (the same API, MIT) for a self-hoster and the local stack. Records
-// are written as text (`s2-format: raw`); the basin creates a stream on its first append or read.
 import type { Config } from "./env.ts";
 
 export interface S2Record {
@@ -29,7 +26,7 @@ export function s2Basin(config: Config) {
     authorization: `Bearer ${config.S2_ACCESS_TOKEN ?? "local"}`,
   };
   const records = (stream: string) => `${base}/streams/${encodeURIComponent(stream)}/records`;
-  const call = async <T>(url: string, init: RequestInit = {}): Promise<T> => {
+  const call = async <T>(url: string, init: RequestInit = {}) => {
     const response = await fetch(url, { ...init, headers: { ...headers, ...init.headers } });
     const body = (await response.json().catch(() => null)) as Record<string, unknown> | null;
     if (!response.ok) {
@@ -39,11 +36,7 @@ export function s2Basin(config: Config) {
     return body as T;
   };
   return {
-    /**
-     * Appends one record. With `matchSeqNum`, only if it would be that record's number (the
-     * stream's tail): null when it would not.
-     */
-    async append(stream: string, body: string, matchSeqNum?: number): Promise<number | null> {
+    async append(stream: string, body: string, matchSeqNum?: number) {
       try {
         const done = await call<{ start: { seq_num: number } }>(records(stream), {
           method: "POST",
@@ -61,21 +54,16 @@ export function s2Basin(config: Config) {
         throw error;
       }
     },
-    /**
-     * The records from `from` on, at most `count`, oldest first. `more` when there may be others
-     * after them (a full batch).
-     */
     async read(stream: string, from: number, count = 1000) {
       try {
         const { records: batch } = await call<{ records: { seq_num: number; body?: string }[] }>(
           `${records(stream)}?seq_num=${from}&count=${count}`,
         );
         return {
-          records: batch.map((r): S2Record => ({ seqNum: r.seq_num, body: r.body ?? "" })),
+          records: batch.map((r) => ({ seqNum: r.seq_num, body: r.body ?? "" }) satisfies S2Record),
           more: batch.length === count,
         };
       } catch (error) {
-        // At or past the tail: nothing yet.
         if (error instanceof S2Error && error.status === 416) return { records: [], more: false };
         throw error;
       }

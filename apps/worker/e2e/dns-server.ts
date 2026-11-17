@@ -1,11 +1,3 @@
-// A local authoritative DNS server for the e2e suites, the way GreenMail stands in for a mail
-// host: a real UDP server speaking DNS (encoded with `dns-packet`), that the mail service's real
-// resolver finds through NS records and queries over the network. Suites publish and remove
-// records on it the way a member does at their DNS host.
-//
-// Every zone's nameserver is `ns1.<zone>` at 127.0.0.1, so the mail service, told to use this
-// server as its resolver and its port for nameservers, takes the same path it takes in production:
-// NS lookup, nameserver address, then a direct query.
 import dgram from "node:dgram";
 import packet, { type Answer } from "dns-packet";
 
@@ -25,7 +17,7 @@ export interface DnsServer {
   close(): Promise<void>;
 }
 
-export async function startDnsServer(): Promise<DnsServer> {
+export const startDnsServer: () => Promise<DnsServer> = async () => {
   const zones = new Set<string>();
   const records = new Map<string, Map<RecordType, Value[]>>();
   const queries: { name: string; type: string }[] = [];
@@ -37,10 +29,13 @@ export async function startDnsServer(): Promise<DnsServer> {
     name === `ns1.${zoneOf(name)}` ||
     [...records.keys()].some((n) => n === name || n.endsWith(`.${name}`));
 
-  function answer(name: string, type: string): { rcode: number; answers: Answer[] } {
+  const answer: (name: string, type: string) => { rcode: number; answers: Answer[] } = (
+    name,
+    type,
+  ) => {
     const zone = zoneOf(name);
-    if (!zone) return { rcode: 5, answers: [] }; // REFUSED: not ours.
-    if (!exists(name)) return { rcode: 3, answers: [] }; // NXDOMAIN
+    if (!zone) return { rcode: 5, answers: [] };
+    if (!exists(name)) return { rcode: 3, answers: [] };
     const at = records.get(name);
     const cname = at?.get("CNAME");
     if (cname && type !== "CNAME") {
@@ -55,7 +50,7 @@ export async function startDnsServer(): Promise<DnsServer> {
     const values = at?.get(type as RecordType) ?? [];
     return {
       rcode: 0,
-      answers: values.map((value): Answer => {
+      answers: values.map<Answer>((value) => {
         if (type === "MX") {
           const mx = value as { priority: number; exchange: string };
           return {
@@ -69,7 +64,7 @@ export async function startDnsServer(): Promise<DnsServer> {
         return { type: type as "CNAME" | "A", name, ttl: 300, data: value as string };
       }),
     };
-  }
+  };
 
   const socket = dgram.createSocket("udp4");
   socket.on("message", (message, peer) => {
@@ -87,7 +82,6 @@ export async function startDnsServer(): Promise<DnsServer> {
     const response = packet.encode({
       id: query.id,
       type: "response",
-      // Authoritative answer, plus the response code in the low bits.
       flags: packet.AUTHORITATIVE_ANSWER | rcode,
       questions: query.questions,
       answers,
@@ -111,4 +105,4 @@ export async function startDnsServer(): Promise<DnsServer> {
     },
     close: () => new Promise<void>((resolve) => socket.close(() => resolve())),
   };
-}
+};

@@ -1,8 +1,3 @@
-// Tells the Worker about newly indexed mail (`POST /internal/mail-events`, HMAC-signed) so it can
-// queue AI jobs, apply the helpdesk status rules and notify open apps. Events are batched and
-// retried with backoff; delivery is at least once, and the Worker dedupes by message id.
-// `message.created` is durable: each new row is flagged `notify_pending` until the Worker accepts
-// its event (`onDelivered`), and `sweep` re-sends whatever a crash or a Worker outage left behind.
 import { randomUUID } from "node:crypto";
 import { MAIL_EVENTS_PATH, type MailEvent, MAX_EVENTS_PER_REQUEST } from "@omni/contracts";
 import { signRequest } from "@omni/crypto";
@@ -15,8 +10,7 @@ export interface QueuedEvent {
   pendingId?: string;
 }
 
-/** What makes a queued event durable: its row id, or its message for `message.created`. */
-function durableKey({ event, pendingId }: QueuedEvent): string | null {
+function durableKey({ event, pendingId }: QueuedEvent) {
   if (pendingId) return `pending:${pendingId}`;
   return event.type === "message.created" ? `message:${event.messageId}` : null;
 }
@@ -38,10 +32,6 @@ export interface NotifierOptions {
 export class WorkerNotifier {
   private readonly options: Required<Omit<NotifierOptions, "onDelivered">> &
     Pick<NotifierOptions, "onDelivered">;
-  /**
-   * Durable events queued or in flight, by message id (`message.created`) or `pending_mail_events`
-   * id, so a sweep never sends one twice at once.
-   */
   private readonly pending = new Set<string>();
   private readonly url: string;
   private queue: QueuedEvent[] = [];
@@ -62,7 +52,7 @@ export class WorkerNotifier {
   }
 
   /** `pendingId`: the event's `pending_mail_events` row, deleted once the Worker accepts it. */
-  push(event: MailEvent, pendingId?: string): void {
+  push(event: MailEvent, pendingId?: string) {
     if (this.stopped) return;
     const key = durableKey({ event, pendingId });
     if (key) {
@@ -77,7 +67,7 @@ export class WorkerNotifier {
   }
 
   /** Sends everything queued so far. Concurrent calls share one flush. */
-  flush(): Promise<void> {
+  flush() {
     this.flushing ??= (async () => {
       while (this.queue.length > 0) {
         const batch = this.queue.splice(0, MAX_EVENTS_PER_REQUEST);
@@ -99,7 +89,7 @@ export class WorkerNotifier {
   }
 
   /** Stops retrying and sends what is queued once. */
-  async stop(): Promise<void> {
+  async stop() {
     this.stopped = true;
     this.wake?.();
     if (this.timer) clearTimeout(this.timer);
@@ -107,8 +97,7 @@ export class WorkerNotifier {
     await this.flush().catch(() => {});
   }
 
-  /** True once the Worker accepted the batch; false when it was dropped. */
-  private async deliver(events: MailEvent[]): Promise<boolean> {
+  private async deliver(events: MailEvent[]) {
     const body = JSON.stringify({ events });
     const log = this.options.logger;
     for (let attempt = 1; ; attempt++) {

@@ -1,5 +1,3 @@
-// Read queries for mail, the web app's (`apps/web/src/lib/mail-queries.ts`) on the phone, in the
-// app's workspace (`workspace.ts`).
 import {
   infiniteQueryOptions,
   queryOptions,
@@ -160,7 +158,6 @@ export function useMarkRead() {
           json: { read: true },
         }),
       ),
-    // Transient failures retry with the same key (the same intent); auth errors don't.
     retry: (count, error) => !isAuthError(error) && count < 2,
     onMutate: async ({ threadId }) => {
       await client.cancelQueries({ queryKey: ["threads"] });
@@ -180,7 +177,6 @@ export function useMarkRead() {
       );
       return { snapshot };
     },
-    // The server still says unread: put the rows back as they were, then ask it.
     onError: (_error, _vars, context) => {
       for (const [key, data] of context?.snapshot ?? []) client.setQueryData(key, data);
       void client.invalidateQueries({ queryKey: ["threads"] });

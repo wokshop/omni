@@ -1,5 +1,3 @@
-// The record shapes the door answers with, and the loaders every operation shares. Every loader
-// takes the member's org and finds nothing outside it.
 import { parseAddress } from "@omni/mail-core/addresses";
 import { and, asc, eq, inArray, isNull, sql, type AnyColumn } from "drizzle-orm";
 import {
@@ -130,10 +128,10 @@ export async function domainsOf(ex: Ex, companyId: string) {
 }
 
 /** The people's addresses, primary first. */
-export async function withAddresses(
+export const withAddresses: (
   ex: Ex,
   rows: Omit<CrmPerson, "addresses">[],
-): Promise<CrmPerson[]> {
+) => Promise<CrmPerson[]> = async (ex, rows) => {
   if (rows.length === 0) return [];
   const emails = await ex
     .select({
@@ -155,7 +153,7 @@ export async function withAddresses(
       .filter((email) => email.personId === row.id)
       .map(({ address, isPrimary }) => ({ address, isPrimary })),
   }));
-}
+};
 
 export async function loadPerson(ex: Ex, orgId: string, id: string, lock = false) {
   const query = ex
@@ -168,7 +166,6 @@ export async function loadPerson(ex: Ex, orgId: string, id: string, lock = false
 
 export async function loadDeal(ex: Ex, orgId: string, id: string, lock = false) {
   if (lock) {
-    // Locked on its own first, so the read below sees the row as the last writer left it.
     const locked = await ex
       .select({ id: crmDeals.id })
       .from(crmDeals)
@@ -204,13 +201,13 @@ export async function existingPeople(ex: Ex, orgId: string, ids: string[]) {
 }
 
 /** A domain as stored (lowercase, no trailing dot), or null when it is not one. */
-export function normalizeDomain(input: string): string | null {
+export function normalizeDomain(input: string) {
   const address = parseAddress(`x@${input.trim().replace(/^@/, "")}`);
   return address ? address.slice(2) : null;
 }
 
 /** A name as stored, or null when empty or too long. */
-export function cleanName(input: string): string | null {
+export function cleanName(input: string) {
   const name = input.trim();
   return name.length > 0 && name.length <= 200 ? name : null;
 }

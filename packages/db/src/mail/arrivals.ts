@@ -1,6 +1,3 @@
-// New mail worth a desktop notification: of the messages an ingest just indexed for the first
-// time, the ones someone else wrote to the mailbox lately. A first sync's backlog, a list or an
-// auto-reply, and the mailbox's own sends are left out.
 import { and, eq, gte, inArray, ne, sql } from "drizzle-orm";
 import type { Executor } from "./conversation-core.ts";
 import { mailboxes, messages } from "../schema/index.ts";
@@ -9,11 +6,11 @@ import { mailboxes, messages } from "../schema/index.ts";
 export const ARRIVAL_WINDOW_MS = 60 * 60 * 1000;
 
 /** The threads, by mailbox, that the messages `messageIds` arrived in as new mail. */
-export async function newArrivals(
+export const newArrivals: (
   db: Executor,
   messageIds: readonly string[],
-  now = new Date(),
-): Promise<Map<string, Set<string>>> {
+  now?: Date,
+) => Promise<Map<string, Set<string>>> = async (db, messageIds, now = new Date()) => {
   const arrived = new Map<string, Set<string>>();
   if (messageIds.length === 0) return arrived;
   const rows = await db
@@ -34,4 +31,4 @@ export async function newArrivals(
     arrived.set(mailboxId, threads);
   }
   return arrived;
-}
+};

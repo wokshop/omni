@@ -29,18 +29,15 @@ export interface SupervisorOptions {
 /** Owns one `MailboxConnection` per mailbox, the periodic folder sync, and the outbox loop. */
 export class Supervisor {
   private readonly connections = new Map<string, MailboxConnection>();
-  /** Mailboxes connecting or syncing at once (`concurrency`). */
   private readonly permits: Semaphore.Semaphore;
   private readonly limit: <T>(task: () => Promise<T>) => Promise<T>;
   private readonly outbox: OutboxExecutor;
   private readonly log: Logger;
   private readonly options: SupervisorOptions;
-  /** The periodic folder sync and outbox poll. */
   private loops: Fiber.Fiber<unknown, unknown>[] = [];
   private running = false;
   private stopping = false;
   private readonly inFlight = new Set<Promise<void>>();
-  /** Wakes the outbox when the next pending action is due (an undo-send window ends). */
   private dueTimer: NodeJS.Timeout | null = null;
 
   constructor(options: SupervisorOptions) {
@@ -59,32 +56,32 @@ export class Supervisor {
     });
   }
 
-  get mailboxCount(): number {
+  get mailboxCount() {
     return this.connections.size;
   }
 
-  get connectedCount(): number {
+  get connectedCount() {
     return [...this.connections.values()].filter((c) => c.connected).length;
   }
 
   /** Connected and past the first sync: their outbox actions run. */
-  get readyCount(): number {
+  get readyCount() {
     return [...this.connections.values()].filter((c) => c.isReady).length;
   }
 
-  connection(mailboxId: string): MailboxConnection | undefined {
-    return this.connections.get(mailboxId);
+  connection(mailboxId: string) {
+    return this.connections.get(mailboxId) satisfies MailboxConnection | undefined;
   }
 
-  has(mailboxId: string): boolean {
+  has(mailboxId: string) {
     return this.connections.has(mailboxId);
   }
 
-  mailboxIds(): string[] {
-    return [...this.connections.keys()];
+  mailboxIds() {
+    return [...this.connections.keys()] satisfies string[];
   }
 
-  start(): void {
+  start() {
     if (this.running) return;
     this.running = true;
     this.loops = [
@@ -94,28 +91,27 @@ export class Supervisor {
   }
 
   /** Adds a mailbox and connects it in the background. Connect attempts share the `concurrency` gate. */
-  add(mailbox: MailboxConfig): MailboxConnection {
+  add(mailbox: MailboxConfig) {
     if (this.stopping) throw new Error("supervisor is stopping");
     const existing = this.connections.get(mailbox.id);
-    if (existing) return existing;
+    if (existing) return existing satisfies MailboxConnection;
     const connection = new MailboxConnection(mailbox, {
       store: this.options.store,
       logger: this.log,
       gate: this.permits,
     });
     if (this.options.onMessage) connection.on("message", this.options.onMessage);
-    // Actions that failed while the mailbox was offline become runnable again on reconnect.
-    connection.on("connected", () => void this.ping());
+    connection.on("connected", () => void this.ping({ mailboxId: mailbox.id }));
     this.connections.set(mailbox.id, connection);
     void connection
       .start()
       .catch((error: unknown) =>
         this.log.error("supervisor.start_failed", { mailboxId: mailbox.id, error }),
       );
-    return connection;
+    return connection satisfies MailboxConnection;
   }
 
-  async remove(mailboxId: string): Promise<void> {
+  async remove(mailboxId: string) {
     const connection = this.connections.get(mailboxId);
     this.connections.delete(mailboxId);
     await connection?.stop();
@@ -125,16 +121,16 @@ export class Supervisor {
    * Removes the mailbox and waits for outbox work already running, so a send that started before
    * finishes (or fails) before the caller deletes the mailbox's rows or revokes its credentials.
    */
-  async retire(mailboxId: string): Promise<void> {
+  async retire(mailboxId: string) {
     await this.remove(mailboxId);
     await Promise.all(this.inFlight);
   }
 
-  /** Runs the outbox now. The HTTP ping lands here. */
-  async ping(): Promise<void> {
+  /** Runs the outbox now. The HTTP ping lands here; `cause` names what asked, for the log. */
+  async ping(cause: Record<string, unknown> = {}) {
     if (!this.running) return;
     const drain = this.outbox.drain().then(
-      () => {},
+      (actions) => this.log.debug("outbox.drained", { actions, ...cause }),
       (error: unknown) => this.log.error("outbox.drain_failed", { error }),
     );
     this.inFlight.add(drain);
@@ -146,12 +142,7 @@ export class Supervisor {
     await this.wakeWhenDue();
   }
 
-  /**
-   * A send queued with an undo window is not due when the Worker pings. Without this it would
-   * wait for the next poll (30 s); with it, it leaves when the window ends. Beyond the poll
-   * interval the poll covers it.
-   */
-  private async wakeWhenDue(): Promise<void> {
+  private async wakeWhenDue() {
     if (!this.running) return;
     const due = await this.options.actions.nextDueAt().catch((error: unknown) => {
       this.log.warn("outbox.next_due_failed", { error });
@@ -168,7 +159,7 @@ export class Supervisor {
     }, delay);
   }
 
-  async syncAll(): Promise<void> {
+  async syncAll() {
     await Promise.all(
       [...this.connections.values()]
         .filter((c) => c.connected)
@@ -185,7 +176,7 @@ export class Supervisor {
    * is still open, then stops every mailbox: each finishes the message it is storing, abandons the
    * rest of its sync (the next start resumes it) and logs out.
    */
-  async stop(): Promise<void> {
+  async stop() {
     this.running = false;
     this.stopping = true;
     if (this.dueTimer) clearTimeout(this.dueTimer);

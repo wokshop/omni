@@ -1,8 +1,3 @@
-// A Markdown file's live document (ADR 0043 decision 3 step 2): one Yjs document shared by
-// everyone editing the file, kept as the file's S2 stream of records (`storageLiveRecordSchema`).
-// Records go out on the workspace's realtime socket and come back from it; whatever a dropped
-// socket missed is read over HTTP. Yjs updates commute, so their order does not matter, only that
-// none is lost.
 import type { RealtimeClientMessage, RealtimeEvent } from "@omni/client";
 import * as Y from "yjs";
 import { api, call } from "./api.ts";
@@ -18,18 +13,12 @@ interface StorageLiveEntry {
   record: StorageLiveRecord;
 }
 
-/** The origin of updates that came from the stream, so they are not sent back to it. */
 const REMOTE = Symbol("remote");
-/** Answers are matched by ref, so refs are unique across every live document in the tab. */
 let nextRef = 1;
-/** Keystrokes within this long go out as one record. */
 const BATCH_MS = 60;
-/** A refused record (the socket's `editing` not checked yet) is sent again after this long. */
 const RETRY_MS = 400;
-/** An update the stream could not take for now is sent again after this long, longer each time. */
 const UNAVAILABLE_MS = 1000;
 const UNAVAILABLE_MAX_MS = 15_000;
-/** How long closing waits for this tab's changes to reach the stream. */
 const SETTLE_MS = 5000;
 
 const toBase64 = (bytes: Uint8Array) => {
@@ -41,8 +30,10 @@ const toBase64 = (bytes: Uint8Array) => {
 };
 const fromBase64 = (text: string) => Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
 
-/** Every record of the file's stream from `from` on, or null when the live layer is off. */
-async function readAll(nodeId: string, from = 0): Promise<StorageLiveEntry[] | null> {
+const readAll: (nodeId: string, from?: number) => Promise<StorageLiveEntry[] | null> = async (
+  nodeId,
+  from = 0,
+) => {
   const entries: StorageLiveEntry[] = [];
   for (let at = from; ;) {
     const page = await call(
@@ -54,7 +45,7 @@ async function readAll(nodeId: string, from = 0): Promise<StorageLiveEntry[] | n
     if (!page.more || !last) return entries;
     at = last.seqNum + 1;
   }
-}
+};
 
 export interface LiveDocOptions {
   orgId: string;
@@ -78,23 +69,20 @@ export interface LiveDocOptions {
  * Joins the file's live document: its latest epoch when that epoch is the file's content now,
  * else a new epoch seeded from it. Null when the live layer is off.
  */
-export async function openLiveDoc(options: LiveDocOptions): Promise<LiveDoc | null> {
+export async function openLiveDoc(options: LiveDocOptions) {
   for (let tries = 0; tries < 5; tries++) {
     const entries = await readAll(options.nodeId);
-    if (!entries) return null;
+    if (!entries) return null satisfies LiveDoc | null;
     const live = new LiveDoc(options);
     const joined = live.join(entries);
-    if (joined === true) return live.start();
+    if (joined === true) return live.start() satisfies LiveDoc | null;
     if (joined !== false) {
-      // Saved since this tab read the file: open that version rather than seed an older one
-      // over everyone's newer page.
       live.close();
       options.onReplaced(joined);
-      return null;
+      return null satisfies LiveDoc | null;
     }
     const tail = (entries.at(-1)?.seqNum ?? -1) + 1;
-    // Someone else seeded first: read again and join theirs.
-    if (await live.seed(tail)) return live.start();
+    if (await live.seed(tail)) return live.start() satisfies LiveDoc | null;
     live.close();
   }
   throw new Error("the live document kept changing while it opened");
@@ -103,11 +91,8 @@ export async function openLiveDoc(options: LiveDocOptions): Promise<LiveDoc | nu
 export class LiveDoc {
   readonly doc = new Y.Doc();
   private epoch = -1;
-  /** Sequence numbers already in the document, at or after the epoch's seed. */
   private known = new Set<number>();
-  /** The lowest sequence number not yet known. */
   private next = 0;
-  /** The last record of the epoch, and whether this tab wrote it. */
   private last = { seqNum: -1, mine: false };
   private lastFold = -1;
   private pending = new Map<number, { record: StorageLiveRecord; matchSeqNum?: number }>();
@@ -123,14 +108,12 @@ export class LiveDoc {
 
   constructor(options: LiveDocOptions) {
     this.options = options;
-    // Listening from the start: a seed sent before the document is joined hears its answer.
     this.stops.push(
       onDocEvent((event) => {
         if (event.nodeId !== this.options.nodeId) return;
         if (event.type !== "doc.record") return this.answers.get(event.ref)?.(event);
         if (this.started) this.onRecord(event.seqNum, event.record);
       }),
-      // Back after a drop: what was not answered goes again, and what was missed is read.
       onRealtimeOpen((orgId) => {
         if (orgId !== this.options.orgId) return;
         for (const [ref, item] of this.pending) this.transmit(ref, item);
@@ -144,7 +127,7 @@ export class LiveDoc {
    * to join (none yet, or the file changed outside the live layer), or the content version the
    * epoch was saved as when that is newer than the file this tab read.
    */
-  join(entries: StorageLiveEntry[]): boolean | number {
+  join(entries: StorageLiveEntry[]) {
     const start = entries.findLastIndex((entry) => entry.record.t === "seed");
     const seed = entries[start];
     if (!seed || seed.record.t !== "seed") return false;
@@ -185,7 +168,6 @@ export class LiveDoc {
       this.timer ??= setTimeout(() => this.flush(), BATCH_MS);
     });
     this.started = true;
-    // What was appended between the read that opened it and now.
     void this.catchUp();
     return this;
   }
@@ -245,7 +227,6 @@ export class LiveDoc {
     });
   }
 
-  /** Sends a record until the stream takes it or refuses it for good; resolves with the answer. */
   private send(record: StorageLiveRecord, matchSeqNum?: number) {
     const ref = nextRef++;
     const item = { record, ...(matchSeqNum === undefined ? {} : { matchSeqNum }) };
@@ -255,12 +236,10 @@ export class LiveDoc {
       this.answers.set(ref, (event) => {
         const again = (ms: number) =>
           setTimeout(() => this.pending.has(ref) && this.transmit(ref, item), ms);
-        // Not checked yet: presence lands first, then the record goes again.
         if (event.type === "doc.refused" && event.reason === "editing" && !this.closed) {
           again(RETRY_MS);
           return;
         }
-        // A change of this tab's is never dropped: the others' next ones may build on it.
         if (event.type === "doc.refused" && event.reason === "unavailable" && !this.closed) {
           if (record.t === "update") {
             again(wait);
@@ -270,7 +249,6 @@ export class LiveDoc {
         }
         this.pending.delete(ref);
         this.answers.delete(ref);
-        // Only an update is a change this tab made; a seed or a fold is not.
         if (event.type === "doc.appended") this.markKnown(event.seqNum, record.t === "update");
         resolve(event);
       });
@@ -279,7 +257,6 @@ export class LiveDoc {
   }
 
   private transmit(ref: number, item: { record: StorageLiveRecord; matchSeqNum?: number }) {
-    // Not sent while the socket is down: the reconnect sends it.
     sendRealtime(this.options.orgId, {
       type: "doc.append",
       nodeId: this.options.nodeId,
@@ -318,7 +295,6 @@ export class LiveDoc {
     while (this.known.has(this.next)) this.next++;
   }
 
-  /** Reads what this tab missed (a dropped socket, a record that overtook another). */
   private async catchUp() {
     if (this.catchingUp || this.closed) return;
     this.catchingUp = true;

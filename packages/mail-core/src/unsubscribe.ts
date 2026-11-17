@@ -11,9 +11,11 @@ export type Unsubscribe =
   | { kind: "mail"; to: string; subject: string; body: string }
   | { kind: "link"; url: string };
 
-export function unsubscribeMethod(uris: readonly string[], oneClick: boolean): Unsubscribe | null {
+export const unsubscribeMethod: (
+  uris: readonly string[],
+  oneClick: boolean,
+) => Unsubscribe | null = (uris, oneClick) => {
   const https = uris.map((uri) => webUrl(uri, ["https:"])).find((url) => url !== null);
-  // RFC 8058: one-click is only an https URI.
   if (oneClick && https) return { kind: "post", url: https };
   for (const uri of uris) {
     const mail = mailto(uri);
@@ -21,20 +23,18 @@ export function unsubscribeMethod(uris: readonly string[], oneClick: boolean): U
   }
   const page = uris.map((uri) => webUrl(uri, ["https:", "http:"])).find((url) => url !== null);
   return page ? { kind: "link", url: page } : null;
-}
+};
 
-function webUrl(uri: string, protocols: string[]): string | null {
+function webUrl(uri: string, protocols: string[]) {
   const url = parse(uri);
   return url && protocols.includes(url.protocol) ? url.href : null;
 }
 
-function mailto(uri: string): Unsubscribe | null {
+const mailto: (uri: string) => Unsubscribe | null = (uri) => {
   const url = parse(uri);
   if (url?.protocol !== "mailto:") return null;
-  // `mailto:a@x,b@x`: the first address does.
   const to = decode(url.pathname.split(",")[0] ?? "");
   if (!/^[^\s@]+@[^\s@]+$/.test(to)) return null;
-  // URLSearchParams reads `+` as a space, which mailto does not; keep it.
   const params = new URLSearchParams(url.search.replaceAll("+", "%2B"));
   return {
     kind: "mail",
@@ -42,17 +42,17 @@ function mailto(uri: string): Unsubscribe | null {
     subject: params.get("subject")?.trim() || "Unsubscribe",
     body: params.get("body") ?? "",
   };
-}
+};
 
-function parse(uri: string): URL | null {
+const parse: (uri: string) => URL | null = (uri) => {
   try {
     return new URL(uri.trim());
   } catch {
     return null;
   }
-}
+};
 
-function decode(value: string): string {
+function decode(value: string) {
   try {
     return decodeURIComponent(value).trim();
   } catch {

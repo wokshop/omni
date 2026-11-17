@@ -1,6 +1,3 @@
-// The workspace's one pipeline and its settings row, both made on first use. The settings row is
-// the seed's lock: whoever inserts it seeds the stages in the same transaction, and a racing
-// first use waits on that insert and then finds the stages committed.
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { crmDeals, crmSettings, crmStages } from "../schema/crm.ts";
 import {
@@ -53,7 +50,7 @@ export async function ensureCrm(ex: Ex, orgId: string) {
 }
 
 /** The stages in order. */
-export async function stagesOf(ex: Ex, orgId: string): Promise<CrmStage[]> {
+export async function stagesOf(ex: Ex, orgId: string) {
   await ensureCrm(ex, orgId);
   return ex
     .select({
@@ -64,7 +61,7 @@ export async function stagesOf(ex: Ex, orgId: string): Promise<CrmStage[]> {
     })
     .from(crmStages)
     .where(eq(crmStages.orgId, orgId))
-    .orderBy(asc(crmStages.position), asc(crmStages.id));
+    .orderBy(asc(crmStages.position), asc(crmStages.id)) satisfies Promise<CrmStage[]>;
 }
 
 /** One stage of the workspace, or null. */
@@ -95,20 +92,17 @@ export type ReplaceStagesResult =
   | NotFound
   | Forbidden
   | { status: "invalid_name" }
-  /** A stage left out of the list still holds deals (archived ones too). */
   | { status: "stage_in_use"; stageIds: string[] }
-  /** The list leaves a kind with no stage. */
   | { status: "stage_kind_required"; kinds: StageKind[] };
 
 /** Replaces the pipeline: rename, add, reorder and remove. Owners and admins only. */
-export async function replaceStages(
+export const replaceStages: (
   tx: Ex,
   member: CrmMember,
   input: StageInput[],
-): Promise<ReplaceStagesResult> {
+) => Promise<ReplaceStagesResult> = async (tx, member, input) => {
   if (!member.admin) return FORBIDDEN;
   await ensureCrm(tx, member.orgId);
-  // Serializes replaces of one workspace's pipeline.
   await tx
     .select({ orgId: crmSettings.orgId })
     .from(crmSettings)
@@ -135,10 +129,8 @@ export async function replaceStages(
       .where(and(eq(crmDeals.orgId, member.orgId), inArray(crmDeals.stageId, removed)));
     if (inUse.length > 0) return { status: "stage_in_use", stageIds: inUse.map((r) => r.stageId) };
     try {
-      // In a savepoint, so the refusal leaves the transaction usable.
       await tx.transaction((sp) => sp.delete(crmStages).where(inArray(crmStages.id, removed)));
     } catch (error) {
-      // A deal moved into a removed stage after the check above.
       if (isForeignKeyViolation(error)) return { status: "stage_in_use", stageIds: removed };
       throw error;
     }
@@ -155,4 +147,4 @@ export async function replaceStages(
     }
   }
   return { status: "ok", stages: await stagesOf(tx, member.orgId) };
-}
+};

@@ -1,6 +1,3 @@
-// Connecting a personal Gmail (ADR 0023). The Worker runs OAuth: a top-level navigation to its
-// `/api/connect/google/start` leaves for Google's consent screen, and Google comes back through
-// the Worker to the page that started it with `?google=connected|error&reason=…`.
 import { mutationOptions, queryOptions, type QueryClient } from "@tanstack/react-query";
 import { api, ApiError, call } from "./api.ts";
 import { desktop } from "./desktop.ts";
@@ -23,11 +20,7 @@ export type GoogleReturn = "onboarding" | "settings";
  */
 export async function startGoogleConnect(from: GoogleReturn) {
   const url = new URL("/api/connect/google/start", window.location.origin);
-  // The account goes where its address belongs (ADR 0024): the company that claimed its domain,
-  // or the Personal space. Setup claims the company's domain before it connects anyone.
   if (from === "onboarding") url.searchParams.set("return", "onboarding");
-  // Today's Worker places every account by address; a Worker from before that does so only with
-  // this flag. Kept until no such Worker can serve this page.
   url.searchParams.set("place", "address");
   if (!desktop.isDesktop) {
     window.location.assign(url.toString());
@@ -45,16 +38,16 @@ export type GoogleOutcome =
   | { kind: "connected"; mailboxId: string | null }
   | { kind: "error"; reason: string };
 
-export function readGoogleOutcome(search: string): GoogleOutcome | null {
+export const readGoogleOutcome: (search: string) => GoogleOutcome | null = (search) => {
   const params = new URLSearchParams(search);
   const google = params.get("google");
   if (google === "connected") return { kind: "connected", mailboxId: params.get("mailboxId") };
   if (google === "error") return { kind: "error", reason: params.get("reason") ?? "failed" };
   return null;
-}
+};
 
 /** What went wrong, in words, for each reason the Worker returns. */
-export function googleErrorText(reason: string): string {
+export function googleErrorText(reason: string) {
   switch (reason) {
     case "denied":
       return "Google wasn't given access. Try again and allow Omni to read and send mail.";

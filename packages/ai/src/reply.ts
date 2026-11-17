@@ -1,6 +1,3 @@
-// Suggested replies (ADR 0022): an agent asks, Claude drafts, the agent edits and sends. Never sent
-// on its own. Plain text only: the composer adds the inbox signature and renders nothing as HTML.
-
 import type Anthropic from "@anthropic-ai/sdk";
 import { estimateTokens, truncateToTokens } from "./policy.ts";
 import { DATA_TAG, escapeUntrusted } from "./prompt.ts";
@@ -51,16 +48,15 @@ Write the reply to the latest customer message:
 - Plain text only: no markdown, no HTML, no bullet symbols unless the customer used a list.`;
 
 /** Drafts one reply. API errors throw (the route answers 502); a refusal returns no reply. */
-export async function suggestReply(
+export const suggestReply: (
   client: ReplyClient,
   input: SuggestReplyInput,
-  options: { model?: string; maxInputTokens?: number } = {},
-): Promise<SuggestedReply> {
+  options?: { model?: string; maxInputTokens?: number },
+) => Promise<SuggestedReply> = async (client, input, options = {}) => {
   const message = await client.beta.messages.create({
     model: options.model ?? REPLY_MODEL,
     max_tokens: 4_096,
     output_config: { effort: "medium" },
-    // A declined request is re-run on a fallback model the API picks by refusal category.
     betas: ["server-side-fallback-2026-07-01"],
     fallbacks: "default",
     system: REPLY_SYSTEM,
@@ -86,13 +82,12 @@ export async function suggestReply(
   return reply === null
     ? { reply: null, source: "fallback", usage }
     : { reply, source: "ai", usage, model: message.model };
-}
+};
 
-export function replyPrompt(input: SuggestReplyInput, maxInputTokens: number): string {
+export function replyPrompt(input: SuggestReplyInput, maxInputTokens: number) {
   const total = input.messages.length;
   const parts: string[] = [];
   let budget = maxInputTokens;
-  // Newest first until the budget runs out; the newest message is always included.
   for (let i = total - 1; i >= 0; i--) {
     const message = input.messages[i];
     if (message === undefined) continue;
@@ -121,22 +116,18 @@ export function replyPrompt(input: SuggestReplyInput, maxInputTokens: number): s
   ].join("\n\n");
 }
 
-function oneLine(text: string): string {
+function oneLine(text: string) {
   return escapeUntrusted(text).replace(/\s+/g, " ").trim().slice(0, 300);
 }
 
-function escapeCanned(text: string): string {
+function escapeCanned(text: string) {
   return escapeUntrusted(text).replace(
     new RegExp(`<\\s*/?\\s*${CANNED_TAG}`, "gi"),
     "[removed tag]",
   );
 }
 
-/**
- * Drops tags until none are left (a removed tag can join `<scr` and `ipt>` into a new one), then
- * any stray angle bracket.
- */
-function withoutTags(text: string): string {
+function withoutTags(text: string) {
   let current = text;
   for (;;) {
     const next = current.replace(/<[^<>]*>/g, "");
@@ -149,7 +140,7 @@ function withoutTags(text: string): string {
  * Model output goes into a text box, never into HTML. Keeps paragraphs, drops tags, control and
  * bidi characters and markdown emphasis, and caps the length. Null if nothing is left.
  */
-export function toReplyText(text: string): string | null {
+export function toReplyText(text: string) {
   const plain = withoutTags(text.replace(/\r\n?/g, "\n"))
     // oxlint-disable-next-line no-control-regex
     .replace(/[\u0000-\u0009\u000B-\u001F\u007F-\u009F​-‏‪-‮⁦-⁩]/g, "")

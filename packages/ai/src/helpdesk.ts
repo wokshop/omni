@@ -1,7 +1,3 @@
-// Helpdesk triage: what a customer's message on a shared inbox adds to the bucket. Jev supplies the
-// judgments (`PRIORITY_QUESTIONS`, one `tagQuestion` per tag); this file decides the priority and
-// which tags fit. Claude answers the same two things directly in its structured output.
-
 import { read } from "./decide.ts";
 import {
   MAX_SUGGESTED_TAGS,
@@ -40,9 +36,10 @@ export const PRIORITY_TABLE: ReadonlyArray<{
   { when: () => true, priority: "normal" },
 ];
 
-export function decidePriority(judgments: PriorityJudgments, bucket: Bucket): Priority {
+export function decidePriority(judgments: PriorityJudgments, bucket: Bucket) {
   const yes = (j: PriorityJudgment) => read(judgments[j]) === "yes";
-  return PRIORITY_TABLE.find((row) => row.when(yes, bucket))?.priority ?? "normal";
+  return (PRIORITY_TABLE.find((row) => row.when(yes, bucket))?.priority ??
+    "normal") satisfies Priority;
 }
 
 /** The tags Jev is asked about: the inbox's first `MAX_TAG_QUESTIONS`, keyed `tag_<index>`. */
@@ -56,13 +53,13 @@ export function tagQuestions(tags: readonly HelpdeskTag[]) {
 }
 
 /** Tags whose Noul reads yes, most likely first, at most `MAX_SUGGESTED_TAGS`. */
-export function pickTags(asked: readonly HelpdeskTag[], nouls: readonly number[]): string[] {
+export function pickTags(asked: readonly HelpdeskTag[], nouls: readonly number[]) {
   return asked
     .map((tag, i) => ({ id: tag.id, p: nouls[i] ?? 0 }))
     .filter((t) => t.p >= NOUL_YES)
     .sort((a, b) => b.p - a.p)
     .slice(0, MAX_SUGGESTED_TAGS)
-    .map((t) => t.id);
+    .map((t) => t.id) satisfies string[];
 }
 
 /** The teammates Jev is asked about: the first `MAX_TEAMMATE_QUESTIONS`, keyed `teammate_<index>`. */
@@ -84,7 +81,7 @@ export function pickAssignee(
   asked: readonly HelpdeskTeammate[],
   nouls: readonly number[],
   bucket: Bucket,
-): string | null {
+) {
   if (bucket !== "needs_reply") return null;
   let best: string | null = null;
   let bestP = NOUL_YES;

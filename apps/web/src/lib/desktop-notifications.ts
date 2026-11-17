@@ -1,9 +1,3 @@
-// Desktop notifications (S2): new mail and your notifications (assigned, mentioned, a note on a
-// conversation you're in, a customer replied, SLA at risk or breached, a teammate joined) as
-// system notifications, from every workspace you're in (`workspace-watch.ts`).
-// Which kinds reach you at all is decided by the server (`member_preferences`); whether this
-// browser shows them is a per-device choice, kept in localStorage beside the browser's own
-// permission. Nothing here is sent to the server.
 import { useSyncExternalStore } from "react";
 import { currentWorkspaceId } from "./current-workspace.ts";
 import { desktop } from "./desktop.ts";
@@ -30,37 +24,33 @@ function readEnabled() {
   }
 }
 
-function currentState(): DesktopNotificationState {
+const currentState: () => DesktopNotificationState = () => {
   if (typeof Notification === "undefined") return "unsupported";
   if (Notification.permission === "denied") return "blocked";
   return Notification.permission === "granted" && readEnabled() ? "on" : "off";
-}
+};
 
-export function useDesktopNotificationState(): DesktopNotificationState {
+export function useDesktopNotificationState() {
   return useSyncExternalStore((notify) => {
     listeners.add(notify);
     return () => listeners.delete(notify);
-  }, currentState);
+  }, currentState) satisfies DesktopNotificationState;
 }
 
 /** Turns them on (asking the browser first) or off for this device. Resolves the new state. */
-export async function setDesktopNotifications(on: boolean): Promise<DesktopNotificationState> {
+export const setDesktopNotifications: (on: boolean) => Promise<DesktopNotificationState> = async (
+  on,
+) => {
   if (typeof Notification === "undefined") return "unsupported";
   if (on && Notification.permission === "default") await Notification.requestPermission();
   try {
     if (on && Notification.permission === "granted") localStorage.setItem(STORAGE_KEY, "on");
     else localStorage.removeItem(STORAGE_KEY);
-  } catch {
-    // Storage blocked: the switch reads off again, which is the truth.
-  }
+  } catch {}
   emit();
   return currentState();
-}
+};
 
-/**
- * Whether Omni is out of sight. A tab is when another tab or app covers it. The desktop app's
- * window can stay visible behind other apps, so there it is whenever another app has the focus.
- */
 const inBackground = () =>
   desktop.isDesktop ? !document.hasFocus() : document.visibilityState !== "visible";
 
@@ -71,7 +61,6 @@ const inBackground = () =>
 export const shouldShow = (orgId: string) =>
   currentState() === "on" && (inBackground() || orgId !== currentWorkspaceId());
 
-/** Threads notified about lately: new mail and a "customer replied" about it are one notification. */
 const recentThreads = new Map<string, number>();
 const SAME_NEWS_MS = 30_000;
 
@@ -113,7 +102,6 @@ export function createNotifier(orgId: string, open: (notice: Notice) => void) {
     seen = new Set([...(seen ?? []), ...notices.map((n) => n.id)]);
     if (!shouldShow(orgId)) return;
     for (const notice of fresh) {
-      // Only "customer replied" says the same as the mail arriving; the rest are news of their own.
       if (notice.kind === "customer_reply" && !claimThread(notice.threadId)) continue;
       showNotification(
         {

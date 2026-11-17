@@ -1,6 +1,3 @@
-// Where a mailbox lives (ADR 0024 decision 2): its address decides, not the workspace that happens
-// to be open. An address on a company's locked domain belongs to that company; any other address
-// belongs to the connecting person's Personal space.
 import { and, eq, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
 import { ensurePersonalSpace } from "../personal-space.ts";
@@ -32,10 +29,10 @@ export type Placement =
  * The workspace and member `address` goes to when `userId` connects it. With `scopeOrgId` (a
  * session opened with a company's address), only that company may receive it.
  */
-export async function placeForAddress(
+export const placeForAddress: (
   db: Db,
   input: { userId: string; address: string; scopeOrgId?: string | null },
-): Promise<Placement> {
+) => Promise<Placement> = async (db, input) => {
   const company = await companyForAddress(db, input.address);
   const orgId = company ?? (await ensurePersonalSpace(db, input.userId));
   if (input.scopeOrgId && orgId !== input.scopeOrgId) {
@@ -47,7 +44,7 @@ export async function placeForAddress(
     .where(and(eq(members.organizationId, orgId), eq(members.userId, input.userId)));
   if (!member) return { ok: false, reason: "not_a_member", orgId };
   return { ok: true, orgId, memberId: member.id, kind: company ? "company" : "personal" };
-}
+};
 
 /** A mailbox in someone's Personal space whose address a company they belong to has since locked. */
 export interface MisplacedMailbox {
@@ -68,10 +65,7 @@ export interface MisplacedMailbox {
  * - A company's Gmail account on an address no company has locked: its owner's Personal space.
  *   An owner who has no Personal space yet gets one at their next sign-in, and it moves then.
  */
-export async function listMisplacedMailboxes(db: Db): Promise<MisplacedMailbox[]> {
-  // The closest company lock on each Personal-space mailbox's domain first, then the owner's
-  // membership in that company: a member of a parent's company must not take a subdomain that
-  // another company locked.
+export async function listMisplacedMailboxes(db: Db) {
   const rows = (await db.execute(sql`
     with closest as (
       select distinct on (m.id) m.id as mailbox_id, d.org_id
@@ -118,7 +112,7 @@ export async function listMisplacedMailboxes(db: Db): Promise<MisplacedMailbox[]
     credentials_enc: string;
     target_org_id: string;
     target_member_id: string;
-  }[]; // postgres-js: the rows themselves
+  }[];
   return rows.map((row) => ({
     id: row.id,
     orgId: row.org_id,
@@ -127,14 +121,14 @@ export async function listMisplacedMailboxes(db: Db): Promise<MisplacedMailbox[]
     credentialsEnc: row.credentials_enc,
     targetOrgId: row.target_org_id,
     targetMemberId: row.target_member_id,
-  }));
+  })) satisfies MisplacedMailbox[];
 }
 
 /**
  * Whether `mailboxId` holds work only Postgres has: a draft (drafts are not mirrored to the
  * provider) or an outbox action not finished yet. Moving it would delete them.
  */
-export async function hasUnsyncedWork(db: Db, mailboxId: string): Promise<boolean> {
+export async function hasUnsyncedWork(db: Db, mailboxId: string) {
   const [row] = (await db.execute(sql`
     select (
       exists (select 1 from ${drafts} d where d.mailbox_id = ${mailboxId})
@@ -152,7 +146,7 @@ export async function hasUnsyncedWork(db: Db, mailboxId: string): Promise<boolea
  * is imported, and a failed import keeps it. Only a completed import stores the server's UIDNEXT,
  * which is at least 1 even for an empty folder.
  */
-export async function firstSyncDone(db: Db, mailboxId: string): Promise<boolean> {
+export async function firstSyncDone(db: Db, mailboxId: string) {
   const [row] = (await db.execute(sql`
     select exists (select 1 from ${mailboxFolders} f where f.mailbox_id = ${mailboxId})
       and not exists (
@@ -172,7 +166,7 @@ export async function firstSyncDone(db: Db, mailboxId: string): Promise<boolean>
 export async function carryThreadState(
   db: Db,
   input: { fromMailboxId: string; toMailboxId: string; toOrgId: string; toMemberId: string },
-): Promise<number> {
+) {
   const rows = (await db.execute(sql`
     insert into ${threadState} (org_id, thread_id, member_id, read, snoozed_until, done_through)
     select distinct on (nt.id)

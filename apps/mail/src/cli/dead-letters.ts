@@ -1,11 +1,3 @@
-// Lists work that will not run again, newest first: AI queue jobs that reached the dead-letter
-// queue, and outbox actions that exhausted their retries. Each with its error and the request ID
-// that started it, to search the Worker's and this service's logs for.
-//
-//   pnpm --filter @omni/mail dead-letters [--org <org id>] [--since 24h] [--limit 50] [--json]
-//
-// Operator tool: reads every org through DATABASE_URL. Prints ids, errors and request IDs only,
-// never payloads (an outbox payload is the message itself).
 import { existsSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { createDb, listDeadLetters } from "@omni/db";
@@ -18,13 +10,13 @@ function fail(message: string): never {
   process.exit(1);
 }
 
-function since(value: string | undefined): Date | undefined {
+const since: (value: string | undefined) => Date | undefined = (value) => {
   if (value === undefined) return undefined;
   const match = /^(\d+)([mhd])$/.exec(value);
   if (!match) fail(`bad --since "${value}"`);
   const unit = { m: 60_000, h: 3_600_000, d: 86_400_000 }[match[2] as "m" | "h" | "d"];
   return new Date(Date.now() - Number(match[1]) * unit);
-}
+};
 
 if (existsSync(".env")) process.loadEnvFile(".env");
 

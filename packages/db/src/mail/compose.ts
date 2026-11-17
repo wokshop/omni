@@ -1,6 +1,3 @@
-// Member-scoped reads and writes for writing mail (ADR 0021): staged uploads, the attachments a
-// send may carry, the agent's sending identity, and signatures. Like `member-mail.ts`, every
-// query checks the member's grant on the row's mailbox in the row's org (`grantFor`).
 import type { SendAttachment } from "@omni/contracts";
 import { and, eq, exists, gt, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { uuidv7 } from "uuidv7";
@@ -113,23 +110,11 @@ export async function deleteUnsentUpload(db: Db, memberId: string, uploadId: str
   return row?.r2Key ?? null;
 }
 
-/** The upload ids among a send's attachments. */
 function uploadIdsOf(requested: SendAttachment[]) {
   return requested.flatMap((a) => (a.kind === "upload" ? [a.uploadId] : []));
 }
 
-/**
- * The files of `requested` that a send from `mailboxId` may not carry: uploads that are not this
- * mailbox's or expired unsent, and stored attachments of another mailbox's messages. Empty means
- * every one is fine. An upload a send already took stays valid, so a retried request (same
- * idempotency key) passes again. Inside a transaction the uploads it accepts stay locked until
- * commit, so a concurrent delete or expiry cleanup waits and then finds them used.
- */
-async function invalidSendAttachments(
-  db: Db,
-  mailboxId: string,
-  requested: SendAttachment[],
-): Promise<SendAttachment[]> {
+async function invalidSendAttachments(db: Db, mailboxId: string, requested: SendAttachment[]) {
   const uploadIds = uploadIdsOf(requested);
   const attachmentIds = requested.flatMap((a) => (a.kind === "attachment" ? [a.attachmentId] : []));
   const okUploads = uploadIds.length
@@ -153,7 +138,9 @@ async function invalidSendAttachments(
         .where(and(inArray(attachments.id, attachmentIds), eq(messages.mailboxId, mailboxId)))
     : [];
   const ok = new Set([...okUploads, ...okAttachments].map((row) => row.id));
-  return requested.filter((a) => !ok.has(a.kind === "upload" ? a.uploadId : a.attachmentId));
+  return requested.filter(
+    (a) => !ok.has(a.kind === "upload" ? a.uploadId : a.attachmentId),
+  ) satisfies SendAttachment[];
 }
 
 /**
@@ -172,11 +159,13 @@ export async function enqueueSendWithAttachments(
   input: NewMailAction & { kind: "send" },
   requested: SendAttachment[],
   options: { delaySeconds?: number; draftId?: string } = {},
-): Promise<
-  { invalid: SendAttachment[] } | { draftGone: true } | { action: typeof mailActions.$inferSelect }
-> {
+) {
   const { delaySeconds = 0, draftId } = options;
-  return db.transaction(async (tx) => {
+  return db.transaction<
+    | { invalid: SendAttachment[] }
+    | { draftGone: true }
+    | { action: typeof mailActions.$inferSelect }
+  >(async (tx) => {
     const [earlier] = await tx
       .select()
       .from(mailActions)
@@ -185,7 +174,6 @@ export async function enqueueSendWithAttachments(
     const invalid = await invalidSendAttachments(tx, input.mailboxId, requested);
     if (invalid.length) return { invalid };
     if (draftId) {
-      // Waits on a concurrent send of the same draft, then finds it deleted.
       const [taken] = await tx
         .delete(drafts)
         .where(and(eq(drafts.id, draftId), eq(drafts.mailboxId, input.mailboxId)))
@@ -197,7 +185,6 @@ export async function enqueueSendWithAttachments(
       .values({ ...input, runAfter: sql`now() + make_interval(secs => ${delaySeconds})` })
       .onConflictDoNothing({ target: mailActions.idempotencyKey })
       .returning();
-    // A retry of the same request racing this one queued it first: answer with that row.
     if (!created) {
       const [existing] = await tx
         .select()
