@@ -29,8 +29,8 @@ import {
 } from "../lib/storage-uploads.ts";
 import {
   addCommentMutation,
+  changeCommentMutation,
   deleteCommentMutation,
-  resolveCommentMutation,
   storageCommentsQuery,
 } from "../lib/storage-comments.ts";
 import { restoreVersionMutation, storageVersionsQuery } from "../lib/storage-versions.ts";
@@ -113,6 +113,26 @@ export function useRestoreVersion() {
   return useMutation(restoreVersionMutation(useQueryClient()));
 }
 
+/** A file's comments (a member, an Editor or a Commenter only). */
+export function useStorageComments(nodeId: string, shareId?: string) {
+  return useQuery(storageCommentsQuery(nodeId, shareId));
+}
+
+/** `mutate({ id, shareId?, body })` starts a thread, or replies with `parentId`. */
+export function useAddComment() {
+  return useMutation(addCommentMutation(useQueryClient()));
+}
+
+/** `mutate({ id, commentId, shareId?, change })` edits (`body`) or resolves (`resolved`). */
+export function useChangeComment() {
+  return useMutation(changeCommentMutation(useQueryClient()));
+}
+
+/** `mutate({ id, commentId, shareId? })` deletes one's own comment. */
+export function useDeleteComment() {
+  return useMutation(deleteCommentMutation(useQueryClient()));
+}
+
 /** Bytes stored, the limit and the allowance, and whether uploads are blocked. */
 export function useStorageUsage() {
   return useQuery(storageUsageQuery());
@@ -160,19 +180,4 @@ export function useStorageLink(
   });
   const nodes = useMemo(() => query.data?.pages.flatMap((page) => page.nodes) ?? [], [query.data]);
   return { ...query, nodes, item: query.data?.pages[0]?.item };
-}
-
-/** A file's comments, oldest first (a member, an Editor or a Commenter only). */
-export function useStorageComments(nodeId: string, shareId?: string) {
-  return useQuery(storageCommentsQuery(nodeId, shareId));
-}
-
-/** Add a thread or reply, resolve a thread, delete a comment of one's own. */
-export function useCommentActions() {
-  const client = useQueryClient();
-  return {
-    add: useMutation(addCommentMutation(client)),
-    resolve: useMutation(resolveCommentMutation(client)),
-    remove: useMutation(deleteCommentMutation(client)),
-  };
 }

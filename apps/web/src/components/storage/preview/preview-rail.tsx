@@ -8,7 +8,7 @@ import {
   IconChevronLeft,
   IconChevronRight,
   IconClock3,
-  IconComment,
+  IconCommentPlain,
   IconCommentArea,
   IconRestore,
 } from "@/components/icons/central";
@@ -60,7 +60,7 @@ export function PreviewRail(props: {
           <PopoverTrigger isOpen={comment.open} onOpenChange={comment.onOpenChange}>
             {/* The button itself, so the popover finds its trigger to sit over. */}
             <Button intent="ghost" size="sq-xs" aria-label="Comment" aria-pressed={comment.open}>
-              <IconComment />
+              <IconCommentPlain />
             </Button>
             <Popover placement="top" offset={10}>
               {comment.composer}

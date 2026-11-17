@@ -35,6 +35,7 @@ export { IconMailbox } from "central-icons-outlined/IconMailbox";
 export { IconPencil } from "central-icons-outlined/IconPencil";
 export { IconPlusMedium as IconPlus } from "central-icons-outlined/IconPlusMedium";
 export { IconPaperPlane as IconSend } from "central-icons-outlined/IconPaperPlane";
+export { IconSignature } from "central-icons-outlined/IconSignature";
 export { IconSettingsGear2 as IconSettings } from "central-icons-outlined/IconSettingsGear2";
 export { IconShield } from "central-icons-outlined/IconShield";
 export { IconPhone as IconSmartphone } from "central-icons-outlined/IconPhone";
@@ -64,6 +65,7 @@ export { IconBell } from "central-icons-outlined/IconBell";
 export { IconNoteText as IconNote } from "central-icons-outlined/IconNoteText";
 export { IconArrowUp } from "central-icons-outlined/IconArrowUp";
 export { IconAt } from "central-icons-outlined/IconAt";
+export { IconBubbleText as IconComment } from "central-icons-outlined/IconBubbleText";
 export { IconArrowShareLeft as IconReply } from "central-icons-outlined/IconArrowShareLeft";
 export { IconArrowUndoUp as IconReplyAll } from "central-icons-outlined/IconArrowUndoUp";
 export { IconArrowShareRight as IconForward } from "central-icons-outlined/IconArrowShareRight";
@@ -101,7 +103,7 @@ export { IconFolder1 as IconFolderFilled } from "central-icons-filled/IconFolder
 export { IconHandshake as IconHandshakeFilled } from "central-icons-filled/IconHandshake";
 export { IconArrowUpCircle as IconUpgrade } from "central-icons-outlined/IconArrowUpCircle";
 export { IconConnectors1 as IconConnections } from "central-icons-outlined/IconConnectors1";
-export { IconChatBubbleSimple as IconComment } from "central-icons-outlined/IconChatBubbleSimple";
+export { IconChatBubbleSimple as IconCommentPlain } from "central-icons-outlined/IconChatBubbleSimple";
 export { IconFormSquare as IconCommentArea } from "central-icons-outlined/IconFormSquare";
 // Filled: the current choice's mark in a menu, in the brand colour.
 export { IconCircleCheck as IconCircleCheckFilled } from "central-icons-filled/IconCircleCheck";

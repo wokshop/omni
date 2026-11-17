@@ -9,8 +9,7 @@ import { IconSend, IconX } from "@/components/icons/central";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { useCommentActions } from "@/hooks/use-storage.ts";
-import { storageErrorToast } from "../storage-errors.ts";
+import { useAddComment } from "@/hooks/use-storage.ts";
 import type { PdfBox } from "./pdf-marks.tsx";
 
 export function CommentComposer(props: {
@@ -21,7 +20,8 @@ export function CommentComposer(props: {
   onClearDraft: () => void;
   onSent: () => void;
 }) {
-  const { add } = useCommentActions();
+  // A failure shows the app's own toast.
+  const add = useAddComment();
   const [text, setText] = useState("");
   const { draft } = props;
 
@@ -39,7 +39,6 @@ export function CommentComposer(props: {
           setText("");
           props.onSent();
         },
-        onError: (error) => storageErrorToast(error, "Your comment was not sent"),
       },
     );
   };
