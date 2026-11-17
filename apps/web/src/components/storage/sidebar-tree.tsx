@@ -6,7 +6,7 @@
 // Every row takes a drop (`node-drag.tsx`): files and folders dragged from the page, or another
 // row, move into it, and files from the computer upload there. Held over a closed row, a drag
 // opens it. Clusters and their folders drag too; the groups are the spaces themselves and stay.
-import { useRef, type DragEvent, type ReactNode } from "react";
+import { useLayoutEffect, useRef, type DragEvent, type ReactNode } from "react";
 import { useDrag } from "react-aria-components/useDrag";
 import { useDrop } from "react-aria-components/useDrop";
 import { SidebarTreeBones, SidebarTreeRow } from "@/components/shell/sidebar-tree-row";
@@ -127,6 +127,8 @@ const DROP_TARGET = "data-drop-target:**:data-[slot=sidebar-item]:bg-primary/10"
 /**
  * A row as a drop target for its folder or space, and (given `node`) a drag source. The row's
  * own link would drag its address: the whole row drags instead, as the picture under the pointer.
+ * A pointer's drag lands on the row; a keyboard or screen reader drag moves focus between drop
+ * targets, so the row's link (focusable, a role) is the target React Aria registers for those.
  */
 function DragRow(props: {
   to: DropPlace;
@@ -136,9 +138,14 @@ function DragRow(props: {
 }) {
   const { to, node, expand } = props;
   const ref = useRef<HTMLDivElement>(null);
+  const link = useRef<HTMLElement>(null);
+  // Before `useDrop`'s own layout effect, which registers `link.current`.
+  useLayoutEffect(() => {
+    link.current = ref.current?.querySelector<HTMLElement>("[data-slot=sidebar-item]") ?? null;
+  });
   const into = useDropInto();
   const { dropProps, isDropTarget } = useDrop({
-    ref,
+    ref: link,
     getDropOperation: () => dropOperation(to),
     onDrop: (event) => void into(to, event.items),
     onDropActivate: () => expand && !expand.value && expand.toggle(),
@@ -151,10 +158,23 @@ function DragRow(props: {
     onDragStart: () => startDrag(dragged),
     onDragEnd: endDrag,
   });
+  const { "aria-describedby": described, ...rowDropProps } = dropProps;
+  // What a keyboard drag's target says it does, on the link that takes focus, beside what the
+  // link is already described by (its tooltip), which comes back when the drag ends.
+  useLayoutEffect(() => {
+    const element = link.current;
+    const own = element?.getAttribute("aria-describedby");
+    if (!element || !described) return;
+    element.setAttribute("aria-describedby", own ? `${own} ${described}` : described);
+    return () => {
+      if (own) element.setAttribute("aria-describedby", own);
+      else element.removeAttribute("aria-describedby");
+    };
+  }, [described]);
   return (
     <div
       ref={ref}
-      {...dropProps}
+      {...rowDropProps}
       {...dragProps}
       onDragStart={(event: DragEvent<HTMLDivElement>) => {
         dragProps.onDragStart?.(event);
