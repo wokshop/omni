@@ -20,6 +20,8 @@ import {
   type DragMoveEvent,
   type DragStartEvent,
   type DropAnimationFunction,
+  type Collision,
+  type DroppableContainer,
   type Over,
 } from "@dnd-kit/core";
 import { motion, useReducedMotion } from "motion/react";
@@ -40,8 +42,6 @@ import { storageErrorToast } from "./storage-errors.ts";
 
 /** Where the pointer took hold of the item, and the item's size then. */
 interface Grip {
-  x: number;
-  y: number;
   /** The pointer's offset into the item. */
   grab: { x: number; y: number };
   width: number;
@@ -64,25 +64,39 @@ export function DriveDragProvider({ children }: { children: ReactNode }) {
     setState(next);
   };
   const grip = useRef<Grip | null>(null);
+  // Where the pointer is now. dnd-kit's delta counts scrolling too, so it would put the pointer
+  // off by however far the page or sidebar scrolled under it.
+  const pointer = useRef({ x: 0, y: 0 });
+  const unfollow = useRef<(() => void) | null>(null);
   const [lift, setLift] = useState<{ grip: Grip; copy: HTMLElement } | null>(null);
   const [back, setBack] = useState(false);
   const ending = useRef<{ land: Landing | null; settle: () => void } | null>(null);
   const change = useChangeNode();
   const reduce = useReducedMotion() ?? false;
 
+  /** Keeps `pointer` where the pointer is, ahead of dnd-kit's own listener, until the drag ends. */
+  const track = (event: PointerEvent) => {
+    pointer.current = { x: event.clientX, y: event.clientY };
+  };
+  const follow = () => {
+    unfollow.current?.();
+    window.addEventListener("pointermove", track, { capture: true });
+    unfollow.current = () => window.removeEventListener("pointermove", track, { capture: true });
+  };
+
   const onDragStart = (event: DragStartEvent) => {
     const source = event.active.data.current as DragSource | undefined;
-    const pointer = event.activatorEvent as PointerEvent;
-    const element = (pointer.target as Element | null)?.closest<HTMLElement>("[data-drive-drag]");
+    const down = event.activatorEvent as PointerEvent;
+    const element = (down.target as Element | null)?.closest<HTMLElement>("[data-drive-drag]");
     if (!source || !element) return;
     const box = element.getBoundingClientRect();
     grip.current = {
-      x: pointer.clientX,
-      y: pointer.clientY,
-      grab: { x: pointer.clientX - box.left, y: pointer.clientY - box.top },
+      grab: { x: down.clientX - box.left, y: down.clientY - box.top },
       width: box.width,
       height: box.height,
     };
+    pointer.current = { x: down.clientX, y: down.clientY };
+    follow();
     setLift({ grip: grip.current, copy: liftedCopy(element, source.look) });
     update({ source, from: String(event.active.id), aim: null, phase: "origin" });
   };
@@ -91,10 +105,8 @@ export function DriveDragProvider({ children }: { children: ReactNode }) {
   // following that would close the gap again, and open it, without end.
   const onDragMove = (event: DragMoveEvent) => {
     const { source, aim } = live.current;
-    const at = grip.current;
-    if (!source || !at) return;
-    const pointer = { x: at.x + event.delta.x, y: at.y + event.delta.y };
-    const next = aimAt(event.over, pointer, source);
+    if (!source) return;
+    const next = aimAt(hitOf(event.collisions), pointer.current, source);
     if (next?.over === aim?.over && sameAim(next, aim)) return;
     update({ ...live.current, aim: next });
   };
@@ -124,6 +136,8 @@ export function DriveDragProvider({ children }: { children: ReactNode }) {
    */
   const end = (land: Landing | null) => {
     const { source } = live.current;
+    unfollow.current?.();
+    unfollow.current = null;
     let done = false;
     const settle = () => {
       if (done) return;
@@ -192,6 +206,15 @@ const foldersFirst: CollisionDetection = (args) => {
   );
   return folders.length ? folders : hits;
 };
+
+/** The drop target under the pointer now (a move's `over` is the one under it a move ago). */
+function hitOf(collisions: Collision[] | null) {
+  const container = collisions?.[0]?.data?.droppableContainer as DroppableContainer | undefined;
+  const rect = container?.rect.current;
+  return container && rect
+    ? { id: container.id, rect, data: container.data, disabled: container.disabled }
+    : null;
+}
 
 /** Where a drop at `pointer` over `over` would land, if `source` can move there. */
 function aimAt(over: Over | null, pointer: { x: number; y: number }, source: DragSource) {
