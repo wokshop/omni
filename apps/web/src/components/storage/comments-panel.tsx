@@ -9,6 +9,7 @@
 //
 // Geometry: rows 20px from the sides and 16px from their rules; text 12px past the squircle;
 // messages 20px apart.
+import { EmptyState } from "@/components/empty/empty-state";
 import { useLayoutEffect, useRef, useState, type Key, type ReactNode } from "react";
 import { Skeleton } from "skullet/react";
 import {
@@ -148,19 +149,31 @@ export function CommentsPanel(props: {
           sample={SAMPLE}
           label="Loading comments"
         >
-          {(state) => (
-            <ul>
-              {threadsOf(state.comments, view === "resolved").map((thread) => (
-                <CommentRow
-                  key={thread.root.id}
-                  door={door}
-                  thread={thread}
-                  replying={replying === thread.root.id}
-                  onReplying={(on) => setReplying(on ? thread.root.id : null)}
+          {(state) => {
+            const threads = threadsOf(state.comments, view === "resolved");
+            if (threads.length === 0) {
+              return (
+                <EmptyState
+                  figure="dish"
+                  title={view === "resolved" ? "No resolved comments" : "No comments"}
+                  className="h-full p-5 pb-16"
                 />
-              ))}
-            </ul>
-          )}
+              );
+            }
+            return (
+              <ul>
+                {threads.map((thread) => (
+                  <CommentRow
+                    key={thread.root.id}
+                    door={door}
+                    thread={thread}
+                    replying={replying === thread.root.id}
+                    onReplying={(on) => setReplying(on ? thread.root.id : null)}
+                  />
+                ))}
+              </ul>
+            );
+          }}
         </Skeleton>
       </div>
     </section>
