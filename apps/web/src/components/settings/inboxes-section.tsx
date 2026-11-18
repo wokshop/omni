@@ -1,7 +1,12 @@
 import { Google } from "@ridemountainpig/svgl-react";
 import { useState } from "react";
 import { Skeleton } from "skullet/react";
-import { IconInbox, IconTag, IconTrash } from "@/components/icons/central";
+import {
+  IconArrowRotateClockwise,
+  IconInbox,
+  IconTag,
+  IconTrash,
+} from "@/components/icons/central";
 import { Button } from "@/components/ui/button";
 import { appToast } from "@/components/ui/toast";
 import { useMailboxes } from "@/hooks/use-mail.ts";
@@ -167,6 +172,11 @@ export function InboxesSection() {
                             setLabelling({ mailboxId: row.mailboxId, label: label ?? "" })
                           }
                           onClear={() => row.mailboxId && saveLabel(row.mailboxId, null)}
+                          onReconnect={
+                            row.kind === "google" && row.status !== "error"
+                              ? () => connect.mutate(row.address)
+                              : undefined
+                          }
                         />
                       )}
                     </>
@@ -227,6 +237,7 @@ function LabelMenu(props: {
   label: string | null;
   onEdit: () => void;
   onClear: () => void;
+  onReconnect?: (() => void) | undefined;
 }) {
   return (
     <SettingsRowMenu
@@ -239,6 +250,9 @@ function LabelMenu(props: {
         },
         ...(props.label
           ? [{ icon: IconTrash, label: "Remove label", onAction: props.onClear }]
+          : []),
+        ...(props.onReconnect
+          ? [{ icon: IconArrowRotateClockwise, label: "Reconnect", onAction: props.onReconnect }]
           : []),
       ]}
     />

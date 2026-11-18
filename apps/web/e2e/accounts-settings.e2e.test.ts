@@ -99,6 +99,9 @@ test("sign-in addresses and inboxes: a Gmail address is an inbox switched off un
     })
     .toBe("Personal");
   await page.getByText("(Personal)").waitFor();
+  await page.getByRole("button", { name: `Inbox actions for ${connected}` }).click();
+  await page.getByRole("menuitem", { name: "Reconnect" }).waitFor();
+  await page.keyboard.press("Escape");
 
   await page.getByRole("button", { name: `Actions for ${email}` }).click();
   await page.getByRole("menuitem", { name: "Stop signing in with it" }).click();
