@@ -179,7 +179,10 @@ export function ComposerProvider({
       startEmail();
     },
     close,
-    sentEmail: close,
+    sentEmail: () => {
+      if (chat) setMode("hidden");
+      else close();
+    },
     showEmail: () => setMode("public"),
     handBack: (content) => {
       if (showingNow.current) return false;
