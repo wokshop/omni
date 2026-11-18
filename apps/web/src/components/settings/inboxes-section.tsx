@@ -2,6 +2,7 @@ import { Google } from "@ridemountainpig/svgl-react";
 import { useState } from "react";
 import { Skeleton } from "skullet/react";
 import { IconInbox } from "@/components/icons/central";
+import { Button } from "@/components/ui/button";
 import { appToast } from "@/components/ui/toast";
 import { useMailboxes } from "@/hooks/use-mail.ts";
 import { useOnboarding } from "@/hooks/use-onboarding.ts";
@@ -24,7 +25,7 @@ const GMAIL_DOMAINS = new Set(["gmail.com", "googlemail.com"]);
 const STATUS: Record<string, string> = {
   pending: "Starting to sync",
   active: "Syncing",
-  error: "Can't sign in. Turn it off and on again.",
+  error: "Can't sign in",
   disabled: "Paused",
 };
 
@@ -116,6 +117,18 @@ export function InboxesSection() {
                 description={row.mailboxId ? STATUS[row.status ?? ""] : undefined}
                 checked={row.mailboxId !== undefined}
                 disabled={row.kind === "hosted" || (!row.mailboxId && !googleReady)}
+                trailing={
+                  row.status === "error" && (
+                    <Button
+                      size="sm"
+                      intent="outline"
+                      isPending={connect.isPending && connect.variables === row.address}
+                      onPress={() => connect.mutate(row.address)}
+                    >
+                      Reconnect
+                    </Button>
+                  )
+                }
                 onCheckedChange={(on) => {
                   if (on) connect.mutate(row.address);
                   else if (row.mailboxId)
