@@ -9,17 +9,28 @@
 #   OMNI_IOS_BUILD_NUMBER     one higher than the last upload
 #   OMNI_IOS_VERSION          optional; the version people see (default 0.1.0)
 #   UPLOAD=0                  build and export the .ipa without uploading it
+#   ASC_KEY_PATH, ASC_KEY_ID, ASC_ISSUER_ID
+#                             optional App Store Connect API key: signs in with it instead of the
+#                             Xcode account, and lets Xcode sign in the cloud when this Mac has no
+#                             distribution certificate
 #
 # Xcode's automatic signing makes the distribution certificate and profile when the team has none
 # (`-allowProvisioningUpdates`).
 set -euo pipefail
 
 : "${EXPO_PUBLIC_OMNI_API_URL:?the Worker origin the app talks to}"
-: "${OMNI_IOS_BUNDLE_ID:?the app's bundle identifier}"
+: "${OMNI_IOS_BUNDLE_ID:?the app bundle identifier}"
 : "${OMNI_IOS_TEAM_ID:?the Apple team id}"
 : "${OMNI_IOS_BUILD_NUMBER:?a build number higher than the last upload}"
 export EXPO_PUBLIC_OMNI_API_URL OMNI_IOS_BUNDLE_ID OMNI_IOS_TEAM_ID OMNI_IOS_BUILD_NUMBER
 export LANG="${LANG:-en_US.UTF-8}"
+
+auth=()
+if [ -n "${ASC_KEY_PATH:-}" ]; then
+  : "${ASC_KEY_ID:?the API key id}" "${ASC_ISSUER_ID:?the API key issuer id}"
+  auth=(-authenticationKeyPath "$ASC_KEY_PATH" -authenticationKeyID "$ASC_KEY_ID"
+    -authenticationKeyIssuerID "$ASC_ISSUER_ID")
+fi
 
 app="$(cd "$(dirname "$0")/.." && pwd)"
 out="$app/ios/build/release"
@@ -33,7 +44,7 @@ git checkout -- package.json
 rm -rf "$out"
 xcodebuild -workspace ios/*.xcworkspace -scheme "$(basename ios/*.xcworkspace .xcworkspace)" \
   -configuration Release -destination "generic/platform=iOS" \
-  -archivePath "$out/app.xcarchive" -allowProvisioningUpdates \
+  -archivePath "$out/app.xcarchive" -allowProvisioningUpdates ${auth[@]+"${auth[@]}"} \
   DEVELOPMENT_TEAM="$OMNI_IOS_TEAM_ID" CODE_SIGN_STYLE=Automatic archive
 
 destination=upload
@@ -51,6 +62,6 @@ cat > "$out/export.plist" <<PLIST
 PLIST
 
 xcodebuild -exportArchive -archivePath "$out/app.xcarchive" \
-  -exportOptionsPlist "$out/export.plist" -exportPath "$out" -allowProvisioningUpdates
+  -exportOptionsPlist "$out/export.plist" -exportPath "$out" -allowProvisioningUpdates ${auth[@]+"${auth[@]}"}
 
 echo "release-testflight: build $OMNI_IOS_BUILD_NUMBER of $OMNI_IOS_BUNDLE_ID ($destination) done"
