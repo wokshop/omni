@@ -22,6 +22,7 @@ import {
   uploadFile,
   type Draft,
   type DraftContent,
+  type DraftList,
   type NewDraft,
   type SendAttachment,
   type Upload,
@@ -275,9 +276,9 @@ export function useDraft(
 
   const remember = useCallback(
     (saved: Draft) => {
-      client.setQueriesData<{ drafts: Draft[] }>({ queryKey: keys.draftLists() }, (old) =>
+      client.setQueriesData<DraftList>({ queryKey: keys.draftLists() }, (old) =>
         Array.isArray(old?.drafts)
-          ? { ...old, drafts: old.drafts.map((d) => (d.id === saved.id ? saved : d)) }
+          ? { ...old, drafts: old.drafts.map((d) => (d.id === saved.id ? { ...d, ...saved } : d)) }
           : old,
       );
       void client.invalidateQueries({ queryKey: keys.draftLists(), refetchType: "none" });
