@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Skeleton } from "skullet/react";
 import { IconMail, IconTrash } from "@/components/icons/central";
 import { appToast } from "@/components/ui/toast";
-import { useGoogleReturn } from "@/hooks/use-google-connection";
+import { useGoogleAccounts, useGoogleReturn } from "@/hooks/use-google-connection";
 import {
   useRemoveSignInEmail,
   useSetPrimarySignInEmail,
@@ -10,7 +10,7 @@ import {
 } from "@/hooks/use-sign-in-emails.ts";
 import { googleErrorText } from "@/lib/google-connection";
 import { AddEmailDialog } from "./add-email-dialog";
-import { InboxesSection } from "./inboxes-section";
+import { GoogleGlyph, InboxesSection, isGoogleAddress, useGoogleDomains } from "./inboxes-section";
 import { SettingsAddRow } from "./kit/settings-add-row";
 import { SettingsGroup, SettingsSection, SettingsSections } from "./kit/settings-layout";
 import { SettingsRow } from "./kit/settings-row";
@@ -48,6 +48,8 @@ function SignInSection() {
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState<string | null>(null);
   const list = emails.data?.emails;
+  const googleDomains = useGoogleDomains();
+  const google = useGoogleAccounts().data?.available !== false;
 
   const stop = async (address: string) => {
     const row = list?.find((e) => e.email === address);
@@ -69,7 +71,7 @@ function SignInSection() {
             {rows.map((row) => (
               <SettingsRow
                 key={row.email}
-                icon={IconMail}
+                icon={google && isGoogleAddress(row.email, googleDomains) ? GoogleGlyph : IconMail}
                 label={row.email}
                 control={
                   rows.length > 1 && (

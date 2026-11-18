@@ -40,6 +40,19 @@ export interface InboxRow {
 
 const domainOf = (address: string) => address.split("@")[1]?.toLowerCase() ?? "";
 
+/** Workspace domains whose mail stays at Google, so their addresses are Google accounts. */
+export function useGoogleDomains() {
+  const onboarding = useOnboarding();
+  return new Set(
+    onboarding.data?.domains
+      .filter((d) => d.provider === "gmail")
+      .map((d) => d.domain.toLowerCase()),
+  );
+}
+
+export const isGoogleAddress = (address: string, googleDomains: Set<string>) =>
+  GMAIL_DOMAINS.has(domainOf(address)) || googleDomains.has(domainOf(address));
+
 /**
  * Connected Google inboxes, then your sign-in addresses at Google (Gmail, or a workspace domain
  * whose mail stays at Google) as inboxes switched off, then inboxes Omni hosts for you here.
@@ -53,9 +66,8 @@ export function inboxRows(input: {
   const rows: InboxRow[] = input.google.map((g) => ({ ...g, kind: "google" }));
   const seen = new Set(rows.map((row) => row.address.toLowerCase()));
   for (const address of input.signIn) {
-    const domain = domainOf(address);
     if (seen.has(address.toLowerCase())) continue;
-    if (!GMAIL_DOMAINS.has(domain) && !input.googleDomains.has(domain)) continue;
+    if (!isGoogleAddress(address, input.googleDomains)) continue;
     seen.add(address.toLowerCase());
     rows.push({ address, kind: "google" });
   }
@@ -71,7 +83,7 @@ export function InboxesSection() {
   const google = useGoogleAccounts();
   const emails = useSignInEmails();
   const mailboxes = useMailboxes();
-  const onboarding = useOnboarding();
+  const googleDomains = useGoogleDomains();
   const connect = useConnectGoogle("settings");
   const disconnect = useDisconnectGoogle();
   const own = useOwnInboxCreation();
@@ -87,11 +99,7 @@ export function InboxesSection() {
           signIn: googleReady
             ? emails.data.emails.filter((e) => e.verified).map((e) => e.email)
             : [],
-          googleDomains: new Set(
-            onboarding.data?.domains
-              .filter((d) => d.provider === "gmail")
-              .map((d) => d.domain.toLowerCase()),
-          ),
+          googleDomains,
           hosted: mailboxes.data.filter(
             (m) => m.orgId === member.orgId && m.kind === "personal" && !connected.has(m.id),
           ),
@@ -168,6 +176,6 @@ export function InboxesSection() {
   );
 }
 
-function GoogleGlyph(props: { className?: string }) {
+export function GoogleGlyph(props: { className?: string }) {
   return <Google aria-hidden className={props.className} />;
 }
