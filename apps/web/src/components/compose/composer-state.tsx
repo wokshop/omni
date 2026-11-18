@@ -7,7 +7,9 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
+import { useQuery } from "@tanstack/react-query";
 import type { ComposerFile } from "@/hooks/use-compose.ts";
+import { draftsQuery } from "@/lib/compose.ts";
 import type { Reply } from "@/lib/reply.ts";
 
 export type ComposerMode = "public" | "hidden";
@@ -121,6 +123,27 @@ export function ComposerProvider({
     setEmail(true);
     setMode("public");
   }, [request, threadId, latestMessageId]);
+  const drafts = useQuery(draftsQuery({ threadId }));
+  const resumed = useRef(false);
+  useEffect(() => {
+    if (resumed.current || !drafts.data) return;
+    resumed.current = true;
+    const saved = drafts.data.find((d) => d.kind === "reply" || d.kind === "forward");
+    if (!saved || showingNow.current) return;
+    const messageId = saved.sourceMessageId ?? undefined;
+    if (saved.kind === "forward") {
+      if (!messageId) return;
+      setForwardId(messageId);
+    } else if (messageId) setReplyToId(messageId);
+    startEmail();
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- once, when the thread's drafts load
+  }, [drafts.data]);
+  const close = () => {
+    setForwardId(undefined);
+    setEmail(false);
+    if (chat) setMode("hidden");
+    setGeneration((n) => n + 1);
+  };
   const value: ComposerState = {
     chat,
     mode: chat ? mode : "public",
@@ -154,15 +177,8 @@ export function ComposerProvider({
       setForwardId(undefined);
       startEmail();
     },
-    close: () => {
-      setForwardId(undefined);
-      setEmail(false);
-      if (chat) setMode("hidden");
-      setGeneration((n) => n + 1);
-    },
-    sentEmail: () => {
-      if (chat) setMode("hidden");
-    },
+    close,
+    sentEmail: close,
     showEmail: () => setMode("public"),
     handBack: (content) => {
       if (showingNow.current) return false;

@@ -273,6 +273,18 @@ export function useDraft(
   const queue = useRef<Promise<unknown>>(Promise.resolve());
   const generation = useRef(0);
 
+  const remember = useCallback(
+    (saved: Draft) => {
+      client.setQueriesData<{ drafts: Draft[] }>({ queryKey: keys.draftLists() }, (old) =>
+        Array.isArray(old?.drafts)
+          ? { ...old, drafts: old.drafts.map((d) => (d.id === saved.id ? saved : d)) }
+          : old,
+      );
+      void client.invalidateQueries({ queryKey: keys.draftLists(), refetchType: "none" });
+    },
+    [client],
+  );
+
   const saveOnce = useCallback(async () => {
     const content = latest.current;
     if (!content) return state.current.id;
@@ -308,12 +320,14 @@ export function useDraft(
     }
     if ("conflict" in result) {
       state.current.version = result.conflict.version;
+      remember(result.conflict);
       onConflict.current?.(result.conflict);
     } else {
       state.current.version = result.draft.version;
+      remember(result.draft);
     }
     return state.current.id;
-  }, [client]);
+  }, [client, remember]);
 
   const flush = useCallback(() => {
     clearTimeout(timer.current);
@@ -372,7 +386,7 @@ export function useDraft(
 
   return {
     draft: existing,
-    isLoading: list.isLoading,
+    isLoading: list.isLoading || list.isRefetching,
     save,
     flush,
     forget,
