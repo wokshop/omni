@@ -107,7 +107,9 @@ export function ComposerProvider({
   const showing = email && (!chat || mode === "public");
   const showingNow = useRef(showing);
   showingNow.current = showing;
+  const resumed = useRef(false);
   const startEmail = () => {
+    resumed.current = true;
     setEmail(true);
     setMode("public");
   };
@@ -120,13 +122,12 @@ export function ComposerProvider({
     if (request.kind === "forward" && !messageId) return;
     setForwardId(request.kind === "forward" ? messageId : undefined);
     if (request.kind === "reply" && request.messageId) setReplyToId(request.messageId);
-    setEmail(true);
-    setMode("public");
+    startEmail();
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- startEmail only sets state
   }, [request, threadId, latestMessageId]);
   const drafts = useQuery(draftsQuery({ threadId }));
-  const resumed = useRef(false);
   useEffect(() => {
-    if (resumed.current || !drafts.data) return;
+    if (resumed.current || !drafts.data || drafts.isRefetching) return;
     resumed.current = true;
     const saved = drafts.data.find((d) => d.kind === "reply" || d.kind === "forward");
     if (!saved || showingNow.current) return;
@@ -137,7 +138,7 @@ export function ComposerProvider({
     } else if (messageId) setReplyToId(messageId);
     startEmail();
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- once, when the thread's drafts load
-  }, [drafts.data]);
+  }, [drafts.data, drafts.isRefetching]);
   const close = () => {
     setForwardId(undefined);
     setEmail(false);
