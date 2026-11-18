@@ -5,14 +5,13 @@ import type { Message } from "@/lib/types.ts";
 
 /**
  * Unsubscribe, as text on the sender's line of list mail. One-click and mailto lists are done by
- * the API; a list that only offers a page opens it in a new tab. Done, it reads Unsubscribed, grey,
- * and stays so on later reads (`unsubscribed` from the API) until the list sends again.
+ * the API; a list that only offers a page opens it in a new tab. Done, it reads Unsubscribed, grey.
  */
 export function Unsubscribe({ threadId, message }: { threadId: string; message: Message }) {
   const leave = useUnsubscribe();
   const option = message.unsubscribe;
   if (!option) return null;
-  const done = leave.isSuccess || option.unsubscribed;
+  const done = leave.isSuccess;
   const press = () => {
     if (option.url) window.open(option.url, "_blank", "noopener,noreferrer");
     else
