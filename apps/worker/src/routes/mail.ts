@@ -6,7 +6,6 @@ import {
   listMemberMailboxes,
   THREAD_VIEWS,
   threadActionTargets,
-  unsubscribedSenders,
   type MailActionRequest,
   type MemberQueries,
 } from "@omni/db";
@@ -161,15 +160,7 @@ async function triage(c: Context<AppEnv>, patch: TriagePatch) {
 
 type FullThread = NonNullable<Awaited<ReturnType<MemberQueries["getThread"]>>>;
 
-function leftLists(c: Context<AppEnv>, thread: FullThread) {
-  return unsubscribedSenders(
-    c.var.db,
-    thread.mailboxId,
-    thread.messages.map((m) => m.fromAddress),
-  );
-}
-
-function threadResponse(thread: FullThread, memberId: string, left: Map<string, Date>) {
+function threadResponse(thread: FullThread, memberId: string) {
   const self = thread.mailboxAddress.toLowerCase();
   const added = addedParticipants(thread.messages);
   return {
@@ -181,10 +172,10 @@ function threadResponse(thread: FullThread, memberId: string, left: Map<string, 
         attachments,
         listUnsubscribe,
         listUnsubscribeOneClick,
+        unsubscribed,
         ...message
       } = row;
       const fromTeam = message.fromAddress.toLowerCase() === self;
-      const leftAt = left.get(message.fromAddress.toLowerCase());
       const unsubscribe = fromTeam
         ? null
         : unsubscribeMethod(listUnsubscribe, listUnsubscribeOneClick);
@@ -193,7 +184,7 @@ function threadResponse(thread: FullThread, memberId: string, left: Map<string, 
         unsubscribe: unsubscribe && {
           kind: unsubscribe.kind,
           url: unsubscribe.kind === "link" ? unsubscribe.url : null,
-          unsubscribed: leftAt !== undefined && message.sentAt <= leftAt,
+          unsubscribed,
         },
         fromTeam,
         fromMe:
@@ -232,7 +223,7 @@ export const mail = new Hono<AppEnv>()
   .get("/threads/:id", async (c) => {
     const thread = await forMember(c.var.db, c.var.member.id).getThread(c.req.param("id"));
     if (!thread) notFound();
-    return c.json(threadResponse(thread, c.var.member.id, await leftLists(c, thread)));
+    return c.json(threadResponse(thread, c.var.member.id));
   })
 
   .get("/counts", zValidator("query", z.object({ scope: scopeParam })), async (c) => {

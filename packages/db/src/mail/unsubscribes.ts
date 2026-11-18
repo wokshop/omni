@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
 import { listUnsubscribes, type unsubscribeKind } from "../schema/index.ts";
 
@@ -30,17 +30,4 @@ export async function recordUnsubscribe(
         unsubscribedAt: sql`now()`,
       },
     });
-}
-
-/** When the mailbox last left each of `senders`' lists, by lowercased sender. */
-export async function unsubscribedSenders(db: Db, mailboxId: string, senders: readonly string[]) {
-  const wanted = [...new Set(senders.map((s) => s.toLowerCase()))];
-  if (wanted.length === 0) return new Map<string, Date>();
-  const rows = await db
-    .select({ sender: listUnsubscribes.sender, at: listUnsubscribes.unsubscribedAt })
-    .from(listUnsubscribes)
-    .where(
-      and(eq(listUnsubscribes.mailboxId, mailboxId), inArray(listUnsubscribes.sender, wanted)),
-    );
-  return new Map(rows.map((row) => [row.sender, row.at]));
 }
