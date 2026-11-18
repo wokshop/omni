@@ -330,13 +330,6 @@
       "when": 1794875080493,
       "tag": "0046_common_spencer_smythe",
       "breakpoints": true
-    },
-    {
-      "idx": 47,
-      "version": "7",
-      "when": 1795029577441,
-      "tag": "0047_peaceful_logan",
-      "breakpoints": true
     }
   ]
 }
