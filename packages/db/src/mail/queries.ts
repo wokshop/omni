@@ -596,6 +596,8 @@ function mailQueries(db: Db, isGrantee: (memberId: AnyColumn | SQL) => SQL) {
           provider: mailboxes.provider,
           status: mailboxes.status,
           role: mailboxAccess.role,
+          label: mailboxes.label,
+          picture: mailboxes.picture,
         })
         .from(mailboxes)
         .innerJoin(...grant)
