@@ -12,7 +12,9 @@
 #   ASC_KEY_PATH, ASC_KEY_ID, ASC_ISSUER_ID
 #                             optional App Store Connect API key: signs in with it instead of the
 #                             Xcode account, and lets Xcode sign in the cloud when this Mac has no
-#                             distribution certificate
+#                             distribution certificate. With it, the export signs manually with
+#                             this Mac's Apple Distribution certificate and the app's App Store
+#                             profile, made once through the API (app-store-profile.mjs)
 #
 # Xcode's automatic signing makes the distribution certificate and profile when the team has none
 # (`-allowProvisioningUpdates`).
@@ -47,6 +49,17 @@ xcodebuild -workspace ios/*.xcworkspace -scheme "$(basename ios/*.xcworkspace .x
   -archivePath "$out/app.xcarchive" -allowProvisioningUpdates ${auth[@]+"${auth[@]}"} \
   DEVELOPMENT_TEAM="$OMNI_IOS_TEAM_ID" CODE_SIGN_STYLE=Automatic archive
 
+signing="<key>signingStyle</key><string>automatic</string>"
+if [ -n "${ASC_KEY_PATH:-}" ]; then
+  serial="$(security find-certificate -c "Apple Distribution" -p | openssl x509 -noout -serial | cut -d= -f2)"
+  profiles="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
+  mkdir -p "$profiles"
+  profile="$(CERT_SERIAL="$serial" PROFILES_DIR="$profiles" node "$app/scripts/app-store-profile.mjs")"
+  signing="<key>signingStyle</key><string>manual</string>
+  <key>signingCertificate</key><string>Apple Distribution</string>
+  <key>provisioningProfiles</key><dict><key>$OMNI_IOS_BUNDLE_ID</key><string>$profile</string></dict>"
+fi
+
 destination=upload
 [ "${UPLOAD:-1}" = 0 ] && destination=export
 cat > "$out/export.plist" <<PLIST
@@ -56,12 +69,12 @@ cat > "$out/export.plist" <<PLIST
   <key>method</key><string>app-store-connect</string>
   <key>destination</key><string>$destination</string>
   <key>teamID</key><string>$OMNI_IOS_TEAM_ID</string>
-  <key>signingStyle</key><string>automatic</string>
+  $signing
   <key>manageAppVersionAndBuildNumber</key><false/>
 </dict></plist>
 PLIST
 
 xcodebuild -exportArchive -archivePath "$out/app.xcarchive" \
-  -exportOptionsPlist "$out/export.plist" -exportPath "$out" -allowProvisioningUpdates ${auth[@]+"${auth[@]}"}
+  -exportOptionsPlist "$out/export.plist" -exportPath "$out" ${auth[@]+"${auth[@]}"}
 
 echo "release-testflight: build $OMNI_IOS_BUILD_NUMBER of $OMNI_IOS_BUNDLE_ID ($destination) done"
