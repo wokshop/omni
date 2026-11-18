@@ -6,6 +6,7 @@ import {
   listMemberMailboxes,
   THREAD_VIEWS,
   threadActionTargets,
+  unsubscribedSenders,
   type MailActionRequest,
   type MemberQueries,
 } from "@omni/db";
@@ -158,10 +159,17 @@ async function triage(c: Context<AppEnv>, patch: TriagePatch) {
   return c.json({ state: applied.state });
 }
 
-function threadResponse(
-  thread: NonNullable<Awaited<ReturnType<MemberQueries["getThread"]>>>,
-  memberId: string,
-) {
+type FullThread = NonNullable<Awaited<ReturnType<MemberQueries["getThread"]>>>;
+
+function leftLists(c: Context<AppEnv>, thread: FullThread) {
+  return unsubscribedSenders(
+    c.var.db,
+    thread.mailboxId,
+    thread.messages.map((m) => m.fromAddress),
+  );
+}
+
+function threadResponse(thread: FullThread, memberId: string, left: Map<string, Date>) {
   const self = thread.mailboxAddress.toLowerCase();
   const added = addedParticipants(thread.messages);
   return {
@@ -176,6 +184,7 @@ function threadResponse(
         ...message
       } = row;
       const fromTeam = message.fromAddress.toLowerCase() === self;
+      const leftAt = left.get(message.fromAddress.toLowerCase());
       const unsubscribe = fromTeam
         ? null
         : unsubscribeMethod(listUnsubscribe, listUnsubscribeOneClick);
@@ -184,6 +193,7 @@ function threadResponse(
         unsubscribe: unsubscribe && {
           kind: unsubscribe.kind,
           url: unsubscribe.kind === "link" ? unsubscribe.url : null,
+          unsubscribed: leftAt !== undefined && message.sentAt <= leftAt,
         },
         fromTeam,
         fromMe:
@@ -222,7 +232,7 @@ export const mail = new Hono<AppEnv>()
   .get("/threads/:id", async (c) => {
     const thread = await forMember(c.var.db, c.var.member.id).getThread(c.req.param("id"));
     if (!thread) notFound();
-    return c.json(threadResponse(thread, c.var.member.id));
+    return c.json(threadResponse(thread, c.var.member.id, await leftLists(c, thread)));
   })
 
   .get("/counts", zValidator("query", z.object({ scope: scopeParam })), async (c) => {
