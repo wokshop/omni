@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import type { Db } from "../client.ts";
-import { mailboxes } from "../schema/index.ts";
+import { mailboxAccess, mailboxes, members } from "../schema/index.ts";
 import { ownedPersonalMailbox } from "./forwarding.ts";
 
 /**
@@ -31,11 +31,22 @@ export async function setInboxNames(
   return rows.length > 0;
 }
 
-/** The From name set on a mailbox, or null. */
-export async function mailboxSenderName(db: Db, mailboxId: string) {
+/**
+ * The From name set on a mailbox the member is on, or null: also null when they have no access
+ * to it, or it sits in another org than their membership.
+ */
+export async function mailboxSenderName(db: Db, memberId: string, mailboxId: string) {
   const [row] = await db
     .select({ senderName: mailboxes.senderName })
     .from(mailboxes)
+    .innerJoin(
+      mailboxAccess,
+      and(eq(mailboxAccess.mailboxId, mailboxes.id), eq(mailboxAccess.memberId, memberId)),
+    )
+    .innerJoin(
+      members,
+      and(eq(members.id, mailboxAccess.memberId), eq(members.organizationId, mailboxes.orgId)),
+    )
     .where(eq(mailboxes.id, mailboxId));
   return row?.senderName ?? null;
 }

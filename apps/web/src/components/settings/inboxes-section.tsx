@@ -185,6 +185,10 @@ export function InboxesSection() {
                             setLabelling({ mailboxId: row.mailboxId, label: label ?? "" })
                           }
                           onClear={() => row.mailboxId && saveLabel(row.mailboxId, null)}
+                          senderName={yours.get(row.mailboxId)?.senderName ?? null}
+                          onClearSenderName={() =>
+                            row.mailboxId && saveSenderName(row.mailboxId, null)
+                          }
                           onSenderName={() =>
                             row.mailboxId &&
                             setNaming({
@@ -268,7 +272,9 @@ function LabelMenu(props: {
   label: string | null;
   onEdit: () => void;
   onClear: () => void;
+  senderName: string | null;
   onSenderName: () => void;
+  onClearSenderName: () => void;
   onReconnect?: (() => void) | undefined;
 }) {
   return (
@@ -284,6 +290,9 @@ function LabelMenu(props: {
           ? [{ icon: IconTrash, label: "Remove label", onAction: props.onClear }]
           : []),
         { icon: IconSignature, label: "Sender name", onAction: props.onSenderName },
+        ...(props.senderName
+          ? [{ icon: IconTrash, label: "Remove sender name", onAction: props.onClearSenderName }]
+          : []),
         ...(props.onReconnect
           ? [{ icon: IconArrowRotateClockwise, label: "Reconnect", onAction: props.onReconnect }]
           : []),

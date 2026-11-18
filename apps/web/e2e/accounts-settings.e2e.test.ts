@@ -113,6 +113,17 @@ test("sign-in addresses and inboxes: a Gmail address is an inbox switched off un
       return row?.senderName;
     })
     .toBe("Rodrigo @ Chow Mein");
+  await page.getByRole("button", { name: `Inbox actions for ${connected}` }).click();
+  await page.getByRole("menuitem", { name: "Remove sender name" }).click();
+  await expect
+    .poll(async () => {
+      const [row] = await db
+        .select({ senderName: schema.mailboxes.senderName })
+        .from(schema.mailboxes)
+        .where(eq(schema.mailboxes.id, box.id));
+      return row?.senderName;
+    })
+    .toBeNull();
 
   await page.goto(new URL("/compose", origin).toString());
   await page.getByRole("button", { name: /^From / }).click();

@@ -120,7 +120,7 @@ export async function fromName(
   mailbox: { id: string; kind: "personal" | "shared" },
 ) {
   if (mailbox.kind === "personal") {
-    const set = await mailboxSenderName(c.var.db, mailbox.id);
+    const set = await mailboxSenderName(c.var.db, c.var.member.id, mailbox.id);
     if (set) return set;
   }
   const identity = await senderIdentity(c.var.db, c.var.member.id);

@@ -1,4 +1,4 @@
-import { saveMailbox, schema } from "@omni/db";
+import { mailboxSenderName, saveMailbox, schema } from "@omni/db";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, test } from "vitest";
@@ -234,6 +234,9 @@ test("mail from a personal inbox carries the sender name its owner set, else the
   expect(await sentFromName()).toBe("Rodrigo @ Chow Mein");
   expect((await name(diCookie, "Di")).status).toBe(404);
   expect(await sentFromName()).toBe("Rodrigo @ Chow Mein");
+  const elsewhere = await createOrg(db, "sender-elsewhere");
+  const outsider = await createMember(db, elsewhere.id, "ex@sender-elsewhere.test");
+  expect(await mailboxSenderName(db, outsider.id, work.id)).toBeNull();
 
   const connectGoogle = (id: string, address: string) =>
     saveMailbox(db, {
