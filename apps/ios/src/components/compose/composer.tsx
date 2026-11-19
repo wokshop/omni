@@ -372,8 +372,8 @@ export function NewComposer(props: { mailboxes: Mailbox[]; mailboxId?: string })
   const [fromId, setFromId] = useState(
     mailboxes.find((m) => m.id === props.mailboxId)?.id ?? mailboxes[0]?.id ?? "",
   );
-  const { to, cc, bcc } = recipients.final;
-  const dirty = !!(text.trim() || subject.trim() || to.length || cc.length || bcc.length);
+  const { to } = recipients.final;
+  const dirty = !!(text.trim() || subject.trim()) || recipients.changed;
   const canSend = !!fromId && to.length > 0 && !recipients.unsendable && !send.isPending;
   const submit = () => {
     const mail = { mailboxId: fromId, subject: subject.trim(), text, ...recipients.final };
