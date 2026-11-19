@@ -80,7 +80,9 @@ export function BottomBar() {
         }}
       />
       <BottomSheet
-        {...adding.props}
+        isOpen={adding.isOpen}
+        onClose={adding.close}
+        onClosed={adding.onClosed}
         title={`Add to ${DRIVE_PAGES[shared ? "shared" : "my"].label}`}
       >
         <MenuRow

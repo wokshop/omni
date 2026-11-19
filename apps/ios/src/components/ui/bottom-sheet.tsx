@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Animated,
   Easing,
@@ -20,6 +20,32 @@ const CLOSE_MS = 240;
 const SHEET_EASE = Easing.bezier(0.32, 0.72, 0, 1);
 const DISMISS_SHARE = 0.3;
 const DISMISS_SPEED = 0.8;
+
+/**
+ * A sheet's (or a popover's) open state, and `pick(then)` for its rows: close it and run `then`
+ * once it has gone (`onClosed`). Both are native modals: a row that navigates, closes the menu
+ * holding the sheet, or presents another view controller (a picker, a prompt) while one is still
+ * up or on its way out makes UIKit and the native stack disagree with React about what is on
+ * screen, and the shell vanishes until something later sets it right.
+ */
+export function useSheet() {
+  const [isOpen, setOpen] = useState(false);
+  const after = useRef<(() => void) | null>(null);
+  return {
+    isOpen,
+    open: () => setOpen(true),
+    close: () => setOpen(false),
+    pick: (then: () => void) => {
+      after.current = then;
+      setOpen(false);
+    },
+    onClosed: () => {
+      const then = after.current;
+      after.current = null;
+      then?.();
+    },
+  };
+}
 
 /**
  * A sheet that slides up from the bottom edge while the page behind it dims: a grabber, its
@@ -85,31 +111,6 @@ export function BottomSheet({
       </Animated.View>
     </Modal>
   );
-}
-
-/**
- * A sheet's open state, and `pick(then)`: close it, and run `then` once it has gone, so what a row
- * opens (a prompt, another sheet, a pushed screen) is not under it. Spread `props` on the sheet.
- */
-export function useSheet() {
-  const [isOpen, setOpen] = useState(false);
-  const after = useRef<(() => void) | null>(null);
-  const close = useCallback(() => setOpen(false), []);
-  const pick = useCallback((then: () => void) => {
-    after.current = then;
-    setOpen(false);
-  }, []);
-  const onClosed = useCallback(() => {
-    const then = after.current;
-    after.current = null;
-    then?.();
-  }, []);
-  return {
-    isOpen,
-    open: useCallback(() => setOpen(true), []),
-    pick,
-    props: { isOpen, onClose: close, onClosed },
-  };
 }
 
 function useSheetMotion(isOpen: boolean, onClose: () => void) {

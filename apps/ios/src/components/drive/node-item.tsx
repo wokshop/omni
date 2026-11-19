@@ -35,7 +35,7 @@ export function NodeItem({ node, card = false }: { node: DriveNode; card?: boole
       ) : (
         <NodeRow node={node} onLongPress={sheet.open} />
       )}
-      <NodeSheet node={node} pick={sheet.pick} {...sheet.props} />
+      <NodeSheet node={node} sheet={sheet} />
     </>
   );
   if (card && !file) return item;

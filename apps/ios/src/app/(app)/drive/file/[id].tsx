@@ -45,9 +45,8 @@ export default function FilePreview() {
           </Stack.Toolbar>
           <NodeSheet
             node={shown}
-            pick={sheet.pick}
+            sheet={sheet}
             onTrashed={() => router.canGoBack() && router.back()}
-            {...sheet.props}
           />
         </>
       ) : null}

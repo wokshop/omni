@@ -21,7 +21,7 @@ import {
 } from "@/components/icons.ts";
 import { MenuRow, SheetDivider } from "@/components/shell/menu-row.tsx";
 import { BottomFade } from "@/components/ui/bottom-fade.tsx";
-import { BottomSheet } from "@/components/ui/bottom-sheet.tsx";
+import { BottomSheet, useSheet } from "@/components/ui/bottom-sheet.tsx";
 import { FloatingButton, FloatingGroup } from "@/components/ui/floating.tsx";
 import { canReplyAll } from "@/lib/compose.ts";
 import { space } from "@/theme/tokens.ts";
@@ -37,7 +37,7 @@ export function ThreadTopBar(props: {
   actions: ThreadActions;
 }) {
   const insets = useSafeAreaInsets();
-  const [open, setOpen] = useState(false);
+  const sheet = useSheet();
   return (
     <View style={[styles.top, { paddingTop: insets.top + space(2) }]}>
       <FloatingButton
@@ -48,13 +48,12 @@ export function ThreadTopBar(props: {
       />
       {props.thread ? (
         <>
-          <FloatingButton icon={IconEllipsis} label="More" compact onPress={() => setOpen(true)} />
+          <FloatingButton icon={IconEllipsis} label="More" compact onPress={sheet.open} />
           <MoreSheet
             thread={props.thread}
             page={props.page}
             actions={props.actions}
-            isOpen={open}
-            onClose={() => setOpen(false)}
+            sheet={sheet}
           />
         </>
       ) : null}
@@ -66,22 +65,19 @@ function MoreSheet(props: {
   thread: Thread;
   page: string | undefined;
   actions: ThreadActions;
-  isOpen: boolean;
-  onClose: () => void;
+  sheet: ReturnType<typeof useSheet>;
 }) {
   const { thread, actions: act } = props;
   const id = thread.id;
   const inSpam = props.page === "spam";
   const list = listMessage(thread);
   const unsubscribed = act.unsubscribe.isSuccess || !!list?.unsubscribe.unsubscribed;
-  const pick = (then: () => void) => () => {
-    props.onClose();
-    then();
-  };
+  const pick = (then: () => void) => () => props.sheet.pick(then);
   return (
     <BottomSheet
-      isOpen={props.isOpen}
-      onClose={props.onClose}
+      isOpen={props.sheet.isOpen}
+      onClose={props.sheet.close}
+      onClosed={props.sheet.onClosed}
       title={thread.messages[0]?.subject || "(no subject)"}
     >
       <MenuRow

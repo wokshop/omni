@@ -8,7 +8,7 @@ import {
   IconUserAdd,
 } from "@/components/icons.ts";
 import { MenuRow, SheetDivider } from "@/components/shell/menu-row.tsx";
-import { BottomSheet } from "@/components/ui/bottom-sheet.tsx";
+import { BottomSheet, type useSheet } from "@/components/ui/bottom-sheet.tsx";
 import { Text } from "@/components/ui/text.tsx";
 import {
   canTrash,
@@ -27,18 +27,16 @@ import { FileTile } from "./file-glyph.tsx";
 /**
  * A file's or folder's actions in a sheet, under its tile, name, day and size: Share and Save to
  * Files; Rename, Move and (a file's) Versions; Move to Trash. `pick` closes the sheet and runs
- * the action once it has gone (`useSheet`), so a prompt or a sheet it opens is not under it.
+ * the action once it has gone (`useSheet().pick`), so a prompt or a sheet it opens is not under it.
  */
 export function NodeSheet(props: {
   node: DriveNode;
-  isOpen: boolean;
-  onClose: () => void;
-  onClosed: () => void;
-  pick: (then: () => void) => void;
+  sheet: ReturnType<typeof useSheet>;
   /** Once it is in Trash (a preview goes back to its folder). */
   onTrashed?: () => void;
 }) {
-  const { node, pick } = props;
+  const { node, sheet } = props;
+  const pick = sheet.pick;
   const me = useMe().data;
   const rename = useChangeNode().mutate;
   const trash = useTrashNode().mutate;
@@ -48,9 +46,9 @@ export function NodeSheet(props: {
     .join(" · ");
   return (
     <BottomSheet
-      isOpen={props.isOpen}
-      onClose={props.onClose}
-      onClosed={props.onClosed}
+      isOpen={sheet.isOpen}
+      onClose={sheet.close}
+      onClosed={sheet.onClosed}
       title={node.name}
       header={
         <View style={styles.header}>
