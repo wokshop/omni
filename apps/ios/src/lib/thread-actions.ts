@@ -9,8 +9,9 @@ import {
 import { Alert } from "react-native";
 import { ApiError, api, call } from "./api.ts";
 import { idempotencyKey } from "./ids.ts";
-import { MAIL_PAGES, isMailPage } from "./mail.ts";
+import { MAIL_ACTIONS_SCOPE, MAIL_PAGES, isMailPage } from "./mail.ts";
 import { keys } from "./query-keys.ts";
+import { currentWorkspaceId } from "./workspace-id.ts";
 
 type ThreadPages = InfiniteData<ThreadPage, string | null>;
 type Snapshot = [QueryKey, unknown][];
@@ -107,8 +108,6 @@ function alertFailure(error: unknown, title?: string) {
 const retry = (count: number, error: Error) =>
   error instanceof ApiError && error.status === 0 && count < 10;
 
-const scope = { id: "mail-actions" };
-
 const header = (key: string) => ({ "idempotency-key": key });
 
 interface ThreadMutation<V extends { threadId: string }> {
@@ -123,15 +122,16 @@ function useThreadMutation<V extends { threadId: string }>(spec: ThreadMutation<
   const mutation = useMutation({
     mutationFn: (vars: V & { key: string }) => spec.request(vars, vars.key),
     retry,
-    scope,
+    scope: MAIL_ACTIONS_SCOPE,
     onMutate: async (vars) => {
+      const workspace = currentWorkspaceId();
       const snapshot = await snapshotThread(client, vars.threadId);
       if (spec.patch) patchThread(client, vars.threadId, spec.patch(vars));
       if (spec.leaves) removeFromLists(client, vars.threadId, spec.leaves(vars));
-      return { snapshot };
+      return { snapshot, workspace };
     },
     onError: (error, _vars, context) => {
-      restore(client, context?.snapshot);
+      if (context?.workspace === currentWorkspaceId()) restore(client, context.snapshot);
       alertFailure(error);
     },
     onSettled: (_data, _error, { threadId }) =>
@@ -269,7 +269,7 @@ export function useUnsubscribe() {
         }),
       ),
     retry,
-    scope,
+    scope: MAIL_ACTIONS_SCOPE,
     onSuccess: (_data, { threadId }) => void invalidateThread(client, threadId),
     onError: (error) => alertFailure(error, "Unsubscribe failed"),
   });

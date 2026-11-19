@@ -12,6 +12,7 @@ import type { Mailbox, Thread, ThreadPage } from "@omni/client";
 import type { SymbolName } from "./symbols.ts";
 import { ApiError, api, call, isAuthError } from "./api.ts";
 import { keys } from "./query-keys.ts";
+import { currentWorkspaceId } from "./workspace-id.ts";
 
 const FIRST_PAGE_SIZE = 30;
 const OLDER_PAGE_SIZE = 100;
@@ -146,6 +147,9 @@ export const useMessageHtml = (threadId: string, messageId: string) =>
     staleTime: Infinity,
   });
 
+/** One queue for every thread action, opening's mark-read included, so they land in order. */
+export const MAIL_ACTIONS_SCOPE = { id: "mail-actions" };
+
 /**
  * Marks a thread read, as opening it does on the web: the list row and the counts follow at once,
  * and a retry reuses the same idempotency key.
@@ -162,7 +166,9 @@ export function useMarkRead() {
         }),
       ),
     retry: (count, error) => !isAuthError(error) && count < 2,
+    scope: MAIL_ACTIONS_SCOPE,
     onMutate: async ({ threadId }) => {
+      const workspace = currentWorkspaceId();
       await client.cancelQueries({ queryKey: ["threads"] });
       await client.cancelQueries({ queryKey: keys.thread(threadId), exact: true });
       const snapshot: [QueryKey, unknown][] = [
@@ -185,10 +191,12 @@ export function useMarkRead() {
             }
           : data,
       );
-      return { snapshot };
+      return { snapshot, workspace };
     },
     onError: (_error, _vars, context) => {
-      for (const [key, data] of context?.snapshot ?? []) client.setQueryData(key, data);
+      if (context?.workspace === currentWorkspaceId()) {
+        for (const [key, data] of context.snapshot) client.setQueryData(key, data);
+      }
       void client.invalidateQueries({ queryKey: ["threads"] });
     },
     onSettled: () => void client.invalidateQueries({ queryKey: keys.counts() }),
