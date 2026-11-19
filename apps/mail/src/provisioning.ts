@@ -121,7 +121,7 @@ export function createProvisioner(deps: {
     if (!smtp.ok) return notPublic(credentials.smtp.host);
     return verifyImapLogin(
       { ...credentials, imap: withPlaintextPolicy(credentials.imap, deps.hosts) },
-      imap.address,
+      imap.addresses,
     );
   }
 

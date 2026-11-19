@@ -7,14 +7,32 @@ import { imapTls } from "./mail-hosts.ts";
  * server's own IMAP reply is passed on: a network error says only that the host was unreachable,
  * so the reason can't be used to read what answers on an address. Never includes the password.
  *
- * `connectTo` is the address `checkMailHost` approved; the host name still names the server for
- * TLS, so a second DNS answer can't redirect the login.
+ * `connectTo` are the addresses `checkMailHost` approved, tried in order while one is
+ * unreachable; the host name still names the server for TLS, so a second DNS answer can't
+ * redirect the login.
  */
-export async function verifyImapLogin(credentials: PasswordCredentials, connectTo?: string) {
+export async function verifyImapLogin(
+  credentials: PasswordCredentials,
+  connectTo: readonly string[] = [credentials.imap.host],
+) {
+  const { imap } = credentials;
+  for (const address of connectTo) {
+    const failure = await tryLogin(credentials, address);
+    if (failure === null) return null;
+    const { responseText, tlsFailed } = failure;
+    if (tlsFailed) {
+      return `${imap.host} doesn't offer an encrypted connection (STARTTLS) on port ${imap.port}`;
+    }
+    if (responseText) return `IMAP login to ${imap.host} failed: ${responseText}`;
+  }
+  return `Couldn't reach an IMAP server at ${imap.host}:${imap.port}`;
+}
+
+async function tryLogin(credentials: PasswordCredentials, address: string) {
   const { imap } = credentials;
   const client = new ImapFlow({
-    host: connectTo ?? imap.host,
-    ...(connectTo && connectTo !== imap.host ? { servername: imap.host } : {}),
+    host: address,
+    ...(address === imap.host ? {} : { servername: imap.host }),
     port: imap.port,
     ...imapTls(imap),
     auth: { user: credentials.user, pass: credentials.pass },
@@ -29,10 +47,6 @@ export async function verifyImapLogin(credentials: PasswordCredentials, connectT
     return null;
   } catch (error) {
     client.close();
-    const { responseText, tlsFailed } = error as { responseText?: string; tlsFailed?: boolean };
-    if (tlsFailed)
-      return `${imap.host} doesn't offer an encrypted connection (STARTTLS) on port ${imap.port}`;
-    if (responseText) return `IMAP login to ${imap.host} failed: ${responseText}`;
-    return `Couldn't reach an IMAP server at ${imap.host}:${imap.port}`;
+    return error as { responseText?: string; tlsFailed?: boolean };
   }
 }

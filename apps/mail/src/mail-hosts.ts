@@ -62,24 +62,25 @@ export const smtpTls = (endpoint: ServerEndpoint) => ({
 const isPublic = (address: string) =>
   ipaddr.isValid(address) && ipaddr.process(address).range() === "unicast";
 
-export type HostCheck = { ok: true; address: string } | { ok: false };
+export type HostCheck = { ok: true; addresses: string[] } | { ok: false };
 
 /**
  * Resolves a member-supplied mail host and refuses it unless every address it resolves to is
  * public, so a mailbox can't be pointed at the mail service's own network. Listed private hosts
- * pass as they are. On success, `address` is what to connect to, so a second lookup can't
- * resolve differently.
+ * pass as they are. On success, `addresses` are what to connect to, in order, so a second
+ * lookup can't resolve differently.
  */
 export async function checkMailHost(host: string, policy: Pick<MailHostPolicy, "privateHosts">) {
   const name = normalize(host);
-  if (policy.privateHosts.has(name)) return { ok: true, address: host } satisfies HostCheck;
+  if (policy.privateHosts.has(name)) return { ok: true, addresses: [host] } satisfies HostCheck;
   const addresses = ipaddr.isValid(name)
     ? [ipaddr.process(name).toString()]
     : await lookup(name, { all: true, verbatim: true }).then(
         (found) => found.map((a) => a.address),
         () => [],
       );
-  const [first] = addresses;
-  if (first === undefined || !addresses.every(isPublic)) return { ok: false } satisfies HostCheck;
-  return { ok: true, address: first } satisfies HostCheck;
+  if (addresses.length === 0 || !addresses.every(isPublic)) {
+    return { ok: false } satisfies HostCheck;
+  }
+  return { ok: true, addresses } satisfies HostCheck;
 }
