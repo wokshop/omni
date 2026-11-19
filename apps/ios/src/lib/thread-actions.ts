@@ -7,7 +7,7 @@ import {
   type QueryKey,
 } from "@tanstack/react-query";
 import { Alert } from "react-native";
-import { ApiError, api, call } from "./api.ts";
+import { ApiError, api, call, inWorkspace } from "./api.ts";
 import { idempotencyKey } from "./ids.ts";
 import {
   MAIL_ACTIONS_KEY,
@@ -108,8 +108,15 @@ const retry = (count: number, error: Error) =>
 
 const header = (key: string) => ({ "idempotency-key": key });
 
+type Options = ReturnType<typeof inWorkspace>;
+
+interface Sent {
+  key: string;
+  workspace: string | null;
+}
+
 interface ThreadMutation<V extends { threadId: string }> {
-  request: (vars: V, key: string) => Promise<unknown>;
+  request: (vars: V, key: string, options: Options) => Promise<unknown>;
   patch?: (vars: V) => ThreadPatch;
   leaves?: (vars: V) => ThreadAction;
 }
@@ -117,12 +124,12 @@ interface ThreadMutation<V extends { threadId: string }> {
 function useThreadMutation<V extends { threadId: string }>(spec: ThreadMutation<V>) {
   const client = useQueryClient();
   const mutation = useMutation({
-    mutationFn: (vars: V & { key: string }) => spec.request(vars, vars.key),
+    mutationFn: (vars: V & Sent) => spec.request(vars, vars.key, inWorkspace(vars.workspace)),
     retry,
     mutationKey: MAIL_ACTIONS_KEY,
     scope: MAIL_ACTIONS_SCOPE,
     onMutate: async (vars) => {
-      const workspace = currentWorkspaceId();
+      const { workspace } = vars;
       const snapshot = await snapshotThread(client, vars.threadId);
       if (spec.patch) patchThread(client, vars.threadId, spec.patch(vars));
       if (spec.leaves) removeFromLists(client, vars.threadId, spec.leaves(vars));
@@ -136,7 +143,8 @@ function useThreadMutation<V extends { threadId: string }>(spec: ThreadMutation<
   });
   return {
     isPending: mutation.isPending,
-    mutate: (vars: V) => mutation.mutate({ ...vars, key: idempotencyKey() }),
+    mutate: (vars: V) =>
+      mutation.mutate({ ...vars, key: idempotencyKey(), workspace: currentWorkspaceId() }),
   };
 }
 
@@ -148,13 +156,12 @@ const thread = (threadId: string) => ({ param: { id: threadId } });
  */
 export const useDone = () =>
   useThreadMutation<{ threadId: string; through: string }>({
-    request: ({ threadId, through }, key) =>
+    request: ({ threadId, through }, key, options) =>
       call(
-        api.threads[":id"].done.$post({
-          ...thread(threadId),
-          header: header(key),
-          json: { through },
-        }),
+        api.threads[":id"].done.$post(
+          { ...thread(threadId), header: header(key), json: { through } },
+          options,
+        ),
       ),
     patch: () => ({ done: true, later: false }),
     leaves: () => "done",
@@ -163,8 +170,8 @@ export const useDone = () =>
 /** `mutate({ threadId })`: not done, back in the Inbox. */
 export const useUndone = () =>
   useThreadMutation<{ threadId: string }>({
-    request: ({ threadId }, key) =>
-      call(api.threads[":id"].done.$delete({ ...thread(threadId), header: header(key) })),
+    request: ({ threadId }, key, options) =>
+      call(api.threads[":id"].done.$delete({ ...thread(threadId), header: header(key) }, options)),
     patch: () => ({ done: false }),
     leaves: () => "undone",
   });
@@ -175,15 +182,18 @@ export const useUndone = () =>
  */
 export const useLater = () =>
   useThreadMutation<{ threadId: string; later: boolean; until?: Date }>({
-    request: ({ threadId, later, until }, key) => {
+    request: ({ threadId, later, until }, key, options) => {
       const request = { ...thread(threadId), header: header(key) };
-      if (!later) return call(api.threads[":id"].later.$delete(request));
+      if (!later) return call(api.threads[":id"].later.$delete(request, options));
       if (until) {
         return call(
-          api.threads[":id"].defer.$post({ ...request, json: { until: until.toISOString() } }),
+          api.threads[":id"].defer.$post(
+            { ...request, json: { until: until.toISOString() } },
+            options,
+          ),
         );
       }
-      return call(api.threads[":id"].later.$post(request));
+      return call(api.threads[":id"].later.$post(request, options));
     },
     patch: ({ later }) => ({ later, ...(later ? { done: false } : {}) }),
     leaves: ({ later }) => (later ? "later" : "unlater"),
@@ -192,8 +202,8 @@ export const useLater = () =>
 /** `mutate({ threadId })`: out of the Inbox and Later, kept in Archive. */
 export const useArchive = () =>
   useThreadMutation<{ threadId: string }>({
-    request: ({ threadId }, key) =>
-      call(api.threads[":id"].archive.$post({ ...thread(threadId), header: header(key) })),
+    request: ({ threadId }, key, options) =>
+      call(api.threads[":id"].archive.$post({ ...thread(threadId), header: header(key) }, options)),
     patch: () => ({ archived: true }),
     leaves: () => "archive",
   });
@@ -201,8 +211,8 @@ export const useArchive = () =>
 /** `mutate({ threadId })`: every copy goes to the mailbox's Trash. */
 export const useTrash = () =>
   useThreadMutation<{ threadId: string }>({
-    request: ({ threadId }, key) =>
-      call(api.threads[":id"].trash.$post({ ...thread(threadId), header: header(key) })),
+    request: ({ threadId }, key, options) =>
+      call(api.threads[":id"].trash.$post({ ...thread(threadId), header: header(key) }, options)),
     patch: () => ({ archived: true }),
     leaves: () => "trash",
   });
@@ -213,12 +223,12 @@ export const useTrash = () =>
  */
 export const useSpam = () =>
   useThreadMutation<{ threadId: string; spam: boolean }>({
-    request: ({ threadId, spam }, key) => {
+    request: ({ threadId, spam }, key, options) => {
       const request = { ...thread(threadId), header: header(key) };
       return call(
         spam
-          ? api.threads[":id"].spam.$post(request)
-          : api.threads[":id"]["not-spam"].$post(request),
+          ? api.threads[":id"].spam.$post(request, options)
+          : api.threads[":id"]["not-spam"].$post(request, options),
       );
     },
     patch: ({ spam }) => ({ archived: spam }),
@@ -228,13 +238,12 @@ export const useSpam = () =>
 /** `mutate({ threadId, read })`: read state, yours alone on a shared mailbox. */
 export const useMarkUnread = () =>
   useThreadMutation<{ threadId: string; read: boolean }>({
-    request: ({ threadId, read }, key) =>
+    request: ({ threadId, read }, key, options) =>
       call(
-        api.threads[":id"].state.$patch({
-          ...thread(threadId),
-          header: header(key),
-          json: { read },
-        }),
+        api.threads[":id"].state.$patch(
+          { ...thread(threadId), header: header(key), json: { read } },
+          options,
+        ),
       ),
     patch: ({ read }) => ({ read, unread: !read }),
   });
@@ -250,17 +259,13 @@ export function useUnsubscribe() {
       threadId,
       messageId,
       key,
-    }: {
-      threadId: string;
-      messageId: string;
-      key: string;
-    }) =>
+      workspace,
+    }: { threadId: string; messageId: string } & Sent) =>
       call(
-        api.threads[":id"].unsubscribe.$post({
-          ...thread(threadId),
-          header: header(key),
-          json: { messageId },
-        }),
+        api.threads[":id"].unsubscribe.$post(
+          { ...thread(threadId), header: header(key), json: { messageId } },
+          inWorkspace(workspace),
+        ),
       ),
     retry,
     mutationKey: MAIL_ACTIONS_KEY,
@@ -272,7 +277,7 @@ export function useUnsubscribe() {
     isPending: mutation.isPending,
     isSuccess: mutation.isSuccess,
     mutate: (vars: { threadId: string; messageId: string }) =>
-      mutation.mutate({ ...vars, key: idempotencyKey() }),
+      mutation.mutate({ ...vars, key: idempotencyKey(), workspace: currentWorkspaceId() }),
   };
 }
 

@@ -10,8 +10,9 @@ import {
   type QueryKey,
 } from "@tanstack/react-query";
 import type { Mailbox, Thread, ThreadPage } from "@omni/client";
+import { useMemo } from "react";
 import type { SymbolName } from "./symbols.ts";
-import { ApiError, api, call, isAuthError } from "./api.ts";
+import { ApiError, api, call, inWorkspace, isAuthError } from "./api.ts";
 import { keys } from "./query-keys.ts";
 import { currentWorkspaceId } from "./workspace-id.ts";
 
@@ -165,26 +166,29 @@ export function settleMailAction(client: QueryClient, threadId: string) {
   void client.invalidateQueries({ queryKey: keys.thread(threadId), exact: true });
 }
 
+interface MarkRead {
+  threadId: string;
+  key: string;
+}
+
 /**
  * Marks a thread read, as opening it does on the web: the list row and the counts follow at once,
  * and a retry reuses the same idempotency key.
  */
 export function useMarkRead() {
   const client = useQueryClient();
-  return useMutation({
-    mutationFn: ({ threadId, key }: { threadId: string; key: string }) =>
+  const mutation = useMutation({
+    mutationFn: ({ threadId, key, workspace }: MarkRead & { workspace: string | null }) =>
       call(
-        api.threads[":id"].state.$patch({
-          param: { id: threadId },
-          header: { "idempotency-key": key },
-          json: { read: true },
-        }),
+        api.threads[":id"].state.$patch(
+          { param: { id: threadId }, header: { "idempotency-key": key }, json: { read: true } },
+          inWorkspace(workspace),
+        ),
       ),
     retry: (count, error) => !isAuthError(error) && count < 2,
     mutationKey: MAIL_ACTIONS_KEY,
     scope: MAIL_ACTIONS_SCOPE,
-    onMutate: async ({ threadId }) => {
-      const workspace = currentWorkspaceId();
+    onMutate: async ({ threadId, workspace }) => {
       await client.cancelQueries({ queryKey: ["threads"] });
       await client.cancelQueries({ queryKey: keys.thread(threadId), exact: true });
       const snapshot: [QueryKey, unknown][] = [
@@ -216,4 +220,9 @@ export function useMarkRead() {
     },
     onSettled: (_data, _error, { threadId }) => settleMailAction(client, threadId),
   });
+  const { mutate } = mutation;
+  return useMemo(
+    () => ({ mutate: (vars: MarkRead) => mutate({ ...vars, workspace: currentWorkspaceId() }) }),
+    [mutate],
+  );
 }
