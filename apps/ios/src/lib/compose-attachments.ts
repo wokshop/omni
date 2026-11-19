@@ -46,7 +46,8 @@ async function upload(file: PickedFile, mailboxId: string) {
 /**
  * The files on a message being written, uploaded for `mailboxId` as they are picked (the web's
  * upload-then-send). Changing the mailbox uploads them again for the new one. `attachments` is
- * what Send carries; `pending` holds Send until every upload settles.
+ * what Send carries; `pending` holds Send while any file is uploading or failed, until it
+ * finishes or is taken off, so a message never goes out without a file it shows.
  */
 export function useComposeAttachments(mailboxId: string) {
   const [list, setList] = useState<ComposeAttachment[]>([]);
@@ -71,7 +72,7 @@ export function useComposeAttachments(mailboxId: string) {
         (uploadId) => settle(key, mailbox, { state: "ready", uploadId }),
         (error: unknown) => {
           settle(key, mailbox, { state: "failed" });
-          if (error instanceof ApiError) Alert.alert("Not attached", error.message);
+          Alert.alert("Not attached", error instanceof Error ? error.message : undefined);
         },
       );
     },
@@ -111,7 +112,7 @@ export function useComposeAttachments(mailboxId: string) {
   return {
     list,
     attachments,
-    pending: list.some((a) => a.state === "uploading"),
+    pending: list.some((a) => a.state !== "ready"),
     attachFiles: () => void add(pickDocuments),
     attachMedia: () => void add(pickMedia),
     remove,

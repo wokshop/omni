@@ -42,12 +42,7 @@ export function MessageItem(props: MessageItemProps) {
   const switchable = message.hasHtml && !!message.cleanText.trim();
   return (
     <View style={[styles.item, props.divided && styles.divided]}>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityState={{ expanded }}
-        onPress={props.onToggle}
-        style={styles.header}
-      >
+      <PressableRow shape="bare" isExpanded={expanded} onPress={props.onToggle}>
         <Avatar
           name={sender}
           logo={{ address: message.fromAddress }}
@@ -67,7 +62,7 @@ export function MessageItem(props: MessageItemProps) {
             {expanded ? recipientsLine(message, props.self) : snippetOf(message.cleanText)}
           </Text>
         </View>
-      </Pressable>
+      </PressableRow>
       {expanded ? (
         <Pressable
           accessibilityHint={
@@ -168,7 +163,6 @@ function FullMessage({ threadId, messageId }: { threadId: string; messageId: str
 const styles = StyleSheet.create({
   item: { padding: gutter, gap: space(4) },
   divided: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
-  header: { flexDirection: "row", alignItems: "flex-start", gap: space(3) },
   lines: { flex: 1, minWidth: 0, gap: space(0.5) },
   top: { flexDirection: "row", alignItems: "baseline", gap: space(2) },
   name: { flex: 1, minWidth: 0 },
