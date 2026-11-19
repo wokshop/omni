@@ -43,3 +43,4 @@ export { IconHandshake as IconHandshakeFilled } from "@central-icons-react-nativ
 export { IconPlusMedium as IconPlus } from "@central-icons-react-native/round-outlined-radius-3-stroke-1.5/IconPlusMedium";
 export { IconImages1 as IconImage } from "@central-icons-react-native/round-outlined-radius-3-stroke-1.5/IconImages1";
 export { IconFolderAddRight as IconFolderPlus } from "@central-icons-react-native/round-outlined-radius-3-stroke-1.5/IconFolderAddRight";
+export { IconArrowUp } from "@central-icons-react-native/round-outlined-radius-3-stroke-1.5/IconArrowUp";
