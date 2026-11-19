@@ -1,5 +1,5 @@
 import type { Message } from "@omni/client";
-import { StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 import { IconPaperclip } from "@/components/icons.ts";
 import { Avatar } from "@/components/ui/avatar.tsx";
 import { Button } from "@/components/ui/button.tsx";
@@ -10,6 +10,7 @@ import { colors, iconSize, radius, shadowRaised, space } from "@/theme/tokens.ts
 export interface MessageItemProps {
   message: Message;
   onShowFull?: () => void;
+  onOpenAttachment?: (file: Message["attachments"][number]) => void;
 }
 
 /**
@@ -17,7 +18,7 @@ export interface MessageItemProps {
  * bubbles (yours and your team's on the right, tinted), long or formal ones cards (`display`,
  * decided by the Worker). With HTML, "Show full message" opens the original.
  */
-export function MessageItem({ message, onShowFull }: MessageItemProps) {
+export function MessageItem({ message, onShowFull, onOpenAttachment }: MessageItemProps) {
   const sender = message.fromName || message.fromAddress;
   const ours = message.fromTeam;
   const card = message.display === "card";
@@ -38,12 +39,17 @@ export function MessageItem({ message, onShowFull }: MessageItemProps) {
       {message.attachments.length ? (
         <View style={[styles.attachments, ours && !card && styles.oursMeta]}>
           {message.attachments.map((file) => (
-            <View key={file.id} style={styles.chip}>
+            <Pressable
+              key={file.id}
+              style={styles.chip}
+              accessibilityRole="button"
+              onPress={() => onOpenAttachment?.(file)}
+            >
               <IconPaperclip size={iconSize.sm} color={colors.mutedForeground} />
               <Text size="sm" numberOfLines={1} ellipsizeMode="middle" style={styles.shrink}>
                 {file.filename}
               </Text>
-            </View>
+            </Pressable>
           ))}
         </View>
       ) : null}
