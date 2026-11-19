@@ -1,6 +1,6 @@
 import type { Mailbox, Thread } from "@omni/client";
 import { Stack, router } from "expo-router";
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import {
   ActionSheetIOS,
   Alert,
@@ -61,6 +61,15 @@ function useRecipients(start: { to: string[]; cc: string[] }) {
 }
 
 type RecipientsState = ReturnType<typeof useRecipients>;
+
+function useSendKey() {
+  const last = useRef<{ payload: string; key: string } | null>(null);
+  return (payload: unknown) => {
+    const json = JSON.stringify(payload);
+    if (last.current?.payload !== json) last.current = { payload: json, key: idempotencyKey() };
+    return last.current.key;
+  };
+}
 
 function confirmDiscard(dirty: boolean, then: () => void) {
   if (!dirty) return then();
@@ -249,28 +258,27 @@ export function ReplyComposer(props: { thread: Thread; replyAll: boolean }) {
   const recipients = useRecipients(start);
   const [text, setText] = useState("");
   const send = useSendReply();
-  const [key] = useState(idempotencyKey);
+  const keyFor = useSendKey();
   const message = start.message;
   const dirty = text.trim().length > 0;
   const canSend = !!message && recipients.list.to.length > 0 && dirty && !send.isPending;
-  const submit = (checkLatest: boolean) =>
-    message &&
+  const submit = (checkLatest: boolean) => {
+    if (!message) return;
+    const reply = {
+      threadId: thread.id,
+      messageId: message.id,
+      replyAll: kind === "replyAll",
+      text,
+      ...recipients.list,
+    };
     send.mutate(
-      {
-        key,
-        workspace: currentWorkspaceId(),
-        threadId: thread.id,
-        messageId: message.id,
-        checkLatest,
-        replyAll: kind === "replyAll",
-        text,
-        ...recipients.list,
-      },
+      { ...reply, key: keyFor(reply), workspace: currentWorkspaceId(), checkLatest },
       {
         onSuccess: () => router.back(),
         onError: (error) => notSent(error, checkLatest ? () => submit(false) : undefined),
       },
     );
+  };
   return (
     <Frame
       title={KINDS[kind].label}
@@ -313,25 +321,20 @@ export function NewComposer(props: { mailboxes: Mailbox[]; mailboxId?: string })
   const [subject, setSubject] = useState("");
   const [text, setText] = useState("");
   const send = useSendNew();
-  const [key] = useState(idempotencyKey);
+  const keyFor = useSendKey();
   const [fromId, setFromId] = useState(
     mailboxes.find((m) => m.id === props.mailboxId)?.id ?? mailboxes[0]?.id ?? "",
   );
   const { to, cc, bcc } = recipients.list;
   const dirty = !!(text.trim() || subject.trim() || to.length || cc.length || bcc.length);
   const canSend = !!fromId && to.length > 0 && !send.isPending;
-  const submit = () =>
+  const submit = () => {
+    const mail = { mailboxId: fromId, subject: subject.trim(), text, ...recipients.list };
     send.mutate(
-      {
-        key,
-        workspace: currentWorkspaceId(),
-        mailboxId: fromId,
-        subject: subject.trim(),
-        text,
-        ...recipients.list,
-      },
+      { ...mail, key: keyFor(mail), workspace: currentWorkspaceId() },
       { onSuccess: () => router.back(), onError: (error) => notSent(error) },
     );
+  };
   return (
     <Frame
       title="New message"
