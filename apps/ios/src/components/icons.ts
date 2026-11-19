@@ -64,3 +64,5 @@ export { IconArrowUpCircle as IconUpgrade } from "@central-icons-react-native/ro
 export { IconSquareArrowDown as IconDownload } from "@central-icons-react-native/round-outlined-radius-3-stroke-1.5/IconSquareArrowDown";
 export { IconPencilLine as IconRename } from "@central-icons-react-native/round-outlined-radius-3-stroke-1.5/IconPencilLine";
 export { IconHistory } from "@central-icons-react-native/round-outlined-radius-3-stroke-1.5/IconHistory";
+export { IconCirclePlaceholderOn as IconCircle } from "@central-icons-react-native/round-outlined-radius-3-stroke-1.5/IconCirclePlaceholderOn";
+export { IconCircleDashed } from "@central-icons-react-native/round-outlined-radius-3-stroke-1.5/IconCircleDashed";

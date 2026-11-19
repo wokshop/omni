@@ -24,13 +24,14 @@ Rodrigo wants the app to triage with two actions, Later and Done, and nothing el
    Needs reply, Awaiting reply and Noise. Needs reply and Awaiting reply are views of the Inbox
    on every app. Nobody files a thread in a lane by hand: the Lane button and its sheet (with FYI)
    are gone from iOS.
-3. **No helpdesk status on iOS.** The Status button and its sheet (resolve, reopen, snooze) are
-   gone. A shared-inbox conversation keeps assignee, priority and tags, which only shared inboxes
+3. **Shared inboxes keep Open and Resolved, without Snooze.** The Status sheet offers Reopen
+   and Resolve only; its two snoozes are gone, since Later covers putting a thread aside. A
+   shared-inbox conversation keeps status, assignee, priority and tags, which only shared inboxes
    have; a personal thread shows no tags.
 4. **This PR is the iOS client.** Removing FYI, the helpdesk status and timed defer from the
    API, the AI and the web follows in stacked PRs.
 
 ## Consequences
 
-- On iOS a teammate can't resolve or snooze a shared conversation for the whole team; Done and
-  Later act for the member alone (ADR 0007). The web still can.
+- Nobody can snooze a shared conversation from iOS. Conversations snoozed earlier still wake on
+  time, and the web's Snooze goes in the next layer.

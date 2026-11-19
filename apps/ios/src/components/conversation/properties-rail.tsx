@@ -9,11 +9,11 @@ import { useAssignees, useConversation, type Conversation } from "@/lib/conversa
 import { mailboxName, useMailboxes } from "@/lib/mail.ts";
 import { useSession } from "@/lib/session.ts";
 import { colors, iconSize, space } from "@/theme/tokens.ts";
-import { Face, PRIORITY, PropertySheet, type Sheet } from "./property-sheets.tsx";
+import { Face, PRIORITY, PropertySheet, STATUS, type Sheet } from "./property-sheets.tsx";
 
 /**
  * The conversation's properties under the top bar, as the desktop's properties row: the mailbox
- * it came to (a tap opens that mailbox's inbox); a shared inbox adds assignee, priority and tags,
+ * it came to (a tap opens that mailbox's inbox); a shared inbox adds status, assignee, priority and tags,
  * which only helpdesk mail has. Each opens a sheet that changes it, as the web's menus do.
  * Scrolls sideways when it overflows.
  */
@@ -74,12 +74,19 @@ function SharedButtons(props: {
 }) {
   const { conversation, onOpen } = props;
   const assignees = useAssignees(props.thread.mailboxId, true).data ?? [];
+  const status = STATUS[conversation.status];
   const priority = PRIORITY[conversation.priority];
   const assignee = assignees.find((a) => a.memberId === conversation.assigneeMemberId);
   const who = assignee?.name ?? "Unassigned";
   const tags = conversation.tags.map((t) => t.name).join(", ");
   return (
     <>
+      <GhostButton
+        icon={status.icon}
+        label={status.label}
+        accessibilityLabel={`Status: ${status.label}`}
+        onPress={() => onOpen("status")}
+      />
       <GhostButton
         icon={assignee ? undefined : IconUserRound}
         lead={assignee ? <Face name={assignee.name} image={assignee.image} /> : undefined}

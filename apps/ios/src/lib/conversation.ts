@@ -13,8 +13,9 @@ import { keys } from "./query-keys.ts";
 import { alertFailure } from "./thread-actions.ts";
 import { currentWorkspaceId } from "./workspace-id.ts";
 
-/** A shared inbox's state for one thread: assignee, priority, tags (the web's). */
+/** A shared inbox's state for one thread: status, assignee, priority, tags (the web's). */
 export type Conversation = InferResponseType<Api["threads"][":id"]["conversation"]["$get"], 200>;
+export type ConversationStatus = Conversation["status"];
 export type Priority = Conversation["priority"];
 export type Tag = InferResponseType<Api["mailboxes"][":id"]["tags"]["$get"], 200>["tags"][number];
 export type Assignee = InferResponseType<
@@ -24,6 +25,8 @@ export type Assignee = InferResponseType<
 
 /** What a property menu changes, as the web's `ConversationChange`. */
 export type ConversationChange =
+  | { type: "resolve" }
+  | { type: "reopen" }
   | { type: "assign"; memberId: string | null }
   | { type: "priority"; priority: Priority }
   | { type: "tag"; tag: Tag; add: boolean };
@@ -74,6 +77,10 @@ function request(
   const options = inWorkspace(workspace);
   const thread = api.threads[":id"];
   switch (change.type) {
+    case "resolve":
+      return call(thread.resolve.$post({ param, header }, options));
+    case "reopen":
+      return call(thread.reopen.$post({ param, header }, options));
     case "assign":
       return call(
         thread.assignee.$put({ param, header, json: { memberId: change.memberId } }, options),
@@ -96,6 +103,10 @@ function request(
 
 function applied(before: Conversation, change: ConversationChange) {
   switch (change.type) {
+    case "resolve":
+      return { ...before, status: "resolved", snoozedUntil: null } satisfies Conversation;
+    case "reopen":
+      return { ...before, status: "open", snoozedUntil: null } satisfies Conversation;
     case "assign":
       return { ...before, assigneeMemberId: change.memberId } satisfies Conversation;
     case "priority":
