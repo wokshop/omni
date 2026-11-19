@@ -1,8 +1,9 @@
 import type { Message } from "@omni/client";
-import { Pressable, StyleSheet, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import { IconPaperclip } from "@/components/icons.ts";
 import { Avatar } from "@/components/ui/avatar.tsx";
 import { Button } from "@/components/ui/button.tsx";
+import { PressableRow } from "@/components/ui/pressable-row.tsx";
 import { Text } from "@/components/ui/text.tsx";
 import { listTime } from "@/lib/mail.ts";
 import { colors, iconSize, radius, shadowRaised, space } from "@/theme/tokens.ts";
@@ -39,17 +40,16 @@ export function MessageItem({ message, onShowFull, onOpenAttachment }: MessageIt
       {message.attachments.length ? (
         <View style={[styles.attachments, ours && !card && styles.oursMeta]}>
           {message.attachments.map((file) => (
-            <Pressable
+            <PressableRow
               key={file.id}
               style={styles.chip}
-              accessibilityRole="button"
-              onPress={() => onOpenAttachment?.(file)}
+              onPress={onOpenAttachment && (() => onOpenAttachment(file))}
             >
               <IconPaperclip size={iconSize.sm} color={colors.mutedForeground} />
               <Text size="sm" numberOfLines={1} ellipsizeMode="middle" style={styles.shrink}>
                 {file.filename}
               </Text>
-            </Pressable>
+            </PressableRow>
           ))}
         </View>
       ) : null}
