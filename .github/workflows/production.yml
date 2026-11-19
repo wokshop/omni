@@ -21,7 +21,9 @@ name: Production
 # - both daily, as the safety net for a Doppler edit (both are idempotent), and by hand: Actions,
 #   Production, Run workflow.
 # A push that changes one job's inputs starts the other too; its `Changed?` step ends it at once.
-# (The push event in Actions carries no per-commit file lists, so each job diffs the push itself.)
+# Each job diffs from the commit of the last successful Production run, not the push's `before`:
+# concurrency replaces a pending run with a newer one, and the newer one must still apply the
+# skipped run's migrations or secrets. (The push event carries no per-commit file lists.)
 on:
   push:
     branches: [main]
@@ -43,6 +45,7 @@ concurrency:
 permissions:
   contents: read
   checks: read
+  actions: read
 
 jobs:
   migrate:
@@ -61,11 +64,12 @@ jobs:
         id: scope
         env:
           EVENT: ${{ github.event_name }}
-          BEFORE: ${{ github.event.before }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           run=true
-          if [ "$EVENT" = "push" ] && git cat-file -e "$BEFORE^{commit}" 2>/dev/null &&
-            [ -z "$(git diff --name-only "$BEFORE" "$GITHUB_SHA" -- packages/db/migrations .github/workflows/production.yml)" ]; then
+          since="$(.github/scripts/last-production-sha.sh)"
+          if [ "$EVENT" = "push" ] && [ -n "$since" ] &&
+            [ -z "$(git diff --name-only "$since" "$GITHUB_SHA" -- packages/db/migrations .github/workflows/production.yml)" ]; then
             run=false
           fi
           echo "run=$run" >> "$GITHUB_OUTPUT"
@@ -105,11 +109,12 @@ jobs:
         id: scope
         env:
           EVENT: ${{ github.event_name }}
-          BEFORE: ${{ github.event.before }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           run=true
-          if [ "$EVENT" = "push" ] && git cat-file -e "$BEFORE^{commit}" 2>/dev/null &&
-            [ -z "$(git diff --name-only "$BEFORE" "$GITHUB_SHA" -- apps/worker/.dev.vars.example apps/worker/wrangler.jsonc .github/scripts .github/workflows/production.yml)" ]; then
+          since="$(.github/scripts/last-production-sha.sh)"
+          if [ "$EVENT" = "push" ] && [ -n "$since" ] &&
+            [ -z "$(git diff --name-only "$since" "$GITHUB_SHA" -- apps/worker/.dev.vars.example apps/worker/wrangler.jsonc .github/scripts .github/workflows/production.yml)" ]; then
             run=false
           fi
           echo "run=$run" >> "$GITHUB_OUTPUT"

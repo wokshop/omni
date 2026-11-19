@@ -14,8 +14,9 @@ the repository's Actions minutes, and the secret sync also made a new Worker ver
 
 1. **Migrations run on a push that adds or edits `packages/db/migrations/`.** The workflow's
    `paths` filter starts a run only for a push that touches either job's inputs, and each job
-   diffs the push (`github.event.before` to the commit) to decide whether it has work. The
-   push event in Actions carries no per-commit file lists, so the diff is the only source.
+   diffs from the commit of the last successful Production run to decide whether it has work.
+   Not from the push's `before`: concurrency replaces a pending run with a newer one, which must
+   still do the replaced run's work. The push event in Actions carries no per-commit file lists.
 2. **The Worker secret sync runs on a push that changes `apps/worker/.dev.vars.example` or
    `wrangler.jsonc`** (or the sync's own scripts). A new secret is documented in
    `.dev.vars.example` (AGENTS.md), so code that needs one arrives with that change.
