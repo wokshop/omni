@@ -202,6 +202,7 @@ export function useMarkRead() {
       await client.cancelQueries({ queryKey: keys.thread(threadId), exact: true });
       const snapshot: [QueryKey, unknown][] = [
         ...client.getQueriesData<InfiniteData<ThreadPage>>({ queryKey: ["threads"] }),
+        ...client.getQueriesData({ queryKey: ["search"] }),
         [keys.thread(threadId), client.getQueryData(keys.thread(threadId))],
       ];
       client.setQueryData<Thread>(keys.thread(threadId), (thread) =>

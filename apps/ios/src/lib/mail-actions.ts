@@ -4,12 +4,14 @@ import {
   useQueryClient,
   type InfiniteData,
   type QueryClient,
+  type QueryKey,
 } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
-import { api, call, isAuthError } from "./api.ts";
+import { api, call, inWorkspace, isAuthError } from "./api.ts";
 import { idempotencyKey } from "./ids.ts";
-import type { MailPage } from "./mail.ts";
+import { MAIL_ACTIONS_KEY, MAIL_ACTIONS_SCOPE, settleMailAction, type MailPage } from "./mail.ts";
 import { keys } from "./query-keys.ts";
+import { currentWorkspaceId } from "./workspace-id.ts";
 
 type Threads = InfiniteData<ThreadPage>;
 
@@ -47,49 +49,65 @@ async function changeCachedThread(client: QueryClient, threadId: string, change:
   return snapshot;
 }
 
-function useThreadAction(
-  send: (thread: ThreadSummary, key: string) => Promise<unknown>,
-  change: Change,
-) {
+type Send = (
+  thread: ThreadSummary,
+  key: string,
+  workspace: ReturnType<typeof inWorkspace>,
+) => Promise<unknown>;
+
+function useThreadAction(send: Send, change: Change) {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: ({ thread, key }: { thread: ThreadSummary; key: string }) => send(thread, key),
+    mutationFn: ({ thread, key, workspace }: Action) => send(thread, key, inWorkspace(workspace)),
     retry: (count, error) => !isAuthError(error) && count < 2,
-    onMutate: async ({ thread }) => {
+    mutationKey: MAIL_ACTIONS_KEY,
+    scope: MAIL_ACTIONS_SCOPE,
+    onMutate: async ({ thread, workspace }) => {
       void Haptics.selectionAsync();
+      const detail: [QueryKey, unknown] = [
+        keys.thread(thread.id),
+        client.getQueryData(keys.thread(thread.id)),
+      ];
       if (change.read !== undefined)
         client.setQueryData<Thread>(keys.thread(thread.id), (data) =>
           data ? { ...data, read: change.read ?? data.read } : data,
         );
-      return { snapshot: await changeCachedThread(client, thread.id, change) };
+      const lists = await changeCachedThread(client, thread.id, change);
+      return { snapshot: [...lists, detail], workspace };
     },
     onError: (_error, _vars, context) => {
-      for (const [key, data] of context?.snapshot ?? []) client.setQueryData(key, data);
+      if (context?.workspace === currentWorkspaceId()) {
+        for (const [key, data] of context.snapshot) client.setQueryData(key, data);
+      }
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     },
-    onSettled: (_data, _error, { thread }) => {
-      void client.invalidateQueries({ queryKey: keys.thread(thread.id) });
-      void client.invalidateQueries({ queryKey: ["threads"] });
-      void client.invalidateQueries({ queryKey: ["search"] });
-      void client.invalidateQueries({ queryKey: keys.counts() });
-    },
+    onSettled: () => settleMailAction(client),
   });
 }
 
+interface Action {
+  thread: ThreadSummary;
+  key: string;
+  workspace: string | null;
+}
+
 const runner = (mutation: ReturnType<typeof useThreadAction>) => (thread: ThreadSummary) =>
-  mutation.mutate({ thread, key: idempotencyKey() });
+  mutation.mutate({ thread, key: idempotencyKey(), workspace: currentWorkspaceId() });
 
 /** Done: off the list, through its latest message (a newer reply brings it back). */
 export function useDone() {
   return runner(
     useThreadAction(
-      (thread, key) =>
+      (thread, key, workspace) =>
         call(
-          api.threads[":id"].done.$post({
-            param: { id: thread.id },
-            header: { "idempotency-key": key },
-            json: { through: thread.lastMessageAt },
-          }),
+          api.threads[":id"].done.$post(
+            {
+              param: { id: thread.id },
+              header: { "idempotency-key": key },
+              json: { through: thread.lastMessageAt },
+            },
+            workspace,
+          ),
         ),
       { apply: () => null, pages: [...INBOX_LISTS, "later"] },
     ),
@@ -100,12 +118,12 @@ export function useDone() {
 export function useLater() {
   return runner(
     useThreadAction(
-      (thread, key) =>
+      (thread, key, workspace) =>
         call(
-          api.threads[":id"].later.$post({
-            param: { id: thread.id },
-            header: { "idempotency-key": key },
-          }),
+          api.threads[":id"].later.$post(
+            { param: { id: thread.id }, header: { "idempotency-key": key } },
+            workspace,
+          ),
         ),
       { apply: () => null, pages: INBOX_LISTS },
     ),
@@ -116,13 +134,12 @@ export function useLater() {
 export function useMarkUnread() {
   return runner(
     useThreadAction(
-      (thread, key) =>
+      (thread, key, workspace) =>
         call(
-          api.threads[":id"].state.$patch({
-            param: { id: thread.id },
-            header: { "idempotency-key": key },
-            json: { read: false },
-          }),
+          api.threads[":id"].state.$patch(
+            { param: { id: thread.id }, header: { "idempotency-key": key }, json: { read: false } },
+            workspace,
+          ),
         ),
       { apply: (thread) => ({ ...thread, read: false, unread: true }), read: false },
     ),

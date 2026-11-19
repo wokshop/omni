@@ -10,7 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton.tsx";
 import { Text } from "@/components/ui/text.tsx";
 import { isNotFound } from "@/lib/api.ts";
 import type { LogoFor } from "@/lib/sender-logo.ts";
-import { colors, gutter, radius, space } from "@/theme/tokens.ts";
+import { gutter, space } from "@/theme/tokens.ts";
 
 /** What a record's top shows: its name, large, and the line under it. */
 export interface RecordHead {
@@ -32,7 +32,7 @@ export function RecordView<T>(props: {
   if (query.isPending) {
     return (
       <View style={styles.loading}>
-        <View style={styles.avatarSkeleton} />
+        <Skeleton width={64} height={64} round />
         <Skeleton width="70%" height={28} />
         <Skeleton width="40%" height={16} />
       </View>
@@ -130,13 +130,6 @@ export function Section<T>(props: { title: string; items: T[]; render: (item: T)
 
 const styles = StyleSheet.create({
   loading: { paddingHorizontal: gutter, paddingTop: space(4), gap: space(3) },
-  avatarSkeleton: {
-    width: 64,
-    height: 64,
-    borderRadius: radius.full,
-    backgroundColor: colors.accent,
-    marginBottom: space(1),
-  },
   scroll: { paddingBottom: space(16), gap: space(6) },
   head: {
     paddingHorizontal: gutter,

@@ -50,7 +50,7 @@ export function ThreadList({ page, mailboxId, mailboxes, you }: ThreadListProps)
         row.kind === "heading" ? (
           <SectionHeading label={row.label} />
         ) : (
-          <Link href={{ pathname: "/mail/thread/[id]", params: { id: row.item.id } }} asChild>
+          <Link href={{ pathname: "/mail/thread/[id]", params: { id: row.item.id, page } }} asChild>
             <Link.Trigger>
               <ThreadRow
                 thread={{
