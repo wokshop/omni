@@ -1,4 +1,4 @@
-import type { ThreadPage, ThreadSummary } from "@omni/client";
+import type { Thread, ThreadPage, ThreadSummary } from "@omni/client";
 import {
   useMutation,
   useQueryClient,
@@ -16,6 +16,7 @@ type Threads = InfiniteData<ThreadPage>;
 interface Change {
   apply: (thread: ThreadSummary) => ThreadSummary | null;
   pages?: MailPage[];
+  read?: boolean;
 }
 
 const INBOX_LISTS: MailPage[] = ["inbox", "needsReply", "awaitingReply"];
@@ -56,13 +57,18 @@ function useThreadAction(
     retry: (count, error) => !isAuthError(error) && count < 2,
     onMutate: async ({ thread }) => {
       void Haptics.selectionAsync();
+      if (change.read !== undefined)
+        client.setQueryData<Thread>(keys.thread(thread.id), (data) =>
+          data ? { ...data, read: change.read ?? data.read } : data,
+        );
       return { snapshot: await changeCachedThread(client, thread.id, change) };
     },
     onError: (_error, _vars, context) => {
       for (const [key, data] of context?.snapshot ?? []) client.setQueryData(key, data);
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     },
-    onSettled: () => {
+    onSettled: (_data, _error, { thread }) => {
+      void client.invalidateQueries({ queryKey: keys.thread(thread.id) });
       void client.invalidateQueries({ queryKey: ["threads"] });
       void client.invalidateQueries({ queryKey: keys.counts() });
     },
@@ -117,7 +123,7 @@ export function useMarkUnread() {
             json: { read: false },
           }),
         ),
-      { apply: (thread) => ({ ...thread, read: false, unread: true }) },
+      { apply: (thread) => ({ ...thread, read: false, unread: true }), read: false },
     ),
   );
 }
