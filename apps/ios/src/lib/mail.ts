@@ -115,14 +115,18 @@ export function mailboxName(mailbox: Pick<Mailbox, "kind" | "address">, you: str
   return local.charAt(0).toUpperCase() + local.slice(1);
 }
 
-const TIME = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
-const DAY = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
+export { bySection, listTime, type Sectioned } from "@omni/mail-core/list-dates";
 
-/** A list row's time: the clock today, the date before. */
-export function listTime(iso: string, now = new Date()) {
-  const date = new Date(iso);
-  return date.toDateString() === now.toDateString() ? TIME.format(date) : DAY.format(date);
-}
+/** Mail search across the workspace, best match first. */
+export const useSearch = (q: string) =>
+  useQuery({
+    queryKey: keys.search(q),
+    queryFn: ({ signal }) =>
+      call(api.search.$get({ query: { q, limit: "50" } }, { init: { signal } })),
+    select: (data) => data.results,
+    enabled: q.trim().length > 0,
+    placeholderData: (previous) => previous,
+  });
 
 /** A thread with every message, each with only what its sender newly wrote. */
 export const threadQuery = (threadId: string) =>

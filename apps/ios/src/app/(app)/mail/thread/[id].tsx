@@ -12,7 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton.tsx";
 import { idempotencyKey } from "@/lib/ids.ts";
 import { mailboxName, useMarkRead, useThread } from "@/lib/mail.ts";
 import { useSession } from "@/lib/session.ts";
-import { space } from "@/theme/tokens.ts";
+import { gutter, space } from "@/theme/tokens.ts";
 
 /** A conversation, read top to bottom. Opening it marks it read, as on the web. */
 export default function ThreadScreen() {
@@ -28,9 +28,10 @@ export default function ThreadScreen() {
       <ThreadActions threadId={id} />
       {thread.isPending ? (
         <View style={styles.content}>
-          <Skeleton width="80%" height={24} />
-          <Skeleton width="55%" height={14} />
-          <Skeleton width="70%" height={64} />
+          <Skeleton width="85%" height={28} />
+          <Skeleton width="55%" height={28} />
+          <Skeleton width="40%" height={16} />
+          <Skeleton width="75%" height={72} />
         </View>
       ) : thread.isError ? (
         <EmptyState icon={IconInbox} title="This conversation didn't load">
@@ -79,9 +80,9 @@ function useMarkReadOnOpen(threadId: string, read: boolean | undefined) {
 
 const styles = StyleSheet.create({
   content: {
-    paddingHorizontal: space(4),
+    paddingHorizontal: gutter,
     paddingTop: space(2),
-    paddingBottom: space(12),
-    gap: space(6),
+    paddingBottom: space(16),
+    gap: space(8),
   },
 });
