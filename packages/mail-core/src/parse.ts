@@ -56,6 +56,11 @@ export interface ParsedMessage {
   messageId: string;
   messageIdSynthesized: boolean;
   /**
+   * The header's own Message-ID when it was over 998 bytes and `messageId` is its hash. A row
+   * stored before ids were bounded still carries this form, so look it up by both.
+   */
+  longMessageId?: string;
+  /**
    * The In-Reply-To header. A bounce without one gets the Message-ID of the message it
    * returns, as Gmail's own bounces carry: it is stored, so threading converges whichever
    * of the two syncs first.
@@ -167,7 +172,9 @@ async function describe(mail: ParsedMail, bodySkipped: boolean) {
     automated: automated(mail, from),
   };
   message.inReplyTo ??= message.automated?.bouncedMessageId ?? null;
-  message.messageId = await boundedId(message.messageId);
+  const bounded = await boundedId(message.messageId);
+  if (bounded !== message.messageId) message.longMessageId = message.messageId;
+  message.messageId = bounded;
   if (message.inReplyTo !== null) message.inReplyTo = await boundedId(message.inReplyTo);
   if (bodySkipped) message.bodySkipped = true;
 
