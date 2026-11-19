@@ -76,7 +76,7 @@ async function run(job: Job) {
       },
     });
     jobs = jobs.filter((j) => j !== job);
-    if (job.workspace === currentWorkspaceId()) {
+    if ((currentWorkspaceId() ?? job.workspace) === job.workspace) {
       if (job.target.replaces) void queryClient.invalidateQueries({ queryKey: keys.driveAll() });
       else void driveNodeChanged(queryClient, node);
     }
