@@ -196,6 +196,14 @@ export class PgMailStore implements MailStore {
     }
   }
 
+  private async findStored(mailboxId: string, message: ParsedMessage) {
+    for (const key of [message.messageId, ...message.messageIdAliases]) {
+      const stored = await findMessageByHeader(this.db, mailboxId, key);
+      if (stored) return stored;
+    }
+    return null;
+  }
+
   private async storeParsed(
     mailboxId: string,
     mailbox: MailboxRow,
@@ -204,7 +212,7 @@ export class PgMailStore implements MailStore {
     parsed: Parsed,
   ) {
     const { message } = parsed;
-    let stored = await findMessageByHeader(this.db, mailboxId, message.messageId);
+    let stored = await this.findStored(mailboxId, message);
     let inserted = false;
     if (!stored) {
       const result = await this.insert(mailboxId, mailbox, folder.id, fetched, parsed);
@@ -255,7 +263,7 @@ export class PgMailStore implements MailStore {
   async storeSent(mailboxId: string, raw: Uint8Array, options: { threadOf?: string } = {}) {
     const mailbox = await this.mailbox(mailboxId);
     const parsed = await parse(raw);
-    if (await findMessageByHeader(this.db, mailboxId, parsed.message.messageId)) return;
+    if (await this.findStored(mailboxId, parsed.message)) return;
     const threadId = options.threadOf
       ? await messageThread(this.db, mailboxId, options.threadOf)
       : null;
