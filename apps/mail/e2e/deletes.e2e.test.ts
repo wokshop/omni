@@ -142,7 +142,7 @@ it("a Message-ID too long to index still imports, threads its reply, and lets de
 
 it("a long Message-ID stored before ids were bounded is found again, not imported twice", async () => {
   const { box, connection } = await connected("shared");
-  const long = `<${randomBytes(600).toString("hex")}@outside.test>`;
+  const long = `<${"y".repeat(3000)}@outside.test>`;
   await arrive(connection, [[box.address, "Stored long ago", { messageId: long }]]);
   const [row] = await messageRows(db, box.id);
   await db
