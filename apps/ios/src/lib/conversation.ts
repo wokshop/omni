@@ -129,13 +129,15 @@ function applied(before: Conversation, change: ConversationChange) {
 
 /**
  * `mutate(change)`: one change to the thread's conversation, as the web's property menus make it.
- * It shows at once; a failure puts it back and says why.
+ * It shows at once; a failure puts it back and says why, unless the workspace changed since.
+ * Changes to one thread queue behind each other, so a quick on-then-off lands in that order.
  */
 export function useConversationChange(threadId: string) {
   const client = useQueryClient();
   const mutation = useMutation({
     mutationFn: (vars: { change: ConversationChange; key: string; workspace: string | null }) =>
       request(threadId, vars.change, vars.key, vars.workspace),
+    scope: { id: `conversation:${threadId}` },
     retry: (count, error) => !isAuthError(error) && count < 2,
     onMutate: async ({ change }) => {
       const key: QueryKey = keys.conversation(threadId);
@@ -144,8 +146,10 @@ export function useConversationChange(threadId: string) {
       if (before) client.setQueryData(key, applied(before, change));
       return { before };
     },
-    onError: (error, _vars, context) => {
-      client.setQueryData(keys.conversation(threadId), context?.before);
+    onError: (error, vars, context) => {
+      if (vars.workspace === currentWorkspaceId()) {
+        client.setQueryData(keys.conversation(threadId), context?.before);
+      }
       alertFailure(error);
     },
     onSettled: () => {
