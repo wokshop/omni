@@ -18,7 +18,7 @@
     "@better-auth/passkey": "^1.7.22",
     "@better-auth/stripe": "1.7.22",
     "@omni/db": "workspace:*",
-    "@simplewebauthn/server": "13.3.3",
+    "@simplewebauthn/server": "14.1.0",
     "better-auth": "^1.7.22",
     "drizzle-orm": "^0.45.4",
     "stripe": "^22.6.2",
