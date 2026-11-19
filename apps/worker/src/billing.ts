@@ -136,10 +136,6 @@ export const READ_ONLY_ALLOWED = [
     reason: "gated in storage/shared.ts by the shared node's workspace, not the visitor's own",
   },
   {
-    path: "/api/storage/sync",
-    reason: "gated in storage/sync.ts once the desktop token names the workspace (ADR 0043)",
-  },
-  {
     path: "/api/storage/signing",
     reason: "a signer answering a request already sent; sending one is gated",
   },
