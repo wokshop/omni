@@ -1,5 +1,5 @@
 import type { ComponentType, ReactNode } from "react";
-import { Pressable, StyleSheet, View, type PressableProps } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, View, type PressableProps } from "react-native";
 import type { SvgProps } from "react-native-svg";
 import { colors, floatingControl, iconSize, radius, searchControl, space } from "@/theme/tokens.ts";
 import { Text } from "./text.tsx";
@@ -20,6 +20,8 @@ export interface FloatingButtonProps extends Omit<PressableProps, "children" | "
   searching?: boolean;
   /** The glyph's size; 20pt unless set. */
   glyph?: number;
+  /** The action is running (Send): dimmed like a disabled button, a spinner in the glyph's place. */
+  isPending?: boolean;
 }
 
 /**
@@ -33,23 +35,29 @@ export function FloatingButton({
   compact = false,
   searching = false,
   glyph = iconSize.md,
+  isPending = false,
+  disabled,
   ...props
 }: FloatingButtonProps) {
+  const ink = primary ? colors.primaryForeground : colors.foreground;
   return (
     <Pressable
       {...props}
+      disabled={disabled || isPending}
       accessibilityRole="button"
       accessibilityLabel={label}
+      accessibilityState={{ disabled: !!(disabled || isPending), busy: isPending }}
       style={({ pressed }) => [
         styles.surface,
         styles.round,
         primary && styles.primary,
         compact && styles.compactRound,
         searching && styles.searchRound,
+        (disabled || isPending) && styles.dimmed,
         pressed && styles.pressed,
       ]}
     >
-      <Icon size={glyph} color={primary ? colors.primaryForeground : colors.foreground} />
+      {isPending ? <ActivityIndicator color={ink} /> : <Icon size={glyph} color={ink} />}
     </Pressable>
   );
 }
@@ -99,6 +107,41 @@ export function FloatingField({ icon: Icon, children }: { icon: Glyph; children:
   );
 }
 
+export interface FloatingGroupAction {
+  icon: Glyph;
+  /** What VoiceOver reads: name the action. */
+  label: string;
+  onPress?: () => void;
+}
+
+/**
+ * Related actions in one floating pill (a conversation's Reply, Reply all, Forward): flat, the
+ * surface fill and a hairline edge, each a 44pt glyph. One without `onPress` is dimmed.
+ */
+export function FloatingGroup({ actions }: { actions: FloatingGroupAction[] }) {
+  return (
+    <View style={[styles.surface, styles.group]}>
+      {actions.map(({ icon: Icon, label, onPress }) => (
+        <Pressable
+          key={label}
+          accessibilityRole="button"
+          accessibilityLabel={label}
+          accessibilityState={{ disabled: !onPress }}
+          disabled={!onPress}
+          onPress={onPress}
+          style={({ pressed }) => [
+            styles.groupButton,
+            !onPress && styles.dimmed,
+            pressed && styles.pressed,
+          ]}
+        >
+          <Icon size={iconSize.md} color={colors.foreground} />
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
 /** A flat card floating over the page (the module menu): surface, hairline edge, no shadow. */
 export function FloatingCard({ children }: { children: ReactNode }) {
   return <View style={styles.card}>{children}</View>;
@@ -134,6 +177,14 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
   },
+  group: { flexDirection: "row", alignItems: "center", paddingHorizontal: space(1.5) },
+  groupButton: {
+    width: compactControl,
+    height: compactControl,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  dimmed: { opacity: 0.5 },
   pressed: { transform: [{ scale: 0.97 }] },
   shrink: { flexShrink: 1 },
 });

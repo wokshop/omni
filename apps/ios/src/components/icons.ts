@@ -51,3 +51,15 @@ export { IconFileZip } from "@central-icons-react-native/round-outlined-radius-3
 export { IconFilePdf } from "@central-icons-react-native/round-outlined-radius-3-stroke-1.5/IconFilePdf";
 export { IconSlidesWide as IconPresentation } from "@central-icons-react-native/round-outlined-radius-3-stroke-1.5/IconSlidesWide";
 export { IconFolderOpen as IconFolderOpenFilled } from "@central-icons-react-native/round-filled-radius-3-stroke-1.5/IconFolderOpen";
+export { IconArrowUp } from "@central-icons-react-native/round-outlined-radius-3-stroke-1.5/IconArrowUp";
+export { IconDotGrid1x3Horizontal as IconEllipsis } from "@central-icons-react-native/round-outlined-radius-3-stroke-1.5/IconDotGrid1x3Horizontal";
+export { IconArrowShareRight as IconForward } from "@central-icons-react-native/round-outlined-radius-3-stroke-1.5/IconArrowShareRight";
+export { IconClockSnooze } from "@central-icons-react-native/round-outlined-radius-3-stroke-1.5/IconClockSnooze";
+export { IconCirclePlaceholderOn as IconCircle } from "@central-icons-react-native/round-outlined-radius-3-stroke-1.5/IconCirclePlaceholderOn";
+export { IconCircleDashed } from "@central-icons-react-native/round-outlined-radius-3-stroke-1.5/IconCircleDashed";
+export { IconSpeedHigh as IconSignalHigh } from "@central-icons-react-native/round-outlined-radius-3-stroke-1.5/IconSpeedHigh";
+export { IconSpeedMiddle as IconSignalMedium } from "@central-icons-react-native/round-outlined-radius-3-stroke-1.5/IconSpeedMiddle";
+export { IconSpeedLow as IconSignalLow } from "@central-icons-react-native/round-outlined-radius-3-stroke-1.5/IconSpeedLow";
+export { IconTag } from "@central-icons-react-native/round-outlined-radius-3-stroke-1.5/IconTag";
+export { IconEmail2Unread as IconMailUnread } from "@central-icons-react-native/round-outlined-radius-3-stroke-1.5/IconEmail2Unread";
+export { IconBellOff } from "@central-icons-react-native/round-outlined-radius-3-stroke-1.5/IconBellOff";
