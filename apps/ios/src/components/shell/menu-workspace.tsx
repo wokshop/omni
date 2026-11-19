@@ -1,35 +1,52 @@
+import type { Workspace } from "@omni/client";
 import { router } from "expo-router";
 import { useState } from "react";
-import { IconCheck, IconLogOut, IconSettings } from "@/components/icons.ts";
+import {
+  IconConnections,
+  IconLogOut,
+  IconPlus,
+  IconSettings,
+  IconUpgrade,
+  IconUserAdd,
+  IconUserRound,
+} from "@/components/icons.ts";
 import { Avatar, AvatarButton } from "@/components/ui/avatar.tsx";
-import { FloatingCard } from "@/components/ui/floating.tsx";
-import { Popover } from "@/components/ui/popover.tsx";
+import { BottomSheet } from "@/components/ui/bottom-sheet.tsx";
 import { usePictureSource } from "@/lib/picture.ts";
 import { signOut, useSession } from "@/lib/session.ts";
 import { openWorkspace, useWorkspace, workspaceLabel } from "@/lib/workspace.ts";
-import { colors, iconSize, space } from "@/theme/tokens.ts";
-import { MenuRow } from "./menu-row.tsx";
+import {
+  openWeb,
+  useWorkspaceMenu,
+  webSettingsPath,
+  type WebSettingsPage,
+} from "@/lib/workspace-menu.ts";
+import { space } from "@/theme/tokens.ts";
+import { ChoiceRow } from "./mailbox-chooser.tsx";
+import { MenuDivider, MenuRow } from "./menu-row.tsx";
 
 const AVATAR = space(11);
-const SMALL = iconSize.menu;
+const SHEET_LEAD = space(9);
 
 /**
  * The top bar's right button: the workspace's avatar (its logo, else its initial), a circle
- * the size of ☰'s. A tap opens
- * a small menu under it: every workspace you belong to (the current one checked), Settings and
+ * the size of ☰'s. A tap opens the Workspaces sheet, as the desktop's workspace menu: every
+ * workspace you belong to (the current one checked), New workspace, the settings pages, and
  * Log out.
  */
-export function WorkspaceButton({ top, right }: { top: number; right: number }) {
+export function WorkspaceButton() {
   const { active, all } = useWorkspace();
   const name = useSession().data?.user.name;
   const [open, setOpen] = useState(false);
   const logo = usePictureSource(active?.logo);
+  const menu = useWorkspaceMenu(!!active && active.kind !== "personal");
   if (!active) return null;
   const label = workspaceLabel(active, name);
   const pick = (then: () => void) => {
     setOpen(false);
     then();
   };
+  const web = (page: WebSettingsPage) => pick(() => openWeb(webSettingsPath(active.slug, page)));
   return (
     <>
       <AvatarButton
@@ -40,36 +57,58 @@ export function WorkspaceButton({ top, right }: { top: number; right: number }) 
         label={`Workspace, ${label}`}
         onPress={() => setOpen(true)}
       />
-      <Popover
-        isOpen={open}
-        onClose={() => setOpen(false)}
-        label="Close workspaces"
-        at={{ top, right }}
-      >
-        <FloatingCard>
-          {all.map((workspace) => {
-            const current = workspace.id === active.id;
-            const title = workspaceLabel(workspace, name);
-            return (
-              <MenuRow
-                key={workspace.id}
-                lead={<Avatar name={title} size={SMALL} inverse />}
-                label={title}
-                trailing={
-                  current ? <IconCheck size={iconSize.sm} color={colors.primary} /> : undefined
-                }
-                onPress={() => pick(() => current || openWorkspace(workspace.id))}
-              />
-            );
-          })}
-          <MenuRow
-            icon={IconSettings}
-            label="Settings"
-            onPress={() => pick(() => router.push("/settings"))}
+      <BottomSheet isOpen={open} onClose={() => setOpen(false)} title="Workspaces">
+        {all.map((workspace) => (
+          <WorkspaceChoice
+            key={workspace.id}
+            workspace={workspace}
+            name={workspaceLabel(workspace, name)}
+            chosen={workspace.id === active.id}
+            onPress={() => pick(() => workspace.id === active.id || openWorkspace(workspace.id))}
           />
-          <MenuRow icon={IconLogOut} label="Log out" onPress={() => pick(() => void signOut())} />
-        </FloatingCard>
-      </Popover>
+        ))}
+        {menu.canCreate && (
+          <MenuRow
+            icon={IconPlus}
+            label="New workspace"
+            onPress={() => pick(() => openWeb("/onboarding"))}
+          />
+        )}
+        <MenuDivider />
+        <MenuRow
+          icon={IconUserRound}
+          label="Account settings"
+          onPress={() => pick(() => router.push("/settings"))}
+        />
+        <MenuRow icon={IconSettings} label="Workspace settings" onPress={() => web("general")} />
+        <MenuRow icon={IconConnections} label="Connections" onPress={() => web("accounts")} />
+        {(menu.invite || menu.upgrade) && <MenuDivider />}
+        {menu.invite && (
+          <MenuRow icon={IconUserAdd} label="Invite members" onPress={() => web("people")} />
+        )}
+        {menu.upgrade && (
+          <MenuRow icon={IconUpgrade} label="Upgrade" onPress={() => web("billing")} />
+        )}
+        <MenuDivider />
+        <MenuRow icon={IconLogOut} label="Log out" onPress={() => pick(() => void signOut())} />
+      </BottomSheet>
     </>
+  );
+}
+
+function WorkspaceChoice(props: {
+  workspace: Workspace;
+  name: string;
+  chosen: boolean;
+  onPress: () => void;
+}) {
+  const photo = usePictureSource(props.workspace.logo);
+  return (
+    <ChoiceRow
+      lead={<Avatar name={props.name} size={SHEET_LEAD} photo={photo} inverse />}
+      name={props.name}
+      chosen={props.chosen}
+      onPress={props.onPress}
+    />
   );
 }

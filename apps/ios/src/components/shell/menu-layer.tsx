@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  AccessibilityInfo,
   Animated,
   Easing,
   ScrollView,
@@ -8,6 +7,7 @@ import {
   useWindowDimensions,
   type ScrollViewInstance,
 } from "react-native";
+import { useReduceMotion } from "@/components/ui/use-reduce-motion.ts";
 import { colors, space } from "@/theme/tokens.ts";
 import { useMenu } from "./menu-context.tsx";
 import { useShellTop } from "./menu-nav.ts";
@@ -61,6 +61,8 @@ function Pages({ width, height }: { width: number; height: number }) {
   const pager = useRef<ScrollViewInstance>(null);
   const showing = useRef(at);
   const heading = useRef<number | null>(null);
+  // WARNING: read once; a new contentOffset mid-swipe strands the pager between pages.
+  const start = useRef({ x: at * width, y: 0 }).current;
   useEffect(() => {
     if (showing.current === at) return;
     showing.current = at;
@@ -73,11 +75,16 @@ function Pages({ width, height }: { width: number; height: number }) {
       horizontal
       pagingEnabled
       showsHorizontalScrollIndicator={false}
-      contentOffset={{ x: at * width, y: 0 }}
+      contentOffset={start}
       onLayout={() => pager.current?.scrollTo({ x: showing.current * width, animated: false })}
       scrollEventThrottle={16}
       onScrollBeginDrag={() => {
         heading.current = null;
+      }}
+      onMomentumScrollEnd={(event) => {
+        const x = event.nativeEvent.contentOffset.x;
+        const page = Math.round(x / width);
+        if (Math.abs(x - page * width) > 1) pager.current?.scrollTo({ x: page * width });
       }}
       onScroll={(event) => {
         const next = Math.round(event.nativeEvent.contentOffset.x / width);
@@ -101,16 +108,6 @@ function Pages({ width, height }: { width: number; height: number }) {
       })}
     </ScrollView>
   );
-}
-
-function useReduceMotion() {
-  const [still, setStill] = useState(false);
-  useEffect(() => {
-    void AccessibilityInfo.isReduceMotionEnabled().then(setStill);
-    const sub = AccessibilityInfo.addEventListener("reduceMotionChanged", setStill);
-    return () => sub.remove();
-  }, []);
-  return still;
 }
 
 const styles = StyleSheet.create({

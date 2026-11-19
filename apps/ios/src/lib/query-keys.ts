@@ -23,6 +23,8 @@ export const keys = {
   crmMe: () => ["crm-me"] as const,
   crmMembers: () => ["crm-members"] as const,
   me: () => ["me"] as const,
+  onboarding: () => ["onboarding"] as const,
+  billing: () => ["billing"] as const,
   /** Everything Drive caches, to ask it all again after a change. */
   driveAll: () => ["drive"] as const,
   driveNode: (nodeId: string) => ["drive", "node", nodeId] as const,
