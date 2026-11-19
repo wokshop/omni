@@ -1,4 +1,4 @@
-import { Stack, router, useLocalSearchParams } from "expo-router";
+import { Stack, router, useIsPreview, useLocalSearchParams } from "expo-router";
 import { useEffect, useRef } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
 import { MessageItem } from "@/components/conversation/message-item.tsx";
@@ -14,7 +14,7 @@ import { mailboxName, useMarkRead, useThread } from "@/lib/mail.ts";
 import { useSession } from "@/lib/session.ts";
 import { gutter, space } from "@/theme/tokens.ts";
 
-/** A conversation, read top to bottom. Opening it marks it read, as on the web. */
+/** A conversation, read top to bottom. Opening it marks it read, as on the web; a long-press peek at it does not. */
 export default function ThreadScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const thread = useThread(id);
@@ -70,12 +70,13 @@ export default function ThreadScreen() {
 
 function useMarkReadOnOpen(threadId: string, read: boolean | undefined) {
   const markRead = useMarkRead();
+  const peeking = useIsPreview();
   const sent = useRef<string | null>(null);
   useEffect(() => {
-    if (read === undefined || sent.current === threadId) return;
+    if (peeking || read === undefined || sent.current === threadId) return;
     sent.current = threadId;
     if (!read) markRead.mutate({ threadId, key: idempotencyKey() });
-  }, [threadId, read, markRead]);
+  }, [threadId, read, markRead, peeking]);
 }
 
 const styles = StyleSheet.create({

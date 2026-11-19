@@ -1,7 +1,9 @@
 import { domainOf, isWebmailDomain } from "@omni/mail-core/addresses";
+import { WORKSPACE_HEADER } from "@omni/client";
 import { useQuery } from "@tanstack/react-query";
 import { api, auth } from "./api.ts";
 import { keys } from "./query-keys.ts";
+import { currentWorkspaceId } from "./workspace-id.ts";
 
 /** Whose logo: a sender's address (their company's mark, or a webmail sender's Gravatar), or a company's domain. */
 export type LogoFor = { address: string } | { domain: string };
@@ -34,6 +36,8 @@ export function useLogoSource(who: LogoFor | null) {
       const headers: Record<string, string> = {};
       const cookie = await auth.getCookie();
       if (cookie) headers.cookie = cookie;
+      const workspace = currentWorkspaceId();
+      if (workspace) headers[WORKSPACE_HEADER] = workspace;
       const domain = byDomain ? null : domainOf(key);
       return {
         uri: api["sender-logo"].$url({ query }).toString(),
