@@ -7,6 +7,7 @@ import {
   type DrivePlace,
 } from "@/lib/drive-actions.ts";
 import { addUploads, pickDocuments, pickMedia } from "@/lib/drive-uploads.ts";
+import { useWorkspace } from "@/lib/workspace.ts";
 
 /**
  * The "+" in a space's or a folder's header: New folder and the two uploads, the web page's
@@ -15,6 +16,7 @@ import { addUploads, pickDocuments, pickMedia } from "@/lib/drive-uploads.ts";
  */
 export function useAddMenu(place: DrivePlace) {
   const create = useCreateFolder().mutate;
+  const workspace = useWorkspace().active?.id;
   const newFolder = () =>
     Alert.prompt(
       "New folder",
@@ -35,7 +37,7 @@ export function useAddMenu(place: DrivePlace) {
     );
   const upload = async (pick: typeof pickDocuments) => {
     const files = await pick().catch(() => []);
-    if (files.length) addUploads(files, { place });
+    if (workspace && files.length) addUploads(files, { workspace, place });
   };
   return (
     <Stack.Toolbar.Menu icon="plus" accessibilityLabel="New">

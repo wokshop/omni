@@ -28,7 +28,7 @@ export interface UploadRequest {
   /** An earlier try's upload, to resume from the parts the server already has. */
   resumeId?: string | undefined;
   /** The workspace the upload was queued in: every request names it, whatever the app is in. */
-  workspace: string | null;
+  workspace: string;
   signal: AbortSignal;
   /** The upload exists on the server: keep its id to resume or cancel it. */
   onOpened: (uploadId: string) => void;
@@ -102,15 +102,15 @@ export async function uploadFile(request: UploadRequest) {
 }
 
 /** Frees what an unfinished upload holds (its parts, and its room against the limit). */
-export async function abortUpload(uploadId: string, workspace: string | null) {
+export async function abortUpload(uploadId: string, workspace: string) {
   await uploadDoor(workspace)
     .abort(uploadId)
     .catch(() => {});
 }
 
-function uploadDoor(workspace: string | null) {
+function uploadDoor(workspace: string) {
   const uploads = api.storage.uploads;
-  const init = workspace ? { headers: { [WORKSPACE_HEADER]: workspace } } : {};
+  const init = { headers: { [WORKSPACE_HEADER]: workspace } };
   return {
     open: async (file: PickedFile, place: DrivePlace) =>
       (

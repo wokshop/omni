@@ -17,14 +17,17 @@ import { colors, space } from "@/theme/tokens.ts";
 export default function FilePreview() {
   const { id, name } = useLocalSearchParams<{ id: string; name?: string }>();
   const source = useQuery({ queryKey: keys.fileSource(id), queryFn: () => fileSource(id) });
-  const node = useNode(id).data?.node;
+  const nodeQuery = useNode(id);
+  const node = nodeQuery.data?.node;
   const menu = useFileMenu(node);
+  const ready = source.data && (node || nodeQuery.isError);
   return (
     <>
       <Stack.Screen options={{ title: node?.name ?? name ?? "" }} />
       <Stack.Toolbar placement="right">{menu}</Stack.Toolbar>
-      {source.data ? (
+      {ready ? (
         <WebView
+          key={node?.contentVersion ?? node?.updatedAt}
           source={source.data}
           style={styles.view}
           originWhitelist={["*"]}

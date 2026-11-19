@@ -48,7 +48,8 @@ function List({ node, data }: { node: DriveNode; data: DriveVersions }) {
   const restore = useRestoreVersion();
   const upload = async () => {
     const [file] = await pickDocuments().catch(() => []);
-    if (file) addUploads([file], { place: placeOf(node), replaces: node.id });
+    if (file)
+      addUploads([file], { workspace: node.orgId, place: placeOf(node), replaces: node.id });
   };
   return (
     <View>

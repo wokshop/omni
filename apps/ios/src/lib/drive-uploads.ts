@@ -11,6 +11,8 @@ import { queryClient } from "./query-client.ts";
 import { currentWorkspaceId, subscribeWorkspaceId } from "./workspace-id.ts";
 
 export interface UploadTarget {
+  /** The workspace the upload goes to: every request names it, whatever the app is in later. */
+  workspace: string;
   place: DrivePlace;
   /** The file this becomes a new version of. */
   replaces?: string | undefined;
@@ -29,7 +31,7 @@ export interface UploadItem {
 interface Job extends UploadItem {
   file: PickedFile;
   target: UploadTarget;
-  workspace: string | null;
+  workspace: string;
   uploadId?: string;
   controller?: AbortController;
   running?: Promise<void>;
@@ -95,9 +97,9 @@ function pump() {
   if (next) next.running = run(next);
 }
 
-/** Queues `files` for `target`, one at a time, in the workspace the app is in now. */
+/** Queues `files` for `target`, one at a time, in `target.workspace`. */
 export function addUploads(files: PickedFile[], target: UploadTarget) {
-  const workspace = currentWorkspaceId();
+  const { workspace } = target;
   for (const file of files) {
     jobs.push({
       id: nextId++,
@@ -135,17 +137,28 @@ export function removeUpload(id: number) {
   pump();
 }
 
-subscribeWorkspaceId(() => {
-  const all = jobs.filter((job) => job.workspace !== currentWorkspaceId());
-  if (!all.length) return;
+function cancel(drop: (job: Job) => boolean) {
+  const all = jobs.filter(drop);
+  if (!all.length) return Promise.resolve();
   jobs = jobs.filter((job) => !all.includes(job));
-  for (const job of all) {
-    job.controller?.abort();
-    if (job.uploadId) void abortUpload(job.uploadId, job.workspace);
-  }
+  for (const job of all) job.controller?.abort();
   publish();
   pump();
+  return Promise.all(
+    all.flatMap((job) => (job.uploadId ? [abortUpload(job.uploadId, job.workspace)] : [])),
+  );
+}
+
+subscribeWorkspaceId(() => {
+  const now = currentWorkspaceId();
+  if (now) void cancel((job) => job.workspace !== now);
 });
+
+/**
+ * Stops every upload and frees what each holds on the server. Call it before the session ends or
+ * the account changes, so nothing queued by one person goes out under the next one's cookie.
+ */
+export const cancelUploads = () => cancel(() => true);
 
 const store = {
   subscribe(listener: () => void) {
