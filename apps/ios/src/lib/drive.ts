@@ -31,6 +31,15 @@ export type DrivePage = keyof typeof DRIVE_PAGES;
 export const isDrivePage = (page: string | undefined): page is DrivePage =>
   !!page && Object.hasOwn(DRIVE_PAGES, page);
 
+/**
+ * The Drive page a route's `page` param lands on in the active workspace: a page the workspace
+ * doesn't have (Shared, outside a company) falls back to My files.
+ */
+export function drivePageIn(page: string | undefined, company: boolean) {
+  if (!isDrivePage(page)) return "my" satisfies DrivePage;
+  return "company" in DRIVE_PAGES[page] && !company ? "my" : page;
+}
+
 /** A space's top (`my`, `shared`) or a folder's contents: folders first, then by name. */
 export const folderQuery = (place: { space: "personal" | "shared" } | { parent: string }) =>
   infiniteQueryOptions({

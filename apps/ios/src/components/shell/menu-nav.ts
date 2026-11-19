@@ -1,8 +1,9 @@
 import { router, useGlobalSearchParams, usePathname } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { isCrmPage, type CrmPage } from "@/lib/crm.ts";
-import { isDrivePage, type DrivePage } from "@/lib/drive.ts";
+import { drivePageIn, type DrivePage } from "@/lib/drive.ts";
 import { isMailPage, type MailPage } from "@/lib/mail.ts";
+import { hasCrm, useWorkspace } from "@/lib/workspace.ts";
 import { space } from "@/theme/tokens.ts";
 import { useMenu } from "./menu-context.tsx";
 
@@ -34,12 +35,13 @@ function moduleOf(pathname: string) {
 export function useMenuPlace() {
   const pathname = usePathname();
   const params = useGlobalSearchParams<{ page?: string; mailbox?: string }>();
+  const company = hasCrm(useWorkspace().active);
   const module = moduleOf(pathname);
   const onRoot = pathname === MODULE_HOME[module];
   const mailPage: MailPage | undefined =
     onRoot && module === "mail" ? (isMailPage(params.page) ? params.page : "inbox") : undefined;
   const drivePage: DrivePage | undefined =
-    onRoot && module === "drive" ? (isDrivePage(params.page) ? params.page : "my") : undefined;
+    onRoot && module === "drive" ? drivePageIn(params.page, company) : undefined;
   const crmPage: CrmPage | undefined =
     onRoot && module === "crm" ? (isCrmPage(params.page) ? params.page : "companies") : undefined;
   const mailbox = mailPage ? params.mailbox : undefined;
