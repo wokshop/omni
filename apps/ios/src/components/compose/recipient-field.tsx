@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { StyleSheet, View } from "react-native";
 import { Tag } from "@/components/ui/tag.tsx";
 import { TextField } from "@/components/ui/text-field.tsx";
@@ -10,16 +10,19 @@ import { HeaderRow } from "./header-field.tsx";
  * One recipient line, as the web's `RecipientField`: the label, the addresses as removable tags,
  * and a field. A comma, semicolon, space or Return turns typed addresses into tags; Delete in an
  * empty field takes the last one off. `end` sits at the end of the line (the Cc Bcc toggle).
+ * Typed text the person never turned into a tag still goes out: Send reads it from `text`.
  */
 export function RecipientField(props: {
   label: string;
   value: string[];
   onChange: (next: string[]) => void;
+  /** What's typed and not yet a tag: held by the composer, which sends it too. */
+  text: string;
+  onText: (text: string) => void;
   autoFocus?: boolean;
   end?: ReactNode;
 }) {
-  const { value, onChange } = props;
-  const [text, setText] = useState("");
+  const { value, onChange, text, onText: setText } = props;
   const add = (found: string[]) => {
     const fresh = found.filter((a) => !value.some((v) => v.toLowerCase() === a.toLowerCase()));
     if (fresh.length) onChange([...value, ...fresh]);

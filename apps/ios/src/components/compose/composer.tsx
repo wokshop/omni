@@ -23,7 +23,7 @@ import { IconButton } from "@/components/ui/icon-button.tsx";
 import { Text } from "@/components/ui/text.tsx";
 import { TextField } from "@/components/ui/text-field.tsx";
 import { ApiError } from "@/lib/api.ts";
-import { replyStart, useSendNew, useSendReply } from "@/lib/compose.ts";
+import { parseAddresses, replyStart, useSendNew, useSendReply } from "@/lib/compose.ts";
 import { idempotencyKey } from "@/lib/ids.ts";
 import { currentWorkspaceId } from "@/lib/workspace-id.ts";
 import { gutter, space } from "@/theme/tokens.ts";
@@ -45,19 +45,39 @@ interface Copies {
   bcc: string[];
 }
 
+type Typed = Record<keyof Copies, string>;
+const NOTHING_TYPED: Typed = { to: "", cc: "", bcc: "" };
+
+const withTyped = (list: string[], typed: string) => [
+  ...list,
+  ...parseAddresses(typed).filter((a) => !list.some((v) => v.toLowerCase() === a.toLowerCase())),
+];
+
 function useRecipients(start: { to: string[]; cc: string[] }) {
   const [list, setList] = useState<Copies>({ to: start.to, cc: start.cc, bcc: [] });
+  const [typed, setTyped] = useState<Typed>(NOTHING_TYPED);
   const [initial, setInitial] = useState<Copies>(list);
   const [showCopies, setShowCopies] = useState(start.cc.length > 0);
+  const final: Copies = {
+    to: withTyped(list.to, typed.to),
+    cc: withTyped(list.cc, typed.cc),
+    bcc: withTyped(list.bcc, typed.bcc),
+  };
   return {
     list,
+    typed,
+    type: (field: keyof Copies, text: string) => setTyped((now) => ({ ...now, [field]: text })),
+    final,
     showCopies,
     showAll: () => setShowCopies(true),
     set: (next: Partial<Copies>) => setList((now) => ({ ...now, ...next })),
-    changed: JSON.stringify(list) !== JSON.stringify(initial),
+    changed:
+      JSON.stringify(list) !== JSON.stringify(initial) ||
+      Object.values(typed).some((text) => text.trim()),
     reset: (next: { to: string[]; cc: string[] }) => {
       const fresh = { to: next.to, cc: next.cc, bcc: [] };
       setList(fresh);
+      setTyped(NOTHING_TYPED);
       setInitial(fresh);
       if (next.cc.length) setShowCopies(true);
     },
@@ -120,6 +140,8 @@ function Recipients({ state, autoFocus }: { state: RecipientsState; autoFocus?: 
       <RecipientField
         label="To"
         value={state.list.to}
+        text={state.typed.to}
+        onText={(text) => state.type("to", text)}
         autoFocus={autoFocus}
         onChange={(to) => state.set({ to })}
         end={
@@ -130,10 +152,18 @@ function Recipients({ state, autoFocus }: { state: RecipientsState; autoFocus?: 
       />
       {state.showCopies ? (
         <>
-          <RecipientField label="Cc" value={state.list.cc} onChange={(cc) => state.set({ cc })} />
+          <RecipientField
+            label="Cc"
+            value={state.list.cc}
+            text={state.typed.cc}
+            onText={(text) => state.type("cc", text)}
+            onChange={(cc) => state.set({ cc })}
+          />
           <RecipientField
             label="Bcc"
             value={state.list.bcc}
+            text={state.typed.bcc}
+            onText={(text) => state.type("bcc", text)}
             onChange={(bcc) => state.set({ bcc })}
           />
         </>
@@ -266,7 +296,7 @@ export function ReplyComposer(props: { thread: Thread; replyAll: boolean }) {
   const message = start.message;
   const written = text.trim().length > 0;
   const dirty = written || recipients.changed;
-  const canSend = !!message && recipients.list.to.length > 0 && written && !send.isPending;
+  const canSend = !!message && recipients.final.to.length > 0 && written && !send.isPending;
   const submit = (checkLatest: boolean) => {
     if (!message) return;
     const reply = {
@@ -274,7 +304,7 @@ export function ReplyComposer(props: { thread: Thread; replyAll: boolean }) {
       messageId: message.id,
       replyAll: kind === "replyAll",
       text,
-      ...recipients.list,
+      ...recipients.final,
     };
     send.mutate(
       { ...reply, key: keyFor(reply), workspace: currentWorkspaceId(), checkLatest },
@@ -330,11 +360,11 @@ export function NewComposer(props: { mailboxes: Mailbox[]; mailboxId?: string })
   const [fromId, setFromId] = useState(
     mailboxes.find((m) => m.id === props.mailboxId)?.id ?? mailboxes[0]?.id ?? "",
   );
-  const { to, cc, bcc } = recipients.list;
+  const { to, cc, bcc } = recipients.final;
   const dirty = !!(text.trim() || subject.trim() || to.length || cc.length || bcc.length);
   const canSend = !!fromId && to.length > 0 && !send.isPending;
   const submit = () => {
-    const mail = { mailboxId: fromId, subject: subject.trim(), text, ...recipients.list };
+    const mail = { mailboxId: fromId, subject: subject.trim(), text, ...recipients.final };
     send.mutate(
       { ...mail, key: keyFor(mail), workspace: currentWorkspaceId() },
       { onSuccess: () => router.back(), onError: (error) => notSent(error) },
