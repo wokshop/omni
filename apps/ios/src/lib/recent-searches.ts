@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import { auth } from "./api.ts";
 import * as SecureStore from "./secure-store";
 import { currentWorkspaceId, subscribeWorkspaceId } from "./workspace-id.ts";
 
@@ -6,8 +7,11 @@ const KEEP = 5;
 const listeners = new Set<() => void>();
 const cache = new Map<string, string[]>();
 
-const keyFor = (workspace: string | null) =>
-  `omni_recent_searches_${(workspace ?? "default").replace(/[^\w.-]/g, "_")}`;
+function currentKey() {
+  const user = auth.useSession.get().data?.user.id ?? "none";
+  const workspace = currentWorkspaceId() ?? "default";
+  return `omni_recent_searches_${user}_${workspace}`.replace(/[^\w.-]/g, "_");
+}
 
 function read(key: string) {
   const cached = cache.get(key);
@@ -27,7 +31,7 @@ function read(key: string) {
 export function rememberSearch(q: string) {
   const query = q.trim();
   if (!query) return;
-  const key = keyFor(currentWorkspaceId());
+  const key = currentKey();
   const next = [query, ...read(key).filter((one) => one.toLowerCase() !== query.toLowerCase())];
   const kept = next.slice(0, KEEP);
   cache.set(key, kept);
@@ -37,14 +41,16 @@ export function rememberSearch(q: string) {
 
 const subscribe = (listener: () => void) => {
   listeners.add(listener);
-  const stop = subscribeWorkspaceId(listener);
+  const stopWorkspace = subscribeWorkspaceId(listener);
+  const stopSession = auth.useSession.subscribe(listener);
   return () => {
     listeners.delete(listener);
-    stop();
+    stopWorkspace();
+    stopSession();
   };
 };
 
-/** This workspace's latest mail searches on this phone, newest first. */
+/** The signed-in person's latest mail searches in this workspace on this phone, newest first. */
 export function useRecentSearches() {
-  return useSyncExternalStore(subscribe, () => read(keyFor(currentWorkspaceId())));
+  return useSyncExternalStore(subscribe, () => read(currentKey()));
 }
