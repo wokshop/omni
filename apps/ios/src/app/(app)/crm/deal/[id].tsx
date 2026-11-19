@@ -11,21 +11,26 @@ export default function Deal() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const stages = useStageNames().data;
   return (
-    <RecordView query={useDeal(id)} title={(data) => data.deal.name}>
-      {(data) => (
-        <>
-          <RecordActions kind="deals" id={id} stageId={data.deal.stageId} />
-          <Fields
-            fields={[
-              ["Stage", stages?.get(data.deal.stageId)],
-              ["Value", dealValue(data.deal)],
-              ["Last contacted", data.lastContactedAt ? listTime(data.lastContactedAt) : null],
-            ]}
-          />
-          <Section title="People" items={data.people} render={(p) => <PersonRow person={p} />} />
-          <TimelineSection kind="deals" id={id} />
-        </>
-      )}
-    </RecordView>
+    <>
+      <Stack.Screen options={{ title: "" }} />
+      <RecordView
+        query={useDeal(id)}
+        head={(data) => ({ name: data.deal.name, detail: dealValue(data.deal) })}
+      >
+        {(data) => (
+          <>
+            <RecordActions kind="deals" id={id} stageId={data.deal.stageId} />
+            <Fields
+              fields={[
+                ["Stage", stages?.get(data.deal.stageId)],
+                ["Last contacted", data.lastContactedAt ? listTime(data.lastContactedAt) : null],
+              ]}
+            />
+            <Section title="People" items={data.people} render={(p) => <PersonRow person={p} />} />
+            <TimelineSection kind="deals" id={id} />
+          </>
+        )}
+      </RecordView>
+    </>
   );
 }
