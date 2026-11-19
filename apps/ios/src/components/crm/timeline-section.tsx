@@ -1,9 +1,10 @@
 import { Link, router } from "expo-router";
 import type { ComponentType, ReactNode } from "react";
-import { Alert, Pressable, StyleSheet, View } from "react-native";
+import { Alert, StyleSheet, View } from "react-native";
 import type { SvgProps } from "react-native-svg";
 import { IconFileText, IconMail, IconNote, IconTimelineEvent } from "@/components/icons.ts";
 import { Button } from "@/components/ui/button.tsx";
+import { PressableRow } from "@/components/ui/pressable-row.tsx";
 import { Skeleton } from "@/components/ui/skeleton.tsx";
 import { Text } from "@/components/ui/text.tsx";
 import { crmErrorAlert } from "@/lib/crm-errors.ts";
@@ -121,20 +122,22 @@ function Item(props: {
           actor={from?.name || from?.address || "Mail"}
           verb="wrote"
         >
-          <Pressable
-            accessibilityRole="button"
+          <PressableRow
+            shape="inset"
+            style={styles.cardFrame}
             onPress={() =>
               router.push({ pathname: "/mail/thread/[id]", params: { id: item.thread.id } })
             }
-            style={({ pressed }) => [styles.card, pressed && styles.pressed]}
           >
-            <Text size="sm" numberOfLines={1}>
-              {item.thread.subject || "(no subject)"}
-            </Text>
-            <Text size="xs" tone="mutedForeground" numberOfLines={1}>
-              {item.thread.snippet}
-            </Text>
-          </Pressable>
+            <View style={styles.cardBody}>
+              <Text size="sm" numberOfLines={1}>
+                {item.thread.subject || "(no subject)"}
+              </Text>
+              <Text size="xs" tone="mutedForeground" numberOfLines={1}>
+                {item.thread.snippet}
+              </Text>
+            </View>
+          </PressableRow>
         </Line>
       );
     }
@@ -233,9 +236,9 @@ function NoteCard(props: {
       asChild
     >
       <Link.Trigger>
-        <Pressable accessibilityRole="button" accessibilityHint="Edit note">
-          <View style={styles.card}>{card}</View>
-        </Pressable>
+        <PressableRow shape="inset" style={styles.cardFrame} accessibilityHint="Edit note">
+          <View style={styles.cardBody}>{card}</View>
+        </PressableRow>
       </Link.Trigger>
       <Link.Menu>
         <Link.MenuAction
@@ -286,8 +289,14 @@ const styles = StyleSheet.create({
   },
   lineText: { flex: 1 },
   lineBody: { paddingLeft: space(7) },
+  cardFrame: {
+    paddingHorizontal: space(3),
+    paddingVertical: space(2.5),
+    borderRadius: radius.xl,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+  },
   card: {
-    gap: space(0.5),
     paddingHorizontal: space(3),
     paddingVertical: space(2.5),
     borderRadius: radius.xl,
@@ -295,5 +304,5 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     backgroundColor: colors.surface,
   },
-  pressed: { backgroundColor: colors.accent },
+  cardBody: { flex: 1, gap: space(0.5) },
 });
