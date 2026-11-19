@@ -18,8 +18,10 @@ name: Production
 # - migrations when a push adds or edits `packages/db/migrations/`;
 # - the secret sync when the Worker's documented env (`.dev.vars.example`) or config changes, which
 #   is when new code can need a new secret;
-# - both daily, as the safety net for a Doppler edit or a push whose file list was cut short
-#   (both are idempotent), and by hand: Actions, Production, Run workflow.
+# - both daily, as the safety net for a Doppler edit (both are idempotent), and by hand: Actions,
+#   Production, Run workflow.
+# A push that changes one job's inputs starts the other too; its `Changed?` step ends it at once.
+# (The push event in Actions carries no per-commit file lists, so each job diffs the push itself.)
 on:
   push:
     branches: [main]
@@ -45,12 +47,6 @@ permissions:
 jobs:
   migrate:
     name: Migrate database
-    # On a push, only when it touched a migration (GitHub lists each commit's files in the event).
-    if: >-
-      github.event_name != 'push' ||
-      contains(toJSON(github.event.commits.*.added), 'packages/db/migrations/') ||
-      contains(toJSON(github.event.commits.*.modified), 'packages/db/migrations/') ||
-      contains(toJSON(github.event.commits.*.modified), '.github/workflows/production.yml')
     # Runner switch (docs/operations/ci-runners.md): repo variable RUNNER_PRODUCTION, else boat-small.
     runs-on: ${{ fromJSON(vars.RUNNER_PRODUCTION || '"boat-small"') }}
     timeout-minutes: 10
@@ -58,32 +54,43 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
 
+      - name: Changed?
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          run=true
+          if [ "$EVENT" = "push" ] && git cat-file -e "$BEFORE^{commit}" 2>/dev/null &&
+            [ -z "$(git diff --name-only "$BEFORE" "$GITHUB_SHA" -- packages/db/migrations .github/workflows/production.yml)" ]; then
+            run=false
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+          echo "Run: $run"
+
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        if: steps.scope.outputs.run == 'true'
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: steps.scope.outputs.run == 'true'
         with:
           node-version-file: .nvmrc
           cache: pnpm
 
-      - run: pnpm install --frozen-lockfile --filter @omni/db...
+      - if: steps.scope.outputs.run == 'true'
+        run: pnpm install --frozen-lockfile --filter @omni/db...
 
       - name: Apply migrations
+        if: steps.scope.outputs.run == 'true'
         env:
           DATABASE_URL: ${{ secrets.MIGRATE_DATABASE_URL }}
         run: pnpm --filter @omni/db db:migrate
 
   worker-secrets:
     name: Sync Worker secrets
-    # On a push, only when the Worker's env or config, or this sync itself, changed.
-    if: >-
-      github.event_name != 'push' ||
-      contains(toJSON(github.event.commits.*.modified), 'apps/worker/.dev.vars.example') ||
-      contains(toJSON(github.event.commits.*.modified), 'apps/worker/wrangler.jsonc') ||
-      contains(toJSON(github.event.commits.*.modified), '.github/scripts/') ||
-      contains(toJSON(github.event.commits.*.added), '.github/scripts/') ||
-      contains(toJSON(github.event.commits.*.modified), '.github/workflows/production.yml')
     # Runner switch (docs/operations/ci-runners.md): repo variable RUNNER_PRODUCTION, else boat-small.
     runs-on: ${{ fromJSON(vars.RUNNER_PRODUCTION || '"boat-small"') }}
     timeout-minutes: 30
@@ -91,19 +98,38 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
 
+      - name: Changed?
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          run=true
+          if [ "$EVENT" = "push" ] && git cat-file -e "$BEFORE^{commit}" 2>/dev/null &&
+            [ -z "$(git diff --name-only "$BEFORE" "$GITHUB_SHA" -- apps/worker/.dev.vars.example apps/worker/wrangler.jsonc .github/scripts .github/workflows/production.yml)" ]; then
+            run=false
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+          echo "Run: $run"
+
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        if: steps.scope.outputs.run == 'true'
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: steps.scope.outputs.run == 'true'
         with:
           node-version-file: .nvmrc
           cache: pnpm
 
-      - run: pnpm install --frozen-lockfile --filter @omni/worker
+      - if: steps.scope.outputs.run == 'true'
+        run: pnpm install --frozen-lockfile --filter @omni/worker
 
       # Every event: a daily or hand-started run on a fresh main commit must not race its build.
       - name: Wait for Cloudflare's deploy of this commit
+        if: steps.scope.outputs.run == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: .github/scripts/wait-for-checks.sh "$GITHUB_SHA"
@@ -111,6 +137,7 @@ jobs:
       # prd_github reaches this job through Doppler's GitHub sync (environment `production`).
       # prd_worker is read with its own token: its keys, and only those, become Worker secrets.
       - name: Sync
+        if: steps.scope.outputs.run == 'true'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

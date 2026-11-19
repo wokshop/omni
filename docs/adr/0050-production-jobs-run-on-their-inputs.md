@@ -12,13 +12,15 @@ the repository's Actions minutes, and the secret sync also made a new Worker ver
 
 ## Decision
 
-1. **Migrations run on a push that adds or edits `packages/db/migrations/`**, read from the
-   push event's file lists.
+1. **Migrations run on a push that adds or edits `packages/db/migrations/`.** The workflow's
+   `paths` filter starts a run only for a push that touches either job's inputs, and each job
+   diffs the push (`github.event.before` to the commit) to decide whether it has work. The
+   push event in Actions carries no per-commit file lists, so the diff is the only source.
 2. **The Worker secret sync runs on a push that changes `apps/worker/.dev.vars.example` or
    `wrangler.jsonc`** (or the sync's own scripts). A new secret is documented in
    `.dev.vars.example` (AGENTS.md), so code that needs one arrives with that change.
 3. **Both run daily (09:23 UTC) and by hand.** Both are idempotent. The daily run picks up a
-   Doppler edit made without a code change, and any migration a push's file list missed. Change a
+   Doppler edit made without a code change. Change a
    production secret and want it live now: Actions, Production, Run workflow.
 4. The secret sync waits for Cloudflare's build of the commit on every event, not only on push.
 
