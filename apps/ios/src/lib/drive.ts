@@ -1,4 +1,4 @@
-import { infiniteQueryOptions, useInfiniteQuery } from "@tanstack/react-query";
+import { infiniteQueryOptions, useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { WORKSPACE_HEADER, type Api } from "@omni/client";
 import type { InferResponseType } from "hono/client";
 import { api, auth, call } from "./api.ts";
@@ -112,3 +112,13 @@ export function fileSize(bytes: number) {
   }
   return `${unit === 0 ? value : value.toFixed(value < 10 ? 1 : 0)} ${UNITS[unit]}`;
 }
+
+/** Drive search across My files (and Shared, in a company): folders first, then by name. */
+export const useDriveSearch = (q: string) =>
+  useQuery({
+    queryKey: keys.driveSearch(q),
+    queryFn: ({ signal }) => call(api.storage.search.$get({ query: { q } }, { init: { signal } })),
+    select: (data) => data.nodes,
+    enabled: q.trim().length > 0,
+    placeholderData: (previous) => previous,
+  });
