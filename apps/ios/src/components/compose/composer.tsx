@@ -47,14 +47,18 @@ interface Copies {
 
 function useRecipients(start: { to: string[]; cc: string[] }) {
   const [list, setList] = useState<Copies>({ to: start.to, cc: start.cc, bcc: [] });
+  const [initial, setInitial] = useState<Copies>(list);
   const [showCopies, setShowCopies] = useState(start.cc.length > 0);
   return {
     list,
     showCopies,
     showAll: () => setShowCopies(true),
     set: (next: Partial<Copies>) => setList((now) => ({ ...now, ...next })),
+    changed: JSON.stringify(list) !== JSON.stringify(initial),
     reset: (next: { to: string[]; cc: string[] }) => {
-      setList({ to: next.to, cc: next.cc, bcc: [] });
+      const fresh = { to: next.to, cc: next.cc, bcc: [] };
+      setList(fresh);
+      setInitial(fresh);
       if (next.cc.length) setShowCopies(true);
     },
   };
@@ -260,8 +264,9 @@ export function ReplyComposer(props: { thread: Thread; replyAll: boolean }) {
   const send = useSendReply();
   const keyFor = useSendKey();
   const message = start.message;
-  const dirty = text.trim().length > 0;
-  const canSend = !!message && recipients.list.to.length > 0 && dirty && !send.isPending;
+  const written = text.trim().length > 0;
+  const dirty = written || recipients.changed;
+  const canSend = !!message && recipients.list.to.length > 0 && written && !send.isPending;
   const submit = (checkLatest: boolean) => {
     if (!message) return;
     const reply = {
