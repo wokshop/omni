@@ -92,27 +92,8 @@ async function serveFile(path: string, res: ServerResponse) {
   res.end(await readFile(join(webDist, "index.html")));
 }
 
-/**
- * `expo-secure-store` ships no web implementation: its web module is `{}`, so the app's first
- * `SecureStore.getItem` (`src/lib/workspace-id.ts`, at import) throws and the export renders
- * nothing. Until the app has a web storage of its own, the page gets the store's five calls on
- * `localStorage`, which is what a web build of the app would use. `workspaceId` is the workspace
- * the app opens in, as if the person had picked it.
- */
-export function secureStoreOnLocalStorage(workspaceId: string) {
-  const store = window.localStorage;
-  store.setItem("omni_workspace", workspaceId);
-  const calls: Record<string, (...args: string[]) => unknown> = {
-    getValueWithKeySync: (key) => store.getItem(key),
-    setValueWithKeySync: (value, key) => store.setItem(key, value),
-    getValueWithKeyAsync: async (key) => store.getItem(key),
-    setValueWithKeyAsync: async (value, key) => store.setItem(key, value),
-    deleteValueWithKeyAsync: async (key) => store.removeItem(key),
-  };
-  for (const [name, value] of Object.entries(calls)) {
-    // oxlint-disable-next-line eslint/no-extend-native -- the store's web module is a bare `{}`
-    Object.defineProperty(Object.prototype, name, { value, configurable: true, writable: true });
-  }
+function pickWorkspace(workspaceId: string) {
+  window.localStorage.setItem("omni_workspace", workspaceId);
 }
 
 /** An iPhone-sized page on the app's origin, signed in with `cookie` (from `signIn()`). */
@@ -134,6 +115,6 @@ export async function openApp(
       return { name: pair.slice(0, at), value: pair.slice(at + 1), url: app.origin };
     }),
   );
-  await context.addInitScript(secureStoreOnLocalStorage, workspaceId);
+  await context.addInitScript(pickWorkspace, workspaceId);
   return context;
 }

@@ -142,7 +142,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: gutter,
     paddingTop: space(2),
     gap: space(2),
-    alignItems: "flex-start",
   },
   fields: { paddingHorizontal: gutter, gap: space(5) },
   field: { gap: space(1) },

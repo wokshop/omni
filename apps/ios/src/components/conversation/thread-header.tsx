@@ -23,8 +23,9 @@ export function ThreadTitle({ subject, sharedInbox }: { subject: string; sharedI
 }
 
 const styles = StyleSheet.create({
-  title: { gap: space(3), alignItems: "flex-start" },
+  title: { gap: space(3) },
   inbox: {
+    alignSelf: "flex-start",
     flexDirection: "row",
     alignItems: "center",
     gap: space(1),

@@ -14,7 +14,6 @@ export default function Company() {
         query={useCompany(id)}
         head={(data) => ({
           name: data.company.name,
-          detail: data.domains[0],
           logo: data.domains[0] ? { domain: data.domains[0] } : null,
         })}
       >

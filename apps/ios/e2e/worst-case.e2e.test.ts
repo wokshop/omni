@@ -54,68 +54,101 @@ interface Seeded {
   folderId: string;
 }
 
+type Clamp = [text: string | RegExp, lines: number];
+
 const SCREENS: {
   name: string;
   path: (s: Seeded) => string;
   shows: string;
-  oneLine?: (string | RegExp)[];
+  clamped?: Clamp[];
+  inFull?: string[];
 }[] = [
   {
     name: "Mail inbox",
     path: () => "/mail",
     shows: LONG.sender,
-    oneLine: [LONG.sender, LONG.address, LONG.subject, TODAYS_TIME],
+    clamped: [
+      [LONG.sender, 1],
+      [LONG.address, 1],
+      [LONG.subject, 1],
+      [TODAYS_TIME, 1],
+    ],
   },
   {
     name: "Mail thread",
     path: (s) => `/mail/thread/${s.threadId}`,
     shows: LONG.subject,
-    oneLine: [...LONG.attachments, TODAYS_TIME],
+    clamped: [...LONG.attachments.map((name) => [name, 1] satisfies Clamp), [TODAYS_TIME, 1]],
+    inFull: [LONG.subject],
   },
   { name: "Mail trash, empty", path: () => "/mail?page=trash", shows: "Trash is empty" },
   {
     name: "Drive",
     path: () => "/drive",
     shows: LONG.folder,
-    oneLine: [LONG.folder, LONG.file, TODAYS_TIME],
+    clamped: [
+      [LONG.folder, 2],
+      [LONG.file, 1],
+      [TODAYS_TIME, 1],
+    ],
   },
   {
     name: "Drive folder",
     path: (s) => `/drive/folder/${s.folderId}?name=${encodeURIComponent(LONG.folder)}`,
     shows: LONG.file,
-    oneLine: [LONG.folder, LONG.file, TODAYS_TIME],
+    clamped: [
+      [LONG.folder, 1],
+      [LONG.file, 1],
+      [TODAYS_TIME, 1],
+    ],
   },
   { name: "Drive trash, empty", path: () => "/drive?page=trash", shows: "Trash is empty" },
   {
     name: "CRM companies",
     path: () => "/crm",
     shows: LONG.company,
-    oneLine: [LONG.company, LONG.unbreakableDomain],
+    clamped: [
+      [LONG.company, 2],
+      [LONG.unbreakableDomain, 1],
+    ],
   },
   {
     name: "CRM people",
     path: () => "/crm?page=people",
     shows: LONG.person,
-    oneLine: [LONG.person, LONG.personAddress],
+    clamped: [
+      [LONG.person, 2],
+      [LONG.personAddress, 1],
+    ],
   },
-  { name: "CRM deals", path: () => "/crm?page=deals", shows: LONG.deal, oneLine: [LONG.deal] },
+  {
+    name: "CRM deals",
+    path: () => "/crm?page=deals",
+    shows: LONG.deal,
+    clamped: [[LONG.deal, 2]],
+  },
   {
     name: "CRM company",
     path: (s) => `/crm/company/${s.companyId}`,
-    shows: LONG.unbreakableDomain,
-    oneLine: [LONG.company, LONG.person, LONG.deal],
+    shows: LONG.company,
+    clamped: [
+      [LONG.person, 2],
+      [LONG.deal, 2],
+    ],
+    inFull: [LONG.company, LONG.unbreakableDomain],
   },
   {
     name: "CRM person",
     path: (s) => `/crm/person/${s.personId}`,
     shows: LONG.personAddress,
-    oneLine: [LONG.person],
+    inFull: [LONG.person, LONG.personAddress],
   },
   {
     name: "CRM deal",
     path: (s) => `/crm/deal/${s.dealId}`,
     shows: LONG.person,
-    oneLine: [LONG.deal, LONG.person],
+    clamped: [[LONG.person, 2]],
+    inFull: [LONG.deal],
   },
 ];
 
@@ -290,25 +323,32 @@ test.for(SCREENS)("$name: nothing runs past the screen's sides", async (screen) 
   }
 });
 
-test.for(SCREENS.filter((screen) => screen.oneLine))(
-  "$name: row text stays on one line and ends in an ellipsis",
+test.for(SCREENS.filter((screen) => screen.clamped))(
+  "$name: row text stays within its lines and ends in an ellipsis when cut",
   async (screen) => {
     const page = await open(screen.path(seeded), screen.shows);
     try {
       const problems: unknown[] = [];
-      for (const text of screen.oneLine ?? []) {
+      for (const [text, lines] of screen.clamped ?? []) {
         const found = page.getByText(text, { exact: true });
         const label = String(text).slice(0, 40);
         if (!(await found.count())) problems.push({ text: label, found: 0 });
         for (const element of await found.all()) {
           const fit = await element.evaluate(lineFit);
-          if (fit.lines > 1 || (fit.spills && !(fit.clips && fit.ellipsis)))
-            problems.push({ text: label, shown: await element.textContent(), ...fit });
+          const cut = fit.spills || fit.hiddenBelow;
+          if (fit.lines > lines || (cut && !fit.ellipsis))
+            problems.push({
+              text: label,
+              allowed: lines,
+              shown: await element.textContent(),
+              ...fit,
+            });
         }
       }
-      expect(problems, `${screen.name}: text that wraps or spills instead of truncating`).toEqual(
-        [],
-      );
+      expect(
+        problems,
+        `${screen.name}: text that runs over its lines or is cut without an ellipsis`,
+      ).toEqual([]);
     } finally {
       await page.close();
     }
@@ -318,7 +358,10 @@ test.for(SCREENS.filter((screen) => screen.oneLine))(
 test("the inbox row with the longest sender keeps its time inside the row", async () => {
   const page = await open("/mail", LONG.sender);
   try {
-    const row = page.getByRole("button").filter({ hasText: LONG.sender });
+    const row = page
+      .getByRole("link")
+      .or(page.getByRole("button"))
+      .filter({ hasText: LONG.sender });
     const time = row.getByText(TODAYS_TIME);
     await time.waitFor();
     const fit = await time.evaluate(sidewaysInside, await row.elementHandle());
@@ -328,22 +371,27 @@ test("the inbox row with the longest sender keeps its time inside the row", asyn
   }
 });
 
-test("a thread shows its whole subject, wrapped", async () => {
-  const page = await open(`/mail/thread/${seeded.threadId}`, LONG.subject);
-  try {
-    const subject = page.getByText(LONG.subject, { exact: true }).first();
-    const shown = await subject.evaluate(showsInFull);
-    expect(shown.text).toBe(LONG.subject);
-    expect(shown.scrollHeight, "lines hidden below the subject's box").toBeLessThanOrEqual(
-      shown.clientHeight + 1,
-    );
-    expect(shown.scrollWidth, "the subject is cut at its side").toBeLessThanOrEqual(
-      shown.clientWidth + 1,
-    );
-  } finally {
-    await page.close();
-  }
-});
+test.for(SCREENS.filter((screen) => screen.inFull))(
+  "$name: names and subjects show in full, wrapped",
+  async (screen) => {
+    const page = await open(screen.path(seeded), screen.shows);
+    try {
+      for (const text of screen.inFull ?? []) {
+        const element = page.getByText(text, { exact: true }).first();
+        const shown = await element.evaluate(showsInFull);
+        expect(shown.text).toBe(text);
+        expect(shown.scrollHeight, `lines hidden below "${text.slice(0, 40)}"`).toBeLessThanOrEqual(
+          shown.clientHeight + 1,
+        );
+        expect(shown.scrollWidth, `"${text.slice(0, 40)}" is cut at its side`).toBeLessThanOrEqual(
+          shown.clientWidth + 1,
+        );
+      }
+    } finally {
+      await page.close();
+    }
+  },
+);
 
 test.for(SCREENS.filter((screen) => screen.name.endsWith("empty")))(
   "$name: an empty list says so",

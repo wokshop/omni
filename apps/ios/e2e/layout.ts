@@ -55,7 +55,7 @@ export function sidewaysOverflow(slack: number) {
   };
 }
 
-/** How one text element sits in its line: its lines, whether its text spills, how it ends. */
+/** How one text element sits in its lines: how many, whether its text spills or hides below, how it ends. */
 export function lineFit(element: Element) {
   const style = getComputedStyle(element);
   const lineHeight = Number.parseFloat(style.lineHeight) || Number.parseFloat(style.fontSize) * 1.2;
@@ -63,7 +63,10 @@ export function lineFit(element: Element) {
     lines: Math.round(element.getBoundingClientRect().height / lineHeight),
     spills: element.scrollWidth > element.clientWidth + 1,
     clips: style.overflowX === "hidden" || style.overflow === "hidden",
-    ellipsis: style.textOverflow === "ellipsis",
+    hiddenBelow: element.scrollHeight > element.clientHeight + 1,
+    ellipsis:
+      style.textOverflow === "ellipsis" ||
+      (style.getPropertyValue("-webkit-line-clamp") || "none") !== "none",
     scrollWidth: element.scrollWidth,
     clientWidth: element.clientWidth,
   };
