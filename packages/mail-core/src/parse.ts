@@ -56,8 +56,8 @@ export interface ParsedMessage {
   messageId: string;
   messageIdSynthesized: boolean;
   /**
-   * The header's own Message-ID when it was over 998 bytes and `messageId` is its hash. A row
-   * stored before ids were bounded still carries this form, so look it up by both.
+   * The header's own Message-ID when it was too long to index and `messageId` is its hash. A
+   * repetitive id compresses enough to have been stored raw before, so look it up by both.
    */
   longMessageId?: string;
   /**
@@ -445,10 +445,10 @@ async function hashedMessageId(input: string) {
   return `<${hex.slice(0, 40)}@omni.invalid>`;
 }
 
-const RFC_5322_MAX_LINE_BYTES = 998;
+const INDEXABLE_ID_BYTES = 2600;
 
 async function boundedId(id: string) {
-  if (Buffer.byteLength(id) <= RFC_5322_MAX_LINE_BYTES) return id;
+  if (Buffer.byteLength(id) <= INDEXABLE_ID_BYTES) return id;
   return hashedMessageId(id);
 }
 
