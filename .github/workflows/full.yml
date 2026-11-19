@@ -92,8 +92,10 @@ jobs:
         run: pnpm test:all
 
       # --continue: one red package still lets the others run, so a failure hides nothing.
+      # --concurrency=1: one package at a time. All at once on 4 vCPU starved the mail and web
+      # timing tests (a different one failed each run); one at a time takes about 11 minutes.
       - name: E2E tests
         if: steps.scope.outputs.run == 'true'
         run: |
           docker compose up -d --wait
-          pnpm test:e2e --continue
+          pnpm test:e2e --continue --concurrency=1
