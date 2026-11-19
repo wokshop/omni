@@ -31,6 +31,7 @@ export const keys = {
   /** Prefixes, for invalidating a whole module at once. */
   threadLists: () => ["threads"] as const,
   threadDetails: () => ["thread"] as const,
+  conversations: () => ["conversation"] as const,
   crmAll: () => ["crm"] as const,
   /** Your notifications: every list (all, unread only). */
   notifications: () => ["notifications"] as const,
