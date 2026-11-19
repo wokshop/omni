@@ -71,9 +71,9 @@ function useMarkReadOnOpen(threadId: string, read: boolean | undefined) {
   const markRead = useMarkRead();
   const sent = useRef<string | null>(null);
   useEffect(() => {
-    if (read !== false || sent.current === threadId) return;
+    if (read === undefined || sent.current === threadId) return;
     sent.current = threadId;
-    markRead.mutate({ threadId, key: idempotencyKey() });
+    if (!read) markRead.mutate({ threadId, key: idempotencyKey() });
   }, [threadId, read, markRead]);
 }
 
