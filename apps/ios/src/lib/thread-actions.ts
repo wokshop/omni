@@ -139,7 +139,7 @@ function useThreadMutation<V extends { threadId: string }>(spec: ThreadMutation<
       if (context?.workspace === currentWorkspaceId()) restore(client, context.snapshot);
       alertFailure(error);
     },
-    onSettled: (_data, _error, { threadId }) => settleMailAction(client, threadId),
+    onSettled: () => settleMailAction(client),
   });
   return {
     isPending: mutation.isPending,
@@ -270,7 +270,7 @@ export function useUnsubscribe() {
     retry,
     mutationKey: MAIL_ACTIONS_KEY,
     scope: MAIL_ACTIONS_SCOPE,
-    onSettled: (_data, _error, { threadId }) => settleMailAction(client, threadId),
+    onSettled: () => settleMailAction(client),
     onError: (error) => alertFailure(error, "Unsubscribe failed"),
   });
   return {

@@ -156,14 +156,18 @@ export const MAIL_ACTIONS_SCOPE = { id: "mail-actions" };
 export const MAIL_ACTIONS_KEY = ["mail-actions"] as const;
 
 /**
- * After a thread action: the counts refetch, and the lists and the thread refetch once the last
- * queued action settles, so an earlier refetch never overwrites a later optimistic edit.
+ * After a thread action: the counts refetch, and the lists and every thread's detail (not its
+ * message HTML) refetch once the last queued action settles, so an earlier refetch never
+ * overwrites a later optimistic edit and no acted-on thread is left stale.
  */
-export function settleMailAction(client: QueryClient, threadId: string) {
+export function settleMailAction(client: QueryClient) {
   void client.invalidateQueries({ queryKey: keys.counts() });
   if (client.isMutating({ mutationKey: MAIL_ACTIONS_KEY }) > 1) return;
   void client.invalidateQueries({ queryKey: ["threads"] });
-  void client.invalidateQueries({ queryKey: keys.thread(threadId), exact: true });
+  void client.invalidateQueries({
+    queryKey: ["thread"],
+    predicate: (query) => query.queryKey.length === 2,
+  });
 }
 
 interface MarkRead {
@@ -218,7 +222,7 @@ export function useMarkRead() {
         for (const [key, data] of context.snapshot) client.setQueryData(key, data);
       }
     },
-    onSettled: (_data, _error, { threadId }) => settleMailAction(client, threadId),
+    onSettled: () => settleMailAction(client),
   });
   const { mutate } = mutation;
   return useMemo(
