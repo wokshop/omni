@@ -6,6 +6,7 @@ import {
   useQuery,
   useQueryClient,
   type InfiniteData,
+  type QueryClient,
   type QueryKey,
 } from "@tanstack/react-query";
 import type { Mailbox, Thread, ThreadPage } from "@omni/client";
@@ -150,6 +151,20 @@ export const useMessageHtml = (threadId: string, messageId: string) =>
 /** One queue for every thread action, opening's mark-read included, so they land in order. */
 export const MAIL_ACTIONS_SCOPE = { id: "mail-actions" };
 
+/** Every thread action's `mutationKey`, so a settling one can tell whether others are still queued. */
+export const MAIL_ACTIONS_KEY = ["mail-actions"] as const;
+
+/**
+ * After a thread action: the counts refetch, and the lists and the thread refetch once the last
+ * queued action settles, so an earlier refetch never overwrites a later optimistic edit.
+ */
+export function settleMailAction(client: QueryClient, threadId: string) {
+  void client.invalidateQueries({ queryKey: keys.counts() });
+  if (client.isMutating({ mutationKey: MAIL_ACTIONS_KEY }) > 1) return;
+  void client.invalidateQueries({ queryKey: ["threads"] });
+  void client.invalidateQueries({ queryKey: keys.thread(threadId), exact: true });
+}
+
 /**
  * Marks a thread read, as opening it does on the web: the list row and the counts follow at once,
  * and a retry reuses the same idempotency key.
@@ -166,6 +181,7 @@ export function useMarkRead() {
         }),
       ),
     retry: (count, error) => !isAuthError(error) && count < 2,
+    mutationKey: MAIL_ACTIONS_KEY,
     scope: MAIL_ACTIONS_SCOPE,
     onMutate: async ({ threadId }) => {
       const workspace = currentWorkspaceId();
@@ -197,8 +213,7 @@ export function useMarkRead() {
       if (context?.workspace === currentWorkspaceId()) {
         for (const [key, data] of context.snapshot) client.setQueryData(key, data);
       }
-      void client.invalidateQueries({ queryKey: ["threads"] });
     },
-    onSettled: () => void client.invalidateQueries({ queryKey: keys.counts() }),
+    onSettled: (_data, _error, { threadId }) => settleMailAction(client, threadId),
   });
 }

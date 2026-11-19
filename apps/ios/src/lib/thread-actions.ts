@@ -9,7 +9,13 @@ import {
 import { Alert } from "react-native";
 import { ApiError, api, call } from "./api.ts";
 import { idempotencyKey } from "./ids.ts";
-import { MAIL_ACTIONS_SCOPE, MAIL_PAGES, isMailPage } from "./mail.ts";
+import {
+  MAIL_ACTIONS_KEY,
+  MAIL_ACTIONS_SCOPE,
+  MAIL_PAGES,
+  isMailPage,
+  settleMailAction,
+} from "./mail.ts";
 import { keys } from "./query-keys.ts";
 import { currentWorkspaceId } from "./workspace-id.ts";
 
@@ -80,14 +86,6 @@ function removeFromLists(client: QueryClient, threadId: string, action: ThreadAc
   }
 }
 
-function invalidateThread(client: QueryClient, threadId: string) {
-  return Promise.all([
-    client.invalidateQueries({ queryKey: keys.threadLists() }),
-    client.invalidateQueries({ queryKey: keys.counts() }),
-    client.invalidateQueries({ queryKey: keys.thread(threadId), exact: true }),
-  ]);
-}
-
 function failureText(error: unknown) {
   if (!(error instanceof ApiError)) return "Something went wrong.";
   if (error.status === 0) return "You're offline.";
@@ -114,7 +112,6 @@ interface ThreadMutation<V extends { threadId: string }> {
   request: (vars: V, key: string) => Promise<unknown>;
   patch?: (vars: V) => ThreadPatch;
   leaves?: (vars: V) => ThreadAction;
-  settles?: "counts" | "thread";
 }
 
 function useThreadMutation<V extends { threadId: string }>(spec: ThreadMutation<V>) {
@@ -122,6 +119,7 @@ function useThreadMutation<V extends { threadId: string }>(spec: ThreadMutation<
   const mutation = useMutation({
     mutationFn: (vars: V & { key: string }) => spec.request(vars, vars.key),
     retry,
+    mutationKey: MAIL_ACTIONS_KEY,
     scope: MAIL_ACTIONS_SCOPE,
     onMutate: async (vars) => {
       const workspace = currentWorkspaceId();
@@ -134,10 +132,7 @@ function useThreadMutation<V extends { threadId: string }>(spec: ThreadMutation<
       if (context?.workspace === currentWorkspaceId()) restore(client, context.snapshot);
       alertFailure(error);
     },
-    onSettled: (_data, _error, { threadId }) =>
-      void (spec.settles === "counts"
-        ? client.invalidateQueries({ queryKey: keys.counts() })
-        : invalidateThread(client, threadId)),
+    onSettled: (_data, _error, { threadId }) => settleMailAction(client, threadId),
   });
   return {
     isPending: mutation.isPending,
@@ -242,7 +237,6 @@ export const useMarkUnread = () =>
         }),
       ),
     patch: ({ read }) => ({ read, unread: !read }),
-    settles: "counts",
   });
 
 /**
@@ -269,8 +263,9 @@ export function useUnsubscribe() {
         }),
       ),
     retry,
+    mutationKey: MAIL_ACTIONS_KEY,
     scope: MAIL_ACTIONS_SCOPE,
-    onSuccess: (_data, { threadId }) => void invalidateThread(client, threadId),
+    onSettled: (_data, _error, { threadId }) => settleMailAction(client, threadId),
     onError: (error) => alertFailure(error, "Unsubscribe failed"),
   });
   return {
