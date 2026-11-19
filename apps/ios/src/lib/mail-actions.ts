@@ -70,6 +70,7 @@ function useThreadAction(
     onSettled: (_data, _error, { thread }) => {
       void client.invalidateQueries({ queryKey: keys.thread(thread.id) });
       void client.invalidateQueries({ queryKey: ["threads"] });
+      void client.invalidateQueries({ queryKey: ["search"] });
       void client.invalidateQueries({ queryKey: keys.counts() });
     },
   });

@@ -9,7 +9,7 @@ import {
   type QueryClient,
   type QueryKey,
 } from "@tanstack/react-query";
-import type { Mailbox, Thread, ThreadPage } from "@omni/client";
+import type { Mailbox, SearchResult, Thread, ThreadPage } from "@omni/client";
 import { useMemo } from "react";
 import type { SymbolName } from "./symbols.ts";
 import { ApiError, api, call, inWorkspace, isAuthError } from "./api.ts";
@@ -168,6 +168,7 @@ export function settleMailAction(client: QueryClient) {
   void client.invalidateQueries({ queryKey: keys.counts() });
   if (client.isMutating({ mutationKey: MAIL_ACTIONS_KEY }) > 1) return;
   void client.invalidateQueries({ queryKey: ["threads"] });
+  void client.invalidateQueries({ queryKey: ["search"] });
   void client.invalidateQueries({
     queryKey: ["thread"],
     predicate: (query) => query.queryKey.length === 2,
@@ -216,6 +217,16 @@ export function useMarkRead() {
                   t.id === threadId ? { ...t, read: true, unread: false } : t,
                 ),
               })),
+            }
+          : data,
+      );
+      client.setQueriesData<{ results: SearchResult[] }>({ queryKey: ["search"] }, (data) =>
+        data
+          ? {
+              ...data,
+              results: data.results.map((hit) =>
+                hit.threadId === threadId ? { ...hit, unread: false } : hit,
+              ),
             }
           : data,
       );
