@@ -18,7 +18,7 @@ import { openOnWeb, useWorkspaceMenu } from "@/lib/workspace-menu.ts";
 import { openWorkspace, useWorkspace, workspaceLabel } from "@/lib/workspace.ts";
 import { space } from "@/theme/tokens.ts";
 import { ChoiceRow } from "./mailbox-chooser.tsx";
-import { MenuDivider, MenuRow } from "./menu-row.tsx";
+import { MenuRow, SheetDivider } from "./menu-row.tsx";
 
 const AVATAR = space(11);
 const SHEET_LEAD = space(9);
@@ -82,7 +82,7 @@ export function WorkspaceButton() {
             onPress={() => pick(() => openOnWeb("onboarding"))}
           />
         ) : null}
-        <MenuDivider />
+        <SheetDivider />
         <MenuRow
           leadWidth={SHEET_LEAD}
           icon={IconUserRound}
@@ -113,7 +113,7 @@ export function WorkspaceButton() {
             onPress={() => settings("people")}
           />
         ) : null}
-        <MenuDivider />
+        <SheetDivider />
         {menu.upgrade ? (
           <MenuRow
             icon={IconUpgrade}

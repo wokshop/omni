@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Animated,
   Easing,
@@ -30,6 +30,7 @@ export function BottomSheet({
   onClose,
   onClosed,
   title,
+  header,
   children,
 }: {
   isOpen: boolean;
@@ -37,6 +38,8 @@ export function BottomSheet({
   /** Once the sheet has gone: where to open what a row picked, so it is not under the sheet. */
   onClosed?: () => void;
   title: string;
+  /** Drawn in place of the title (a file's tile, name and size); `title` still names the sheet. */
+  header?: ReactNode;
   children: ReactNode;
 }) {
   const insets = useSafeAreaInsets();
@@ -70,16 +73,43 @@ export function BottomSheet({
       >
         <View {...motion.handle}>
           <View style={styles.grabber} />
-          <View style={styles.title}>
-            <Text weight="semibold" accessibilityRole="header">
-              {title}
-            </Text>
-          </View>
+          {header ?? (
+            <View style={styles.title}>
+              <Text weight="semibold" accessibilityRole="header" numberOfLines={1}>
+                {title}
+              </Text>
+            </View>
+          )}
         </View>
         <ScrollView>{children}</ScrollView>
       </Animated.View>
     </Modal>
   );
+}
+
+/**
+ * A sheet's open state, and `pick(then)`: close it, and run `then` once it has gone, so what a row
+ * opens (a prompt, another sheet, a pushed screen) is not under it. Spread `props` on the sheet.
+ */
+export function useSheet() {
+  const [isOpen, setOpen] = useState(false);
+  const after = useRef<(() => void) | null>(null);
+  const close = useCallback(() => setOpen(false), []);
+  const pick = useCallback((then: () => void) => {
+    after.current = then;
+    setOpen(false);
+  }, []);
+  const onClosed = useCallback(() => {
+    const then = after.current;
+    after.current = null;
+    then?.();
+  }, []);
+  return {
+    isOpen,
+    open: useCallback(() => setOpen(true), []),
+    pick,
+    props: { isOpen, onClose: close, onClosed },
+  };
 }
 
 function useSheetMotion(isOpen: boolean, onClose: () => void) {

@@ -6,11 +6,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   IconArchive,
   IconBellOff,
-  IconCheck,
   IconChevronLeft,
   IconCircleCheck,
   IconClock,
-  IconClockSnooze,
   IconEllipsis,
   IconForward,
   IconInbox,
@@ -21,13 +19,13 @@ import {
   IconTrash,
   IconWarning,
 } from "@/components/icons.ts";
-import { MenuRow } from "@/components/shell/menu-row.tsx";
+import { MenuRow, SheetDivider } from "@/components/shell/menu-row.tsx";
 import { BottomFade } from "@/components/ui/bottom-fade.tsx";
 import { BottomSheet } from "@/components/ui/bottom-sheet.tsx";
 import { FloatingButton, FloatingGroup } from "@/components/ui/floating.tsx";
 import { canReplyAll } from "@/lib/compose.ts";
-import { snoozePresets } from "@/lib/thread-actions.ts";
 import { space } from "@/theme/tokens.ts";
+import { LaterSheet } from "./later-sheet.tsx";
 import { forward, listMessage, reply, type ThreadActions } from "./use-thread-actions.ts";
 
 const SIDE = space(4);
@@ -81,42 +79,21 @@ function MoreSheet(props: {
     then();
   };
   return (
-    <BottomSheet isOpen={props.isOpen} onClose={props.onClose} title="Actions">
-      {thread.later ? (
-        <MenuRow
-          icon={IconInbox}
-          muted
-          label="Back to inbox"
-          onPress={pick(() => act.later(id, false))}
-        />
-      ) : (
-        snoozePresets().map((preset) => (
-          <MenuRow
-            key={preset.id}
-            icon={IconClockSnooze}
-            muted
-            label={preset.label}
-            onPress={pick(() => act.later(id, true, preset.until))}
-          />
-        ))
-      )}
-      {thread.done ? (
-        <MenuRow
-          icon={IconCheck}
-          muted
-          label="Not done"
-          onPress={pick(() => act.toggleDone(thread))}
-        />
-      ) : null}
-      {thread.archived ? null : (
-        <MenuRow icon={IconArchive} muted label="Archive" onPress={pick(() => act.archive(id))} />
-      )}
+    <BottomSheet
+      isOpen={props.isOpen}
+      onClose={props.onClose}
+      title={thread.messages[0]?.subject || "(no subject)"}
+    >
       <MenuRow
         icon={thread.read ? IconMailUnread : IconMail}
         muted
-        label={thread.read ? "Mark unread" : "Mark read"}
+        label={thread.read ? "Mark as unread" : "Mark as read"}
         onPress={pick(() => act.markUnread.mutate({ threadId: id, read: !thread.read }))}
       />
+      {thread.archived ? null : (
+        <MenuRow icon={IconArchive} muted label="Archive" onPress={pick(() => act.archive(id))} />
+      )}
+      <SheetDivider />
       {list && !unsubscribed ? (
         <MenuRow
           icon={IconBellOff}
@@ -128,9 +105,20 @@ function MoreSheet(props: {
       <MenuRow
         icon={inSpam ? IconInbox : IconWarning}
         muted
-        label={inSpam ? "Not spam" : "Move to spam"}
+        label={inSpam ? "Not spam" : "Report spam"}
         onPress={pick(() => act.spam(id, !inSpam))}
       />
+      {props.page === "trash" ? null : (
+        <>
+          <SheetDivider />
+          <MenuRow
+            icon={IconTrash}
+            destructive
+            label="Move to trash"
+            onPress={pick(() => act.trash(id))}
+          />
+        </>
+      )}
     </BottomSheet>
   );
 }
@@ -145,10 +133,16 @@ export function ThreadBottomBar(props: {
   actions: ThreadActions;
 }) {
   const insets = useSafeAreaInsets();
+  const [choosing, setChoosing] = useState(false);
   const { thread, actions: act } = props;
   const id = thread.id;
   return (
     <>
+      <LaterSheet
+        isOpen={choosing}
+        onClose={() => setChoosing(false)}
+        onPick={(until) => act.later(id, true, until)}
+      />
       <BottomFade />
       <View
         pointerEvents="box-none"
@@ -170,7 +164,7 @@ export function ThreadBottomBar(props: {
             {
               icon: IconClock,
               label: thread.later ? "Back to inbox" : "Later",
-              onPress: () => act.later(id, !thread.later),
+              onPress: () => (thread.later ? act.later(id, false) : setChoosing(true)),
             },
             {
               icon: IconCircleCheck,
