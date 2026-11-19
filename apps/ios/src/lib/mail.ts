@@ -6,8 +6,9 @@ import {
   useQuery,
   useQueryClient,
   type InfiniteData,
+  type QueryKey,
 } from "@tanstack/react-query";
-import type { Mailbox, ThreadPage } from "@omni/client";
+import type { Mailbox, Thread, ThreadPage } from "@omni/client";
 import type { SymbolName } from "./symbols.ts";
 import { ApiError, api, call, isAuthError } from "./api.ts";
 import { keys } from "./query-keys.ts";
@@ -59,6 +60,8 @@ export const MAIL_PAGES = {
     icon: "ellipsis.bubble",
     empty: "Not waiting on anyone",
   },
+  done: { label: "Done", view: "done", icon: "checkmark.circle", empty: "Nothing done yet" },
+  archive: { label: "Archive", view: "archive", icon: "archivebox", empty: "Nothing archived" },
   all: { label: "All mail", view: "all", icon: "envelope", empty: "No mail yet" },
   sent: { label: "Sent", view: "sent", icon: "paperplane", empty: "Nothing sent yet" },
   trash: { label: "Trash", view: "trash", icon: "trash", empty: "Trash is empty" },
@@ -161,7 +164,14 @@ export function useMarkRead() {
     retry: (count, error) => !isAuthError(error) && count < 2,
     onMutate: async ({ threadId }) => {
       await client.cancelQueries({ queryKey: ["threads"] });
-      const snapshot = client.getQueriesData<InfiniteData<ThreadPage>>({ queryKey: ["threads"] });
+      await client.cancelQueries({ queryKey: keys.thread(threadId), exact: true });
+      const snapshot: [QueryKey, unknown][] = [
+        ...client.getQueriesData<InfiniteData<ThreadPage>>({ queryKey: ["threads"] }),
+        [keys.thread(threadId), client.getQueryData(keys.thread(threadId))],
+      ];
+      client.setQueryData<Thread>(keys.thread(threadId), (thread) =>
+        thread ? { ...thread, read: true } : thread,
+      );
       client.setQueriesData<InfiniteData<ThreadPage>>({ queryKey: ["threads"] }, (data) =>
         data
           ? {
