@@ -39,7 +39,12 @@ function useDraft(start: { to: string[]; cc: string[] }) {
     fields: { to, setTo, cc, setCc, bcc, setBcc, body, setBody, showCopies, setShowCopies },
     addresses,
     valid,
-    dirty: body.trim().length > 0,
+    written: body.trim().length > 0,
+    dirty:
+      body.trim().length > 0 ||
+      bcc.trim().length > 0 ||
+      to !== start.to.join(", ") ||
+      cc !== start.cc.join(", "),
   };
 }
 
@@ -99,7 +104,7 @@ function Recipients({ draft, from }: { draft: Draft; from: ReactNode }) {
   );
 }
 
-function Body({ draft }: { draft: Draft }) {
+function Body({ draft, short }: { draft: Draft; short?: boolean }) {
   return (
     <TextField
       variant="bare"
@@ -110,7 +115,7 @@ function Body({ draft }: { draft: Draft }) {
       maxLength={BODY_MAX}
       value={draft.fields.body}
       onChangeText={draft.fields.setBody}
-      style={styles.body}
+      style={[styles.body, short && styles.shortBody]}
     />
   );
 }
@@ -142,12 +147,12 @@ function notSent(error: Error, sendAnyway?: () => void) {
 
 /** A reply to a conversation's latest message, from the inbox it arrived on. */
 export function ReplyComposer({ thread, replyAll }: { thread: Thread; replyAll: boolean }) {
-  const start = replyStart(thread, replyAll);
+  const [start] = useState(() => replyStart(thread, replyAll));
   const draft = useDraft(start);
   const send = useSendReply();
   const [key] = useState(idempotencyKey);
   const message = start.message;
-  const canSend = !!message && draft.valid && draft.dirty && !send.isPending;
+  const canSend = !!message && draft.valid && draft.written && !send.isPending;
   const submit = (checkLatest: boolean) =>
     message &&
     send.mutate(
@@ -179,7 +184,7 @@ export function ReplyComposer({ thread, replyAll }: { thread: Thread; replyAll: 
       <HeaderRow label="Subject">
         <Text selectable>{start.subject}</Text>
       </HeaderRow>
-      <Body draft={draft} />
+      <Body draft={draft} short />
       {message ? (
         <View style={styles.quoted}>
           <ItemRow
@@ -286,5 +291,6 @@ const styles = StyleSheet.create({
   from: { minHeight: 52, gap: space(2), ...rule },
   fromAddress: { flex: 1, minWidth: 0 },
   body: { minHeight: 200, paddingHorizontal: gutter, paddingTop: space(4) },
-  quoted: { marginTop: space(4) },
+  shortBody: { minHeight: 120 },
+  quoted: { marginTop: space(2) },
 });
