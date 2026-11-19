@@ -16,7 +16,6 @@ export const keys = {
   /** Your notifications: every list (all, unread only). */
   notifications: () => ["notifications"] as const,
   notificationList: (unread: boolean) => ["notifications", { unread }] as const,
-  /** Prefixes, for invalidating a whole module at once. */
   /** Every cached thread list, whatever its page and mailbox (`threads(...)` is under it). */
   threadLists: () => ["threads"] as const,
   threadDetails: () => ["thread"] as const,
