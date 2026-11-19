@@ -37,6 +37,7 @@ export const useAttachmentFile = (ref: AttachmentRef) =>
       const { file, folder } = await downloadAgainEveryTime(ref);
       return { uri: file.uri, folderUri: folder.uri };
     },
+    gcTime: 0,
     staleTime: Infinity,
   });
 
