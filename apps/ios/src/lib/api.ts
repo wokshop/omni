@@ -6,7 +6,7 @@ import {
   toApiError,
   type ApiErrorInfo,
 } from "@omni/client";
-import * as SecureStore from "expo-secure-store";
+import * as SecureStore from "./secure-store";
 import { Platform } from "react-native";
 import { DetailedError, parseResponse, type ClientResponse } from "hono/client";
 import { config } from "./config.ts";
@@ -66,6 +66,14 @@ export class ApiError extends Error {
     this.param = info.param;
     this.details = info.details;
   }
+}
+
+/**
+ * Request options that name `workspace` on a call, whatever the app is in when it runs: a mutation
+ * captures the workspace when the person acts, so a retry after they switch still lands there.
+ */
+export function inWorkspace(workspace: string | null) {
+  return workspace ? { headers: { [WORKSPACE_HEADER]: workspace } } : {};
 }
 
 /** Awaits a Hono RPC call and returns its typed body, or throws `ApiError`. */

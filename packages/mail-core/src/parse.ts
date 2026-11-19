@@ -56,6 +56,12 @@ export interface ParsedMessage {
   messageId: string;
   messageIdSynthesized: boolean;
   /**
+   * Other keys an earlier version may have stored this message under: the raw id when
+   * `messageId` is its hash (a repetitive id compressed enough to index), or the hash when an
+   * id of 999 to 2,600 bytes kept its raw form. Look a message up by `messageId`, then these.
+   */
+  messageIdAliases: string[];
+  /**
    * The In-Reply-To header. A bounce without one gets the Message-ID of the message it
    * returns, as Gmail's own bounces carry: it is stored, so threading converges whichever
    * of the two syncs first.
@@ -146,8 +152,9 @@ async function describe(mail: ParsedMail, bodySkipped: boolean) {
   const message: ParsedMessage = {
     messageId: headerId ?? (await synthesizeMessageId(mail.headerLines, mail.text, mail.html)),
     messageIdSynthesized: headerId === null,
+    messageIdAliases: [],
     inReplyTo: firstMessageId(mail.inReplyTo),
-    references: capReferences(messageIds(mail.references)),
+    references: capReferences(await boundedIds(messageIds(mail.references))),
     from,
     to: addresses(mail.to),
     cc: addresses(mail.cc),
@@ -167,6 +174,9 @@ async function describe(mail: ParsedMail, bodySkipped: boolean) {
     automated: automated(mail, from),
   };
   message.inReplyTo ??= message.automated?.bouncedMessageId ?? null;
+  message.messageIdAliases = await idAliases(message.messageId);
+  message.messageId = await boundedId(message.messageId);
+  if (message.inReplyTo !== null) message.inReplyTo = await boundedId(message.inReplyTo);
   if (bodySkipped) message.bodySkipped = true;
 
   return withoutNul(message) satisfies ParsedMessage;
@@ -427,8 +437,30 @@ async function synthesizeMessageId(
   const keyHeaders = ["from", "to", "cc", "date", "subject"]
     .map((key) => `${key}:${header(lines, key) ?? ""}`)
     .join("\n");
-  const input = `${keyHeaders}\n\n${text ?? ""}\n\n${html || ""}`;
+  return hashedMessageId(`${keyHeaders}\n\n${text ?? ""}\n\n${html || ""}`);
+}
+
+async function hashedMessageId(input: string) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
   const hex = Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
   return `<${hex.slice(0, 40)}@omni.invalid>`;
+}
+
+const INDEXABLE_ID_BYTES = 2600;
+
+async function boundedId(id: string) {
+  if (Buffer.byteLength(id) <= INDEXABLE_ID_BYTES) return id;
+  return hashedMessageId(id);
+}
+
+const HASHED_BEFORE_BYTES = 998;
+
+async function idAliases(id: string) {
+  const bytes = Buffer.byteLength(id);
+  if (bytes <= HASHED_BEFORE_BYTES) return [];
+  return bytes <= INDEXABLE_ID_BYTES ? [await hashedMessageId(id)] : [id];
+}
+
+async function boundedIds(ids: string[]) {
+  return [...new Set(await Promise.all(ids.map(boundedId)))];
 }

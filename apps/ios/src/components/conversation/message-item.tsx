@@ -3,6 +3,7 @@ import { StyleSheet, View } from "react-native";
 import { IconPaperclip } from "@/components/icons.ts";
 import { Avatar } from "@/components/ui/avatar.tsx";
 import { Button } from "@/components/ui/button.tsx";
+import { PressableRow } from "@/components/ui/pressable-row.tsx";
 import { Text } from "@/components/ui/text.tsx";
 import { listTime } from "@/lib/mail.ts";
 import { colors, iconSize, radius, shadowRaised, space } from "@/theme/tokens.ts";
@@ -10,6 +11,7 @@ import { colors, iconSize, radius, shadowRaised, space } from "@/theme/tokens.ts
 export interface MessageItemProps {
   message: Message;
   onShowFull?: () => void;
+  onOpenAttachment?: (file: Message["attachments"][number]) => void;
 }
 
 /**
@@ -17,18 +19,18 @@ export interface MessageItemProps {
  * bubbles (yours and your team's on the right, tinted), long or formal ones cards (`display`,
  * decided by the Worker). With HTML, "Show full message" opens the original.
  */
-export function MessageItem({ message, onShowFull }: MessageItemProps) {
+export function MessageItem({ message, onShowFull, onOpenAttachment }: MessageItemProps) {
   const sender = message.fromName || message.fromAddress;
   const ours = message.fromTeam;
   const card = message.display === "card";
   return (
     <View style={[styles.item, ours && !card && styles.ours]}>
       <View style={[styles.meta, ours && !card && styles.oursMeta]}>
-        <Avatar name={sender} size={24} />
-        <Text size="sm" weight="medium" numberOfLines={1} style={styles.shrink}>
+        <Avatar name={sender} logo={{ address: message.fromAddress }} size={32} />
+        <Text weight="medium" numberOfLines={1} style={styles.shrink}>
           {sender}
         </Text>
-        <Text size="sm" tone="mutedForeground" tabular>
+        <Text size="sm" tone="mutedForeground" tabular style={styles.keep}>
           {listTime(message.sentAt)}
         </Text>
       </View>
@@ -38,12 +40,16 @@ export function MessageItem({ message, onShowFull }: MessageItemProps) {
       {message.attachments.length ? (
         <View style={[styles.attachments, ours && !card && styles.oursMeta]}>
           {message.attachments.map((file) => (
-            <View key={file.id} style={styles.chip}>
+            <PressableRow
+              key={file.id}
+              style={styles.chip}
+              onPress={onOpenAttachment && (() => onOpenAttachment(file))}
+            >
               <IconPaperclip size={iconSize.sm} color={colors.mutedForeground} />
-              <Text size="sm" numberOfLines={1} style={styles.shrink}>
+              <Text size="sm" numberOfLines={1} ellipsizeMode="middle" style={styles.shrink}>
                 {file.filename}
               </Text>
-            </View>
+            </PressableRow>
           ))}
         </View>
       ) : null}
@@ -60,22 +66,23 @@ export function MessageItem({ message, onShowFull }: MessageItemProps) {
 }
 
 const styles = StyleSheet.create({
-  item: { gap: space(2), alignItems: "flex-start" },
+  item: { gap: space(2.5), alignItems: "flex-start" },
   ours: { alignItems: "flex-end" },
-  meta: { flexDirection: "row", alignItems: "center", gap: space(2), maxWidth: "100%" },
+  meta: { flexDirection: "row", alignItems: "center", gap: space(2.5), maxWidth: "100%" },
   oursMeta: { justifyContent: "flex-end" },
-  shrink: { flexShrink: 1 },
+  shrink: { flexShrink: 1, minWidth: 0 },
+  keep: { flexShrink: 0 },
   bubble: {
-    maxWidth: "85%",
-    paddingHorizontal: space(3.5),
-    paddingVertical: space(2.5),
+    maxWidth: "88%",
+    paddingHorizontal: space(4),
+    paddingVertical: space(3),
     borderRadius: radius.card,
     backgroundColor: colors.accent,
   },
   oursBubble: { backgroundColor: colors.primarySubtle },
   card: {
     alignSelf: "stretch",
-    padding: space(4),
+    padding: space(5),
     borderRadius: radius.card,
     borderWidth: 1,
     borderColor: colors.border,
@@ -87,7 +94,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: space(1.5),
-    maxWidth: 220,
+    maxWidth: "100%",
     paddingHorizontal: space(3),
     paddingVertical: space(1.5),
     borderRadius: radius.full,

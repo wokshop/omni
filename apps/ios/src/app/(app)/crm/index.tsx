@@ -1,4 +1,5 @@
 import { Redirect, Stack, router, useLocalSearchParams } from "expo-router";
+import { newRecordButton } from "@/components/crm/new-record-button.tsx";
 import { CompanyRow, DealRow, PersonRow } from "@/components/crm/record-rows.tsx";
 import { IconBuildings, IconHandshake, IconUsers } from "@/components/icons.ts";
 import { ModuleToolbar } from "@/components/shell/module-toolbar.tsx";
@@ -15,7 +16,6 @@ import {
 import { hasCrm, useWorkspace } from "@/lib/workspace.ts";
 
 const PAGES = Object.entries(CRM_PAGES).map(([id, page]) => ({ ...page, id: id as CrmPage }));
-const INSET = 64;
 
 /** A CRM list: Companies, People or Deals. A Personal space has no CRM: it goes to Mail. */
 export default function CrmHome() {
@@ -25,7 +25,12 @@ export default function CrmHome() {
   return (
     <>
       <Stack.Screen options={{ title: CRM_PAGES[page].label }} />
-      <ModuleToolbar pages={PAGES} current={page} onPage={(id) => router.setParams({ page: id })} />
+      <ModuleToolbar
+        pages={PAGES}
+        current={page}
+        onPage={(id) => router.setParams({ page: id })}
+        actions={newRecordButton(page)}
+      />
       {page === "people" ? <People /> : page === "deals" ? <Deals /> : <Companies />}
     </>
   );
@@ -39,7 +44,6 @@ function Companies() {
       renderItem={(company) => <CompanyRow company={company} />}
       icon={IconBuildings}
       empty={CRM_PAGES.companies.empty}
-      separatorInset={INSET}
     />
   );
 }
@@ -52,7 +56,6 @@ function People() {
       renderItem={(person) => <PersonRow person={person} />}
       icon={IconUsers}
       empty={CRM_PAGES.people.empty}
-      separatorInset={INSET}
     />
   );
 }
@@ -66,7 +69,6 @@ function Deals() {
       renderItem={(deal) => <DealRow deal={deal} stage={stages?.get(deal.stageId)} />}
       icon={IconHandshake}
       empty={CRM_PAGES.deals.empty}
-      separatorInset={INSET}
     />
   );
 }

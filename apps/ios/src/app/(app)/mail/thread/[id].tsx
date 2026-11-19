@@ -1,7 +1,8 @@
-import { Stack, router, useLocalSearchParams } from "expo-router";
+import { Stack, router, useIsPreview, useLocalSearchParams } from "expo-router";
 import { useEffect, useRef } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
 import { MessageItem } from "@/components/conversation/message-item.tsx";
+import { ThreadActions } from "@/components/conversation/thread-actions.tsx";
 import { ThreadTitle } from "@/components/conversation/thread-header.tsx";
 import { IconInbox } from "@/components/icons.ts";
 import { Button } from "@/components/ui/button.tsx";
@@ -11,9 +12,9 @@ import { Skeleton } from "@/components/ui/skeleton.tsx";
 import { idempotencyKey } from "@/lib/ids.ts";
 import { mailboxName, useMarkRead, useThread } from "@/lib/mail.ts";
 import { useSession } from "@/lib/session.ts";
-import { space } from "@/theme/tokens.ts";
+import { gutter, space } from "@/theme/tokens.ts";
 
-/** A conversation, read top to bottom. Opening it marks it read, as on the web. */
+/** A conversation, read top to bottom. Opening it marks it read, as on the web; a long-press peek at it does not. */
 export default function ThreadScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const thread = useThread(id);
@@ -24,11 +25,13 @@ export default function ThreadScreen() {
   return (
     <Screen edges={[]}>
       <Stack.Screen options={{ title: "" }} />
+      <ThreadActions threadId={id} />
       {thread.isPending ? (
         <View style={styles.content}>
-          <Skeleton width="80%" height={24} />
-          <Skeleton width="55%" height={14} />
-          <Skeleton width="70%" height={64} />
+          <Skeleton width="85%" height={28} />
+          <Skeleton width="55%" height={28} />
+          <Skeleton width="40%" height={16} />
+          <Skeleton width="75%" height={72} />
         </View>
       ) : thread.isError ? (
         <EmptyState icon={IconInbox} title="This conversation didn't load">
@@ -57,6 +60,17 @@ export default function ThreadScreen() {
                   params: { threadId: id, messageId: message.id },
                 })
               }
+              onOpenAttachment={(file) =>
+                router.push({
+                  pathname: "/mail/attachment/[threadId]/[attachmentId]",
+                  params: {
+                    threadId: id,
+                    attachmentId: file.id,
+                    name: file.filename,
+                    mimeType: file.mimeType,
+                  },
+                })
+              }
             />
           ))}
         </ScrollView>
@@ -67,19 +81,20 @@ export default function ThreadScreen() {
 
 function useMarkReadOnOpen(threadId: string, read: boolean | undefined) {
   const markRead = useMarkRead();
+  const peeking = useIsPreview();
   const sent = useRef<string | null>(null);
   useEffect(() => {
-    if (read !== false || sent.current === threadId) return;
+    if (peeking || read === undefined || sent.current === threadId) return;
     sent.current = threadId;
-    markRead.mutate({ threadId, key: idempotencyKey() });
-  }, [threadId, read, markRead]);
+    if (!read) markRead.mutate({ threadId, key: idempotencyKey() });
+  }, [threadId, read, markRead, peeking]);
 }
 
 const styles = StyleSheet.create({
   content: {
-    paddingHorizontal: space(4),
+    paddingHorizontal: gutter,
     paddingTop: space(2),
-    paddingBottom: space(12),
-    gap: space(6),
+    paddingBottom: space(16),
+    gap: space(8),
   },
 });
