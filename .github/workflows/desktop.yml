@@ -7,8 +7,8 @@ name: Desktop
 #
 # The macOS and Windows builds run only when started by hand: this repository's jobs run on its
 # `boat` runners, and GitHub-hosted macOS and Windows runners are not enabled for it yet (a job
-# on them fails before it starts). The Windows leg can use a self-hosted runner through the
-# RUNNER_WINDOWS variable (docs/operations/ci-runners.md). Run them on push once both work.
+# on them fails before it starts). Either leg can use a self-hosted runner through the
+# RUNNER_WINDOWS or RUNNER_MACOS variable (docs/operations/ci-runners.md). Run them on push once both work.
 on:
   pull_request:
     branches: [main]
@@ -84,8 +84,11 @@ jobs:
       fail-fast: false
       matrix:
         os: [macos-15, windows-2025]
-    # RUNNER_WINDOWS (docs/operations/ci-runners.md) moves the Windows leg to a self-hosted runner.
-    runs-on: ${{ matrix.os == 'windows-2025' && vars.RUNNER_WINDOWS && fromJSON(vars.RUNNER_WINDOWS) || matrix.os }}
+    # RUNNER_WINDOWS / RUNNER_MACOS (docs/operations/ci-runners.md) move a leg to a self-hosted runner.
+    runs-on: >-
+      ${{ matrix.os == 'windows-2025' && vars.RUNNER_WINDOWS && fromJSON(vars.RUNNER_WINDOWS)
+      || matrix.os == 'macos-15' && vars.RUNNER_MACOS && fromJSON(vars.RUNNER_MACOS)
+      || matrix.os }}
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

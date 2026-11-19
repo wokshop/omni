@@ -10,6 +10,7 @@ deleting the variable switches a job straight back.
 | `RUNNER_HEAVY`      | `Full` (nightly e2e), `Rust (Linux)` (desktop.yml)          | `boat`         |
 | `RUNNER_PRODUCTION` | `Migrate database`, `Sync Worker secrets` (production.yml)  | `boat-small`   |
 | `RUNNER_WINDOWS`    | Windows leg of the hand-started desktop build (desktop.yml) | `windows-2025` |
+| `RUNNER_MACOS`      | macOS leg of the hand-started desktop build (desktop.yml)   | `macos-15`     |
 
 Each value is JSON, read with `fromJSON`: a quoted label (`"boat"`, `"ubuntu-latest"`) or a list
 of labels the runner must all carry (`["self-hosted", "omni-linux"]`). Set them under Settings,
@@ -57,6 +58,26 @@ again when they finish, even after a failure.
    WebView2 and Git for Windows, register a second runner natively on Windows with
    `--labels omni-windows`, and set `RUNNER_WINDOWS` to `["self-hosted","omni-windows"]`.
 6. Prune now and then: `docker system prune -af --volumes` and the runner's `_work` folder.
+
+## A Mac runner
+
+A Mac fits the macOS desktop build (Tauri plus the File Provider Swift tests), which no Linux or
+Windows machine can do. Keep the Linux jobs (`Checks`, `Full`) off it: they download `linux_x64`
+binaries and use `apt-get`, and Docker on macOS runs them in a VM that competes with your own work.
+
+A runner takes one job at a time, so it costs only while a job runs: the hand-started desktop
+build compiles Rust for roughly 10 to 20 minutes and uses every core while it does.
+
+1. Create a standard macOS user just for CI (`omni-ci`), so jobs never see your files, keychain or
+   sign-ins, and install Xcode, Rust and Git for that user.
+2. As that user, unpack the runner in its home folder (`~/actions-runner`), never inside your
+   `omni` checkout, and register it with `--labels omni-macos`. Its jobs check out into
+   `~/actions-runner/_work`.
+3. Install it as a service (`./svc.sh install && ./svc.sh start`). Register one runner only, so
+   jobs never run in parallel. To keep it out of your way, start it at background priority:
+   `taskpolicy -b ./run.sh` instead of the service, or pause it from the Runners page while you
+   need the machine.
+4. Set `RUNNER_MACOS` to `["self-hosted","omni-macos"]` and start the Desktop workflow by hand.
 
 ## Production jobs
 
