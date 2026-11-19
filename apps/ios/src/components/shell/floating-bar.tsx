@@ -36,8 +36,11 @@ export function FloatingBar({
   onSearch,
   onStart,
   onStop,
+  initial,
 }: {
   placeholder: string;
+  /** A search already running (coming back from one of its results): the field reopens with it. */
+  initial?: { searching: boolean; query: string };
   action: FloatingBarAction;
   onSearch: (q: string) => void;
   /** The field opened (the shell closes its menu and hides its top bar). */
@@ -47,8 +50,9 @@ export function FloatingBar({
 }) {
   const insets = useSafeAreaInsets();
   const keyboard = useKeyboardHeight();
-  const [searching, setSearching] = useState(false);
-  const [q, setQ] = useState("");
+  const [searching, setSearching] = useState(initial?.searching ?? false);
+  const [q, setQ] = useState(initial?.query ?? "");
+  const [focus, setFocus] = useState(false);
   const stop = () => {
     Keyboard.dismiss();
     setSearching(false);
@@ -70,7 +74,7 @@ export function FloatingBar({
               label={placeholder}
               placeholder={placeholder}
               variant="bare"
-              autoFocus
+              autoFocus={focus}
               autoCapitalize="none"
               autoCorrect={false}
               returnKeyType="search"
@@ -98,6 +102,7 @@ export function FloatingBar({
             label={placeholder}
             onPress={() => {
               onStart?.();
+              setFocus(true);
               setSearching(true);
             }}
           />

@@ -1,5 +1,5 @@
 import { router } from "expo-router";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAddActions } from "@/components/drive/add-menu.tsx";
 import { IconCompose, IconFile, IconFolderPlus, IconImage, IconPlus } from "@/components/icons.ts";
@@ -38,10 +38,6 @@ export function BottomBar() {
   const [adding, setAdding] = useState(false);
   const module = shell.isOpen ? shell.browsing : place.module;
   const { setQuery, setSearching } = shell;
-  useEffect(() => {
-    setQuery("");
-    setSearching(false);
-  }, [place.module, setQuery, setSearching]);
   const add = useAddActions({ space: place.drivePage === "shared" ? "shared" : "personal" });
   const record = NEW_RECORD[place.crmPage ?? "companies"];
   const act = {
@@ -71,6 +67,7 @@ export function BottomBar() {
       <FloatingBar
         key={module}
         placeholder={PLACEHOLDER[module]}
+        initial={{ searching: shell.searching, query: shell.query }}
         onSearch={setQuery}
         onStart={() => {
           closeMenu();
