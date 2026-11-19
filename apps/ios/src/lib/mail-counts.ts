@@ -4,10 +4,7 @@ import { countsQuery, type MailPage } from "./mail.ts";
 const unreadBadge = (count: number) => (count > 99 ? "99+" : countOrNothing(count));
 const countOrNothing = (count: number) => (count ? String(count) : undefined);
 
-/**
- * The counts the web sidebar shows beside Mail's pages, in one mailbox or all: unread for Inbox,
- * the lane's threads for Needs reply and Awaiting reply.
- */
+/** The count beside Mail's pages, in one mailbox or all: unread for Inbox. */
 export function useMailPageCounts(mailboxId: string | undefined) {
   const counts = (useQuery(countsQuery()).data ?? []).filter(
     (c) => !mailboxId || c.mailboxId === mailboxId,
@@ -16,8 +13,6 @@ export function useMailPageCounts(mailboxId: string | undefined) {
     counts.reduce((acc, c) => acc + count(c), 0);
   return {
     inbox: unreadBadge(sum((c) => c.unread)),
-    needsReply: countOrNothing(sum((c) => c.lanes.needs_reply)),
-    awaitingReply: countOrNothing(sum((c) => c.lanes.waiting_on_them)),
   } satisfies Partial<Record<MailPage, string | undefined>>;
 }
 

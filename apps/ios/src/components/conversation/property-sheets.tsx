@@ -3,10 +3,6 @@ import type { ComponentType } from "react";
 import type { SvgProps } from "react-native-svg";
 import {
   IconCheck,
-  IconCircle,
-  IconCircleCheck,
-  IconCircleDashed,
-  IconClockSnooze,
   IconSignalHigh,
   IconSignalLow,
   IconSignalMedium,
@@ -22,7 +18,6 @@ import {
   useConversationChange,
   useTags,
   type Conversation,
-  type ConversationStatus,
   type Priority,
 } from "@/lib/conversation.ts";
 import { usePictureSource } from "@/lib/picture.ts";
@@ -30,14 +25,7 @@ import { colors, iconSize } from "@/theme/tokens.ts";
 
 type Glyph = ComponentType<SvgProps & { size?: number }>;
 
-export type Sheet = "status" | "assignee" | "priority" | "tags";
-
-export const STATUS: Record<ConversationStatus, { label: string; icon: Glyph }> = {
-  open: { label: "Open", icon: IconCircle },
-  pending: { label: "Pending", icon: IconCircleDashed },
-  snoozed: { label: "Snoozed", icon: IconClockSnooze },
-  resolved: { label: "Resolved", icon: IconCircleCheck },
-};
+export type Sheet = "assignee" | "priority" | "tags";
 
 export const PRIORITY: Record<Priority, { label: string; icon: Glyph }> = {
   urgent: { label: "Urgent", icon: IconWarning },
@@ -47,21 +35,7 @@ export const PRIORITY: Record<Priority, { label: string; icon: Glyph }> = {
 };
 const PRIORITIES = Object.keys(PRIORITY) as Priority[];
 
-function morning(days: number) {
-  const at = new Date();
-  at.setDate(at.getDate() + days);
-  at.setHours(8, 0, 0, 0);
-  return at;
-}
-const untilMonday = () => (8 - new Date().getDay()) % 7 || 7;
-
-const SNOOZES = [
-  { label: "Snooze until tomorrow", until: () => morning(1) },
-  { label: "Snooze until Monday", until: () => morning(untilMonday()) },
-];
-
 const TITLES: Record<Sheet, string> = {
-  status: "Status",
   assignee: "Assignee",
   priority: "Priority",
   tags: "Tags",
@@ -70,8 +44,8 @@ const TITLES: Record<Sheet, string> = {
 const check = <IconCheck size={iconSize.md} color={colors.foreground} />;
 
 /**
- * The sheet a property opens, with the web menu's choices: status (reopen, resolve, snooze),
- * who it's assigned to, its priority, or its tags (each tap adds or removes one; the sheet stays).
+ * The sheet a property opens, with the web menu's choices: who it's assigned to, its priority,
+ * or its tags (each tap adds or removes one; the sheet stays).
  */
 export function PropertySheet(props: {
   sheet: Sheet | null;
@@ -90,35 +64,6 @@ export function PropertySheet(props: {
   const applied = new Set(conversation.tags.map((t) => t.id));
   return (
     <BottomSheet isOpen={sheet !== null} onClose={props.onClose} title={sheet ? TITLES[sheet] : ""}>
-      {sheet === "status" ? (
-        <>
-          {conversation.status === "open" ? null : (
-            <MenuRow
-              icon={IconCircle}
-              muted
-              label="Reopen"
-              onPress={then(() => change({ type: "reopen" }))}
-            />
-          )}
-          {conversation.status === "resolved" ? null : (
-            <MenuRow
-              icon={IconCircleCheck}
-              muted
-              label="Resolve"
-              onPress={then(() => change({ type: "resolve" }))}
-            />
-          )}
-          {SNOOZES.map(({ label, until }) => (
-            <MenuRow
-              key={label}
-              icon={IconClockSnooze}
-              muted
-              label={label}
-              onPress={then(() => change({ type: "snooze", until: until().toISOString() }))}
-            />
-          ))}
-        </>
-      ) : null}
       {sheet === "assignee" ? (
         <>
           <MenuRow
