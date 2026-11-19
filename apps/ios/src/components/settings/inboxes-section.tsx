@@ -7,16 +7,22 @@ import {
   useYourInboxes,
   type YourInbox,
 } from "@/lib/settings.ts";
+import { currentWorkspaceId } from "@/lib/workspace-id.ts";
 import { space } from "@/theme/tokens.ts";
 import { SettingsRow, SettingsSection } from "./settings-list.tsx";
 
-function promptName(title: string, current: string | null, onSave: (name: string | null) => void) {
+function promptName(
+  title: string,
+  current: string | null,
+  onSave: (name: string | null, workspace: string | null) => void,
+) {
+  const workspace = currentWorkspaceId();
   Alert.prompt(
     title,
     undefined,
     [
       { text: "Cancel", style: "cancel" },
-      { text: "Save", onPress: (value?: string) => onSave(value?.trim() || null) },
+      { text: "Save", onPress: (value?: string) => onSave(value?.trim() || null, workspace) },
     ],
     "plain-text",
     current ?? "",
@@ -33,16 +39,16 @@ export function InboxesSection() {
   const sender = useSenderName();
 
   const editLabel = (inbox: YourInbox) =>
-    promptName("Label this inbox", inbox.label, (next) =>
+    promptName("Label this inbox", inbox.label, (next, workspace) =>
       label.mutate(
-        { mailboxId: inbox.id, label: next },
+        { mailboxId: inbox.id, label: next, workspace },
         { onError: (error) => Alert.alert("Couldn't save the label", error.message) },
       ),
     );
   const editSender = (inbox: YourInbox) =>
-    promptName("Sender name", inbox.senderName, (next) =>
+    promptName("Sender name", inbox.senderName, (next, workspace) =>
       sender.mutate(
-        { mailboxId: inbox.id, senderName: next },
+        { mailboxId: inbox.id, senderName: next, workspace },
         { onError: (error) => Alert.alert("Couldn't save the sender name", error.message) },
       ),
     );

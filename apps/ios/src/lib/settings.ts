@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, auth, call } from "./api.ts";
+import { api, auth, call, inWorkspace } from "./api.ts";
 import { useMailboxes } from "./mail.ts";
 import { keys } from "./query-keys.ts";
 import { useWorkspace } from "./workspace.ts";
@@ -53,31 +53,41 @@ function useRefreshInboxes() {
     ]);
 }
 
-/** `mutate({ mailboxId, label })` names one of your inboxes ("Work"); null clears it. */
+/**
+ * `mutate({ mailboxId, label, workspace })` names one of your inboxes ("Work"); null clears it.
+ * `workspace` is `currentWorkspaceId()` when the person acts.
+ */
 export function useLabelMailbox() {
   const refresh = useRefreshInboxes();
   return useMutation({
-    mutationFn: (vars: { mailboxId: string; label: string | null }) =>
+    mutationFn: (vars: { mailboxId: string; label: string | null; workspace: string | null }) =>
       call(
-        api.mailboxes[":id"].label.$put({
-          param: { id: vars.mailboxId },
-          json: { label: vars.label },
-        }),
+        api.mailboxes[":id"].label.$put(
+          { param: { id: vars.mailboxId }, json: { label: vars.label } },
+          inWorkspace(vars.workspace),
+        ),
       ),
     onSettled: refresh,
   });
 }
 
-/** `mutate({ mailboxId, senderName })`: the From name one of your inboxes sends under. */
+/**
+ * `mutate({ mailboxId, senderName, workspace })`: the From name one of your inboxes sends under.
+ * `workspace` is `currentWorkspaceId()` when the person acts.
+ */
 export function useSenderName() {
   const refresh = useRefreshInboxes();
   return useMutation({
-    mutationFn: (vars: { mailboxId: string; senderName: string | null }) =>
+    mutationFn: (vars: {
+      mailboxId: string;
+      senderName: string | null;
+      workspace: string | null;
+    }) =>
       call(
-        api.mailboxes[":id"]["sender-name"].$put({
-          param: { id: vars.mailboxId },
-          json: { senderName: vars.senderName },
-        }),
+        api.mailboxes[":id"]["sender-name"].$put(
+          { param: { id: vars.mailboxId }, json: { senderName: vars.senderName } },
+          inWorkspace(vars.workspace),
+        ),
       ),
     onSettled: refresh,
   });

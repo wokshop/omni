@@ -9,7 +9,7 @@ import {
   useNotifications,
   useUnreadNotifications,
 } from "@/lib/notifications.ts";
-import { space } from "@/theme/tokens.ts";
+import { currentWorkspaceId } from "@/lib/workspace-id.ts";
 
 function open(n: Notification) {
   const comment = commentTarget(n);
@@ -37,7 +37,7 @@ export default function Notifications() {
           icon="envelope.open"
           accessibilityLabel="Mark all read"
           disabled={unread === 0}
-          onPress={() => markRead.mutate({})}
+          onPress={() => markRead.mutate({ workspace: currentWorkspaceId() })}
         />
         <Stack.Toolbar.Menu
           icon="line.3.horizontal.decrease"
@@ -56,12 +56,11 @@ export default function Notifications() {
         keyOf={(n) => n.id}
         icon={IconInbox}
         empty="No notifications"
-        separatorInset={space(4) + 28 + space(3)}
         renderItem={(n) => (
           <NotificationRow
             n={n}
             onPress={() => {
-              if (!n.readAt) markRead.mutate({ ids: [n.id] });
+              if (!n.readAt) markRead.mutate({ ids: [n.id], workspace: currentWorkspaceId() });
               open(n);
             }}
           />

@@ -6,9 +6,10 @@ import {
   type InfiniteData,
   type QueryKey,
 } from "@tanstack/react-query";
-import { api, call, isAuthError } from "./api.ts";
+import { api, call, inWorkspace, isAuthError } from "./api.ts";
 import type { NotificationPage } from "./notification-text.ts";
 import { keys } from "./query-keys.ts";
+import { currentWorkspaceId } from "./workspace-id.ts";
 
 const PAGE_SIZE = 30;
 
@@ -56,14 +57,17 @@ export const useUnreadNotifications = () =>
 type Pages = InfiniteData<NotificationPage, string | null>;
 
 /**
- * `mutate({ ids })` marks those read, `mutate({})` every one, as the web's does: unread-only
- * lists drop them and every list's count goes down at once; the lists refetch when it settles.
+ * `mutate({ ids, workspace })` marks those read, `mutate({ workspace })` every one, as the web's
+ * does: unread-only lists drop them and every list's count goes down at once; the lists refetch
+ * when it settles. `workspace` is `currentWorkspaceId()` when the person acts, so a retry after a
+ * workspace switch still marks the right ones, and a failure never restores the old workspace's
+ * list over the new one.
  */
 export function useMarkNotificationsRead() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: ({ ids }: { ids?: string[] }) =>
-      call(api.notifications.read.$post({ json: ids ? { ids } : {} })),
+    mutationFn: ({ ids, workspace }: { ids?: string[]; workspace: string | null }) =>
+      call(api.notifications.read.$post({ json: ids ? { ids } : {} }, inWorkspace(workspace))),
     retry: (count, error) => !isAuthError(error) && count < 2,
     onMutate: async ({ ids }) => {
       await client.cancelQueries({ queryKey: keys.notifications() });
@@ -97,7 +101,8 @@ export function useMarkNotificationsRead() {
       }
       return { snapshot };
     },
-    onError: (_error, _vars, context) => {
+    onError: (_error, { workspace }, context) => {
+      if (workspace !== currentWorkspaceId()) return;
       for (const [key, data] of context?.snapshot ?? []) client.setQueryData(key, data);
     },
     onSettled: () => void client.invalidateQueries({ queryKey: keys.notifications() }),
