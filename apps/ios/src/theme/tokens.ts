@@ -7,6 +7,8 @@ export const colors = {
   mutedForeground: "#858585",
   subtleForeground: "#a6a6a6",
   border: "#e8e8e8",
+  /** `--hairline-line`: a stronger line (a sheet's grabber, a disabled chevron). */
+  hairlineLine: "#d9d9d9",
   /** The current item's fill. */
   accent: "#f3f3f3",
   /** A well: sunk one step into its surface (fields). */
@@ -23,6 +25,8 @@ export const colors = {
   moduleDrive: "#15924f",
   moduleCrm: "#7a4fd1",
   moduleForeground: "#ffffff",
+  /** What dims the page under a sheet: the foreground at 18%. */
+  scrim: "rgba(23, 23, 23, 0.18)",
   danger: "#ef2a51",
   dangerForeground: "#ffffff",
 } as const;
@@ -71,6 +75,8 @@ export const radius = {
   field: 12,
   row: 14,
   card: 16,
+  /** A bottom sheet's top corners. */
+  sheet: 28,
   full: 999,
 } as const;
 
@@ -78,12 +84,16 @@ export const radius = {
 export const space = (steps: number) => steps * 4;
 
 /** `--spacing-icon` and the larger glyph touch targets use. */
-export const iconSize = { sm: 15, md: 20, menu: 22, lg: 24 } as const;
+export const iconSize = { sm: 15, field: 18, md: 20, menu: 22, lg: 24 } as const;
 
 /** A list row's leading avatar or tile, and the gutter every screen keeps from its edges. */
 export const rowLead = 44;
 /** The floating bar's round buttons and its search pill. */
 export const floatingControl = 50;
+/** The bar's controls while its field is open over the keyboard. */
+export const searchControl = 48;
+/** The fade behind the floating bar, where the page dissolves before it. */
+export const floatingFade = 128;
 /** The dot beside an unread thread's sender, or on the bell. */
 export const unreadDot = 7;
 export const gutter = space(5);

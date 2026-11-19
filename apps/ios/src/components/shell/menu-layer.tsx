@@ -8,9 +8,7 @@ import {
   useWindowDimensions,
   type ScrollViewInstance,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors, space } from "@/theme/tokens.ts";
-import { FLOATING_BAR_SPACE } from "./floating-bar.tsx";
 import { useMenu } from "./menu-context.tsx";
 import { useShellTop } from "./menu-nav.ts";
 import { MENU_INSET } from "./menu-row.tsx";
@@ -54,7 +52,6 @@ export function MenuLayer() {
 }
 
 function Pages({ width, height }: { width: number; height: number }) {
-  const insets = useSafeAreaInsets();
   const shell = useMenu();
   const modules = useModules();
   const at = Math.max(
@@ -97,14 +94,7 @@ function Pages({ width, height }: { width: number; height: number }) {
       {modules.map(({ id }) => {
         const Rows = ROWS[id];
         return (
-          <ScrollView
-            key={id}
-            style={{ width, height }}
-            contentContainerStyle={[
-              styles.rows,
-              { paddingBottom: FLOATING_BAR_SPACE + Math.max(insets.bottom, space(4)) + space(4) },
-            ]}
-          >
+          <ScrollView key={id} style={{ width, height }} contentContainerStyle={styles.rows}>
             <Rows />
           </ScrollView>
         );
@@ -125,9 +115,5 @@ function useReduceMotion() {
 
 const styles = StyleSheet.create({
   layer: { position: "absolute", left: 0, right: 0, bottom: 0, backgroundColor: colors.background },
-  rows: {
-    gap: space(1),
-    paddingHorizontal: MENU_INSET,
-    paddingTop: space(3),
-  },
+  rows: { paddingHorizontal: MENU_INSET, paddingTop: space(2), paddingBottom: space(30) },
 });

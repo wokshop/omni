@@ -49,7 +49,7 @@ export function PagePill({
         <View style={[styles.tile, { backgroundColor: colors[tile] }]}>
           <Icon size={space(4)} color={colors.moduleForeground} />
         </View>
-        <Text size="sm" weight="medium">
+        <Text size="subhead" weight="semibold">
           {label}
         </Text>
       </View>
@@ -82,7 +82,7 @@ function Step({
       onPress={() => onPick(to)}
       style={styles.step}
     >
-      <Icon size={space(4)} color={off ? colors.border : colors.mutedForeground} />
+      <Icon size={space(4)} color={off ? colors.hairlineLine : colors.mutedForeground} />
     </Pressable>
   );
 }
@@ -100,7 +100,6 @@ const styles = StyleSheet.create({
     paddingLeft: space(2),
     paddingRight: space(3.5),
     borderRadius: radius.full,
-    backgroundColor: colors.surface,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
   },

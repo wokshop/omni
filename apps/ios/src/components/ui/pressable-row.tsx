@@ -67,7 +67,7 @@ const styles = StyleSheet.create({
   },
   menu: {
     alignItems: "center",
-    gap: space(3),
+    gap: space(3.5),
     minHeight: space(12.5),
     paddingHorizontal: space(3.5),
     borderRadius: radius.row,

@@ -8,7 +8,7 @@ import { useMenu } from "./menu-context.tsx";
 
 /** The shell's round buttons (☰, the workspace) and the top bar's height below the status bar. */
 export const SHELL_CONTROL = space(11);
-const SHELL_BAR = space(2) + SHELL_CONTROL + space(2);
+const SHELL_BAR = space(2) + SHELL_CONTROL + space(2.5);
 
 /** Where a module's root page starts: under the shell's top bar and its hairline. */
 export function useShellTop() {

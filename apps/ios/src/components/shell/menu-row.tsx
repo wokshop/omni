@@ -6,7 +6,7 @@ import { Text } from "@/components/ui/text.tsx";
 import { colors, iconSize, space } from "@/theme/tokens.ts";
 
 /**
- * A row on the menu page: a glyph in the brand's ink (or `lead`, an avatar), the label, a count
+ * A row on the menu page: a glyph (or `lead`, an avatar), the label, a count
  * at the end. The current one has the accent fill and its label semibold.
  */
 export function MenuRow(props: {
@@ -15,6 +15,8 @@ export function MenuRow(props: {
   label: string;
   count?: string;
   isCurrent?: boolean;
+  /** A folder's glyph is muted; a view's is in the brand's ink. */
+  muted?: boolean;
   /** Drawn after the label in place of a count: a check. */
   trailing?: ReactNode;
   onPress: () => void;
@@ -29,10 +31,16 @@ export function MenuRow(props: {
       accessibilityLabel={[props.label, props.count].filter(Boolean).join(", ")}
     >
       <View style={styles.lead}>
-        {props.lead ?? (Icon ? <Icon size={iconSize.menu} color={colors.primary} /> : null)}
+        {props.lead ??
+          (Icon ? (
+            <Icon
+              size={iconSize.menu}
+              color={props.muted ? colors.mutedForeground : colors.primary}
+            />
+          ) : null)}
       </View>
       <Text
-        size="body"
+        size="md"
         weight={current ? "semibold" : "regular"}
         numberOfLines={1}
         style={styles.label}
@@ -41,7 +49,7 @@ export function MenuRow(props: {
       </Text>
       {props.trailing ??
         (props.count ? (
-          <Text size="sm" tone="mutedForeground" tabular>
+          <Text size="subhead" tone="mutedForeground" tabular>
             {props.count}
           </Text>
         ) : null)}
@@ -52,7 +60,7 @@ export function MenuRow(props: {
 /** A run of menu rows under its label (Views, Folders). */
 export function MenuSection({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <View style={styles.section}>
+    <View>
       <View style={styles.heading}>
         <Text
           size="subhead"
@@ -80,11 +88,10 @@ export function MenuDivider() {
 const styles = StyleSheet.create({
   lead: { width: iconSize.menu, alignItems: "center", justifyContent: "center" },
   label: { flex: 1, minWidth: 0 },
-  section: { gap: space(1) },
   heading: { height: space(11), justifyContent: "center", paddingHorizontal: space(3.5) },
   divider: {
     height: StyleSheet.hairlineWidth,
-    marginVertical: space(1),
+    marginVertical: space(2),
     marginHorizontal: -MENU_INSET,
     backgroundColor: colors.border,
   },

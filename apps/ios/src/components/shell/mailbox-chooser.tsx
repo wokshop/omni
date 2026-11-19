@@ -56,7 +56,7 @@ export function MailboxChooser() {
           )
         }
         label={label}
-        trailing={<IconChevronsUpDown size={iconSize.sm} color={colors.mutedForeground} />}
+        trailing={<IconChevronsUpDown size={space(4)} color={colors.mutedForeground} />}
         onPress={() => setOpen(true)}
       />
       <BottomSheet isOpen={open} onClose={() => setOpen(false)} title="Mailboxes">
@@ -95,12 +95,13 @@ function ChoiceRow(props: {
   return (
     <PressableRow
       shape="menu"
+      style={styles.choice}
       onPress={props.onPress}
       accessibilityLabel={[props.name, props.detail].join(", ")}
     >
       {props.lead}
       <View style={styles.text}>
-        <Text size="body" numberOfLines={1}>
+        <Text size="md" numberOfLines={1}>
           {props.name}
         </Text>
         <Text size="sm" tone="mutedForeground" numberOfLines={1}>
@@ -108,13 +109,14 @@ function ChoiceRow(props: {
         </Text>
       </View>
       <View style={styles.check}>
-        {props.chosen ? <IconCheck size={iconSize.sm} color={colors.foreground} /> : null}
+        {props.chosen ? <IconCheck size={iconSize.md} color={colors.foreground} /> : null}
       </View>
     </PressableRow>
   );
 }
 
 const styles = StyleSheet.create({
-  text: { flex: 1, minWidth: 0, gap: space(0.5), paddingVertical: space(2) },
-  check: { width: iconSize.sm, alignItems: "center" },
+  choice: { paddingVertical: space(3.5) },
+  text: { flex: 1, minWidth: 0, gap: space(0.5) },
+  check: { width: iconSize.md, alignItems: "center" },
 });

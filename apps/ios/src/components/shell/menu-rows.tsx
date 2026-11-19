@@ -71,10 +71,11 @@ export function MailMenu() {
   const place = useMenuPlace();
   const views = useCountedPages(VIEWS, place.mailbox);
   const notifications = useUnreadNotifications();
-  const pageRow = (row: { id: MailPage; icon: Glyph; count?: string }) => (
+  const pageRow = (row: { id: MailPage; icon: Glyph; count?: string }, muted = false) => (
     <MenuRow
       key={row.id}
       icon={row.icon}
+      muted={muted}
       label={MAIL_PAGES[row.id].label}
       count={row.count}
       isCurrent={place.mailPage === row.id}
@@ -88,7 +89,7 @@ export function MailMenu() {
     <>
       <MailboxChooser />
       <MenuSection label="Views">
-        {views.map(pageRow)}
+        {views.map((row) => pageRow(row))}
         <MenuRow
           icon={IconBell}
           label="Notifications"
@@ -100,7 +101,7 @@ export function MailMenu() {
         />
       </MenuSection>
       <MenuDivider />
-      <MenuSection label="Folders">{FOLDERS.map(pageRow)}</MenuSection>
+      <MenuSection label="Folders">{FOLDERS.map((row) => pageRow(row, true))}</MenuSection>
     </>
   );
 }

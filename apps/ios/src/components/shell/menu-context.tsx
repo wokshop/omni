@@ -13,6 +13,9 @@ export interface ShellState {
   /** What the bottom bar's search field holds; the module's root page shows its results. */
   query: string;
   setQuery: (q: string) => void;
+  /** The bottom bar's search field is open (the top bar steps away). */
+  searching: boolean;
+  setSearching: (searching: boolean) => void;
   /** The root page's rows have scrolled under the top bar. */
   scrolled: boolean;
   setScrolled: (scrolled: boolean) => void;
@@ -26,6 +29,7 @@ export function MenuProvider({ children }: { children: ReactNode }) {
   const [browsing, browse] = useState<Module>("mail");
   const [query, setQuery] = useState("");
   const [scrolled, setScrolled] = useState(false);
+  const [searching, setSearching] = useState(false);
   const value = useMemo(
     () => ({
       isOpen,
@@ -38,10 +42,12 @@ export function MenuProvider({ children }: { children: ReactNode }) {
       browse,
       query,
       setQuery,
+      searching,
+      setSearching,
       scrolled,
       setScrolled,
     }),
-    [isOpen, browsing, query, scrolled],
+    [isOpen, browsing, query, searching, scrolled],
   );
   return <ShellContext.Provider value={value}>{children}</ShellContext.Provider>;
 }

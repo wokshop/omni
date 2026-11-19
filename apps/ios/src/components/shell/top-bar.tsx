@@ -5,7 +5,7 @@ import { IconMenu, IconX } from "@/components/icons.ts";
 import { FloatingButton } from "@/components/ui/floating.tsx";
 import { PagePill } from "@/components/ui/page-pill.tsx";
 import { Text } from "@/components/ui/text.tsx";
-import { colors, space } from "@/theme/tokens.ts";
+import { colors, iconSize, space } from "@/theme/tokens.ts";
 import { useMenu } from "./menu-context.tsx";
 import { SHELL_CONTROL, useCloseMenu, useMenuPlace, useShellTop } from "./menu-nav.ts";
 import { WorkspaceButton } from "./menu-workspace.tsx";
@@ -20,8 +20,8 @@ const SIDE = space(4);
  * The shell's one top bar, the same over a module and over the menu: ☰ (✕ while the menu is
  * open) and the workspace in equal round slots at the sides; between them, centred on the
  * screen, the page's title and count, crossfading to the module pill while the menu is open (a
- * tap on a dot or a swipe there changes module). Its hairline shows only once the page's rows
- * have scrolled under it.
+ * chevron or a swipe there changes module). Its hairline shows only once the page's rows
+ * have scrolled under it. It steps away while the bottom bar's search field is open.
  */
 export function TopBar() {
   const shell = useMenu();
@@ -41,13 +41,14 @@ export function TopBar() {
   const edge = useCrossfade(shell.scrolled && !shell.isOpen);
   const { setScrolled } = shell;
   useEffect(() => setScrolled(false), [page.title, place.mailbox, setScrolled]);
-  if (!current) return null;
+  if (!current || shell.searching) return null;
   return (
     <View style={[styles.bar, { paddingTop: insets.top + space(2) }]}>
       <Animated.View pointerEvents="none" style={[styles.edge, { opacity: edge }]} />
       <View style={styles.slot}>
         <FloatingButton
           icon={shell.isOpen ? IconX : IconMenu}
+          glyph={shell.isOpen ? iconSize.field : iconSize.md}
           label={shell.isOpen ? "Close menu" : "Open menu"}
           compact
           onPress={() => (shell.isOpen ? closeMenu() : shell.open(place.module))}
@@ -65,7 +66,7 @@ export function TopBar() {
             {page.title}
           </Text>
           {page.count ? (
-            <Text tone="mutedForeground" tabular>
+            <Text size="subhead" tone="mutedForeground" tabular>
               {page.count}
             </Text>
           ) : null}
@@ -106,7 +107,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: SIDE,
-    paddingBottom: space(2),
+    paddingBottom: space(2.5),
     backgroundColor: colors.background,
   },
   edge: {
@@ -118,7 +119,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.border,
   },
   slot: { width: SHELL_CONTROL, height: SHELL_CONTROL },
-  center: { flex: 1, height: SHELL_CONTROL, marginHorizontal: space(2) },
+  center: { flex: 1, height: SHELL_CONTROL, marginHorizontal: space(3) },
   layer: {
     ...StyleSheet.absoluteFill,
     flexDirection: "row",

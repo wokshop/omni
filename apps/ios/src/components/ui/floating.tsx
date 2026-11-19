@@ -1,10 +1,10 @@
 import type { ComponentType, ReactNode } from "react";
 import { Pressable, StyleSheet, View, type PressableProps } from "react-native";
 import type { SvgProps } from "react-native-svg";
-import { colors, floatingControl, iconSize, radius, space } from "@/theme/tokens.ts";
+import { colors, floatingControl, iconSize, radius, searchControl, space } from "@/theme/tokens.ts";
+import { Text } from "./text.tsx";
 
 export const compactControl = space(11);
-import { Text } from "./text.tsx";
 
 type Glyph = ComponentType<SvgProps & { size?: number }>;
 
@@ -16,6 +16,10 @@ export interface FloatingButtonProps extends Omit<PressableProps, "children" | "
   primary?: boolean;
   /** 44pt instead of 50: a control in a page's top row (the menu's Settings). */
   compact?: boolean;
+  /** 48pt: beside the open search field. */
+  searching?: boolean;
+  /** The glyph's size; 20pt unless set. */
+  glyph?: number;
 }
 
 /**
@@ -27,6 +31,8 @@ export function FloatingButton({
   label,
   primary = false,
   compact = false,
+  searching = false,
+  glyph = iconSize.md,
   ...props
 }: FloatingButtonProps) {
   return (
@@ -39,10 +45,11 @@ export function FloatingButton({
         styles.round,
         primary && styles.primary,
         compact && styles.compactRound,
+        searching && styles.searchRound,
         pressed && styles.pressed,
       ]}
     >
-      <Icon size={iconSize.md} color={primary ? colors.primaryForeground : colors.foreground} />
+      <Icon size={glyph} color={primary ? colors.primaryForeground : colors.foreground} />
     </Pressable>
   );
 }
@@ -74,7 +81,7 @@ export function FloatingPill({
         pressed && styles.pressed,
       ]}
     >
-      <Icon size={iconSize.sm} color={colors.mutedForeground} />
+      <Icon size={iconSize.field} color={colors.mutedForeground} />
       <Text size="body" tone="mutedForeground" numberOfLines={1} style={styles.shrink}>
         {label}
       </Text>
@@ -85,8 +92,8 @@ export function FloatingPill({
 /** The pill holding a live field: the glyph, then `children` (a bare `TextField`). */
 export function FloatingField({ icon: Icon, children }: { icon: Glyph; children: ReactNode }) {
   return (
-    <View style={[styles.surface, styles.pill]}>
-      <Icon size={iconSize.sm} color={colors.mutedForeground} />
+    <View style={[styles.surface, styles.pill, styles.field]}>
+      <Icon size={iconSize.field} color={colors.mutedForeground} />
       {children}
     </View>
   );
@@ -108,7 +115,9 @@ const styles = StyleSheet.create({
   round: { width: floatingControl, alignItems: "center", justifyContent: "center" },
   compact: { height: compactControl },
   compactRound: { width: compactControl, height: compactControl },
-  primary: { backgroundColor: colors.primaryButton, borderColor: colors.primary },
+  searchRound: { width: searchControl, height: searchControl },
+  field: { height: searchControl, paddingHorizontal: space(4) },
+  primary: { backgroundColor: colors.primaryButton, borderWidth: 0 },
   pill: {
     flex: 1,
     minWidth: 0,

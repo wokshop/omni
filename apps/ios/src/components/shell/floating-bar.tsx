@@ -12,7 +12,7 @@ import type { SvgProps } from "react-native-svg";
 import { IconSearch, IconX } from "@/components/icons.ts";
 import { FloatingButton, FloatingField, FloatingPill } from "@/components/ui/floating.tsx";
 import { TextField } from "@/components/ui/text-field.tsx";
-import { floatingControl, space, text } from "@/theme/tokens.ts";
+import { floatingControl, iconSize, space, text } from "@/theme/tokens.ts";
 
 /** How far a list under the bar scrolls past its last row, so the bar never covers it. */
 export const FLOATING_BAR_SPACE = floatingControl + space(10);
@@ -35,12 +35,15 @@ export function FloatingBar({
   action,
   onSearch,
   onStart,
+  onStop,
 }: {
   placeholder: string;
   action: FloatingBarAction;
   onSearch: (q: string) => void;
-  /** The field opened (the shell closes its menu). */
+  /** The field opened (the shell closes its menu and hides its top bar). */
   onStart?: () => void;
+  /** The field closed. */
+  onStop?: () => void;
 }) {
   const insets = useSafeAreaInsets();
   const keyboard = useKeyboardHeight();
@@ -51,10 +54,15 @@ export function FloatingBar({
     setSearching(false);
     setQ("");
     onSearch("");
+    onStop?.();
   };
-  const bottom = searching && keyboard ? keyboard + space(2.5) : Math.max(insets.bottom, space(4));
+  const bottom =
+    searching && keyboard ? keyboard + space(2.5) : Math.max(insets.bottom - space(1), space(4));
   return (
-    <View pointerEvents="box-none" style={[styles.bar, { paddingBottom: bottom }]}>
+    <View
+      pointerEvents="box-none"
+      style={[styles.bar, searching && styles.open, { paddingBottom: bottom }]}
+    >
       {searching ? (
         <>
           <FloatingField icon={IconSearch}>
@@ -75,7 +83,13 @@ export function FloatingBar({
               style={text.body}
             />
           </FloatingField>
-          <FloatingButton icon={IconX} label="Close search" onPress={stop} />
+          <FloatingButton
+            icon={IconX}
+            label="Close search"
+            searching
+            glyph={iconSize.field}
+            onPress={stop}
+          />
         </>
       ) : (
         <>
@@ -132,5 +146,6 @@ const styles = StyleSheet.create({
     gap: space(2.5),
     paddingHorizontal: SIDE,
   },
+  open: { paddingHorizontal: space(3) },
   field: { flex: 1, minWidth: 0 },
 });

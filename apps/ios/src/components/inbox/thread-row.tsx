@@ -26,7 +26,7 @@ export interface ThreadRowProps extends Omit<PressableRowProps, "children"> {
 
 /**
  * One conversation in a list, as Spark draws it: the sender's logo, then who wrote last (a blue
- * dot after the name when unread) and when, the subject, and one line of what they said.
+ * dot after the name when unread), the subject, and one line of what they said ending in when.
  * Each line truncates on its own; the time, count and marks keep their room.
  */
 export function ThreadRow({ thread, sharedInbox, ...props }: ThreadRowProps) {
@@ -56,15 +56,6 @@ export function ThreadRow({ thread, sharedInbox, ...props }: ThreadRowProps) {
             {thread.sender || " "}
           </Text>
           {thread.unread ? <View style={styles.dot} /> : null}
-          <View style={styles.grow} />
-          {count > 1 ? (
-            <Text size="caption" tone="mutedForeground" tabular style={styles.keep}>
-              {count}
-            </Text>
-          ) : null}
-          <Text size="caption" tone="mutedForeground" tabular style={styles.keep}>
-            {listTime(thread.lastMessageAt)}
-          </Text>
         </View>
         <Text size="subhead" weight={weight} numberOfLines={1}>
           {thread.subject || " "}
@@ -73,6 +64,11 @@ export function ThreadRow({ thread, sharedInbox, ...props }: ThreadRowProps) {
           <Text size="subhead" tone="mutedForeground" numberOfLines={1} style={styles.grow}>
             {thread.snippet || " "}
           </Text>
+          {count > 1 ? (
+            <Text size="caption" weight="medium" tone="mutedForeground" tabular style={styles.keep}>
+              {count}
+            </Text>
+          ) : null}
           {thread.hasAttachments || sharedInbox ? (
             <View style={styles.marks}>
               {thread.hasAttachments ? (
@@ -88,6 +84,9 @@ export function ThreadRow({ thread, sharedInbox, ...props }: ThreadRowProps) {
               ) : null}
             </View>
           ) : null}
+          <Text size="caption" weight="medium" tone="mutedForeground" tabular style={styles.keep}>
+            {listTime(thread.lastMessageAt)}
+          </Text>
         </View>
       </View>
     </PressableRow>

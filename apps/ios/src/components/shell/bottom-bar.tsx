@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAddActions } from "@/components/drive/add-menu.tsx";
 import { IconCompose, IconFile, IconFolderPlus, IconImage, IconPlus } from "@/components/icons.ts";
+import { BottomFade } from "@/components/ui/bottom-fade.tsx";
 import { FloatingCard } from "@/components/ui/floating.tsx";
 import { Popover } from "@/components/ui/popover.tsx";
 import type { CrmPage } from "@/lib/crm.ts";
@@ -25,8 +26,8 @@ const NEW_RECORD: Record<CrmPage, { kind: string; label: string }> = {
 };
 
 /**
- * The shell's one bottom bar, over a module and over the menu: the module's search and its main
- * action (New message, Drive's New menu, a new record). Searching or acting from the menu
+ * The shell's one bottom bar, over a module and over the menu, the page fading out behind it:
+ * the module's search and its main action (New message, Drive's New menu, a new record). Searching or acting from the menu
  * closes it onto the module it shows.
  */
 export function BottomBar() {
@@ -36,8 +37,11 @@ export function BottomBar() {
   const insets = useSafeAreaInsets();
   const [adding, setAdding] = useState(false);
   const module = shell.isOpen ? shell.browsing : place.module;
-  const { setQuery } = shell;
-  useEffect(() => setQuery(""), [place.module, setQuery]);
+  const { setQuery, setSearching } = shell;
+  useEffect(() => {
+    setQuery("");
+    setSearching(false);
+  }, [place.module, setQuery, setSearching]);
   const add = useAddActions({ space: place.drivePage === "shared" ? "shared" : "personal" });
   const record = NEW_RECORD[place.crmPage ?? "companies"];
   const act = {
@@ -63,11 +67,16 @@ export function BottomBar() {
   };
   return (
     <>
+      <BottomFade />
       <FloatingBar
         key={module}
         placeholder={PLACEHOLDER[module]}
         onSearch={setQuery}
-        onStart={closeMenu}
+        onStart={() => {
+          closeMenu();
+          setSearching(true);
+        }}
+        onStop={() => setSearching(false)}
         action={{
           icon: act.icon,
           label: act.label,
@@ -83,7 +92,7 @@ export function BottomBar() {
         label="Close New"
         at={{
           right: space(4),
-          bottom: Math.max(insets.bottom, space(4)) + floatingControl + space(2),
+          bottom: Math.max(insets.bottom - space(1), space(4)) + floatingControl + space(2),
         }}
       >
         <FloatingCard>

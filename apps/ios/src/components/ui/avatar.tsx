@@ -8,8 +8,8 @@ import { Text } from "./text.tsx";
 /**
  * A person or company, round. Their logo once one loads (a company's mark inset on a white
  * tile, a Gravatar filling the circle); their initial on the accent fill until then, and when
- * there is none. A sender is `square` (corners at 20% of its size, as the web's `isSquare`), its
- * logo at 85% of the tile. A workspace is `inverse`: its initial on the foreground fill.
+ * there is none. A sender is `square` (corners at 20% of its size, as the web's `isSquare`, with a
+ * hairline edge), its logo at 85% of the tile. A workspace is `inverse`: its initial on the foreground fill.
  */
 export function Avatar({
   name,
@@ -46,7 +46,7 @@ export function Avatar({
       style={[
         styles.avatar,
         { width: size, height: size },
-        square && { borderRadius: Math.round(size * SQUARE_CORNER) },
+        square && [styles.edge, { borderRadius: Math.round(size * SQUARE_CORNER) }],
         inverse && styles.inverse,
         showing && !showing.photo ? styles.tile : null,
       ]}
@@ -116,6 +116,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   inverse: { backgroundColor: colors.foreground },
+  edge: { borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
   tile: {
     backgroundColor: colors.logoTile,
     borderWidth: StyleSheet.hairlineWidth,
