@@ -37,7 +37,8 @@ export function BottomBar() {
   const insets = useSafeAreaInsets();
   const [adding, setAdding] = useState(false);
   const module = shell.isOpen ? shell.browsing : place.module;
-  const { setQuery, setSearching } = shell;
+  const { setQuery, setSearchIn } = shell;
+  const mine = shell.searchIn === module;
   const add = useAddActions({ space: place.drivePage === "shared" ? "shared" : "personal" });
   const record = NEW_RECORD[place.crmPage ?? "companies"];
   const act = {
@@ -67,13 +68,14 @@ export function BottomBar() {
       <FloatingBar
         key={module}
         placeholder={PLACEHOLDER[module]}
-        initial={{ searching: shell.searching, query: shell.query }}
+        initial={{ searching: mine, query: mine ? shell.query : "" }}
         onSearch={setQuery}
         onStart={() => {
           closeMenu();
-          setSearching(true);
+          setQuery("");
+          setSearchIn(module);
         }}
-        onStop={() => setSearching(false)}
+        onStop={() => setSearchIn(null)}
         action={{
           icon: act.icon,
           label: act.label,

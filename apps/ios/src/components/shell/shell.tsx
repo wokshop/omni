@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { BottomBar } from "./bottom-bar.tsx";
 import { useMenu } from "./menu-context.tsx";
 import { MenuLayer } from "./menu-layer.tsx";
@@ -6,19 +6,25 @@ import { useMenuPlace } from "./menu-nav.ts";
 import { TopBar } from "./top-bar.tsx";
 
 /**
- * The shell's chrome over a module's root page: the menu, then the top and bottom bars over
- * both. A page pushed inside a module (a conversation, a folder) keeps its own native header.
- * A search is cleared here, only when the module changes: the bottom bar unmounts on a pushed
- * page, and a search must survive opening one of its results.
+ * The shell's chrome over every root page: the menu, the top bar and the bottom bar. A pushed
+ * page brings its own header, so the chrome steps away unless the menu is open.
+ *
+ * A search belongs to one module and is cleared here when the user lands on another module. It
+ * survives opening one of its results (the bottom bar unmounts on a pushed page), and a search
+ * started from the menu for the module it shows survives the move onto that module.
  */
 export function ShellChrome() {
   const shell = useMenu();
   const { onRoot, module } = useMenuPlace();
-  const { setQuery, setSearching } = shell;
+  const { setQuery, setSearchIn, searchIn } = shell;
+  const shown = useRef(module);
   useEffect(() => {
+    if (shown.current === module) return;
+    shown.current = module;
+    if (searchIn === module) return;
     setQuery("");
-    setSearching(false);
-  }, [module, setQuery, setSearching]);
+    setSearchIn(null);
+  }, [module, searchIn, setQuery, setSearchIn]);
   if (!onRoot && !shell.isOpen) return null;
   return (
     <>
