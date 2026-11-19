@@ -38,7 +38,7 @@ export interface ThreadListProps {
  * A mail page's threads, newest first under a heading per day, older ones as you scroll, pull
  * to refresh. A tap zooms the row open into the conversation, warmed as the finger lands; a long
  * press peeks at it, with its actions in a menu: Done, Later and Mark as read or unread; Archive
- * and Report spam; Move to trash. On the Inbox a row swipes right for Done and left for Later; on
+ * and Report spam; Move to trash. On the Inbox and its lane views a row swipes right for Done and left for Later; on
  * Later, right for Done.
  */
 export function ThreadList({ page, mailboxId, mailboxes, you, footerSpace }: ThreadListProps) {
@@ -54,7 +54,7 @@ export function ThreadList({ page, mailboxId, mailboxes, you, footerSpace }: Thr
       ),
     [mailboxId, mailboxes, you],
   );
-  const triaged = page === "inbox";
+  const triaged = page === "inbox" || page === "needsReply" || page === "awaitingReply";
   const doneable = triaged || page === "later";
   return (
     <InfiniteList

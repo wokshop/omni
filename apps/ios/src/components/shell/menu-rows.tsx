@@ -4,6 +4,8 @@ import { router } from "expo-router";
 import {
   IconArchive,
   IconBell,
+  IconBubble,
+  IconBubbleDots,
   IconBuildings,
   IconCircleCheck,
   IconClock,
@@ -34,6 +36,8 @@ type Glyph = ComponentType<SvgProps & { size?: number }>;
 
 const VIEWS: { id: MailPage; icon: Glyph }[] = [
   { id: "inbox", icon: IconInbox },
+  { id: "needsReply", icon: IconBubble },
+  { id: "awaitingReply", icon: IconBubbleDots },
   { id: "later", icon: IconClock },
   { id: "done", icon: IconCircleCheck },
 ];

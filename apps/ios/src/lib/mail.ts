@@ -39,16 +39,31 @@ export const countsQuery = () =>
 interface MailPageInfo {
   label: string;
   view: string;
+  lane?: string;
   /** Its SF Symbol in the page menu. */
   icon: SymbolName;
   /** The list's title when it has nothing, as the web's empty state says it. */
   empty: string;
 }
 
-/** Mail's pages: each a view of the threads. Triage is Later and Done only (ADR 0051). */
+/** Mail's pages, as the web sidebar lists them: a view of the threads, and for two, a lane. */
 export const MAIL_PAGES = {
   inbox: { label: "Inbox", view: "inbox", icon: "tray", empty: "Inbox zero" },
   later: { label: "Later", view: "later", icon: "clock", empty: "Nothing for later" },
+  needsReply: {
+    label: "Needs reply",
+    view: "inbox",
+    lane: "needs_reply",
+    icon: "bubble",
+    empty: "Nothing needs a reply",
+  },
+  awaitingReply: {
+    label: "Awaiting reply",
+    view: "inbox",
+    lane: "waiting_on_them",
+    icon: "ellipsis.bubble",
+    empty: "Not waiting on anyone",
+  },
   done: { label: "Done", view: "done", icon: "checkmark.circle", empty: "Nothing done yet" },
   archive: { label: "Archive", view: "archive", icon: "archivebox", empty: "Nothing archived" },
   all: { label: "All mail", view: "all", icon: "envelope", empty: "No mail yet" },
@@ -67,12 +82,14 @@ export const threadsQuery = (page: MailPage, mailboxId: string | undefined) =>
   infiniteQueryOptions({
     queryKey: keys.threads(page, mailboxId),
     queryFn: ({ pageParam, signal }) => {
-      const { view } = MAIL_PAGES[page];
+      const { view, ...rest } = MAIL_PAGES[page];
+      const lane = "lane" in rest ? rest.lane : undefined;
       return call(
         api.threads.$get(
           {
             query: {
               view,
+              ...(lane ? { lane } : {}),
               ...(mailboxId ? { mailboxId } : {}),
               ...(pageParam ? { cursor: pageParam } : {}),
               limit: String(pageParam ? OLDER_PAGE_SIZE : FIRST_PAGE_SIZE),

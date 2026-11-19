@@ -1,4 +1,4 @@
-# 0051: On iOS, triage is Later and Done
+# 0051: People triage with Later and Done; the AI sorts into lanes
 
 Date: 2026-11-19 · Status: accepted · Amends: spec v1 "Clients" (iOS triage lanes, swipe to snooze)
 
@@ -20,17 +20,17 @@ Rodrigo wants the app to triage with two actions, Later and Done, and nothing el
 1. **iOS triage is Later and Done.** A row swipes right for Done and left for Later; the
    conversation's bar and the row's menu offer the same two. Later is one tap, with no time
    (`POST`/`DELETE /threads/:id/later`, ADR 0027).
-2. **No lanes on iOS.** The Needs reply and Awaiting reply pages, the Lane button and its sheet
-   are gone. Mail's views are Inbox, Later and Done.
+2. **Lanes are the AI's, shown as views.** The AI keeps sorting received and sent mail into
+   Needs reply, Awaiting reply and Noise. Needs reply and Awaiting reply are views of the Inbox
+   on every app. Nobody files a thread in a lane by hand: the Lane button and its sheet (with FYI)
+   are gone from iOS.
 3. **No helpdesk status on iOS.** The Status button and its sheet (resolve, reopen, snooze) are
    gone. A shared-inbox conversation keeps assignee, priority and tags, which only shared inboxes
    have; a personal thread shows no tags.
-4. **The API is unchanged.** The AI still files lanes, and the web still shows them and the
-   helpdesk status. This decision is the iOS client only.
+4. **This PR is the iOS client.** Removing FYI, the helpdesk status and timed defer from the
+   API, the AI and the web follows in stacked PRs.
 
 ## Consequences
 
 - On iOS a teammate can't resolve or snooze a shared conversation for the whole team; Done and
   Later act for the member alone (ADR 0007). The web still can.
-- If lanes and helpdesk status go from the web too, that is its own decision and its own ADR,
-  covering the AI triage pipeline and `/counts`.

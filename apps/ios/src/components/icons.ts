@@ -23,6 +23,8 @@ export { IconArrowUndoUp as IconReplyAll } from "@central-icons-react-native/rou
 export { IconChevronDownMedium as IconChevronDown } from "@central-icons-react-native/round-outlined-radius-3-stroke-1.5/IconChevronDownMedium";
 export { IconBarsThree as IconMenu } from "@central-icons-react-native/round-outlined-radius-3-stroke-1.5/IconBarsThree";
 export { IconMagnifyingGlass as IconSearch } from "@central-icons-react-native/round-outlined-radius-3-stroke-1.5/IconMagnifyingGlass";
+export { IconBubble2 as IconBubble } from "@central-icons-react-native/round-outlined-radius-3-stroke-1.5/IconBubble2";
+export { IconBubbleDots } from "@central-icons-react-native/round-outlined-radius-3-stroke-1.5/IconBubbleDots";
 export { IconPencil as IconCompose } from "@central-icons-react-native/round-outlined-radius-3-stroke-1.5/IconPencil";
 export { IconBell } from "@central-icons-react-native/round-outlined-radius-3-stroke-1.5/IconBell";
 export { IconSettingsGear2 as IconSettings } from "@central-icons-react-native/round-outlined-radius-3-stroke-1.5/IconSettingsGear2";
