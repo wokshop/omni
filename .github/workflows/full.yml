@@ -6,13 +6,13 @@ name: Full
 #
 # - Nightly on main, skipped when main has no new commit in the last day.
 # - By hand: Actions > Full > Run workflow, on any branch.
-# - On a pull request, by adding the `full-e2e` label (remove and re-add it to run again).
+# - On a pull request, by adding the `full-e2e` label, and again on each push while it has it.
 on:
   schedule:
     - cron: "17 6 * * *"
   workflow_dispatch:
   pull_request:
-    types: [labeled]
+    types: [labeled, synchronize]
 
 concurrency:
   group: full-${{ github.event.pull_request.number || github.ref }}
@@ -28,7 +28,11 @@ env:
 jobs:
   full:
     name: Full
-    if: github.event_name != 'pull_request' || github.event.label.name == 'full-e2e'
+    if: >-
+      github.event_name != 'pull_request' ||
+      (github.event.action == 'labeled' && github.event.label.name == 'full-e2e') ||
+      (github.event.action == 'synchronize' &&
+        contains(github.event.pull_request.labels.*.name, 'full-e2e'))
     runs-on: boat # 4 vCPU / 8 GB: the full compose stack + wrangler e2e need more than boat-small's 4 GB
     timeout-minutes: 25
     env:
@@ -87,8 +91,9 @@ jobs:
         if: steps.scope.outputs.run == 'true'
         run: pnpm test:all
 
+      # --continue: one red package still lets the others run, so a failure hides nothing.
       - name: E2E tests
         if: steps.scope.outputs.run == 'true'
         run: |
           docker compose up -d --wait
-          pnpm test:e2e
+          pnpm test:e2e --continue
