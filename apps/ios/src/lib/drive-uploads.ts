@@ -137,14 +137,15 @@ export function removeUpload(id: number) {
   pump();
 }
 
-function cancel(drop: (job: Job) => boolean) {
+async function cancel(drop: (job: Job) => boolean) {
   const all = jobs.filter(drop);
-  if (!all.length) return Promise.resolve();
+  if (!all.length) return;
   jobs = jobs.filter((job) => !all.includes(job));
   for (const job of all) job.controller?.abort();
   publish();
   pump();
-  return Promise.all(
+  await Promise.allSettled(all.map((job) => job.running));
+  await Promise.all(
     all.flatMap((job) => (job.uploadId ? [abortUpload(job.uploadId, job.workspace)] : [])),
   );
 }

@@ -1,4 +1,4 @@
-import { StyleSheet, View } from "react-native";
+import { ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { IconArrowRotateClockwise, IconX } from "@/components/icons.ts";
 import { IconButton } from "@/components/ui/icon-button.tsx";
@@ -16,11 +16,11 @@ export function UploadsPanel() {
   if (!uploads.length) return null;
   return (
     <SafeAreaView edges={["bottom"]} style={styles.dock} pointerEvents="box-none">
-      <View style={styles.panel}>
+      <ScrollView style={styles.panel} contentContainerStyle={styles.rows}>
         {uploads.map((item) => (
           <Row key={item.id} item={item} />
         ))}
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -73,14 +73,15 @@ function Row({ item }: { item: UploadItem }) {
 const styles = StyleSheet.create({
   dock: { position: "absolute", left: space(4), right: space(4), bottom: space(4) },
   panel: {
-    gap: space(3),
-    padding: space(3),
+    flexGrow: 0,
+    maxHeight: space(72),
     borderRadius: radius.card,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
     backgroundColor: colors.surface,
     ...shadowRaised,
   },
+  rows: { gap: space(3), padding: space(3) },
   row: { gap: space(1.5) },
   line: { flexDirection: "row", alignItems: "center", gap: space(2) },
   name: { flex: 1 },
