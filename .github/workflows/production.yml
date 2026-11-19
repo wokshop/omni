@@ -10,12 +10,28 @@ name: Production
 #    every running service. Nothing waits for them, so schema changes are additive-first.
 # 2. Doppler prd_worker -> the Worker's secrets (Doppler has no automatic sync for Workers).
 #
-# `wrangler secret bulk` deploys a new version of the latest one, so on a push it first waits for
-# that commit's Cloudflare build (its GitHub check run) to finish: otherwise a sync that read the
+# `wrangler secret bulk` deploys a new version of the latest one, so it first waits for the
+# commit's Cloudflare build (its GitHub check run) to finish: otherwise a sync that read the
 # version before Cloudflare deployed the new one could put the old code back.
+#
+# Each job runs only when its inputs change (ADR 0050), so most pushes start nothing:
+# - migrations when a push adds or edits `packages/db/migrations/`;
+# - the secret sync when the Worker's documented env (`.dev.vars.example`) or config changes, which
+#   is when new code can need a new secret;
+# - both daily, as the safety net for a Doppler edit or a push whose file list was cut short
+#   (both are idempotent), and by hand: Actions, Production, Run workflow.
 on:
   push:
     branches: [main]
+    paths:
+      - packages/db/migrations/**
+      - apps/worker/.dev.vars.example
+      - apps/worker/wrangler.jsonc
+      - .github/scripts/doppler.sh
+      - .github/scripts/wait-for-checks.sh
+      - .github/workflows/production.yml
+  schedule:
+    - cron: "23 9 * * *"
   workflow_dispatch:
 
 concurrency:
@@ -29,6 +45,12 @@ permissions:
 jobs:
   migrate:
     name: Migrate database
+    # On a push, only when it touched a migration (GitHub lists each commit's files in the event).
+    if: >-
+      github.event_name != 'push' ||
+      contains(toJSON(github.event.commits.*.added), 'packages/db/migrations/') ||
+      contains(toJSON(github.event.commits.*.modified), 'packages/db/migrations/') ||
+      contains(toJSON(github.event.commits.*.modified), '.github/workflows/production.yml')
     # Runner switch (docs/operations/ci-runners.md): repo variable RUNNER_PRODUCTION, else boat-small.
     runs-on: ${{ fromJSON(vars.RUNNER_PRODUCTION || '"boat-small"') }}
     timeout-minutes: 10
@@ -54,6 +76,14 @@ jobs:
 
   worker-secrets:
     name: Sync Worker secrets
+    # On a push, only when the Worker's env or config, or this sync itself, changed.
+    if: >-
+      github.event_name != 'push' ||
+      contains(toJSON(github.event.commits.*.modified), 'apps/worker/.dev.vars.example') ||
+      contains(toJSON(github.event.commits.*.modified), 'apps/worker/wrangler.jsonc') ||
+      contains(toJSON(github.event.commits.*.modified), '.github/scripts/') ||
+      contains(toJSON(github.event.commits.*.added), '.github/scripts/') ||
+      contains(toJSON(github.event.commits.*.modified), '.github/workflows/production.yml')
     # Runner switch (docs/operations/ci-runners.md): repo variable RUNNER_PRODUCTION, else boat-small.
     runs-on: ${{ fromJSON(vars.RUNNER_PRODUCTION || '"boat-small"') }}
     timeout-minutes: 30
@@ -72,8 +102,8 @@ jobs:
 
       - run: pnpm install --frozen-lockfile --filter @omni/worker
 
+      # Every event: a daily or hand-started run on a fresh main commit must not race its build.
       - name: Wait for Cloudflare's deploy of this commit
-        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
         run: .github/scripts/wait-for-checks.sh "$GITHUB_SHA"
