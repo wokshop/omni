@@ -27,4 +27,8 @@ export const keys = {
   senderLogo: (who: string) => ["sender-logo", who] as const,
   search: (q: string) => ["search", q] as const,
   attachmentFile: (attachmentId: string) => ["attachment", attachmentId] as const,
+  crmTimeline: (kind: string, id: string) => ["crm", "timeline", kind, id] as const,
+  crmCompanySearch: (q: string) => ["crm", "company-search", q] as const,
+  crmMe: () => ["crm-me"] as const,
+  crmMembers: () => ["crm-members"] as const,
 };

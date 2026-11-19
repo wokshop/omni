@@ -17,20 +17,19 @@ export interface ModulePage<Id extends string> {
 /**
  * A module page's header buttons, native menus both: on the left, the module's pages (the web
  * sidebar's rows), the current one checked, then `children` (more sections, such as mail's
- * mailboxes); on the right, the notifications bell and the workspace menu: every workspace the
- * person belongs to, Settings and Log out. Its items are called, not mounted: the native header
- * keeps only direct `Stack.Toolbar.*` elements, so a wrapper component would draw nothing.
+ * mailboxes); on the right, `actions` (a page's own buttons, such as New), then the workspace:
+ * every one the person belongs to, and Log out. A native header reads its buttons straight from
+ * its children, so each is a `Stack.Toolbar.*` element here, never a component wrapping one.
  */
 export function ModuleToolbar<Id extends string>(props: {
   pages: readonly ModulePage<Id>[];
   current: Id;
   onPage: (id: Id) => void;
   children?: ReactNode;
-  /** Native buttons or menus before the workspace menu, such as Drive's "+". */
+  /** `Stack.Toolbar.Button` or `.Menu` elements before the workspace menu. */
   actions?: ReactNode;
 }) {
   const workspaceMenu = useWorkspaceMenu();
-  const unread = useUnreadNotifications();
   return (
     <>
       <Stack.Toolbar placement="left">
@@ -53,7 +52,6 @@ export function ModuleToolbar<Id extends string>(props: {
       </Stack.Toolbar>
       <Stack.Toolbar placement="right">
         {props.actions}
-        {notificationsButton(unread)}
         {workspaceMenu}
       </Stack.Toolbar>
     </>
