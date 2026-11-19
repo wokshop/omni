@@ -26,10 +26,10 @@ export function ModuleToolbar<Id extends string>(props: {
   current: Id;
   onPage: (id: Id) => void;
   children?: ReactNode;
+  /** Native buttons or menus before the workspace menu, such as Drive's "+". */
+  actions?: ReactNode;
 }) {
-  const workspace = useWorkspace();
-  const name = useSession().data?.user.name;
-  const unread = useUnreadNotifications();
+  const workspaceMenu = useWorkspaceMenu();
   return (
     <>
       <Stack.Toolbar placement="left">
@@ -51,14 +51,16 @@ export function ModuleToolbar<Id extends string>(props: {
         </Stack.Toolbar.Menu>
       </Stack.Toolbar>
       <Stack.Toolbar placement="right">
-        {notificationsButton(unread)}
-        {workspaceMenu(workspace, name)}
+        {props.actions}
+        {workspaceMenu}
       </Stack.Toolbar>
     </>
   );
 }
 
-function workspaceMenu({ active, all }: ReturnType<typeof useWorkspace>, name?: string) {
+function useWorkspaceMenu() {
+  const { active, all } = useWorkspace();
+  const name = useSession().data?.user.name;
   if (!active) return null;
   return (
     <Stack.Toolbar.Menu

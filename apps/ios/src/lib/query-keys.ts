@@ -19,6 +19,10 @@ export const keys = {
   /** Every cached thread list, whatever its page and mailbox (`threads(...)` is under it). */
   threadLists: () => ["threads"] as const,
   threadDetails: () => ["thread"] as const,
+  me: () => ["me"] as const,
+  /** Everything Drive caches, to ask it all again after a change. */
   driveAll: () => ["drive"] as const,
-  crmAll: () => ["crm"] as const,
+  driveNode: (nodeId: string) => ["drive", "node", nodeId] as const,
+  driveSharing: (nodeId: string) => ["drive", "sharing", nodeId] as const,
+  driveVersions: (nodeId: string) => ["drive", "versions", nodeId] as const,
 };
