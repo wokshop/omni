@@ -11,3 +11,6 @@ export { IconHandshake } from "@central-icons-react-native/round-outlined-radius
 export { IconUser as IconUserRound } from "@central-icons-react-native/round-outlined-radius-3-stroke-1.5/IconUser";
 export { IconCrossMedium as IconX } from "@central-icons-react-native/round-outlined-radius-3-stroke-1.5/IconCrossMedium";
 export { IconArrowRotateClockwise } from "@central-icons-react-native/round-outlined-radius-3-stroke-1.5/IconArrowRotateClockwise";
+export { IconExclamationCircle as IconCircleAlert } from "@central-icons-react-native/round-outlined-radius-3-stroke-1.5/IconExclamationCircle";
+export { IconClock3OClock as IconClock3 } from "@central-icons-react-native/round-outlined-radius-3-stroke-1.5/IconClock3OClock";
+export { IconEmail1 as IconMail } from "@central-icons-react-native/round-outlined-radius-3-stroke-1.5/IconEmail1";

@@ -30,6 +30,7 @@ export function ModuleToolbar<Id extends string>(props: {
   actions?: ReactNode;
 }) {
   const workspaceMenu = useWorkspaceMenu();
+  const unread = useUnreadNotifications();
   return (
     <>
       <Stack.Toolbar placement="left">
@@ -52,6 +53,7 @@ export function ModuleToolbar<Id extends string>(props: {
       </Stack.Toolbar>
       <Stack.Toolbar placement="right">
         {props.actions}
+        {notificationsButton(unread)}
         {workspaceMenu}
       </Stack.Toolbar>
     </>
