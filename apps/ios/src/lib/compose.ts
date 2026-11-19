@@ -11,11 +11,17 @@ const retry = (count: number, error: Error) =>
 
 const ADDRESS = /^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/;
 
+const tokens = (text: string) =>
+  [...new Set(text.split(/[\s,;]+/).map((a) => a.replace(/^<|>$/g, "").trim()))].filter(Boolean);
+
 /** Every address in typed or pasted text, in order, without repeats (the web's `parseAddresses`). */
 export function parseAddresses(text: string) {
-  return [...new Set(text.split(/[\s,;]+/).map((a) => a.replace(/^<|>$/g, "").trim()))].filter(
-    (a) => ADDRESS.test(a),
-  ) satisfies string[];
+  return tokens(text).filter((a) => ADDRESS.test(a)) satisfies string[];
+}
+
+/** What in typed text isn't an address, kept in the field for the person to fix. */
+export function notAddresses(text: string) {
+  return tokens(text).filter((a) => !ADDRESS.test(a)) satisfies string[];
 }
 
 /** What a reply starts from: its recipients, as the Worker would pick them, and its subject. */

@@ -23,7 +23,13 @@ import { IconButton } from "@/components/ui/icon-button.tsx";
 import { Text } from "@/components/ui/text.tsx";
 import { TextField } from "@/components/ui/text-field.tsx";
 import { ApiError } from "@/lib/api.ts";
-import { parseAddresses, replyStart, useSendNew, useSendReply } from "@/lib/compose.ts";
+import {
+  notAddresses,
+  parseAddresses,
+  replyStart,
+  useSendNew,
+  useSendReply,
+} from "@/lib/compose.ts";
 import { idempotencyKey } from "@/lib/ids.ts";
 import { currentWorkspaceId } from "@/lib/workspace-id.ts";
 import { gutter, space } from "@/theme/tokens.ts";
@@ -68,6 +74,7 @@ function useRecipients(start: { to: string[]; cc: string[] }) {
     typed,
     type: (field: keyof Copies, text: string) => setTyped((now) => ({ ...now, [field]: text })),
     final,
+    unsendable: Object.values(typed).some((text) => notAddresses(text).length > 0),
     showCopies,
     showAll: () => setShowCopies(true),
     set: (next: Partial<Copies>) => setList((now) => ({ ...now, ...next })),
@@ -296,7 +303,12 @@ export function ReplyComposer(props: { thread: Thread; replyAll: boolean }) {
   const message = start.message;
   const written = text.trim().length > 0;
   const dirty = written || recipients.changed;
-  const canSend = !!message && recipients.final.to.length > 0 && written && !send.isPending;
+  const canSend =
+    !!message &&
+    recipients.final.to.length > 0 &&
+    !recipients.unsendable &&
+    written &&
+    !send.isPending;
   const submit = (checkLatest: boolean) => {
     if (!message) return;
     const reply = {
@@ -362,7 +374,7 @@ export function NewComposer(props: { mailboxes: Mailbox[]; mailboxId?: string })
   );
   const { to, cc, bcc } = recipients.final;
   const dirty = !!(text.trim() || subject.trim() || to.length || cc.length || bcc.length);
-  const canSend = !!fromId && to.length > 0 && !send.isPending;
+  const canSend = !!fromId && to.length > 0 && !recipients.unsendable && !send.isPending;
   const submit = () => {
     const mail = { mailboxId: fromId, subject: subject.trim(), text, ...recipients.final };
     send.mutate(

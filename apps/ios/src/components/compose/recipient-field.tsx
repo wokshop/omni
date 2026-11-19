@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { StyleSheet, View } from "react-native";
 import { Tag } from "@/components/ui/tag.tsx";
 import { TextField } from "@/components/ui/text-field.tsx";
-import { parseAddresses } from "@/lib/compose.ts";
+import { notAddresses, parseAddresses } from "@/lib/compose.ts";
 import { space } from "@/theme/tokens.ts";
 import { HeaderRow } from "./header-field.tsx";
 
@@ -31,7 +31,7 @@ export function RecipientField(props: {
     const found = parseAddresses(typed);
     if (!found.length) return false;
     add(found);
-    setText("");
+    setText(notAddresses(typed).join(", "));
     return true;
   };
   return (
