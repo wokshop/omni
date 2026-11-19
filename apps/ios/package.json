@@ -8,7 +8,8 @@
     "dev": "expo start",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "build:check": "expo export --platform ios --output-dir dist/ios-check"
+    "build:check": "expo export --platform ios --output-dir dist/ios-check",
+    "test:e2e": "vitest run --config vitest.e2e.mts"
   },
   "dependencies": {
     "@better-auth/expo": "1.7.22",
@@ -43,6 +44,9 @@
     "zod": "4.6.7"
   },
   "devDependencies": {
-    "@types/react": "~19.3.0"
+    "@omni/db": "workspace:*",
+    "@omni/worker": "workspace:*",
+    "@types/react": "~19.3.0",
+    "playwright-core": "1.63.0"
   }
 }
