@@ -280,7 +280,7 @@ primitives, and add no text.
   `/desktop/latest.json` last, checks the live feed and tags `desktop-v<version>`. The Worker
   serves `/desktop/latest.json`, `/desktop/download/:platform` and `/desktop/releases/*` from it,
   so a self-hoster publishes to their own. Every key is a file on that Mac, or a secret of the
-  GitHub environment `release` written to a file for the job.
+  Doppler `prd_github` secret (synced to the GitHub environment `production`) written to a file for the job.
 - **Config.** `OMNI_DESKTOP_ORIGIN` (optional default server), `OMNI_DESKTOP_BUNDLE_ID`,
   `OMNI_DESKTOP_APP_GROUP`, `APPLE_TEAM_ID`, updater public key and endpoint. Documented in
   `apps/desktop/.env.example` and `docs/self-hosting.md`.

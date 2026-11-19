@@ -7,7 +7,8 @@ name: iOS release
 # Connect holds. About 20 minutes of macOS, so only for a release.
 #
 # macos-26: App Store Connect takes only builds made with the current iOS SDK (Xcode 26).
-# Settings live in the GitHub environment `release`, named in docs/operations/releases.md.
+# Settings come from Doppler `prd_github`, which syncs to the GitHub environment `production`
+# (docs/operations/releases.md lists them).
 on:
   workflow_call:
     inputs:
@@ -32,7 +33,7 @@ jobs:
     name: TestFlight
     runs-on: macos-26
     timeout-minutes: 60
-    environment: release
+    environment: production
     steps:
       - name: Tag
         env:
@@ -70,13 +71,13 @@ jobs:
 
       - name: Build and upload
         env:
-          EXPO_PUBLIC_OMNI_API_URL: ${{ vars.EXPO_PUBLIC_OMNI_API_URL }}
-          OMNI_IOS_BUNDLE_ID: ${{ vars.OMNI_IOS_BUNDLE_ID }}
-          OMNI_IOS_NAME: ${{ vars.OMNI_IOS_NAME }}
-          OMNI_IOS_SCHEME: ${{ vars.OMNI_IOS_SCHEME }}
-          OMNI_IOS_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
-          ASC_KEY_ID: ${{ vars.ASC_KEY_ID }}
-          ASC_ISSUER_ID: ${{ vars.ASC_ISSUER_ID }}
+          EXPO_PUBLIC_OMNI_API_URL: ${{ secrets.EXPO_PUBLIC_OMNI_API_URL }}
+          OMNI_IOS_BUNDLE_ID: ${{ secrets.OMNI_IOS_BUNDLE_ID }}
+          OMNI_IOS_NAME: ${{ secrets.OMNI_IOS_NAME }}
+          OMNI_IOS_SCHEME: ${{ secrets.OMNI_IOS_SCHEME }}
+          OMNI_IOS_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
         run: apps/ios/scripts/release-testflight.sh
 
       - name: Clean up

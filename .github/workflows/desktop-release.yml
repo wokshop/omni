@@ -5,8 +5,8 @@ name: Desktop release
 # it when a release pull request raises the desktop version; run it by hand (Actions, Desktop
 # release, Run workflow) to retry a tag. About 25 minutes of macOS, so only for a release.
 #
-# Settings live in the GitHub environment `release` (Settings, Environments), named in
-# docs/operations/releases.md. Secrets become files under $RUNNER_TEMP for the job only.
+# Settings come from Doppler `prd_github`, which syncs to the GitHub environment `production`
+# (docs/operations/releases.md lists them). Secrets become files under $RUNNER_TEMP for the job only.
 on:
   workflow_call:
     inputs:
@@ -31,7 +31,7 @@ jobs:
     name: Sign and publish (macOS)
     runs-on: macos-15
     timeout-minutes: 60
-    environment: release
+    environment: production
     steps:
       - name: Tag
         env:
@@ -73,8 +73,8 @@ jobs:
           APP_PROFILE: ${{ secrets.DESKTOP_APP_PROFILE_BASE64 }}
           EXTENSION_PROFILE: ${{ secrets.DESKTOP_EXTENSION_PROFILE_BASE64 }}
           ASC_KEY: ${{ secrets.ASC_API_KEY_P8 }}
-          UPDATER_KEY: ${{ secrets.DESKTOP_UPDATER_PRIVATE_KEY }}
-          UPDATER_PUBKEY: ${{ vars.DESKTOP_UPDATER_PUBKEY }}
+          UPDATER_KEY: ${{ secrets.OMNI_DESKTOP_UPDATER_KEY }}
+          UPDATER_PUBKEY: ${{ secrets.DESKTOP_UPDATER_PUBKEY }}
         run: |
           keys="$RUNNER_TEMP/keys"
           mkdir -p "$keys"
@@ -92,17 +92,17 @@ jobs:
 
       - name: Build, sign, notarize and publish
         env:
-          OMNI_DESKTOP_ORIGIN: ${{ vars.OMNI_DESKTOP_ORIGIN }}
-          OMNI_DESKTOP_BUNDLE_ID: ${{ vars.OMNI_DESKTOP_BUNDLE_ID }}
-          OMNI_DESKTOP_APP_GROUP: ${{ vars.OMNI_DESKTOP_APP_GROUP }}
-          OMNI_DESKTOP_RELEASE_BUCKET: ${{ vars.OMNI_DESKTOP_RELEASE_BUCKET }}
-          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
-          APPLE_SIGNING_IDENTITY: ${{ vars.DESKTOP_SIGNING_IDENTITY }}
-          APPLE_API_KEY: ${{ vars.ASC_KEY_ID }}
-          APPLE_API_ISSUER: ${{ vars.ASC_ISSUER_ID }}
+          OMNI_DESKTOP_ORIGIN: ${{ secrets.OMNI_DESKTOP_ORIGIN }}
+          OMNI_DESKTOP_BUNDLE_ID: ${{ secrets.OMNI_DESKTOP_BUNDLE_ID }}
+          OMNI_DESKTOP_APP_GROUP: ${{ secrets.OMNI_DESKTOP_APP_GROUP }}
+          OMNI_DESKTOP_RELEASE_BUCKET: ${{ secrets.OMNI_DESKTOP_RELEASE_BUCKET }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.DESKTOP_SIGNING_IDENTITY }}
+          APPLE_API_KEY: ${{ secrets.ASC_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.ASC_ISSUER_ID }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.DESKTOP_UPDATER_KEY_PASSWORD }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: apps/desktop/scripts/release-macos.sh
 
       - name: Clean up

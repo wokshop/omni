@@ -27,7 +27,8 @@ a fix from a feature or write a changelog.
 3. **Merging the release pull request builds and publishes on GitHub.** It tags `desktop-vX.Y.Z`
    and `ios-vX.Y.Z`; `desktop-release.yml` runs the same `release-macos.sh` on `macos-15` and
    `ios-release.yml` runs the same `release-testflight.sh` on `macos-26`. Keys are secrets of the
-   GitHub environment `release` (docs/operations/releases.md), written to files for the job only.
+   Doppler config `prd_github`, synced to the GitHub environment `production`
+   (docs/operations/releases.md), and written to files for the job only.
    The scripts still run on a Mac by hand, unchanged in what they need.
 4. **iOS signs by hand on CI.** With an App Store Connect key and an Apple Distribution certificate
    in the keychain, `app.config.ts` signs only the app target with that certificate and the app's
@@ -43,5 +44,5 @@ a fix from a feature or write a changelog.
   be started by hand on that branch.
 - A `desktop-v*` tag no longer builds an unsigned macOS app in `desktop.yml`: the signed release
   build replaces it. Windows still compiles on a tag.
-- Losing the `release` environment's secrets stops releases, not the apps; the originals stay in
+- Losing those secrets stops releases, not the apps; the originals stay in
   the team's Apple account and on the Mac.
