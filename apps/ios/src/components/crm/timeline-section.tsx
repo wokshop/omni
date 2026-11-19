@@ -233,12 +233,8 @@ function NoteCard(props: {
       asChild
     >
       <Link.Trigger>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityHint="Edit note"
-          style={({ pressed }) => [styles.card, pressed && styles.pressed]}
-        >
-          {card}
+        <Pressable accessibilityRole="button" accessibilityHint="Edit note">
+          <View style={styles.card}>{card}</View>
         </Pressable>
       </Link.Trigger>
       <Link.Menu>
