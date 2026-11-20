@@ -501,6 +501,12 @@ export const storageSignBodySchema = z.object({
   consentVersion: z.string(),
 });
 
+/**
+ * `?signer=` on `POST /signing/:id/code` and `/sign`: the address the page shows. When the
+ * browser now opens the request as someone else, the call answers `409 signer_changed`.
+ */
+export const storageSignerQuerySchema = z.object({ signer: z.string().max(320).optional() });
+
 /** `POST /api/storage/signing/:id/link`: the token from the signing mail's link. */
 export const storageSigningLinkBodySchema = z.object({ token: z.string().min(20).max(200) });
 
