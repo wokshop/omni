@@ -16,11 +16,11 @@ import { Route as AuthedWorkspaceRouteImport } from "./routes/_authed/$workspace
 import { Route as AuthedJoinRouteImport } from "./routes/_authed/join";
 import { Route as AuthedOnboardingRouteImport } from "./routes/_authed/onboarding";
 import { Route as SShareIdRouteImport } from "./routes/s.$shareId";
+import { Route as SignRequestIdRouteImport } from "./routes/sign.$requestId";
 import { Route as AuthedWorkspaceSplatRouteImport } from "./routes/_authed/$workspace/$";
 import { Route as AuthedWorkspaceCrmRouteImport } from "./routes/_authed/$workspace/crm";
 import { Route as AuthedInviteInvitationIdRouteImport } from "./routes/_authed/invite.$invitationId";
 import { Route as AuthedOauthConsentRouteImport } from "./routes/_authed/oauth/consent";
-import { Route as AuthedSignRequestIdRouteImport } from "./routes/_authed/sign.$requestId";
 import { Route as AuthedWorkspaceCrmIndexRouteImport } from "./routes/_authed/$workspace/crm/index";
 import { Route as AuthedWorkspaceFilesIndexRouteImport } from "./routes/_authed/$workspace/files/index";
 import { Route as AuthedWorkspaceFilesSharedWithMeRouteImport } from "./routes/_authed/$workspace/files/shared-with-me";
@@ -45,6 +45,7 @@ import { Route as AuthedWorkspaceCrmDealsIndexRouteImport } from "./routes/_auth
 import { Route as AuthedWorkspaceCrmDealsIdRouteImport } from "./routes/_authed/$workspace/crm/deals.$id";
 import { Route as AuthedWorkspaceCrmPeopleIndexRouteImport } from "./routes/_authed/$workspace/crm/people.index";
 import { Route as AuthedWorkspaceCrmPeopleIdRouteImport } from "./routes/_authed/$workspace/crm/people.$id";
+import { Route as AuthedWorkspaceCrmProjectsIndexRouteImport } from "./routes/_authed/$workspace/crm/projects.index";
 import { Route as AuthedWorkspaceCrmTasksIndexRouteImport } from "./routes/_authed/$workspace/crm/tasks.index";
 import { Route as AuthedWorkspaceCrmTasksIdRouteImport } from "./routes/_authed/$workspace/crm/tasks.$id";
 import { Route as AuthedWorkspaceFilesMyIndexRouteImport } from "./routes/_authed/$workspace/files/my.index";
@@ -96,6 +97,11 @@ const SShareIdRoute = SShareIdRouteImport.update({
   path: "/s/$shareId",
   getParentRoute: () => rootRouteImport,
 } as any);
+const SignRequestIdRoute = SignRequestIdRouteImport.update({
+  id: "/sign/$requestId",
+  path: "/sign/$requestId",
+  getParentRoute: () => rootRouteImport,
+} as any);
 const AuthedWorkspaceSplatRoute = AuthedWorkspaceSplatRouteImport.update({
   id: "/$",
   path: "/$",
@@ -115,11 +121,6 @@ const AuthedInviteInvitationIdRoute =
 const AuthedOauthConsentRoute = AuthedOauthConsentRouteImport.update({
   id: "/oauth/consent",
   path: "/oauth/consent",
-  getParentRoute: () => AuthedRoute,
-} as any);
-const AuthedSignRequestIdRoute = AuthedSignRequestIdRouteImport.update({
-  id: "/sign/$requestId",
-  path: "/sign/$requestId",
   getParentRoute: () => AuthedRoute,
 } as any);
 const AuthedWorkspaceCrmIndexRoute = AuthedWorkspaceCrmIndexRouteImport.update({
@@ -261,6 +262,12 @@ const AuthedWorkspaceCrmPeopleIdRoute =
     path: "/people/$id",
     getParentRoute: () => AuthedWorkspaceCrmRoute,
   } as any);
+const AuthedWorkspaceCrmProjectsIndexRoute =
+  AuthedWorkspaceCrmProjectsIndexRouteImport.update({
+    id: "/projects/",
+    path: "/projects/",
+    getParentRoute: () => AuthedWorkspaceCrmRoute,
+  } as any);
 const AuthedWorkspaceCrmTasksIndexRoute =
   AuthedWorkspaceCrmTasksIndexRouteImport.update({
     id: "/tasks/",
@@ -365,11 +372,11 @@ export interface FileRoutesByFullPath {
   "/join": typeof AuthedJoinRoute;
   "/onboarding": typeof AuthedOnboardingRoute;
   "/s/$shareId": typeof SShareIdRoute;
+  "/sign/$requestId": typeof SignRequestIdRoute;
   "/$workspace/$": typeof AuthedWorkspaceSplatRoute;
   "/$workspace/crm": typeof AuthedWorkspaceCrmRouteWithChildren;
   "/invite/$invitationId": typeof AuthedInviteInvitationIdRoute;
   "/oauth/consent": typeof AuthedOauthConsentRoute;
-  "/sign/$requestId": typeof AuthedSignRequestIdRoute;
   "/$workspace/files/shared-with-me": typeof AuthedWorkspaceFilesSharedWithMeRoute;
   "/$workspace/files/trash": typeof AuthedWorkspaceFilesTrashRoute;
   "/$workspace/mail/all": typeof AuthedWorkspaceMailAllRouteWithChildren;
@@ -407,6 +414,7 @@ export interface FileRoutesByFullPath {
   "/$workspace/crm/companies/": typeof AuthedWorkspaceCrmCompaniesIndexRoute;
   "/$workspace/crm/deals/": typeof AuthedWorkspaceCrmDealsIndexRoute;
   "/$workspace/crm/people/": typeof AuthedWorkspaceCrmPeopleIndexRoute;
+  "/$workspace/crm/projects/": typeof AuthedWorkspaceCrmProjectsIndexRoute;
   "/$workspace/crm/tasks/": typeof AuthedWorkspaceCrmTasksIndexRoute;
   "/$workspace/files/my/": typeof AuthedWorkspaceFilesMyIndexRoute;
   "/$workspace/files/shared/": typeof AuthedWorkspaceFilesSharedIndexRoute;
@@ -418,10 +426,10 @@ export interface FileRoutesByTo {
   "/join": typeof AuthedJoinRoute;
   "/onboarding": typeof AuthedOnboardingRoute;
   "/s/$shareId": typeof SShareIdRoute;
+  "/sign/$requestId": typeof SignRequestIdRoute;
   "/$workspace/$": typeof AuthedWorkspaceSplatRoute;
   "/invite/$invitationId": typeof AuthedInviteInvitationIdRoute;
   "/oauth/consent": typeof AuthedOauthConsentRoute;
-  "/sign/$requestId": typeof AuthedSignRequestIdRoute;
   "/$workspace/files/shared-with-me": typeof AuthedWorkspaceFilesSharedWithMeRoute;
   "/$workspace/files/trash": typeof AuthedWorkspaceFilesTrashRoute;
   "/$workspace/mail/all": typeof AuthedWorkspaceMailAllRouteWithChildren;
@@ -459,6 +467,7 @@ export interface FileRoutesByTo {
   "/$workspace/crm/companies": typeof AuthedWorkspaceCrmCompaniesIndexRoute;
   "/$workspace/crm/deals": typeof AuthedWorkspaceCrmDealsIndexRoute;
   "/$workspace/crm/people": typeof AuthedWorkspaceCrmPeopleIndexRoute;
+  "/$workspace/crm/projects": typeof AuthedWorkspaceCrmProjectsIndexRoute;
   "/$workspace/crm/tasks": typeof AuthedWorkspaceCrmTasksIndexRoute;
   "/$workspace/files/my": typeof AuthedWorkspaceFilesMyIndexRoute;
   "/$workspace/files/shared": typeof AuthedWorkspaceFilesSharedIndexRoute;
@@ -472,11 +481,11 @@ export interface FileRoutesById {
   "/_authed/join": typeof AuthedJoinRoute;
   "/_authed/onboarding": typeof AuthedOnboardingRoute;
   "/s/$shareId": typeof SShareIdRoute;
+  "/sign/$requestId": typeof SignRequestIdRoute;
   "/_authed/$workspace/$": typeof AuthedWorkspaceSplatRoute;
   "/_authed/$workspace/crm": typeof AuthedWorkspaceCrmRouteWithChildren;
   "/_authed/invite/$invitationId": typeof AuthedInviteInvitationIdRoute;
   "/_authed/oauth/consent": typeof AuthedOauthConsentRoute;
-  "/_authed/sign/$requestId": typeof AuthedSignRequestIdRoute;
   "/_authed/$workspace/files/shared-with-me": typeof AuthedWorkspaceFilesSharedWithMeRoute;
   "/_authed/$workspace/files/trash": typeof AuthedWorkspaceFilesTrashRoute;
   "/_authed/$workspace/mail/all": typeof AuthedWorkspaceMailAllRouteWithChildren;
@@ -514,6 +523,7 @@ export interface FileRoutesById {
   "/_authed/$workspace/crm/companies/": typeof AuthedWorkspaceCrmCompaniesIndexRoute;
   "/_authed/$workspace/crm/deals/": typeof AuthedWorkspaceCrmDealsIndexRoute;
   "/_authed/$workspace/crm/people/": typeof AuthedWorkspaceCrmPeopleIndexRoute;
+  "/_authed/$workspace/crm/projects/": typeof AuthedWorkspaceCrmProjectsIndexRoute;
   "/_authed/$workspace/crm/tasks/": typeof AuthedWorkspaceCrmTasksIndexRoute;
   "/_authed/$workspace/files/my/": typeof AuthedWorkspaceFilesMyIndexRoute;
   "/_authed/$workspace/files/shared/": typeof AuthedWorkspaceFilesSharedIndexRoute;
@@ -527,11 +537,11 @@ export interface FileRouteTypes {
     | "/join"
     | "/onboarding"
     | "/s/$shareId"
+    | "/sign/$requestId"
     | "/$workspace/$"
     | "/$workspace/crm"
     | "/invite/$invitationId"
     | "/oauth/consent"
-    | "/sign/$requestId"
     | "/$workspace/files/shared-with-me"
     | "/$workspace/files/trash"
     | "/$workspace/mail/all"
@@ -569,6 +579,7 @@ export interface FileRouteTypes {
     | "/$workspace/crm/companies/"
     | "/$workspace/crm/deals/"
     | "/$workspace/crm/people/"
+    | "/$workspace/crm/projects/"
     | "/$workspace/crm/tasks/"
     | "/$workspace/files/my/"
     | "/$workspace/files/shared/";
@@ -580,10 +591,10 @@ export interface FileRouteTypes {
     | "/join"
     | "/onboarding"
     | "/s/$shareId"
+    | "/sign/$requestId"
     | "/$workspace/$"
     | "/invite/$invitationId"
     | "/oauth/consent"
-    | "/sign/$requestId"
     | "/$workspace/files/shared-with-me"
     | "/$workspace/files/trash"
     | "/$workspace/mail/all"
@@ -621,6 +632,7 @@ export interface FileRouteTypes {
     | "/$workspace/crm/companies"
     | "/$workspace/crm/deals"
     | "/$workspace/crm/people"
+    | "/$workspace/crm/projects"
     | "/$workspace/crm/tasks"
     | "/$workspace/files/my"
     | "/$workspace/files/shared";
@@ -633,11 +645,11 @@ export interface FileRouteTypes {
     | "/_authed/join"
     | "/_authed/onboarding"
     | "/s/$shareId"
+    | "/sign/$requestId"
     | "/_authed/$workspace/$"
     | "/_authed/$workspace/crm"
     | "/_authed/invite/$invitationId"
     | "/_authed/oauth/consent"
-    | "/_authed/sign/$requestId"
     | "/_authed/$workspace/files/shared-with-me"
     | "/_authed/$workspace/files/trash"
     | "/_authed/$workspace/mail/all"
@@ -675,6 +687,7 @@ export interface FileRouteTypes {
     | "/_authed/$workspace/crm/companies/"
     | "/_authed/$workspace/crm/deals/"
     | "/_authed/$workspace/crm/people/"
+    | "/_authed/$workspace/crm/projects/"
     | "/_authed/$workspace/crm/tasks/"
     | "/_authed/$workspace/files/my/"
     | "/_authed/$workspace/files/shared/";
@@ -685,6 +698,7 @@ export interface RootRouteChildren {
   AuthedRoute: typeof AuthedRouteWithChildren;
   LoginRoute: typeof LoginRoute;
   SShareIdRoute: typeof SShareIdRoute;
+  SignRequestIdRoute: typeof SignRequestIdRoute;
 }
 
 declare module "@tanstack/react-router" {
@@ -738,6 +752,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof SShareIdRouteImport;
       parentRoute: typeof rootRouteImport;
     };
+    "/sign/$requestId": {
+      id: "/sign/$requestId";
+      path: "/sign/$requestId";
+      fullPath: "/sign/$requestId";
+      preLoaderRoute: typeof SignRequestIdRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/_authed/$workspace/$": {
       id: "/_authed/$workspace/$";
       path: "/$";
@@ -764,13 +785,6 @@ declare module "@tanstack/react-router" {
       path: "/oauth/consent";
       fullPath: "/oauth/consent";
       preLoaderRoute: typeof AuthedOauthConsentRouteImport;
-      parentRoute: typeof AuthedRoute;
-    };
-    "/_authed/sign/$requestId": {
-      id: "/_authed/sign/$requestId";
-      path: "/sign/$requestId";
-      fullPath: "/sign/$requestId";
-      preLoaderRoute: typeof AuthedSignRequestIdRouteImport;
       parentRoute: typeof AuthedRoute;
     };
     "/_authed/$workspace/crm/": {
@@ -941,6 +955,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof AuthedWorkspaceCrmPeopleIdRouteImport;
       parentRoute: typeof AuthedWorkspaceCrmRoute;
     };
+    "/_authed/$workspace/crm/projects/": {
+      id: "/_authed/$workspace/crm/projects/";
+      path: "/projects";
+      fullPath: "/$workspace/crm/projects/";
+      preLoaderRoute: typeof AuthedWorkspaceCrmProjectsIndexRouteImport;
+      parentRoute: typeof AuthedWorkspaceCrmRoute;
+    };
     "/_authed/$workspace/crm/tasks/": {
       id: "/_authed/$workspace/crm/tasks/";
       path: "/tasks";
@@ -1065,6 +1086,7 @@ interface AuthedWorkspaceCrmRouteChildren {
   AuthedWorkspaceCrmCompaniesIndexRoute: typeof AuthedWorkspaceCrmCompaniesIndexRoute;
   AuthedWorkspaceCrmDealsIndexRoute: typeof AuthedWorkspaceCrmDealsIndexRoute;
   AuthedWorkspaceCrmPeopleIndexRoute: typeof AuthedWorkspaceCrmPeopleIndexRoute;
+  AuthedWorkspaceCrmProjectsIndexRoute: typeof AuthedWorkspaceCrmProjectsIndexRoute;
   AuthedWorkspaceCrmTasksIndexRoute: typeof AuthedWorkspaceCrmTasksIndexRoute;
 }
 
@@ -1077,6 +1099,7 @@ const AuthedWorkspaceCrmRouteChildren: AuthedWorkspaceCrmRouteChildren = {
   AuthedWorkspaceCrmCompaniesIndexRoute: AuthedWorkspaceCrmCompaniesIndexRoute,
   AuthedWorkspaceCrmDealsIndexRoute: AuthedWorkspaceCrmDealsIndexRoute,
   AuthedWorkspaceCrmPeopleIndexRoute: AuthedWorkspaceCrmPeopleIndexRoute,
+  AuthedWorkspaceCrmProjectsIndexRoute: AuthedWorkspaceCrmProjectsIndexRoute,
   AuthedWorkspaceCrmTasksIndexRoute: AuthedWorkspaceCrmTasksIndexRoute,
 };
 
@@ -1290,7 +1313,6 @@ interface AuthedRouteChildren {
   AuthedOnboardingRoute: typeof AuthedOnboardingRoute;
   AuthedInviteInvitationIdRoute: typeof AuthedInviteInvitationIdRoute;
   AuthedOauthConsentRoute: typeof AuthedOauthConsentRoute;
-  AuthedSignRequestIdRoute: typeof AuthedSignRequestIdRoute;
   AuthedSettingsEmailsVerifyRoute: typeof AuthedSettingsEmailsVerifyRoute;
 }
 
@@ -1300,7 +1322,6 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedOnboardingRoute: AuthedOnboardingRoute,
   AuthedInviteInvitationIdRoute: AuthedInviteInvitationIdRoute,
   AuthedOauthConsentRoute: AuthedOauthConsentRoute,
-  AuthedSignRequestIdRoute: AuthedSignRequestIdRoute,
   AuthedSettingsEmailsVerifyRoute: AuthedSettingsEmailsVerifyRoute,
 };
 
@@ -1312,6 +1333,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthedRoute: AuthedRouteWithChildren,
   LoginRoute: LoginRoute,
   SShareIdRoute: SShareIdRoute,
+  SignRequestIdRoute: SignRequestIdRoute,
 };
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
