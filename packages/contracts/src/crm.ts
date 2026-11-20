@@ -375,7 +375,7 @@ export const crmUpdateContractBodySchema = z.object({
  * contract out for signature from Omni answers `signature_open`; one with its copy, `contract_signed`.
  */
 export const crmSignedCopyBodySchema = z.object({
-  /** The executed copy, a file in Shared (upload it into the record's folder first). */
+  /** The executed copy, a PDF in Shared (upload it into the record's folder first). */
   nodeId: id,
   /** When it was signed; now when left out. */
   signedAt: isoDate.optional(),

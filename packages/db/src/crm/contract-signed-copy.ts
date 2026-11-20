@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import type { Db } from "../client.ts";
 import { crmContracts } from "../schema/crm.ts";
-import { memberStorage } from "../storage.ts";
+import { memberStorage, STORAGE_PDF_MIME } from "../storage.ts";
 import { wasSigned } from "./contract-status.ts";
 import {
   contractColumns,
@@ -17,7 +17,7 @@ import { NOT_FOUND, refuse, type CrmMember, type Ex } from "./core.ts";
 import { cleanName } from "./records.ts";
 
 export interface SignedCopyInput {
-  /** The executed PDF, a file in Shared. */
+  /** The executed copy: a PDF in Shared. */
   nodeId: string;
   /** When it was signed; now when left out, or the recorded date on a contract already signed. */
   signedAt?: Date;
@@ -36,6 +36,22 @@ function signersOf(input: ContractSignedBy[]) {
     signers.push({ name, email });
   }
   return signers;
+}
+
+async function isSignedPdf(tx: Ex, member: CrmMember, nodeId: string) {
+  if (!(await usableDocument(tx, member, nodeId))) return false;
+  const file = await memberStorage(tx as Db, member.id).node(nodeId);
+  return file?.node.mimeType === STORAGE_PDF_MIME;
+}
+
+async function checkInput(tx: Ex, member: CrmMember, input: SignedCopyInput, now: Date) {
+  if (input.signedAt && input.signedAt.getTime() > now.getTime() + DAY_MS) {
+    return invalid("signedAt");
+  }
+  const signers = signersOf(input.signers);
+  if (!signers) return invalid("signers");
+  if (!(await isSignedPdf(tx, member, input.nodeId))) return invalid("nodeId");
+  return { status: "ok" as const, signers };
 }
 
 /**
@@ -58,12 +74,9 @@ export const recordSignedCopy: (
   if (current.status === "sent" && current.signatureRequestId) return { status: "signature_open" };
   if (current.signedNodeId) return { status: "contract_signed" };
   const now = new Date();
-  if (input.signedAt && input.signedAt.getTime() > now.getTime() + DAY_MS) {
-    return invalid("signedAt");
-  }
-  const signers = signersOf(input.signers);
-  if (!signers) return invalid("signers");
-  if (!(await usableDocument(tx, member, input.nodeId))) return invalid("nodeId");
+  const checked = await checkInput(tx, member, input, now);
+  if (checked.status !== "ok") return checked;
+  const { signers } = checked;
   const signing = !wasSigned(current.status);
   const documentNodeId = current.documentNodeId ?? input.nodeId;
   const [contract] = await tx

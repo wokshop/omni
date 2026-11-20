@@ -93,6 +93,7 @@ function SignedCopyForm(props: {
         <DialogBody className="gap-4">
           <FilePicker
             label="Signed copy"
+            pdfOnly
             owner={props.owner}
             folderId={props.folderId}
             value={file}

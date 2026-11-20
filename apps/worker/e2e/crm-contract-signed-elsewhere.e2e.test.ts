@@ -162,7 +162,7 @@ test("a contract marked signed by hand takes its signed copy later and keeps its
   expect(await statusEvents(org.id)).toHaveLength(1);
 });
 
-test("a signed copy is refused while the contract is out from Omni, from the future, or outside Shared, and nothing changes", async () => {
+test("a signed copy is refused while the contract is out from Omni, from the future, when not a PDF, or outside Shared, and nothing changes", async () => {
   const { ana, dealId, folderId, contractId, signedCopy } = await dealWithDraft();
   const copy = await signedCopy();
 
@@ -173,6 +173,19 @@ test("a signed copy is refused while the contract is out from Omni, from the fut
     signers: [],
   });
   expect(future.body).toMatchObject({ code: "BAD_REQUEST", param: "signedAt" });
+
+  const sheet = await stack.upload(
+    ana.jar,
+    { parentId: folderId },
+    "Firmas.csv",
+    Buffer.from("name,signed\nUP,yes\n"),
+    "text/csv",
+  );
+  const notPdf = await crm(ana, "POST", `/contracts/${contractId}/signed-copy`, {
+    nodeId: sheet.id,
+    signers: [],
+  });
+  expect(notPdf.body).toMatchObject({ code: "BAD_REQUEST", param: "nodeId" });
 
   const mine = await stack.upload(ana.jar, { space: "personal" }, "Mío.pdf", SIGNED);
   const personal = await crm(ana, "POST", `/contracts/${contractId}/signed-copy`, {

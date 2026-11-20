@@ -14,9 +14,11 @@ import { uploadFile } from "@/lib/storage-upload.ts";
 /** The record a contract is on. */
 export type Owner = { companyId: string } | { dealId: string };
 
-function useFolderFiles(folderId: string | null) {
+function useFolderFiles(folderId: string | null, pdfOnly: boolean) {
   const list = useStorageList({ parentId: folderId ?? "" }, { enabled: !!folderId });
-  return list.nodes.filter((node) => node.kind === "file");
+  return list.nodes.filter(
+    (node) => node.kind === "file" && (!pdfOnly || node.mimeType === "application/pdf"),
+  );
 }
 
 function useContractUpload(owner: Owner) {
@@ -59,13 +61,15 @@ function useContractUpload(owner: Owner) {
 /** A file from the record's folder, or a PDF uploaded into it (making the folder first). */
 export function FilePicker(props: {
   label?: string;
+  /** Only PDFs from the folder, as for a signed copy. */
+  pdfOnly?: boolean;
   owner: Owner;
   folderId: string | null;
   value: string | null;
   onChange: (id: string | null) => void;
 }) {
   const [folderId, setFolderId] = useState(props.folderId);
-  const files = useFolderFiles(folderId);
+  const files = useFolderFiles(folderId, !!props.pdfOnly);
   const upload = useContractUpload(props.owner);
   return (
     <div className="flex items-end gap-2">
