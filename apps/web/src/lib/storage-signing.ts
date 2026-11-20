@@ -62,6 +62,13 @@ export const signingQuery = (requestId: string) =>
     },
   });
 
+/**
+ * Trades the token from a signing mail's link for a cookie on that one request, so the page
+ * opens without signing in. Throws `ApiError` 404 for a wrong or expired link.
+ */
+export const openSigningLink = (requestId: string, token: string) =>
+  call(signerDoor().link.$post({ param: { id: requestId }, json: { token } }));
+
 /** The document as it was sent, for the preview and the download. */
 export const signingDocumentUrl = (requestId: string) =>
   signerDoor()
