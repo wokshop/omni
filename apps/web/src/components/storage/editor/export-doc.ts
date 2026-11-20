@@ -25,7 +25,11 @@ const parse = (markdown: string) =>
 const nodes: NodeSerializer = {
   ...defaultNodes,
   codeBlock: (state, node) => {
-    state.renderContent(node);
+    let breaks = 0;
+    for (const line of node.textContent.split("\n")) {
+      if (line) state.text(line, { break: breaks || undefined, font: "Courier New" });
+      breaks = line ? 1 : breaks + 1;
+    }
     state.closeBlock(node);
   },
   horizontalRule: (state, node) => {

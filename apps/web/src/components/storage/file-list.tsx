@@ -15,6 +15,7 @@ import {
 } from "@/components/icons/central";
 import type { SettingsRowMenuItem } from "@/components/settings/kit/settings-row-menu";
 import { useMember } from "@/hooks/use-session.ts";
+import { useExportDoc } from "@/hooks/use-export-doc.ts";
 import { useStorageList, useTrashNode } from "@/hooks/use-storage.ts";
 import type { StorageNode, StoragePlace, StorageSpace } from "@/lib/storage.ts";
 import { storageFileUrl } from "@/lib/urls.ts";
@@ -83,18 +84,9 @@ export function FileList({ space, folderId }: { space: StorageSpace; folderId?: 
 const fileUrl = (node: StorageNode) => storageFileUrl(node.id);
 const download = (node: StorageNode) => downloadFile(fileUrl(node));
 
-const exportAs = (node: StorageNode, format: DocExport) =>
-  void Promise.all([
-    fetch(fileUrl(node)).then((response) => {
-      if (!response.ok) throw new Error(`the file did not load (${response.status})`);
-      return response.text();
-    }),
-    import("./editor/export-doc.ts"),
-  ])
-    .then(([text, module]) => module.exportDoc(text, node.name, format))
-    .catch((error: unknown) => storageErrorToast(error, `“${node.name}” was not exported`));
+type ExportDoc = (node: StorageNode, format: DocExport) => void;
 
-const docExports = (node: StorageNode) =>
+const docExports = (node: StorageNode, exportAs: ExportDoc) =>
   node.kind === "file" && fileType(node.name, node.mimeType).language === "markdown"
     ? [
         { icon: IconFilePdf, label: "Export as PDF", onAction: () => exportAs(node, "pdf") },
@@ -115,6 +107,15 @@ export function useCanTrash() {
 export function useRowMenu(canTrash: (node: StorageNode) => boolean) {
   const trash = useTrashNode();
   const trashNode = trash.mutate;
+  const exportDoc = useExportDoc().mutate;
+  const exportAs = useCallback<ExportDoc>(
+    (node, format) =>
+      exportDoc(
+        { node, format },
+        { onError: (error) => storageErrorToast(error, `“${node.name}” was not exported`) },
+      ),
+    [exportDoc],
+  );
   return useCallback(
     (node: StorageNode, open: (dialog: FolderDialog) => void) => {
       const result: SettingsRowMenuItem[] = [
@@ -123,7 +124,7 @@ export function useRowMenu(canTrash: (node: StorageNode) => boolean) {
           label: "Download",
           onAction: () => (node.kind === "file" ? download(node) : downloadZip([node.id])),
         },
-        ...docExports(node),
+        ...docExports(node, exportAs),
         { icon: IconUserAdd, label: "Share", onAction: () => open({ dialog: "share", node }) },
         { icon: IconPencil, label: "Rename", onAction: () => open({ dialog: "rename", node }) },
         ...(node.kind === "folder" && node.parentId === null
@@ -176,6 +177,6 @@ export function useRowMenu(canTrash: (node: StorageNode) => boolean) {
       ];
       return result;
     },
-    [canTrash, trashNode],
+    [canTrash, trashNode, exportAs],
   );
 }
