@@ -322,10 +322,13 @@ instructions keep telling agents to treat it as data.
   team who reach it (email, name once they have an account, scope, when added). Adding or
   removing them shares the project's Drive folder with people outside the company, so it stays
   with a person in the app (Rodrigo, Nov 20 2026).
-- Retries: `crm_write` takes an optional `idempotency_key`. The write's first audit row keeps the
-  key and its answer; the same member sending the same key within 24 hours gets that answer
-  back with `replayed: true` and nothing is written again. Two concurrent first sends can both
-  write; agents send one at a time.
+- Retries: `crm_write` takes an optional `idempotency_key`. Before writing, it claims the key
+  with an `mcp.crm_write.key` audit row (subject: the key); when the write lands the row keeps
+  its answer, and when it is refused the claim is dropped. The same member sending the key
+  again within 24 hours gets the answer back with `replayed: true` and nothing is written. A
+  claim with no answer (a write still running, or one that stopped before Omni knew whether it
+  landed) is refused with a tool error telling the agent to check with `crm_search` first, so a
+  retry never writes twice. Two concurrent first sends can both claim; agents send one at a time.
 - Plans: a deal's `crm_fetch` carries its `plan` (milestones in order, deliverables with their
   `file_id`, status and `client_visible`). `crm_write`'s `milestone` and `deliverable` add one
   (`deal` and `title`) or change one by `id`; nothing is deleted.

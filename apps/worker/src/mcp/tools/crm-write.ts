@@ -20,7 +20,7 @@ import {
   writeMilestone,
 } from "../crm-write/plan.ts";
 import { companySchema, personSchema, writeCompany, writePerson } from "../crm-write/records.ts";
-import { outputSchema } from "../crm-write/shared.ts";
+import { outputSchema, type Output, type Written } from "../crm-write/shared.ts";
 import { taskSchema, writeTask } from "../crm-write/task.ts";
 import { result, toolError } from "../format.ts";
 import { guarded, type ToolContext } from "../server.ts";
@@ -81,25 +81,76 @@ function run(context: ToolContext, workspace: CrmWorkspace, input: Input) {
 }
 
 const REPLAY_WINDOW_MS = 24 * 60 * 60 * 1000;
+const CLAIM = "mcp.crm_write.key";
+const UNSETTLED =
+  "A write with this `idempotency_key` is still running, or stopped before Omni knew whether it landed. Check with `crm_search` before trying again with a new key.";
 
-async function replayOf(context: ToolContext, workspace: CrmWorkspace, key: string) {
+async function claimOf(context: ToolContext, workspace: CrmWorkspace, key: string) {
   const [row] = await context.db
-    .select({ data: schema.auditEvents.data })
+    .select({ id: schema.auditEvents.id, data: schema.auditEvents.data })
     .from(schema.auditEvents)
     .where(
       and(
         eq(schema.auditEvents.orgId, workspace.orgId),
-        eq(schema.auditEvents.action, "mcp.crm_write"),
+        eq(schema.auditEvents.action, CLAIM),
         eq(schema.auditEvents.actorMemberId, workspace.memberId),
+        eq(schema.auditEvents.subject, key),
         gt(schema.auditEvents.createdAt, new Date(Date.now() - REPLAY_WINDOW_MS)),
-        sql`${schema.auditEvents.data}->>'idempotencyKey' = ${key}`,
-        sql`${schema.auditEvents.data} ? 'output'`,
       ),
     )
     .orderBy(desc(schema.auditEvents.createdAt))
     .limit(1);
-  const parsed = outputSchema.safeParse(row?.data.output);
-  return parsed.success ? parsed.data : null;
+  if (!row) return null;
+  const parsed = outputSchema.safeParse(row.data.output);
+  return parsed.success ? { output: parsed.data } : { pending: true };
+}
+
+async function claim(context: ToolContext, workspace: CrmWorkspace, key: string) {
+  const found = await claimOf(context, workspace, key);
+  if (found) return found;
+  const [row] = await context.db
+    .insert(schema.auditEvents)
+    .values({
+      orgId: workspace.orgId,
+      actorMemberId: workspace.memberId,
+      action: CLAIM,
+      subject: key,
+      data: { via: "mcp", clientId: context.caller.clientId },
+    })
+    .returning({ id: schema.auditEvents.id });
+  return { id: row?.id ?? "" };
+}
+
+const settle = (context: ToolContext, id: string, output: Output | null) =>
+  output
+    ? context.db
+        .update(schema.auditEvents)
+        .set({ data: sql`${schema.auditEvents.data} || ${JSON.stringify({ output })}::jsonb` })
+        .where(eq(schema.auditEvents.id, id))
+    : context.db.delete(schema.auditEvents).where(eq(schema.auditEvents.id, id));
+
+async function audit(
+  context: ToolContext,
+  workspace: CrmWorkspace,
+  write: string,
+  written: Exclude<Written, { error: string }>,
+) {
+  if (!written.ids.length) return;
+  await context.db.insert(schema.auditEvents).values(
+    written.ids.map((subject) => ({
+      orgId: workspace.orgId,
+      actorMemberId: workspace.memberId,
+      action: "mcp.crm_write",
+      subject,
+      data: {
+        via: "mcp",
+        clientId: context.caller.clientId,
+        kind: written.kind,
+        write,
+        result: written.output.result,
+      },
+    })),
+  );
 }
 
 async function write(context: ToolContext, input: Input) {
@@ -116,31 +167,22 @@ async function write(context: ToolContext, input: Input) {
   if (!(await inGoodStanding(context.db, context.config, workspace.orgId))) {
     return toolError("This workspace is read-only until its plan is paid.");
   }
-  const key = input.idempotency_key;
-  const replay = key ? await replayOf(context, workspace, key) : null;
-  if (replay) return result({ ...replay, replayed: true });
-  const written = await run(context, workspace, input);
-  if ("error" in written) return toolError(written.error);
-  await announce(context, workspace, written.kind, written.ids);
-  if (written.ids.length) {
-    await context.db.insert(schema.auditEvents).values(
-      written.ids.map((subject, i) => ({
-        orgId: workspace.orgId,
-        actorMemberId: workspace.memberId,
-        action: "mcp.crm_write",
-        subject,
-        data: {
-          via: "mcp",
-          clientId: context.caller.clientId,
-          kind: written.kind,
-          write: given[0],
-          result: written.output.result,
-          ...(key ? { idempotencyKey: key } : {}),
-          ...(key && i === 0 ? { output: written.output } : {}),
-        },
-      })),
-    );
+  const claimed = input.idempotency_key
+    ? await claim(context, workspace, input.idempotency_key)
+    : null;
+  if (claimed && "output" in claimed) return result({ ...claimed.output, replayed: true });
+  if (claimed && "pending" in claimed) return toolError(UNSETTLED);
+  const written = await run(context, workspace, input).catch(async (error: unknown) => {
+    if (claimed) await settle(context, claimed.id, null);
+    throw error;
+  });
+  if ("error" in written) {
+    if (claimed) await settle(context, claimed.id, null);
+    return toolError(written.error);
   }
+  if (claimed) await settle(context, claimed.id, written.output);
+  await audit(context, workspace, given[0] ?? "", written);
+  await announce(context, workspace, written.kind, written.ids);
   return result(written.output);
 }
 

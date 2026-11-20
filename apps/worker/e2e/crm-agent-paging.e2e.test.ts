@@ -1,5 +1,5 @@
 import type { Client } from "@modelcontextprotocol/client";
-import { forMember } from "@omni/db";
+import { forMember, schema } from "@omni/db";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { startCrmStack, type CrmStack } from "./crm-support.ts";
 import { connectAgent } from "./mcp-support.ts";
@@ -77,6 +77,23 @@ test("a retried add with the same idempotency_key writes once and replays the an
   expect(other.deal.id).not.toBe(first.deal.id);
   const listed = await forMember(stack.db, ana.id).crm.listDeals({});
   expect(listed.status === "ok" && listed.deals.length).toBe(2);
+
+  const interrupted = crypto.randomUUID();
+  await stack.db.insert(schema.auditEvents).values({
+    orgId: org.id,
+    actorMemberId: ana.id,
+    action: "mcp.crm_write.key",
+    subject: interrupted,
+    data: { via: "mcp" },
+  });
+  const unsure = await agent.callTool({
+    name: "crm_write",
+    arguments: { ...add, idempotency_key: interrupted },
+  });
+  expect(unsure.isError).toBe(true);
+  expect((unsure.content as { text: string }[])[0]!.text).toContain("Check with `crm_search`");
+  const after = await forMember(stack.db, ana.id).crm.listDeals({});
+  expect(after.status === "ok" && after.deals.length).toBe(2);
 });
 
 test("a freelancer's agent lists their project, and the team's agent sees who has access", async () => {
