@@ -1,4 +1,4 @@
-// `omni-sync`: the app's side of Drive sync on macOS (ADR 0043, amended). The Tauri shell runs it
+// `omni-sync`: the app's side of Drive sync on macOS (amended). The Tauri shell runs it
 // from `Contents/MacOS/` for each sync command and reads one line of JSON back. It registers and
 // removes the File Provider domain, runs the sync sign-in, writes `sync.json`, and signals the
 // working set. It holds no restricted entitlement (macOS kills a bare tool that claims one), so
@@ -19,7 +19,12 @@
 import FileProvider
 import Foundation
 import OmniSyncClient
+import os
 import StorageSync
+
+/// What the helper did, in the system log (`log show --predicate 'subsystem == "<bundle id>"'`):
+/// the shell keeps no log, so this is the one record of why sync did not turn on.
+let syncLog = Logger(subsystem: Bundle.main.bundleIdentifier ?? "omni-sync", category: "sync")
 
 /// The one domain: "Omni" in Finder's sidebar, a folder per synced workspace inside.
 enum Omni {
@@ -99,12 +104,16 @@ func run(_ arguments: [String]) async throws {
     case ("connect", 2):
         let orgId = arguments[1]
         guard var next = settings else {
+            syncLog.notice("connect: no sync.json yet, sync sign-in needed")
             try print(json: DesktopWorkspaceSync(orgId: orgId, state: .needsAttention))
             return
         }
         if !next.workspaces.contains(orgId) { next.workspaces.append(orgId) }
         try next.write(to: container)
-        if try await !registered() { try await NSFileProviderManager.add(Omni.domain) }
+        if try await !registered() {
+            try await NSFileProviderManager.add(Omni.domain)
+            syncLog.notice("added the Omni domain")
+        }
         try await signal()
         try print(json: DesktopWorkspaceSync(orgId: orgId, state: state(of: orgId, settings: next)))
 
@@ -159,6 +168,10 @@ func keep(_ preserved: URL) throws {
 do {
     try await run(Array(CommandLine.arguments.dropFirst()))
 } catch {
+    // Errors here name a step and a status, never a token.
+    let command = CommandLine.arguments.dropFirst().first ?? ""
+    let reason = String(describing: error)
+    syncLog.error("\(command, privacy: .public) failed: \(reason, privacy: .public)")
     FileHandle.standardError.write(Data("omni-sync: \(error)\n".utf8))
     exit(1)
 }
