@@ -21,6 +21,7 @@ import { FolderView, type FolderDialog } from "./folder-view.tsx";
 import { storageErrorToast } from "./storage-errors.ts";
 import { SPACE_LABEL, SPACE_PATH } from "./storage-nav.tsx";
 import { useWorkspacePaths } from "@/hooks/use-workspaces.ts";
+import { downloadFile } from "@/lib/download.ts";
 
 const EMPTY = {
   personal: { title: "No files yet", description: "Files you add here are yours alone." },
@@ -74,7 +75,7 @@ export function FileList({ space, folderId }: { space: StorageSpace; folderId?: 
 }
 
 const fileUrl = (node: StorageNode) => storageFileUrl(node.id);
-const download = (node: StorageNode) => window.location.assign(fileUrl(node));
+const download = (node: StorageNode) => downloadFile(fileUrl(node));
 
 function useRowMenu() {
   const { member } = useMember();
