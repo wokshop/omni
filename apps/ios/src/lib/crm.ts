@@ -3,6 +3,7 @@ import {
   infiniteQueryOptions,
   queryOptions,
   useInfiniteQuery,
+  useQueries,
   useQuery,
 } from "@tanstack/react-query";
 import type { InferResponseType } from "hono/client";
@@ -95,12 +96,38 @@ export function useDeals(
   );
 }
 
-export const useCompany = (id: string) =>
-  useQuery({
+const companyQuery = (id: string) =>
+  queryOptions({
     queryKey: keys.crmRecord("company", id),
     queryFn: ({ signal }) =>
       call(api.crm.companies[":id"].$get({ param: { id } }, { init: { signal } })),
   });
+
+export const useCompany = (id: string) => useQuery(companyQuery(id));
+
+/**
+ * The active projects (deals in a `won` stage), by name, each with its client's name and domain,
+ * read from the company record its page caches.
+ */
+export function useActiveProjects() {
+  const projects = useDeals(DEFAULT_VIEW, { projects: true, whole: true }).data ?? [];
+  const ids = [...new Set(projects.flatMap((deal) => (deal.companyId ? [deal.companyId] : [])))];
+  const clients = new Map(
+    useQueries({ queries: ids.map(companyQuery) }).flatMap((query) =>
+      query.data
+        ? [
+            [
+              query.data.company.id,
+              { name: query.data.company.name, domain: query.data.domains[0] ?? null },
+            ] as const,
+          ]
+        : [],
+    ),
+  );
+  return projects
+    .map((deal) => ({ deal, client: deal.companyId ? clients.get(deal.companyId) : undefined }))
+    .sort((a, b) => a.deal.name.localeCompare(b.deal.name, undefined, { sensitivity: "base" }));
+}
 
 export const usePerson = (id: string) =>
   useQuery({
