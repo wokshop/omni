@@ -131,11 +131,16 @@ function endsFrom(text: string, suffix: string, start: number, most: number) {
 function between(text: string, anchor: TextAnchor) {
   const size = anchor.quote.length;
   const off = (found: Found) => Math.abs(found.end - found.start - size);
+  const needBefore = Math.min(MIN_EDGE, anchor.prefix.length);
+  const needAfter = Math.min(MIN_EDGE, anchor.suffix.length);
   let best: Found | null = null;
   for (const start of startsOf(text, anchor.prefix)) {
     const before = sharedEnd(text.slice(0, start), anchor.prefix);
+    if (before < needBefore) continue;
     for (const end of endsFrom(text, anchor.suffix, start, size * 2 + 20)) {
-      const fit = before + sharedStart(text.slice(end), anchor.suffix);
+      const after = sharedStart(text.slice(end), anchor.suffix);
+      if (after < needAfter) continue;
+      const fit = before + after;
       const found: Found = { start, end, fit };
       if (!best || fit > best.fit || (fit === best.fit && off(found) < off(best))) best = found;
     }
