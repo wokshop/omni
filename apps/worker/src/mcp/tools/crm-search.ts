@@ -50,7 +50,7 @@ const inputSchema = z.object({
   limit: z.number().int().min(1).max(50).default(20).describe("Most rows of each kind."),
   cursor: z
     .string()
-    .max(4_000)
+    .max(262_144)
     .optional()
     .describe("`next_cursor` from the last call, with the same filters, for the next page."),
   workspace: z.string().min(1).optional().describe("Only this workspace id. Default: every one."),
