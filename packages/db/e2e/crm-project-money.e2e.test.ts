@@ -104,6 +104,14 @@ test("a freelancer never reads what a project is worth, by any route", async () 
   const byValue = ok(await fran.listDeals({ sort: { key: "value", dir: "desc" }, limit: 1 }));
   expect(byValue.deals.map((d) => d.name)).toEqual(["app"]);
   expect(byValue.nextCursor).toMatchObject({ key: "name", value: "app" });
+  const next = ok(
+    await fran.listDeals({
+      sort: { key: "value", dir: "desc" },
+      limit: 1,
+      cursor: byValue.nextCursor ?? undefined,
+    }),
+  );
+  expect(next.deals.map((d) => d.name)).toEqual(["website"]);
 
   expect(ok(await team.deal(app.id)).deal).toMatchObject({
     valueMinor: 4_800_000,
