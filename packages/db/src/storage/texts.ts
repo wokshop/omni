@@ -5,6 +5,7 @@ import { storageNodes, storageTexts } from "../schema/storage.ts";
 /** Failed reads of one content version before the indexer gives up on it. */
 export const STORAGE_TEXT_MAX_ATTEMPTS = 3;
 const RETRY_AFTER = "10 minutes";
+const PICTURE_NAME = "\\.(avif|gif|heic|heif|jpe?g|png|webp)$";
 
 export type StorageTextStatus = (typeof storageTexts.status.enumValues)[number];
 
@@ -59,6 +60,10 @@ export async function storageFilesToRead(db: Db, limit: number, options: { ocr: 
                   like(storageNodes.mimeType, "image/%"),
                   eq(storageNodes.mimeType, "application/pdf"),
                   ilike(storageNodes.name, "%.pdf"),
+                  and(
+                    or(isNull(storageNodes.mimeType), eq(storageNodes.mimeType, "")),
+                    sql`${storageNodes.name} ~* ${PICTURE_NAME}`,
+                  ),
                 ),
               )
             : undefined,
