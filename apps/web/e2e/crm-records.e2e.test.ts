@@ -80,7 +80,11 @@ test("a deal's close date is cleared from inside its calendar", async () => {
     .where(eq(schema.crmDeals.id, deal.id));
   const page = await team.page(`/crm/deals/${deal.id}`);
   await page.getByText("Dec 11, 2026").click();
-  await page.getByRole("button", { name: "Clear date" }).click();
+  await page.getByRole("grid").waitFor();
+  const clear = page.getByRole("button", { name: "Clear date" });
+  await expect.poll(async () => (await clear.boundingBox())?.y ?? null).not.toBeNull();
+  await page.waitForTimeout(200);
+  await clear.click();
   await expect
     .poll(
       async () => {
