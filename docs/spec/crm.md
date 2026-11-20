@@ -44,7 +44,7 @@ mail and the files the workspace already has in Omni.
 | One timeline per record             | Events, notes, contracts, emails, merged newest first         | Meetings, files, tasks                   |
 | A pipeline you drag                 | Stages with a fixed kind and a free name; a board by stage    | Several pipelines, saved views           |
 | Notes on records                    | Plain notes on one record                                     | Mentions, notes on several records       |
-| Files on records                    | The record's folder in Shared                                 | Previews                                 |
+| Files on records                    | The record's folder in Shared, plus Drive files linked in place | Previews                                 |
 | An API first, and agents            | Every route typed; MCP tools                                  | Webhooks                                 |
 | A flexible data model               | Fixed columns                                                 | Custom fields as definitions plus JSON   |
 | Contracts and a client's own view   | Stored and tracked                                            | Signed in Omni; the dashboard |
@@ -83,7 +83,12 @@ when it was won. That is the only ceremony: the deal carries on as the project.
 
 **Keep the files.** A deal's Files are a folder in Shared, under `Clients`. Dropping a file on
 the deal uploads it there, and the same folder is in Storage, where it can be shared like any
-other.
+other. A file that already lives elsewhere in Drive is linked, not moved or copied (founder's
+call, Nov 20, 2026): "Add from Drive" adds a reference, like a symlink, in `crm_file_links`, and
+the record shows it beside its folder's files. Removing it from the record drops only the link.
+Each member sees the links whose file they can open in Drive (not in Trash, not a teammate's My
+files); deleting the file for good, or the record, removes the link. The first link makes the
+record's folder, as the first upload does.
 
 **Store the contract.** A contract starts as a draft with its file. A member marks it sent,
 then attaches the executed copy and marks it signed. From then the file is locked: it cannot be
@@ -107,13 +112,20 @@ All under `/api/crm` on the Worker, for the active workspace. Shapes live in
 | `POST /notes` · `PATCH /notes/:id` · `DELETE /notes/:id`            | Write a note on one record. Its author edits or deletes it.                                                  |
 | `GET /companies/:id/timeline` · same for people and deals           | The merged timeline, newest first.                                                                           |
 | `POST /companies/:id/folder` · `POST /deals/:id/folder`             | Finds or makes the record's folder and returns its node id. The apps then use `/api/storage` on it.          |
+| `GET /companies/:id/links` · `POST` · `DELETE …/links/:nodeId` (and deals) | Drive files linked where they live. `POST` takes `nodeIds` the member can open now; linking twice is a no-op. |
 | `GET /contracts` · `POST /contracts` · `PATCH /contracts/:id` · `DELETE` | List by `?company=` or `?deal=`. Create. Change status, dates or file. Delete (never a signed one).     |
+| `POST /companies/:id/restore` · same for people and deals          | Brings an archived record back.                                                                   |
+| `POST /companies/bulk` · same for people and deals                 | One action (`archive`, `restore`, `delete`, `owner`; deals `stage`) on up to 200 ids, each by its own rules. |
 | `GET /lookup?address=`                                              | Up to 50 addresses. The people, companies and open deals that match, for the conversation sidebar.           |
 | `GET /search?q=`                                                    | People, companies and deals whose name, address or domain starts with the words. For pickers.                |
 | `GET /settings` · `PUT /settings`                                   | The default currency.                                                                                        |
 | `GET /tasks` · `POST /tasks` · `GET /tasks/counts`                  | List by `?status=`, `?assignee=`, `?due=`, `?company=`/`?person=`/`?deal=`, `?q=` (see Tasks). Create. Counts.    |
 | `GET /tasks/:id` · `PATCH` · `DELETE`                               | Read. Change, complete or reopen (`done`), move to another record. Delete.                                   |
 
+- Every list takes `sort` (`name`, `created`, `updated`; deals also `value`, `closeOn`,
+  `stageEntered`), `dir`, `owner` (an id or `none`), `createdAfter`, `createdBefore` and
+  `archived` (`1` with archived, `only` archived alone). Companies take `domain`; people
+  `hasCompany`; deals `closeAfter`, `closeBefore`, `minValue`, `maxValue`.
 - Error codes beside `error`: `NOT_FOUND`, `NO_CRM`, `ADDRESS_TAKEN`, `DOMAIN_TAKEN`,
   `WEBMAIL_DOMAIN`, `STAGE_IN_USE`, `STAGE_KIND_REQUIRED` (each kind keeps at least one stage),
   `INVALID_CURRENCY`, `CONTRACT_SIGNED`, and the platform's `BILLING_INACTIVE`.
@@ -159,6 +171,35 @@ One list, newest first, of four kinds of item:
 - A record's tasks are its own: a company's panel does not gather its deals' tasks.
 - Writes publish `crm.changed` with kind `task`, plus the record's kind. Tasks write no timeline
   events yet. Not yet: reminders, recurring tasks, subtasks, several records per task, MCP tools.
+
+## Records parity
+
+Nov 20, 2026. Companies, people and deals at the level of Attio, HubSpot, Folk and Pipedrive for
+the everyday flows: create, edit, find, archive and delete; lists with sort, filter and search; a
+board by stage; a won deal is the project.
+
+- **Owners and a close date.** Companies and people have an owner like deals do
+  (`owner_member_id`, `on delete set null`). Deals have `expected_close_on`. A company made by
+  hand is its creator's; one made from an address, and every person, starts with none.
+- **Sort.** Every list sorts by name, created or updated, and deals also by value, close date
+  and stage entered, either way. The cursor carries the sort, the last row's value and its id, so
+  pages hold still; unvalued and undated deals come last both ways. A cursor from before this
+  (by name) still pages. `lastContactedAt` does not sort: it is computed per viewer at read time.
+- **Filter.** Owner (a member or nobody) and creation time on every list; companies by domain;
+  people by company or having none; deals by stage, kind, company, close date and value ranges.
+  Filters combine. Saved views stay out.
+- **Restore.** An archived record comes back with `POST /:records/:id/restore`, which writes a
+  `restored` event.
+- **Bulk.** One action (`archive`, `restore`, `delete`, `owner`, and `stage` for deals) on up to
+  200 ids. Each id goes through the single route's door function in its own transaction, so every
+  rule holds (only owners and admins delete, a signed contract outlives its record, stage moves
+  set `won_at` once), and the answer says by id what changed and what was refused.
+- **A person's deals** come with `GET /people/:id`.
+- **Currency.** The apps always send a currency with a value: the deal's own, else the
+  workspace default, else the device's. The API still refuses a value with no currency at all.
+- **Projects** are deals in a `won` stage (`kind=won`); the apps list them on their own.
+
+Still out: custom fields, saved views, several pipelines, merging duplicates, imports.
 
 ## Agents
 
