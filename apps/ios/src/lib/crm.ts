@@ -7,6 +7,7 @@ import {
   useQuery,
 } from "@tanstack/react-query";
 import type { InferResponseType } from "hono/client";
+import { useEffect } from "react";
 import { api, call } from "./api.ts";
 import {
   DEFAULT_VIEW,
@@ -110,7 +111,12 @@ export const useCompany = (id: string) => useQuery(companyQuery(id));
  * read from the company record its page caches.
  */
 export function useActiveProjects() {
-  const projects = useDeals(DEFAULT_VIEW, { projects: true, whole: true }).data ?? [];
+  const query = useDeals(DEFAULT_VIEW, { projects: true, whole: true });
+  const { hasNextPage, isFetchingNextPage, fetchNextPage } = query;
+  useEffect(() => {
+    if (hasNextPage && !isFetchingNextPage) void fetchNextPage();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+  const projects = query.data ?? [];
   const ids = [...new Set(projects.flatMap((deal) => (deal.companyId ? [deal.companyId] : [])))];
   const clients = new Map(
     useQueries({ queries: ids.map(companyQuery) }).flatMap((query) =>
