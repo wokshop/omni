@@ -497,11 +497,15 @@ export const storageRevisionGuardQuerySchema = z.object({
 
 /**
  * On the workspace's realtime socket (`GET /sync/:orgId/realtime` for a provider): something in
- * this drive changed, so read its changes. Sent after the change commits; it names no node.
+ * this drive changed, so read its changes. Sent after the change commits; it names no file.
+ * `parentIds` are the folders whose listing changed, `null` for the drive's top; a folder listed
+ * there may also have been renamed or moved, so a listing under it is stale too. Without it (an
+ * older Worker), any listing in the drive may have changed.
  */
 export const storageChangedEventSchema = z.object({
   type: z.literal("storage.changed"),
   space: storageSpaceSchema,
+  parentIds: z.array(id.nullable()).optional(),
 });
 
 /**
