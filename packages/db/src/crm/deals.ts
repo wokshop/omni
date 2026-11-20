@@ -454,7 +454,7 @@ export const archiveDeal: (tx: Ex, member: CrmMember, id: string) => Promise<Dea
   return { status: "ok", deal: (await loadDeal(tx, member.orgId, id))! };
 };
 
-/** Brings an archived deal back onto the board and into every list (ADR 0054 decision 4). */
+/** Brings an archived deal back onto the board and into every list. */
 export const restoreDeal: (tx: Ex, member: CrmMember, id: string) => Promise<DealResult> = async (
   tx,
   member,

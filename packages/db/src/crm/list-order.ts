@@ -1,6 +1,6 @@
 import { asc, desc, sql, type AnyColumn, type SQL } from "drizzle-orm";
 
-/** How a list is ordered (ADR 0054 decision 2). Deals add `value`, `closeOn`, `stageEntered`. */
+/** How a list is ordered. Deals add `value`, `closeOn`, `stageEntered`. */
 export type CrmSortKey = "name" | "created" | "updated" | "value" | "closeOn" | "stageEntered";
 export type CrmSortDir = "asc" | "desc";
 

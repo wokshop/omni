@@ -171,7 +171,7 @@ export async function getPerson(ex: Ex, member: CrmMember, id: string) {
   return (person ? { status: "ok", person } : NOT_FOUND) satisfies PersonResult;
 }
 
-/** A person with the live deals they are part of (ADR 0054 decision 6). */
+/** A person with the live deals they are part of. */
 export async function getPersonDetail(ex: Ex, member: CrmMember, id: string) {
   const person = await loadPerson(ex, member.orgId, id);
   if (!person) return NOT_FOUND;
@@ -392,7 +392,7 @@ export const archivePerson: (
   return { status: "ok", person: (await loadPerson(tx, member.orgId, id))! };
 };
 
-/** Brings an archived person back into every list (ADR 0054 decision 4). */
+/** Brings an archived person back into every list. */
 export const restorePerson: (
   tx: Ex,
   member: CrmMember,

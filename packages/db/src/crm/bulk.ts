@@ -7,7 +7,7 @@ export const BULK_MAX = 200;
 
 export type CrmBulkRecords = "companies" | "people" | "deals";
 
-/** One action for many records (ADR 0054 decision 5). `stage` is for deals. */
+/** One action for many records. `stage` is for deals. */
 export type CrmBulkAction =
   | { action: "archive" }
   | { action: "restore" }

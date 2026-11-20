@@ -53,7 +53,7 @@ export interface CreatedRange {
   createdBefore?: Date;
 }
 
-/** What every record list takes (ADR 0054 decisions 2 and 3). */
+/** What every record list takes. */
 export interface ListRecordsInput extends CreatedRange {
   /** Words the name, or one of its words, starts with. */
   q?: string;
@@ -356,7 +356,7 @@ export const archiveCompany: (
   return { status: "ok", company: updated! };
 };
 
-/** Brings an archived company back into every list (ADR 0054 decision 4). */
+/** Brings an archived company back into every list. */
 export const restoreCompany: (
   tx: Ex,
   member: CrmMember,

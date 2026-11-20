@@ -275,7 +275,7 @@ export const nameCursor = z.object({ name: z.string(), id: z.string().min(1) });
 const sortKey = z.enum(["name", "created", "updated", "value", "closeOn", "stageEntered"]);
 
 /**
- * Where a list page ended (ADR 0054): its sort, the last row's sort value and id. A cursor an
+ * Where a list page ended: its sort, the last row's sort value and id. A cursor an
  * older Worker gave (by name) reads as a name cursor, so an open tab keeps paging.
  */
 export const listCursor = z.union([

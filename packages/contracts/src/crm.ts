@@ -152,7 +152,7 @@ export const crmActivitySchema = z.object({
 
 const lastContactedAt = isoDate.nullable().optional();
 
-/** How a list is ordered (ADR 0054). Deals also take `value`, `closeOn` and `stageEntered`. */
+/** How a list is ordered. Deals also take `value`, `closeOn` and `stageEntered`. */
 export const crmRecordSortSchema = z.enum(["name", "created", "updated"]);
 export const crmDealSortSchema = z.enum([
   "name",
