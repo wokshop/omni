@@ -7,6 +7,7 @@ import {
   IconBubble,
   IconBubbleDots,
   IconBuildings,
+  IconChecklist,
   IconCircleCheck,
   IconClock,
   IconFolder,
@@ -63,6 +64,7 @@ const CRM_ICONS: Record<CrmPage, Glyph> = {
   people: IconUsers,
   deals: IconHandshake,
   projects: IconProjects,
+  tasks: IconChecklist,
 };
 
 /**
