@@ -140,7 +140,7 @@ function PanelHeader(props: {
 }) {
   return (
     <div
-      className={`flex h-12 shrink-0 items-center gap-1 ${props.inPlace ? "-me-1.5" : "border-b ps-5 pe-2.5"}`}
+      className={`flex shrink-0 items-center gap-1 ${props.inPlace ? "-mt-2 -me-1.5 h-10" : "h-12 border-b ps-5 pe-2.5"}`}
     >
       <div className="flex min-w-0 flex-1 items-center">{props.title}</div>
       {props.children}
