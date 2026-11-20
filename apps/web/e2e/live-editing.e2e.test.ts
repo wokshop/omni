@@ -4,7 +4,9 @@ import { schema } from "@omni/db";
 import { eq } from "drizzle-orm";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright-core";
 import { afterAll, beforeAll, expect, test } from "vitest";
+import { connectAgent } from "../../worker/e2e/mcp-support.ts";
 import {
+  CookieJar,
   createMailbox,
   createOrg,
   createTestDatabase,
@@ -352,5 +354,61 @@ test("a comment on selected text is marked for every editor, follows its words, 
 
   await ana.getByRole("button", { name: "Resolve" }).click();
   await expect.poll(() => marked.count(), { timeout: 15_000 }).toBe(0);
+  await own.close();
+});
+
+test("an assistant's edit lands live in an open doc, merged with what the person types", async () => {
+  const origin = String(worker.url);
+  const jar = new CookieJar();
+  const cookie = await signIn({ url: new URL(origin) }, db, `agent-${Date.now()}@gmail.test`, jar);
+  const own = await browser.newContext();
+  await own.addCookies(
+    cookie.split("; ").map((pair) => {
+      const at = pair.indexOf("=");
+      return { name: pair.slice(0, at), value: pair.slice(at + 1), url: origin };
+    }),
+  );
+  const ana = await own.newPage();
+  await ana.goto(new URL("/files/my", origin).toString());
+  await ana
+    .getByRole("button", { name: "Upload", exact: true })
+    .first()
+    .waitFor({ timeout: 15_000 });
+  await ana
+    .locator("input[type=file]")
+    .first()
+    .setInputFiles({
+      name: "agenda.md",
+      mimeType: "text/markdown",
+      buffer: Buffer.from("# Agenda\n\nOpen the meeting\n"),
+    });
+  await ana.getByRole("row", { name: /agenda\.md/ }).click();
+  await ana
+    .locator("[contenteditable=true]")
+    .getByText("Open the meeting")
+    .waitFor({ timeout: 15_000 });
+  const id = new URL(ana.url()).searchParams.get("file") ?? "";
+  const saved = () =>
+    ana.evaluate(async (at) => (await fetch(at)).text(), `/api/storage/files/${id}/content`);
+
+  await typeAtEnd(ana, "Review the budget");
+  await expect.poll(saved, { timeout: 20_000 }).toContain("Review the budget");
+  await typeAtEnd(ana, "Then lunch");
+
+  const agent = await connectAgent(origin, jar, {
+    scope: "openid mail:read drive:read drive:write",
+    authURL: origin.replace(/\/$/, ""),
+  });
+  const edited = await agent.callTool({
+    name: "drive_edit_doc",
+    arguments: { id, edits: [{ find: "Open the meeting", replace: "Open the meeting at nine" }] },
+  });
+  expect(edited.isError).toBeFalsy();
+
+  await expect.poll(() => pageText(ana), { timeout: 15_000 }).toContain("Open the meeting at nine");
+  await expect
+    .poll(saved, { timeout: 20_000 })
+    .toMatch(/^# Agenda\n\nOpen the meeting at nine\n\nReview the budget\n\nThen lunch\n*$/);
+  expect(await ana.getByRole("alertdialog").count()).toBe(0);
   await own.close();
 });
