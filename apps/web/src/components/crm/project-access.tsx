@@ -42,7 +42,7 @@ function AccessRow(props: { dealId: string; row: CrmProjectAccess }) {
   const other: CrmProjectScope = row.scope === "client" ? "freelancer" : "client";
   return (
     <RowWithMenu
-      label={row.name ?? row.email}
+      label={row.name || row.email}
       actions={[
         {
           id: "scope",
@@ -69,7 +69,7 @@ function AccessRow(props: { dealId: string; row: CrmProjectAccess }) {
     >
       <span className="flex h-8 min-w-0 items-center gap-2 text-sm">
         <span className="truncate" title={row.email}>
-          {row.name ?? row.email}
+          {row.name || row.email}
         </span>
         <Badge intent="secondary" className="shrink-0">
           {scopeLabel(row.scope)}
