@@ -169,7 +169,7 @@ export function MessageItem(props: {
   );
 }
 
-const CARD_BODY = "pr-5 pb-4 pl-16 last:pb-5";
+const CARD_BODY = "pr-5 pb-4 pl-17 last:pb-5";
 
 function HtmlMenuItems(props: { full: boolean; onToggle: () => void }) {
   const label = props.full ? "Show text" : "Show full message";
@@ -228,7 +228,7 @@ function CardHeader(props: {
     message.subject ? `Subject: ${message.subject}` : undefined,
   ].filter((line): line is string => !!line);
   return (
-    <header className="flex w-full items-start gap-3 px-5 pt-5 pb-3">
+    <header className="flex w-full items-start gap-4 px-5 pt-5 pb-3">
       <SenderAvatar
         isSquare
         size="md"
@@ -242,7 +242,7 @@ function CardHeader(props: {
           {props.unsubscribe}
         </div>
         {lines.map((line) => (
-          <span key={line} className="truncate text-xs/5 text-muted-foreground">
+          <span key={line} className="truncate text-xs/4.5 text-muted-foreground">
             {line}
           </span>
         ))}

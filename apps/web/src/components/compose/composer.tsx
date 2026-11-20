@@ -721,6 +721,12 @@ function NewMessage(props: {
   );
 }
 
+function composerRows(props: { row?: boolean | undefined; fill?: boolean | undefined }) {
+  if (props.row)
+    return "[--composer-row:--spacing(15)] [--composer-x:--spacing(5)] [--composer-y:--spacing(5)]";
+  return props.fill ? "[--composer-row:--spacing(13)]" : "[--composer-row:--spacing(12)]";
+}
+
 function SubjectRow(props: { mode: Mode; source: Message | undefined }) {
   const prefix = props.mode === "forward" ? forwardSubject : replySubject;
   const subject = prefix(props.source?.subject ?? "");
@@ -806,9 +812,8 @@ function ComposerFrame(props: {
         [
           "flex flex-col bg-background outline-hidden",
           props.flat ? "" : "rounded-xl border",
-          props.row ? "[--composer-x:--spacing(5)]" : "",
           props.fill ? "min-h-0 flex-1" : "",
-          props.fill ? "[--composer-row:--spacing(13)]" : "[--composer-row:--spacing(12)]",
+          composerRows(props),
           isDropTarget ? (props.flat ? "ring-1 ring-ring ring-inset" : "border-ring") : "",
         ].join(" ")
       }
@@ -854,10 +859,10 @@ function Recipients(props: {
             <Button
               intent="plain"
               size="sm"
-              className="-me-2 shrink-0"
+              className="-me-2 shrink-0 text-muted-foreground"
               onPress={props.onShowCopies}
             >
-              Cc Bcc
+              CC BCC
             </Button>
           )
         }
@@ -905,7 +910,7 @@ function Body(props: {
         }
       }}
       data-composer-body
-      className={`${props.fill ? "min-h-24 flex-1" : "max-h-[min(24rem,30vh)] min-h-24"} resize-none overscroll-contain px-[var(--composer-x,--spacing(3))] pt-3 pb-1 sm:px-[var(--composer-x,--spacing(3))] sm:pt-3 sm:pb-1`}
+      className={`${props.fill ? "min-h-24 flex-1" : "max-h-[min(24rem,30vh)] min-h-24"} resize-none overscroll-contain px-[var(--composer-x,--spacing(3))] pt-[var(--composer-y,--spacing(3))] pb-1 sm:px-[var(--composer-x,--spacing(3))] sm:pt-[var(--composer-y,--spacing(3))] sm:pb-1`}
     />
   );
 }
