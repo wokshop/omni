@@ -85,6 +85,15 @@ test("a freelancer reaches only the projects they were added to, in the CRM and 
     ok(await crm.listTasks({ record: { dealId: website.deal.id } })).tasks.map((t) => t.title),
   ).toEqual(["website task"]);
   ok(await crm.createMilestone(website.deal.id, { title: "Handoff" }));
+  expect(ok(await crm.dealFolder(website.deal.id)).nodeId).toBe(website.folder);
+  ok(await crm.linkFiles({ dealId: website.deal.id }, [website.file.id]));
+  expect(
+    ok(await crm.fileLinks({ dealId: website.deal.id })).links.map((l) => l.node.name),
+  ).toEqual(["website.pdf"]);
+  ok(await crm.createDeliverable(website.deal.id, { title: "PDF", nodeId: website.file.id }));
+  expect((await door.storage.node(website.file.id))?.node.name).toBe("website.pdf");
+  expect(ok(await crm.listDeals({ archivedOnly: true })).deals).toEqual([]);
+  expect(ok(await crm.listDeals({ q: "app" })).deals).toEqual([]);
   ok(await crm.createNote({ record: { dealId: website.deal.id }, body: "Fonts are licensed" }));
 
   expect((await crm.deal(app.deal.id)).status).toBe("not_found");
@@ -188,4 +197,34 @@ test("another workspace cannot add itself to a project", async () => {
       .status,
   ).toBe("not_found");
   expect((await eve.projectAccess(website.deal.id)).status).toBe("not_found");
+});
+
+test("a freelancer finds their project however many others share its name", async () => {
+  const { org, team, website } = await studio("access-crowd");
+  const { door } = await freelancer(org.id, "fran@crowd.test");
+  for (let n = 0; n < 50; n++) {
+    ok(await team.crm.createDeal({ name: `web ${String(n).padStart(2, "0")}` }));
+  }
+  ok(
+    await team.crm.grantProjectAccess(website.deal.id, {
+      email: "fran@crowd.test",
+      scope: "freelancer",
+    }),
+  );
+  expect(ok(await door.crm.search({ q: "web" })).deals.map((d) => d.name)).toEqual(["website"]);
+});
+
+test("removing a freelancer while the project's folder is in Trash still takes it away", async () => {
+  const { org, team, website } = await studio("access-trash");
+  const { as } = await freelancer(org.id, "fran@trash.test");
+  ok(
+    await team.crm.grantProjectAccess(website.deal.id, {
+      email: "fran@trash.test",
+      scope: "freelancer",
+    }),
+  );
+  ok(await team.storage.trash(website.folder));
+  ok(await team.crm.revokeProjectAccess(website.deal.id, "fran@trash.test"));
+  ok(await team.storage.restore(website.folder));
+  expect(await as.storage.node(website.file.id)).toBeNull();
 });

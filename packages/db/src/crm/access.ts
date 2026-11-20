@@ -93,11 +93,16 @@ const PORTAL_FOLDER_NAME = "Client";
 
 const sharingRefused = (reason: string) => refuse({ status: "sharing_refused", reason });
 
-async function portalFolder(tx: Ex, member: CrmMember, dealId: string, parentId: string) {
+async function portalOf(tx: Ex, dealId: string) {
   const [portal] = await tx
     .select({ folderNodeId: crmPortals.folderNodeId })
     .from(crmPortals)
     .where(eq(crmPortals.dealId, dealId));
+  return portal ?? null;
+}
+
+async function portalFolder(tx: Ex, member: CrmMember, dealId: string, parentId: string) {
+  const portal = await portalOf(tx, dealId);
   const storage = memberStorage(tx as Db, member.id);
   const live = portal?.folderNodeId ? await storage.node(portal.folderNodeId) : null;
   if (live && !live.inTrash) return live.node.id;
@@ -133,17 +138,13 @@ async function revokeFolder(
   email: string,
   scope: ProjectScope,
 ) {
-  const storage = memberStorage(tx as Db, member.id);
-  if (scope === "freelancer") {
-    const deal = await loadDeal(tx, member.orgId, dealId);
-    if (deal?.folderNodeId) await storage.removeGrant(deal.folderNodeId, email);
-    return;
-  }
-  const [portal] = await tx
-    .select({ folderNodeId: crmPortals.folderNodeId })
-    .from(crmPortals)
-    .where(eq(crmPortals.dealId, dealId));
-  if (portal?.folderNodeId) await storage.removeGrant(portal.folderNodeId, email);
+  const folderNodeId =
+    scope === "freelancer"
+      ? (await loadDeal(tx, member.orgId, dealId))?.folderNodeId
+      : (await portalOf(tx, dealId))?.folderNodeId;
+  if (!folderNodeId) return;
+  const removed = await memberStorage(tx as Db, member.id).removeGrant(folderNodeId, email);
+  if (removed.status === "forbidden") sharingRefused("forbidden");
 }
 
 /**
