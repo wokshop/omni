@@ -119,15 +119,16 @@ function endFrom(text: string, suffix: string, start: number) {
 }
 
 function between(text: string, anchor: TextAnchor) {
-  const fit = Math.min(anchor.prefix.length, EDGE) + Math.min(anchor.suffix.length, EDGE);
   const size = anchor.quote.length;
+  const off = (found: Found) => Math.abs(found.end - found.start - size);
   let best: Found | null = null;
   for (const start of startsOf(text, anchor.prefix)) {
     const end = endFrom(text, anchor.suffix, start);
     if (end <= start || end - start > size * 2 + 20) continue;
-    if (!best || Math.abs(end - start - size) < Math.abs(best.end - best.start - size)) {
-      best = { start, end, fit };
-    }
+    const fit =
+      sharedEnd(text.slice(0, start), anchor.prefix) + sharedStart(text.slice(end), anchor.suffix);
+    const found: Found = { start, end, fit };
+    if (!best || fit > best.fit || (fit === best.fit && off(found) < off(best))) best = found;
   }
   return best;
 }
