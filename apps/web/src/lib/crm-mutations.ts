@@ -136,6 +136,19 @@ const bulkRoute = (kind: CrmRecordKind) =>
       ? api.crm.people.bulk
       : api.crm.deals.bulk;
 
+const BULK_BATCH = 200;
+
+async function bulk(kind: CrmRecordKind, ids: string[], action: BulkAction) {
+  const result = { done: [] as string[], refused: [] as { id: string; code: string }[] };
+  for (let start = 0; start < ids.length; start += BULK_BATCH) {
+    const batch = ids.slice(start, start + BULK_BATCH);
+    const answer = await call(bulkRoute(kind).$post({ json: { ids: batch, action } }));
+    result.done.push(...answer.done);
+    result.refused.push(...answer.refused);
+  }
+  return result;
+}
+
 /** `mutateAsync({ kind, ids, action })` → what changed and what was refused, by id. */
 export const bulkMutation = (client: QueryClient) =>
   mutationOptions({
@@ -148,7 +161,7 @@ export const bulkMutation = (client: QueryClient) =>
       kind: CrmRecordKind;
       ids: string[];
       action: BulkAction;
-    }) => call(bulkRoute(kind).$post({ json: { ids, action } })),
+    }) => bulk(kind, ids, action),
     ...settle(client),
   });
 

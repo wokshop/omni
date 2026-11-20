@@ -60,12 +60,23 @@ export const peopleFilter = (
 ) =>
   ({ ...listParams(search), sort: search.sort, company: search.company }) satisfies CrmPeopleFilter;
 
-/** The board never shows archived deals, and keeps every other filter. */
+/** On the board, deals sort within their column by one of these. */
+export const BOARD_SORTS: CrmSort[] = ["name", "value", "closeOn", "updated"];
+
+const dealSort = (search: DealParams, board: boolean) =>
+  board && search.sort && !BOARD_SORTS.includes(search.sort)
+    ? { sort: undefined, dir: undefined }
+    : { sort: search.sort, dir: search.dir };
+
+/**
+ * The board never shows archived deals, keeps every other filter, and falls back to name order
+ * for a sort it doesn't offer, as its sort control shows.
+ */
 export const dealsFilter = (search: DealParams, board: boolean) =>
   ({
     ...listParams(search),
+    ...dealSort(search, board),
     archived: board ? undefined : search.archived,
-    sort: search.sort,
     stage: board ? undefined : search.stage,
     closeAfter: search.closeAfter,
     closeBefore: search.closeBefore,

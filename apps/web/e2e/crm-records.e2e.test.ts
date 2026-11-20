@@ -167,6 +167,25 @@ test("the deal board shows only the owner's deals when filtered by owner", async
   await page.getByRole("row", { name: "Ana's deal" }).waitFor();
 });
 
+test("a list sort the board can't use falls back to name order on the board, in the query too", async () => {
+  const team = await workspace("board-sort");
+  await team.api("POST", "/deals", { name: "Alpha deal" });
+  await team.api("POST", "/deals", { name: "Zulu deal" });
+  const page = await team.page("/crm/deals?view=list&sort=created&dir=desc");
+  await page.getByRole("row", { name: /Alpha deal/ }).waitFor();
+  expect(await names(page)).toEqual(["Zulu deal", "Alpha deal"]);
+
+  await page.goto(page.url().replace("view=list", "view=board"));
+  await page.getByRole("row", { name: "Alpha deal" }).waitFor();
+
+  const board = page.getByRole("row", { name: /^(Alpha|Zulu) deal$/ });
+  const order = (await board.allInnerTexts()).map((text) =>
+    text.includes("Alpha") ? "Alpha" : "Zulu",
+  );
+  expect(order).toEqual(["Alpha", "Zulu"]);
+  await page.getByRole("button", { name: "Name" }).waitFor();
+});
+
 test("a won deal is listed under Projects, and its page sits under Projects", async () => {
   const team = await workspace("projects");
   const { stages } = await team.api("GET", "/stages");

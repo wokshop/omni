@@ -29,8 +29,6 @@ export const SORT_FIELDS: Record<CrmSort, { label: string; icon: ReactNode; dir:
 
 export const RECORD_SORTS: CrmSort[] = ["name", "created", "updated"];
 export const DEAL_SORTS: CrmSort[] = [...RECORD_SORTS, "value", "closeOn", "stageEntered"];
-/** On the board, deals sort within their column. */
-export const BOARD_SORTS: CrmSort[] = ["name", "value", "closeOn", "updated"];
 
 export interface SortState {
   sort: CrmSort;

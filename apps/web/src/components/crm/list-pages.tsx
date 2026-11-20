@@ -5,7 +5,13 @@ import { byAddress } from "@/components/avatar/sender-avatar";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useCrmCompanies, useCrmDeals, useCrmPeople } from "@/hooks/use-crm.ts";
 import { useWorkspacePaths } from "@/hooks/use-workspaces.ts";
-import { companiesFilter, dealsFilter, peopleFilter, projectsFilter } from "@/lib/crm-lists.ts";
+import {
+  BOARD_SORTS,
+  companiesFilter,
+  dealsFilter,
+  peopleFilter,
+  projectsFilter,
+} from "@/lib/crm-lists.ts";
 import type {
   CrmCompaniesSearch,
   CrmDealsSearch,
@@ -14,7 +20,7 @@ import type {
 } from "@/lib/search-params.ts";
 import { DealBoard } from "./deal-board.tsx";
 import { COMPANY_COLUMNS, DEAL_COLUMNS, PEOPLE_COLUMNS } from "./list-columns.tsx";
-import { BOARD_SORTS, DEAL_SORTS, RECORD_SORTS } from "./list-sort.tsx";
+import { DEAL_SORTS, RECORD_SORTS } from "./list-sort.tsx";
 import { ListToolbar } from "./list-toolbar.tsx";
 import { isFiltered, useListView } from "./list-view.tsx";
 import { NewCompanyDialog, NewDealDialog, NewPersonDialog } from "./new-records.tsx";
