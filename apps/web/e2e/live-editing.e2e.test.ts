@@ -285,3 +285,72 @@ function freePort() {
     });
   }) satisfies Promise<number>;
 }
+
+test("a comment on selected text is marked for every editor, follows its words, and clears when resolved", async () => {
+  const origin = String(worker.url);
+  const cookie = await signIn({ url: new URL(origin) }, db, `remark-${Date.now()}@gmail.test`);
+  const own = await browser.newContext();
+  await own.addCookies(
+    cookie.split("; ").map((pair) => {
+      const at = pair.indexOf("=");
+      return { name: pair.slice(0, at), value: pair.slice(at + 1), url: origin };
+    }),
+  );
+  const ana = await own.newPage();
+  await ana.goto(new URL("/files/my", origin).toString());
+  await ana
+    .getByRole("button", { name: "Upload", exact: true })
+    .first()
+    .waitFor({ timeout: 15_000 });
+  await ana
+    .locator("input[type=file]")
+    .first()
+    .setInputFiles({
+      name: "remarks.md",
+      mimeType: "text/markdown",
+      buffer: Buffer.from("# Remarks\n\nShip the plan on Monday\n"),
+    });
+  await ana.getByRole("row", { name: /remarks\.md/ }).click();
+  const bo = await own.newPage();
+  await bo.goto(ana.url());
+  for (const page of [ana, bo]) {
+    await page
+      .locator("[contenteditable=true]")
+      .getByText("Ship the plan")
+      .waitFor({ timeout: 15_000 });
+  }
+
+  await toEnd(ana);
+  await ana.keyboard.press("Home");
+  for (let i = 0; i < 5; i++) await ana.keyboard.press("ArrowRight");
+  for (let i = 0; i < 8; i++) await ana.keyboard.press("Shift+ArrowRight");
+  await ana.getByRole("button", { name: "Comment", exact: true }).click();
+  await ana.getByRole("textbox", { name: "Comment" }).fill("Why Monday?");
+  await ana.getByRole("button", { name: "Send", exact: true }).click();
+
+  const id = new URL(ana.url()).searchParams.get("file") ?? "";
+  await expect
+    .poll(
+      async () =>
+        (
+          await db
+            .select({ anchor: schema.storageComments.anchor })
+            .from(schema.storageComments)
+            .where(eq(schema.storageComments.nodeId, id))
+        ).map((row) => row.anchor),
+      { timeout: 15_000 },
+    )
+    .toEqual([{ kind: "text", quote: "the plan", prefix: "Remarks\nShip ", suffix: " on Monday" }]);
+  const marked = bo.locator(".doc-comment");
+  await expect.poll(() => marked.allInnerTexts(), { timeout: 15_000 }).toEqual(["the plan"]);
+
+  await ana.locator("[contenteditable=true]").getByText("Ship the plan").click();
+  await ana.keyboard.press("Home");
+  await ana.keyboard.type("First, ");
+  await expect.poll(() => pageText(bo), { timeout: 15_000 }).toContain("First, ");
+  expect(await marked.allInnerTexts()).toEqual(["the plan"]);
+
+  await ana.getByRole("button", { name: "Resolve" }).click();
+  await expect.poll(() => marked.count(), { timeout: 15_000 }).toBe(0);
+  await own.close();
+});
