@@ -560,10 +560,21 @@ test("a project's icon is uploaded from its header, and a person's menu opens ma
     )
     .toContain(`/api/crm/deals/${deal.id}/icon/`);
 
+  const signed = await page.request.put(
+    new URL(`/api/mailboxes/${box.id}/signature?scope=mine`, String(worker.url)).toString(),
+    {
+      headers: { origin: String(worker.url) },
+      data: { bodyText: "Ana, Studio Icon" },
+    },
+  );
+  expect(signed.ok()).toBe(true);
   await page.getByRole("button", { name: "Marisol Velazquez actions" }).click();
   await page.getByRole("menuitem", { name: "Email" }).click();
   await page.getByRole("button", { name: "Send" }).waitFor();
   await page.getByText("marisol@calpolli.test", { exact: true }).waitFor();
+  await expect
+    .poll(() => page.getByRole("dialog").getByRole("textbox").last().inputValue())
+    .toContain("Ana, Studio Icon");
   if (SHOTS) {
     await page.waitForTimeout(400);
     await page.screenshot({ path: `${SHOTS}/project-email.png` });

@@ -15,6 +15,7 @@ export interface NewMessageDraft {
 const listeners = new Set<() => void>();
 let current = false;
 let draft: NewMessageDraft | undefined;
+let addressedTo: string[] | undefined;
 
 function set(open: boolean) {
   if (current === open) return;
@@ -32,6 +33,7 @@ export function useComposePane() {
   const open = useSyncExternalStore(subscribe, () => current);
   const close = useCallback(() => {
     draft = undefined;
+    addressedTo = undefined;
     set(false);
   }, []);
   return [open, close] as const;
@@ -60,7 +62,17 @@ export function takeComposeDraft() {
   return taken;
 }
 
-/** Opens new mail addressed to `to`, from the first mailbox. False while the dialog is already open. */
+/** Opens new mail addressed to `to`. False while the dialog is already open. */
 export function openComposeTo(to: string[]) {
-  return reopenCompose({ mailboxId: "", to, cc: [], bcc: [], subject: "", text: "", files: [] });
+  if (current) return false;
+  addressedTo = to;
+  set(true);
+  return true;
+}
+
+/** The recipients new mail was opened for, once, for the composer that opens with them. */
+export function takeComposeTo() {
+  const taken = addressedTo;
+  addressedTo = undefined;
+  return taken;
 }
