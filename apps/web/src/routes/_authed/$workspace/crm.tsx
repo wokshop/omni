@@ -26,5 +26,8 @@ function CrmLayout() {
 }
 
 function stopNativeDrag(event: DragEvent) {
+  const node = event.target as Node;
+  const target = node instanceof Element ? node : node.parentElement;
+  if (target?.closest('[draggable="true"], [contenteditable="true"]')) return;
   event.preventDefault();
 }

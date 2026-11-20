@@ -224,6 +224,15 @@ test("a deal dragged onto another stage moves there, and a stage's Add deal star
         !link.dispatchEvent(new DragEvent("dragstart", { bubbles: true, cancelable: true })),
     );
   expect(native).toBe(true);
+  const ownDrag = await page.getByRole("main").evaluate((main) => {
+    const handle = Object.assign(document.createElement("div"), { draggable: true });
+    main.append(handle);
+    const event = new DragEvent("dragstart", { bubbles: true, cancelable: true });
+    handle.dispatchEvent(event);
+    handle.remove();
+    return event.defaultPrevented;
+  });
+  expect(ownDrag).toBe(false);
 
   const to = page.getByRole("region", { name: next!.name, exact: true });
   const start = (await from.boundingBox())!;

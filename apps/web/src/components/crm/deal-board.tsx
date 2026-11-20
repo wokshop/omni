@@ -113,9 +113,13 @@ function Column(props: {
       data-taking={taking || undefined}
       className={`${COLUMN} rounded-xl p-1 transition-colors duration-150 ease-out data-taking:bg-hover`}
     >
-      <header className="flex h-9 shrink-0 items-center gap-2 text-sm">
+      <header className="mb-2 flex h-9 shrink-0 items-center gap-2 text-sm">
         <span className="truncate">{stage.name}</span>
-        <Badge intent="secondary" isCircle={false} className="tabular-nums">
+        <Badge
+          intent="secondary"
+          isCircle={false}
+          className="h-5 min-w-5 justify-center px-1.5 py-0 text-xs/none tabular-nums"
+        >
           {deals.length}
         </Badge>
         {total && (
@@ -127,7 +131,7 @@ function Column(props: {
           <DraggableDeal key={deal.id} deal={deal} />
         ))}
       </ul>
-      <Button size="sm" intent="plain" className="mt-1 self-start" onPress={props.onAdd}>
+      <Button size="sm" intent="plain" className="mt-3 self-start" onPress={props.onAdd}>
         <IconPlus data-slot="icon" />
         Add deal
       </Button>
@@ -164,7 +168,7 @@ function BoardBones() {
     <div className="flex gap-3 px-5 py-4">
       {Array.from({ length: 5 }, (_, column) => (
         <div key={column} className={`${COLUMN} gap-2 p-1`}>
-          <div className="flex h-9 items-center">
+          <div className="mb-2 flex h-9 items-center">
             <SkeletonBox width={72} height={10} />
           </div>
           {Array.from({ length: 3 - (column % 3) }, (__, card) => (
