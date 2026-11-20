@@ -121,3 +121,5 @@ export { IconFilter1 as IconFilter } from "central-icons-outlined/IconFilter1";
 export { IconArrowDown } from "central-icons-outlined/IconArrowDown";
 export { IconText1 as IconText } from "central-icons-outlined/IconText1";
 export { IconMoneybag as IconMoney } from "central-icons-outlined/IconMoneybag";
+export { IconChecklist } from "central-icons-outlined/IconChecklist";
+export { IconCalendarDays } from "central-icons-outlined/IconCalendarDays";

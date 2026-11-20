@@ -39,6 +39,14 @@ const DEAL_SORTS = [...RECORD_SORTS, "value", "closeOn", "stageEntered"] as cons
 const isoDay = optional(z.string().check(z.regex(/^\d{4}-\d{2}-\d{2}$/)));
 const amount = optional(z.number());
 
+/** The tasks: mine unless `view` says all or done; `assignee` narrows all and done. */
+export const crmTasksSearch = z.object({
+  mailbox: optionalId,
+  q: optional(z.string()),
+  view: optional(z.enum(["mine", "all", "done"])),
+  assignee: optionalId,
+});
+
 const crmListFields = {
   mailbox: optionalId,
   q: optional(z.string()),

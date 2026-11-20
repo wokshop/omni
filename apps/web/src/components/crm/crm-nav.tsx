@@ -1,6 +1,7 @@
 import { useMemo, type ReactNode } from "react";
 import {
   IconBuildings,
+  IconChecklist,
   IconCircle,
   IconCircleCheck,
   IconCircleX,
@@ -20,6 +21,7 @@ export const CRM_LISTS = {
   people: { label: "People", path: "/crm/people" },
   deals: { label: "Deals", path: "/crm/deals" },
   projects: { label: "Projects", path: "/crm/projects" },
+  tasks: { label: "Tasks", path: "/crm/tasks" },
 } as const;
 
 const ROWS: { list: keyof typeof CRM_LISTS; icon: ReactNode }[] = [
@@ -27,6 +29,7 @@ const ROWS: { list: keyof typeof CRM_LISTS; icon: ReactNode }[] = [
   { list: "people", icon: <IconUsers className="size-icon" /> },
   { list: "deals", icon: <IconHandshake className="size-icon" /> },
   { list: "projects", icon: <IconProjects className="size-icon" /> },
+  { list: "tasks", icon: <IconChecklist className="size-icon" /> },
 ];
 
 const STAGE_GLYPH: Record<CrmStageKind, ReactNode> = {

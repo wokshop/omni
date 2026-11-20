@@ -43,6 +43,7 @@ import {
   DomainsSection,
   PeopleSection,
 } from "./record-sections.tsx";
+import { RecordTasks } from "./tasks.tsx";
 import { Timeline } from "./timeline.tsx";
 
 const day = (iso: string | null) => (iso ? DAY.format(new Date(iso)) : null);
@@ -127,6 +128,7 @@ export function CompanyPage({ id }: { id: string }) {
         }
         tabs={[
           { id: "timeline", label: "Timeline", panel: <Timeline kind="companies" id={id} /> },
+          { id: "tasks", label: "Tasks", panel: <RecordTasks kind="companies" id={id} /> },
           {
             id: "files",
             label: "Files",
@@ -218,7 +220,10 @@ export function PersonPage({ id }: { id: string }) {
             <DealsSection deals={query.data.deals ?? []} />
           </>
         }
-        tabs={[{ id: "timeline", label: "Timeline", panel: <Timeline kind="people" id={id} /> }]}
+        tabs={[
+          { id: "timeline", label: "Timeline", panel: <Timeline kind="people" id={id} /> },
+          { id: "tasks", label: "Tasks", panel: <RecordTasks kind="people" id={id} /> },
+        ]}
       />
       {open === "company" && (
         <ChooseCompanyDialog
@@ -315,6 +320,7 @@ export function DealPage({ id }: { id: string }) {
         }
         tabs={[
           { id: "timeline", label: "Timeline", panel: <Timeline kind="deals" id={id} /> },
+          { id: "tasks", label: "Tasks", panel: <RecordTasks kind="deals" id={id} /> },
           {
             id: "files",
             label: "Files",
