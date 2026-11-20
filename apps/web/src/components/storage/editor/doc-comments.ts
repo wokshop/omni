@@ -66,28 +66,60 @@ function occurrences(text: string, words: string) {
   return found;
 }
 
+interface Found {
+  start: number;
+  end: number;
+  fit: number;
+}
+
 function exact(text: string, anchor: TextAnchor) {
-  let best = -1;
-  let score = -1;
+  let best: Found | null = null;
   for (const i of occurrences(text, anchor.quote)) {
+    const end = i + anchor.quote.length;
     const fit =
-      sharedEnd(text.slice(0, i), anchor.prefix) +
-      sharedStart(text.slice(i + anchor.quote.length), anchor.suffix);
-    if (fit > score) [best, score] = [i, fit];
+      sharedEnd(text.slice(0, i), anchor.prefix) + sharedStart(text.slice(end), anchor.suffix);
+    if (!best || fit > best.fit) best = { start: i, end, fit };
   }
-  return best === -1 ? null : { start: best, end: best + anchor.quote.length };
+  return best;
+}
+
+const EDGE = 12;
+const MIN_EDGE = 4;
+
+const tail = (prefix: string) => prefix.slice(-EDGE).split("\n").at(-1) ?? "";
+const head = (suffix: string) => suffix.slice(0, EDGE).split("\n")[0] ?? "";
+
+function startsOf(text: string, prefix: string) {
+  const starts = prefix.length < CONTEXT && text.startsWith(prefix) ? [prefix.length] : [];
+  const before = tail(prefix);
+  if (before.length < MIN_EDGE) return starts;
+  return [...starts, ...occurrences(text, before).map((i) => i + before.length)];
+}
+
+function endFrom(text: string, suffix: string, start: number) {
+  const after = head(suffix);
+  const near = after.length < MIN_EDGE ? -1 : text.indexOf(after, start);
+  if (near !== -1 || suffix.length >= CONTEXT || !text.endsWith(suffix)) return near;
+  return text.length - suffix.length;
 }
 
 function between(text: string, anchor: TextAnchor) {
-  const before = anchor.prefix.slice(-12);
-  const after = anchor.suffix.slice(0, 12);
-  if (before.length < 4 || after.length < 4) return null;
-  for (const i of occurrences(text, before)) {
-    const start = i + before.length;
-    const end = text.indexOf(after, start);
-    if (end > start && end - start <= anchor.quote.length * 2 + 20) return { start, end };
+  const fit = Math.min(anchor.prefix.length, EDGE) + Math.min(anchor.suffix.length, EDGE);
+  for (const start of startsOf(text, anchor.prefix)) {
+    const end = endFrom(text, anchor.suffix, start);
+    if (end > start && end - start <= anchor.quote.length * 2 + 20) {
+      const found: Found = { start, end, fit };
+      return found;
+    }
   }
   return null;
+}
+
+function locate(text: string, anchor: TextAnchor) {
+  const same = exact(text, anchor);
+  const near = between(text, anchor);
+  if (!near) return same;
+  return same && same.fit >= near.fit ? same : near;
 }
 
 /** Where each thread's passage is in the doc now; a thread whose passage is gone is left out. */
@@ -95,7 +127,7 @@ export function placeThreads(doc: PmNode, threads: MarkedThread[]) {
   const { text, at } = flatten(doc);
   const ranges: Range[] = [];
   for (const thread of threads) {
-    const found = exact(text, thread.anchor) ?? between(text, thread.anchor);
+    const found = locate(text, thread.anchor);
     const from = found ? at[found.start] : undefined;
     const last = found ? at[found.end - 1] : undefined;
     if (from === undefined || last === undefined || from < 0 || last < 0) continue;

@@ -183,12 +183,17 @@ const AVATAR =
   "shrink-0 bg-accent text-foreground outline-0 [--avatar-radius:var(--radius-md)] [--avatar-size:--spacing(6)]";
 
 function Quote(props: { text: string; active: boolean; onPress?: () => void }) {
-  const className = `line-clamp-2 border-s-2 ps-2.5 text-start text-sm text-muted-foreground ${props.active ? "border-warning" : "border-border"}`;
-  if (!props.onPress) return <p className={className}>{props.text}</p>;
+  const edge = `border-s-2 ps-2.5 text-sm text-muted-foreground ${props.active ? "border-warning" : "border-border"}`;
+  if (!props.onPress) return <p className={`line-clamp-2 ${edge}`}>{props.text}</p>;
   return (
-    <button type="button" className={`${className} cursor-pointer`} onClick={props.onPress}>
-      {props.text}
-    </button>
+    <Button
+      intent="plain"
+      size="text"
+      className={`w-full justify-start rounded-none text-start ${edge}`}
+      onPress={props.onPress}
+    >
+      <span className="line-clamp-2">{props.text}</span>
+    </Button>
   );
 }
 
