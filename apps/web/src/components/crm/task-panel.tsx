@@ -1,10 +1,9 @@
 import { useRouter, useSearch } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { Skeleton, SkeletonBox } from "skullet/react";
 import { EmptyState } from "@/components/empty/empty-state";
 import { IconTrash, IconX } from "@/components/icons/central";
 import { Button } from "@/components/ui/button";
-import { ResizeGrip, useStoredWidth } from "@/components/ui/resize-grip";
 import { useCrmTask } from "@/hooks/use-crm-tasks.ts";
 import { ApiError } from "@/lib/api.ts";
 import type { CrmTask } from "@/lib/crm-tasks.ts";
@@ -43,66 +42,6 @@ export const TASK_PANEL_MIN = 360;
 export const TASK_PANEL_MAX = 4096;
 export const TASK_PANEL_KEY = "omni:task-panel-width";
 
-const RECORD_MIN_BESIDE_TASK = 736;
-
-/** Whether a task fits beside the record in `row`, re-measured as the row resizes. */
-export function useTaskFitsBeside(row: React.RefObject<HTMLElement | null>) {
-  const width = useWidth(row);
-  return { beside: width >= RECORD_MIN_BESIDE_TASK + TASK_PANEL_MIN, width };
-}
-
-/**
- * The open task as a column on the right of a record page, the width the Tasks page keeps it, or
- * the whole page when the record and the task don't both fit. `content` is the record beside it.
- */
-export function RecordTaskColumn(props: {
-  id: string;
-  /** The row's width, and whether the task fits beside the record in it. */
-  fit: { beside: boolean; width: number };
-  content: React.RefObject<HTMLElement | null>;
-  onClose: () => void;
-}) {
-  const panel = useStoredWidth(TASK_PANEL_KEY, TASK_PANEL_WIDTH, TASK_PANEL_MIN, TASK_PANEL_MAX);
-  const { beside, width } = props.fit;
-  if (!beside) {
-    return (
-      <div className="flex min-w-0 flex-1 *:border-s-0">
-        <TaskPanel key={props.id} id={props.id} onClose={props.onClose} />
-      </div>
-    );
-  }
-  return (
-    <div
-      style={{
-        width: Math.max(TASK_PANEL_MIN, Math.min(panel.width, width - RECORD_MIN_BESIDE_TASK)),
-      }}
-      className="relative flex min-w-0 shrink-0"
-    >
-      <ResizeGrip
-        label="Resize task"
-        width={() => props.content.current?.offsetWidth ?? 0}
-        onResize={(next) => panel.set(width - next)}
-        onReset={panel.reset}
-      />
-      <TaskPanel key={props.id} id={props.id} onClose={props.onClose} />
-    </div>
-  );
-}
-
-function useWidth(ref: React.RefObject<HTMLElement | null>) {
-  const [width, setWidth] = useState(Infinity);
-  useEffect(() => {
-    const element = ref.current;
-    if (!element || typeof ResizeObserver === "undefined") return;
-    const measure = () => setWidth(element.offsetWidth);
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [ref]);
-  return width;
-}
-
 const isControl = (target: EventTarget | null) =>
   target instanceof HTMLElement &&
   !!target.closest("input, textarea, select, [contenteditable], [role=listbox], [role=dialog]");
@@ -119,18 +58,24 @@ function useCloseOnEscape(onClose: () => void) {
   }, [onClose]);
 }
 
-/** A task beside the list, as an open email sits beside its inbox: its check and title on top, then the task. */
-export function TaskPanel(props: { id: string; onClose: () => void }) {
+/**
+ * A task beside the list, as an open email sits beside its inbox: its check and title on top, then
+ * the task. `inPlace` lays it in the page instead, where a record's Tasks tab shows it over its list.
+ */
+export function TaskPanel(props: { id: string; onClose: () => void; inPlace?: boolean }) {
   const query = useCrmTask(props.id);
   const task = query.data?.task;
   useCloseOnEscape(props.onClose);
   return (
-    <section aria-label="Task" className="flex min-w-0 flex-1 flex-col border-s bg-background">
+    <section
+      aria-label="Task"
+      className={`flex min-w-0 flex-1 flex-col bg-background ${props.inPlace ? "" : "border-s"}`}
+    >
       {task ? (
-        <LoadedTask task={task} onClose={props.onClose} />
+        <LoadedTask task={task} onClose={props.onClose} inPlace={props.inPlace} />
       ) : (
         <>
-          <PanelHeader title={null} onClose={props.onClose} />
+          <PanelHeader title={null} onClose={props.onClose} inPlace={props.inPlace} />
           {query.isPending ? (
             <Skeleton loading label="Loading task" skeleton={<PanelBones />}>
               {null}
@@ -154,13 +99,17 @@ export function TaskPanel(props: { id: string; onClose: () => void }) {
   );
 }
 
-function LoadedTask(props: { task: CrmTask; onClose: () => void }) {
+function LoadedTask(props: { task: CrmTask; onClose: () => void; inPlace?: boolean }) {
   const { task } = props;
   const save = useSaveTask(task.id);
   const remove = useDeleteThisTask(task.id, props.onClose);
   return (
     <>
-      <PanelHeader title={<TaskHeading task={task} onSave={save} />} onClose={props.onClose}>
+      <PanelHeader
+        title={<TaskHeading task={task} onSave={save} />}
+        onClose={props.onClose}
+        inPlace={props.inPlace}
+      >
         <Button
           intent="plain"
           size="sq-sm"
@@ -171,9 +120,11 @@ function LoadedTask(props: { task: CrmTask; onClose: () => void }) {
           <IconTrash />
         </Button>
       </PanelHeader>
-      <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-5 py-4">
+      <div
+        className={`flex min-h-0 flex-1 flex-col gap-6 ${props.inPlace ? "py-2" : "overflow-y-auto px-5 py-4"}`}
+      >
         <TaskContent task={task} onSave={save} />
-        <div className="-mx-5 flex flex-col gap-0.5 border-t px-5 pt-4">
+        <div className={`flex flex-col gap-0.5 ${props.inPlace ? "" : "-mx-5 border-t px-5 pt-4"}`}>
           <TaskDetails task={task} onSave={save} />
         </div>
       </div>
@@ -184,10 +135,13 @@ function LoadedTask(props: { task: CrmTask; onClose: () => void }) {
 function PanelHeader(props: {
   title: React.ReactNode;
   onClose: () => void;
+  inPlace?: boolean;
   children?: React.ReactNode;
 }) {
   return (
-    <div className="flex h-12 shrink-0 items-center gap-1 border-b ps-5 pe-2.5">
+    <div
+      className={`flex h-12 shrink-0 items-center gap-1 ${props.inPlace ? "-me-1.5" : "border-b ps-5 pe-2.5"}`}
+    >
       <div className="flex min-w-0 flex-1 items-center">{props.title}</div>
       {props.children}
       <Button intent="plain" size="sq-sm" aria-label="Close task" onPress={props.onClose}>

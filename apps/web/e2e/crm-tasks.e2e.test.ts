@@ -357,7 +357,7 @@ test("New › Task starts on the record whose page it is, and from the task list
   await context.close();
 });
 
-test("a task on a record's Tasks tab opens beside the record without leaving it, and Escape closes it", async () => {
+test("a task on a record's Tasks tab opens in place of the tab's list without leaving the record, and X or Escape closes it", async () => {
   const origin = String(worker.url);
   const org = await createOrg(db, "record-task");
   await db.insert(schema.orgSetup).values({ orgId: org.id, step: "complete" });
@@ -394,7 +394,8 @@ test("a task on a record's Tasks tab opens beside the record without leaving it,
   await page.getByRole("link", { name: "Confirm the venue" }).click();
   await expect.poll(() => new URL(page.url()).searchParams.get("task")).toBe(task.id);
   expect(new URL(page.url()).pathname).toBe(dealPath);
-  const panel = page.getByRole("region", { name: "Task" });
+  const panel = page.getByRole("region", { name: "Task", exact: true });
+  const rail = page.getByRole("list", { name: "Tasks" });
   await expect
     .poll(() => panel.getByRole("textbox", { name: "Title" }).inputValue())
     .toBe("Confirm the venue");
@@ -407,13 +408,15 @@ test("a task on a record's Tasks tab opens beside the record without leaving it,
     .poll(async () => (await row(task.id))?.body ?? null, { timeout: 10_000 })
     .toBe("Check the loading dock.");
 
-  await page.setViewportSize({ width: 1100, height: 900 });
-  await expect
-    .poll(() => page.getByRole("complementary", { name: "Details" }).isVisible())
-    .toBe(false);
-  expect(await page.getByRole("region", { name: "Task", exact: true }).isVisible()).toBe(true);
-  await page.setViewportSize({ width: 1440, height: 900 });
+  expect(await rail.count()).toBe(0);
 
+  await panel.getByRole("button", { name: "Close task" }).click();
+  await expect.poll(() => new URL(page.url()).searchParams.get("task")).toBeNull();
+  await expect.poll(() => rail.isVisible()).toBe(true);
+  expect(new URL(page.url()).pathname).toBe(dealPath);
+
+  await page.getByRole("link", { name: "Confirm the venue" }).click();
+  await expect.poll(() => panel.count()).toBe(1);
   await page.getByRole("tab", { name: "Tasks" }).click();
   await page.keyboard.press("Escape");
   await expect.poll(() => new URL(page.url()).searchParams.get("task")).toBeNull();

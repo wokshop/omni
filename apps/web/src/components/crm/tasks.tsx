@@ -174,6 +174,8 @@ const OpenTaskContext = createContext<{
 export function RecordTasks(props: { kind: CrmRecordKind; id: string }) {
   const [adding, setAdding] = useState(false);
   const filter = recordFilter(props.kind, props.id);
+  const open = useOpenTask();
+  if (open.id) return <TaskPanel key={open.id} id={open.id} onClose={open.close} inPlace />;
   return (
     <div className="flex flex-col gap-6 lg:min-h-[calc(100dvh-8rem)]">
       <TaskRail filter={filter} />
