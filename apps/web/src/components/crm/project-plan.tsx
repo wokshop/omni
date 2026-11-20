@@ -241,58 +241,66 @@ function DeliverableRow({ deliverable }: { deliverable: CrmDeliverable }) {
     });
   const due = dayLabel(deliverable.dueOn);
   return (
-    <li className="flex h-10 min-w-0 items-center rounded-lg px-2 transition-colors duration-150 ease-out hover:bg-hover">
-      <div className="min-w-0 flex-1">
-        <RowWithMenu
-          label={deliverable.title}
-          actions={[
-            ...DELIVERABLE_STATUSES.filter((s) => s.id !== deliverable.status).map((s) => ({
-              id: s.id,
-              label: s.label,
-              icon: DELIVERABLE_ICONS[s.id],
-              onAction: () => change({ id: deliverable.id, status: s.id }),
-            })),
-            {
-              id: "visible",
-              label: deliverable.clientVisible ? "Hide from client" : "Show to client",
-              icon: deliverable.clientVisible ? (
-                <IconLock data-slot="icon" />
-              ) : (
-                <IconUsers data-slot="icon" />
-              ),
-              onAction: () =>
-                change({ id: deliverable.id, clientVisible: !deliverable.clientVisible }),
-            },
-            {
-              id: "delete",
-              label: "Delete deliverable",
-              icon: <IconTrash data-slot="icon" />,
-              danger: true,
-              onAction: () =>
-                remove.mutate(deliverable.id, {
-                  onError: (error) => crmErrorToast(error, "The deliverable was not deleted"),
-                }),
-            },
-          ]}
-        >
-          <span className="flex min-w-0 items-center gap-2 ps-6">
-            <span className="truncate text-sm text-foreground">{deliverable.title}</span>
-            <Badge intent={DELIVERABLE_INTENT[deliverable.status]} className="shrink-0">
-              {statusLabel(DELIVERABLE_STATUSES, deliverable.status)}
-            </Badge>
-            {deliverable.clientVisible && (
-              <Badge intent="outline" className="shrink-0">
-                Client
+    <li className="flex min-w-0 flex-col rounded-lg px-2 transition-colors duration-150 ease-out hover:bg-hover">
+      <div className="flex h-10 min-w-0 items-center">
+        <div className="min-w-0 flex-1">
+          <RowWithMenu
+            label={deliverable.title}
+            actions={[
+              ...DELIVERABLE_STATUSES.filter((s) => s.id !== deliverable.status).map((s) => ({
+                id: s.id,
+                label: s.label,
+                icon: DELIVERABLE_ICONS[s.id],
+                onAction: () => change({ id: deliverable.id, status: s.id }),
+              })),
+              {
+                id: "visible",
+                label: deliverable.clientVisible ? "Hide from client" : "Show to client",
+                icon: deliverable.clientVisible ? (
+                  <IconLock data-slot="icon" />
+                ) : (
+                  <IconUsers data-slot="icon" />
+                ),
+                onAction: () =>
+                  change({ id: deliverable.id, clientVisible: !deliverable.clientVisible }),
+              },
+              {
+                id: "delete",
+                label: "Delete deliverable",
+                icon: <IconTrash data-slot="icon" />,
+                danger: true,
+                onAction: () =>
+                  remove.mutate(deliverable.id, {
+                    onError: (error) => crmErrorToast(error, "The deliverable was not deleted"),
+                  }),
+              },
+            ]}
+          >
+            <span className="flex min-w-0 items-center gap-2 ps-6">
+              <span className="truncate text-sm text-foreground">{deliverable.title}</span>
+              <Badge intent={DELIVERABLE_INTENT[deliverable.status]} className="shrink-0">
+                {statusLabel(DELIVERABLE_STATUSES, deliverable.status)}
               </Badge>
-            )}
-            {due && (
-              <span className="ms-auto shrink-0 text-xs text-muted-foreground tabular-nums">
-                {due}
-              </span>
-            )}
-          </span>
-        </RowWithMenu>
+              {deliverable.clientVisible && (
+                <Badge intent="outline" className="shrink-0">
+                  Client
+                </Badge>
+              )}
+              {due && (
+                <span className="ms-auto shrink-0 text-xs text-muted-foreground tabular-nums">
+                  {due}
+                </span>
+              )}
+            </span>
+          </RowWithMenu>
+        </div>
       </div>
+      {deliverable.status === "changes_requested" && deliverable.reviewNote && (
+        <p className="flex min-w-0 gap-1.5 ps-6 pb-2.5 text-sm">
+          <span className="shrink-0 text-muted-foreground">{deliverable.reviewedByEmail}</span>
+          <span className="line-clamp-3 text-foreground">{deliverable.reviewNote}</span>
+        </p>
+      )}
     </li>
   );
 }

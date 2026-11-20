@@ -105,6 +105,7 @@ test("the team plans a project and adds a client from the deal page", async () =
   await page.getByRole("button", { name: "Build actions" }).click();
   await page.getByRole("menuitem", { name: "Delete milestone" }).click();
   await expect.poll(async () => (await milestones(deal.id)).length).toBe(2);
+  await page.getByRole("button", { name: "Build actions" }).waitFor({ state: "detached" });
   await page.getByRole("button", { name: "Launch actions" }).click();
   await page.getByRole("menuitem", { name: "Move up" }).click();
   await expect
@@ -122,6 +123,19 @@ test("the team plans a project and adds a client from the deal page", async () =
     .poll(async () => (await deliverables(deal.id)).find((d) => d.title === "Notes")?.milestoneId)
     .toBeNull();
 
+  await db
+    .update(schema.crmDeliverables)
+    .set({
+      status: "changes_requested",
+      reviewNote: "Bigger logo",
+      reviewedByEmail: "bea@client.test",
+      reviewedAt: new Date(),
+    })
+    .where(eq(schema.crmDeliverables.title, "Homepage"));
+  await page.reload();
+  await page.getByRole("tab", { name: "Plan" }).click();
+  await page.getByText("Bigger logo").waitFor();
+
   await page.getByRole("button", { name: "Add someone" }).click();
   await page.getByRole("textbox", { name: "Email" }).fill("bea@client.test");
   await page.getByRole("button", { name: "Add", exact: true }).click();
@@ -135,7 +149,8 @@ test("the team plans a project and adds a client from the deal page", async () =
       ).map((row) => [row.email, row.scope]),
     )
     .toEqual([["bea@client.test", "client"]]);
-  await page.getByText("bea@client.test").waitFor();
+  await page.getByText("bea@client.test").first().waitFor();
+  await page.getByRole("dialog").waitFor({ state: "detached" });
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/deal-plan.png` });
   await context.close();
 });
