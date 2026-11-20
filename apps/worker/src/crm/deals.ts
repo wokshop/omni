@@ -110,8 +110,15 @@ export const deals = new Hono<AppEnv>()
     const found = await memberCrm(c).deal(id);
     if (found.status !== "ok") return refused(c, found);
     const iconId = await storeIcon(c, id, c.req.valid("form").file);
-    const set = await setIcon(c, id, iconId);
-    if (!set.ok) return refused(c, set.refusal);
+    const drop = () => c.env.MAIL_BUCKET.delete(iconKey(c.var.member.orgId, id, iconId));
+    const set = await setIcon(c, id, iconId).catch(async (error: unknown) => {
+      await drop();
+      throw error;
+    });
+    if (!set.ok) {
+      await drop();
+      return refused(c, set.refusal);
+    }
     return c.json({ deal: wireDeal(set.deal) } satisfies CrmDealResponse);
   })
 
