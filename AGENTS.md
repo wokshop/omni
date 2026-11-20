@@ -103,6 +103,9 @@ Each test must catch a bug we would plausibly ship; name it before writing the t
     --input -` (a new top layer: `POST …/stacks/<n>/add`). Check with
     `gh api "repos/{owner}/{repo}/stacks?pull_request=<n>"`.
   - When the layer below changes, `gh stack rebase`, then `gh stack push --remote origin`.
+  - A first `gh stack push` that fails with `stale info` means the session's
+    `origin/<branch>` ref points at a branch that doesn't exist yet: `git push -u origin <branch>`
+    once, then `gh stack push` works.
 - Migrations number in stack order: each layer runs `db:generate` on top of the layer below, so a
   layer's migration is always one above the one beneath it. Two threads that both add a migration
   are never parallel: the later one becomes a layer on the earlier one's stack. When a restack
