@@ -1,5 +1,12 @@
 import type { Db } from "./client.ts";
-import { grantAddresses, grantDoor, linkDoor, loadMember, memberDoor } from "./storage/access.ts";
+import {
+  grantAddresses,
+  grantDoor,
+  linkDoor,
+  loadMember,
+  memberDoor,
+  type LinkVisitor,
+} from "./storage/access.ts";
 import type { StorageListCursor, StorageSpace } from "./storage/core.ts";
 import { storagePeakOf } from "./storage/billing.ts";
 import { commentOperations } from "./storage/comments.ts";
@@ -7,7 +14,12 @@ import { findOperations } from "./storage/find.ts";
 import { iconOperations } from "./storage/icons.ts";
 import { lockOperations } from "./storage/lock.ts";
 import { storageUsageOf } from "./storage/maintenance.ts";
-import { listSharedWith, sharingOperations, type SharedWithMeCursor } from "./storage/sharing.ts";
+import {
+  listSharedWith,
+  policyOperations,
+  sharingOperations,
+  type SharedWithMeCursor,
+} from "./storage/sharing.ts";
 import { signerOperations } from "./storage/signer.ts";
 import { signingOperations } from "./storage/signing.ts";
 import { listChanges, listSyncWorkspaces, type StorageSyncCursor } from "./storage/sync.ts";
@@ -30,7 +42,14 @@ export {
   type StorageNodeKind,
   type StorageSpace,
 } from "./storage/core.ts";
-export type { StorageRole } from "./storage/access.ts";
+export {
+  linkState,
+  storagePolicyOf,
+  type LinkState,
+  type LinkVisitor,
+  type StoragePolicy,
+  type StorageRole,
+} from "./storage/access.ts";
 export type {
   CreateFolderResult,
   FileResult,
@@ -88,16 +107,22 @@ export {
   type StorageFull,
   type StorageUpload,
 } from "./storage/uploads.ts";
-export type {
-  PutGrantResult,
-  RemoveGrantResult,
-  SharedWithMeCursor,
-  SharedWithMeItem,
-  SharingResult,
-  StorageGrantRole,
-  StorageLinkAccess,
-  StoragePerson,
-  StorageSharing,
+export {
+  linkOf,
+  recordShareEvent,
+  type PolicyResult,
+  type ShareEventInput,
+  type StorageLink,
+  type StorageLinkSettings,
+  type PutGrantResult,
+  type RemoveGrantResult,
+  type SharedWithMeCursor,
+  type SharedWithMeItem,
+  type SharingResult,
+  type StorageGrantRole,
+  type StorageLinkAccess,
+  type StoragePerson,
+  type StorageSharing,
 } from "./storage/sharing.ts";
 export {
   STORAGE_MAX_SIGNERS,
@@ -165,6 +190,7 @@ export function memberStorage(db: Db, memberId: string) {
     ...iconOperations(db, door),
     ...trashOperations(db, door, memberId),
     ...sharingOperations(db, door),
+    ...policyOperations(db, memberId),
     ...lockOperations(db, door, memberId),
     ...signingOperations(db, door, memberId),
     async changes(
@@ -216,8 +242,8 @@ export function userStorage(db: Db, userId: string, scopeOrgId?: string | null) 
  * The link door. What anyone holding `/s/<shareId>` may read while the link is open to anyone:
  * the shared node and, for a folder, everything inside it. Read only.
  */
-export function publicStorage(db: Db, shareId: string) {
-  const { node, nodeByShareId, list, file } = treeOperations(db, linkDoor(shareId));
+export function publicStorage(db: Db, shareId: string, visitor?: LinkVisitor) {
+  const { node, nodeByShareId, list, file } = treeOperations(db, linkDoor(shareId, visitor));
   return {
     node: (nodeId?: string) => (nodeId ? node(nodeId) : nodeByShareId(shareId)),
     async list(page: { parentId?: string; cursor?: StorageListCursor | null; limit?: number }) {
@@ -255,4 +281,8 @@ export interface SharedAccess {
   file(nodeId: string): Promise<FileResult>;
   /** The member or grant door that opened it, for changes. A link alone never writes. */
   writer: MemberStorage | SharedStorage | null;
+  /** The door that opened it, as the sharing audit records it. */
+  via: "member" | "grant" | "link";
+  /** False when the link alone opened it and the link is view only: no bytes leave. */
+  downloads: boolean;
 }
