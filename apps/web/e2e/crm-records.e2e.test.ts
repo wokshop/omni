@@ -559,6 +559,7 @@ test("a project's icon is uploaded from its header, and a person's menu opens ma
       },
     )
     .toContain(`/api/crm/deals/${deal.id}/icon/`);
+  expect(await header.locator("img").getAttribute("src")).toContain(`workspace=${team.orgId}`);
 
   const signed = await page.request.put(
     new URL(`/api/mailboxes/${box.id}/signature?scope=mine`, String(worker.url)).toString(),

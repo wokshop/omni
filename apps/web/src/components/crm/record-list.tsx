@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/table";
 import { useIsMobile } from "@/hooks/use-mobile.ts";
 import { descriptorOf, fromDescriptor, type SortState } from "./list-sort.tsx";
+import { withWorkspace } from "@/lib/current-workspace.ts";
 
 export const DAY = new Intl.DateTimeFormat(undefined, {
   month: "short",
@@ -73,7 +74,7 @@ export function RecordMark(props: {
   if (props.src) {
     return (
       <Avatar
-        src={props.src}
+        src={withWorkspace(props.src)}
         initials={props.name.trim().slice(0, 1).toUpperCase() || "?"}
         isSquare={props.square}
         className="bg-secondary text-muted-foreground outline-0"
