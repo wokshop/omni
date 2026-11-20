@@ -230,6 +230,61 @@ interface Task {
   assignee: { address: string } | null;
 }
 
+describe("companies", () => {
+  test("a filtered search still finds a company by its domain", async () => {
+    const { agent, crm } = await workspace("agentdomain");
+    const acme = await crm.createCompany({ name: "Acme", domains: ["acme-domain.test"] });
+    if (acme.status !== "ok") throw new Error("seed");
+    const plain = await call<Found>(agent, "crm_search", { query: "acme-domain.test" });
+    expect(names(plain.companies)).toEqual(["Acme"]);
+    const mine = await call<Found>(agent, "crm_search", { query: "acme-domain.test", owner: "me" });
+    expect(names(mine.companies)).toEqual(["Acme"]);
+    const withArchived = await call<Found>(agent, "crm_search", {
+      query: "acme-domain",
+      archived: "include",
+    });
+    expect(names(withArchived.companies)).toEqual(["Acme"]);
+  });
+
+  test("a company change that is refused part way changes nothing", async () => {
+    const { agent, crm } = await workspace("agentatomic");
+    const made = await crm.createCompany({ name: "Atomic", domains: ["atomic.test"] });
+    if (made.status !== "ok") throw new Error("seed");
+    const id = made.company.id;
+
+    expect(
+      await refusal(agent, "crm_write", {
+        company: { id, name: "Atomic Labs", add_domains: ["atomic-labs.test", "gmail.com"] },
+      }),
+    ).toMatch(/webmail/);
+    expect(
+      await refusal(agent, "crm_write", {
+        company: {
+          id,
+          remove_domains: ["atomic.test"],
+          add_domains: ["gmail.com"],
+          archived: true,
+        },
+      }),
+    ).toMatch(/webmail/);
+    const after = await crm.company(id);
+    if (after.status !== "ok") throw new Error("read");
+    expect(after.company.name).toBe("Atomic");
+    expect(after.company.archivedAt).toBeNull();
+    expect(after.domains).toEqual(["atomic.test"]);
+
+    const changed = await call<{ company: Row }>(agent, "crm_write", {
+      company: { id, name: "Atomic Labs", add_domains: ["atomic-labs.test"], archived: true },
+    });
+    expect(changed.company).toMatchObject({ name: "Atomic Labs", archived: true });
+    const done = await crm.company(id);
+    expect(done.status === "ok" && done.domains.toSorted()).toEqual([
+      "atomic-labs.test",
+      "atomic.test",
+    ]);
+  });
+});
+
 describe("tasks", () => {
   test("an agent adds a task on a deal for a teammate, finds it, and completes it", async () => {
     const { org, ben, agent, crm } = await workspace("agenttasks");
