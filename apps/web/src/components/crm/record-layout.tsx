@@ -89,8 +89,8 @@ export function RecordLayout(props: {
               onReset={details.reset}
               onResizingChange={setResizing}
             />
-            <main className="min-h-0 min-w-0 flex-1 pb-4 lg:overflow-y-auto">
-              <Tabs className="w-full">
+            <main className="flex min-h-0 min-w-0 flex-1 flex-col pb-4 lg:overflow-y-auto">
+              <Tabs className="w-full flex-1">
                 <TabList aria-label="Record" className="px-5 pt-1.5 [--tab-list-pb:--spacing(1.5)]">
                   {props.tabs.map((tab) => (
                     <Tab key={tab.id} id={tab.id}>
@@ -99,7 +99,7 @@ export function RecordLayout(props: {
                   ))}
                 </TabList>
                 {props.tabs.map((tab) => (
-                  <TabPanel key={tab.id} id={tab.id} className="px-5 pt-2">
+                  <TabPanel key={tab.id} id={tab.id} className="flex flex-1 flex-col px-5 pt-2">
                     {tab.panel}
                   </TabPanel>
                 ))}
