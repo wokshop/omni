@@ -45,7 +45,7 @@ afterAll(async () => {
   await database?.teardown();
 });
 
-test("checking a task off in the list completes it, and notes typed on its page are saved", async () => {
+test("checking a task off in the list completes it, and an old link to its page opens it beside the list", async () => {
   const origin = String(worker.url);
   const org = await createOrg(db, "studio");
   await db.insert(schema.orgSetup).values({ orgId: org.id, step: "complete" });
@@ -77,6 +77,8 @@ test("checking a task off in the list completes it, and notes typed on its page 
     .not.toBeNull();
 
   await page.goto(new URL(`/${org.slug}/crm/tasks/${task.id}`, origin).toString());
+  await expect.poll(() => new URL(page.url()).searchParams.get("task")).toBe(task.id);
+  expect(new URL(page.url()).pathname).toBe(`/${org.slug}/crm/tasks`);
   await page.getByRole("textbox", { name: "Description" }).fill("Ask for the Q1 budget.");
   await page.getByRole("textbox", { name: "Title" }).click();
   await expect
@@ -396,6 +398,30 @@ test("opening a task far down the list keeps the list where it was scrolled", as
     .getByRole("textbox", { name: "Title" })
     .waitFor();
   expect(await scrolled()).toBe(before);
+  await context.close();
+});
+
+test("in a window too narrow for both, the task takes the whole screen, and sits beside the list when wide", async () => {
+  const { page, org, context, headers } = await signedIn("narrow");
+  const made = await fetch(new URL("/api/crm/tasks", origin()), {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ title: "Pack the lenses" }),
+  });
+  const { task } = (await made.json()) as { task: { id: string } };
+  await page.setViewportSize({ width: 900, height: 800 });
+  await page.goto(
+    new URL(`/${org.slug}/crm/tasks?assignee=anyone&task=${task.id}`, origin()).toString(),
+  );
+  const panel = page.getByRole("region", { name: "Task", exact: true });
+  const list = page.getByRole("heading", { name: "Tasks", exact: true });
+  await expect
+    .poll(() => panel.getByRole("textbox", { name: "Title" }).inputValue(), { timeout: 10_000 })
+    .toBe("Pack the lenses");
+  await expect.poll(() => list.isVisible()).toBe(false);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect.poll(() => list.isVisible()).toBe(true);
+  expect(await panel.isVisible()).toBe(true);
   await context.close();
 });
 

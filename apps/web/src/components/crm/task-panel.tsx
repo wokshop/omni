@@ -1,11 +1,10 @@
-import { useNavigate, useRouter } from "@tanstack/react-router";
+import { useRouter } from "@tanstack/react-router";
 import { useCallback, useMemo } from "react";
 import { Skeleton, SkeletonBox } from "skullet/react";
 import { EmptyState } from "@/components/empty/empty-state";
-import { IconMaximize, IconTrash, IconX } from "@/components/icons/central";
+import { IconTrash, IconX } from "@/components/icons/central";
 import { Button } from "@/components/ui/button";
 import { useCrmTask } from "@/hooks/use-crm-tasks.ts";
-import { useWorkspaceSlug } from "@/hooks/use-workspaces.ts";
 import { ApiError } from "@/lib/api.ts";
 import type { CrmTask } from "@/lib/crm-tasks.ts";
 import {
@@ -14,7 +13,7 @@ import {
   TaskHeading,
   useDeleteThisTask,
   useSaveTask,
-} from "./task-page.tsx";
+} from "./task-detail.tsx";
 
 /** The open task in the list's URL (`?task=`): its link, and a way to open or close one. */
 export function useOpenTask() {
@@ -77,7 +76,6 @@ function LoadedTask(props: { task: CrmTask; onClose: () => void }) {
   return (
     <>
       <PanelHeader title={<TaskHeading task={task} onSave={save} />} onClose={props.onClose}>
-        <OpenAsPage id={task.id} />
         <Button
           intent="plain"
           size="sq-sm"
@@ -111,21 +109,6 @@ function PanelHeader(props: {
         <IconX />
       </Button>
     </div>
-  );
-}
-
-function OpenAsPage({ id }: { id: string }) {
-  const navigate = useNavigate();
-  const workspace = useWorkspaceSlug();
-  return (
-    <Button
-      intent="plain"
-      size="sq-sm"
-      aria-label="Open as page"
-      onPress={() => void navigate({ to: "/$workspace/crm/tasks/$id", params: { workspace, id } })}
-    >
-      <IconMaximize />
-    </Button>
   );
 }
 

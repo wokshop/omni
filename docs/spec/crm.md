@@ -269,12 +269,13 @@ One list, newest first, of four kinds of item:
 - A record's tasks are its own: a company's panel does not gather its deals' tasks.
 - A record's Tasks tab lays its tasks on the same rail as the Plan: due day on the left, the
   check on the spine, open tasks first and then the done ones.
-- On the web a task opens in a panel beside the task list (`/crm/tasks?task=<id>`), like an
-  email; `/crm/tasks/<id>` stays its full page.
+- On the web a task opens only in a panel beside the task list (`/crm/tasks?task=<id>`), like an
+  email; it has no full page. When the list and the panel don't both fit, as on a phone, the
+  panel takes the whole screen. `/crm/tasks/<id>` redirects to the panel.
 - Subtasks are a checklist on the task, `subtasks` (jsonb, in order, each `{ id, title, done }`
   with an id the client makes). `PATCH { subtasks }` replaces the whole list; blank steps are
   dropped and it holds at most 100. Checking every step does not complete the task. The panel
-  and page read like an issue: the task's check beside its title on top, then its description
+  reads like an issue: the task's check beside its title on top, then its description
   (`body`), then a Subtasks group (a check and a line each, and a line to add one), then the
   fields.
 - The command menu (⌘K) finds open tasks by title, so the task list has no search of its own.

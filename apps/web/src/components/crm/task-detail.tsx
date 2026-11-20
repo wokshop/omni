@@ -1,14 +1,12 @@
-import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { IconTrash, IconX } from "@/components/icons/central";
+import { IconX } from "@/components/icons/central";
 import { Button } from "@/components/ui/button";
 import { Checkbox, CheckboxField } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { TextField } from "@/components/ui/text-field";
 import { Textarea } from "@/components/ui/textarea";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useCrmTask, useDeleteTask } from "@/hooks/use-crm-tasks.ts";
-import { useWorkspaceSlug } from "@/hooks/use-workspaces.ts";
+import { useDeleteTask } from "@/hooks/use-crm-tasks.ts";
 import {
   dayOf,
   dueAtOf,
@@ -21,20 +19,12 @@ import {
 } from "@/lib/crm-tasks.ts";
 import { crmErrorToast } from "./crm-errors.ts";
 import { FieldRow, LinkValue, PlainValue } from "./record-fields.tsx";
-import { RecordFrame, RecordState } from "./record-layout.tsx";
 import { DAY } from "./record-list.tsx";
 import { AssigneePicker, RecordPicker, useMemberNames } from "./task-dialog.tsx";
 import { CHECK_CELL, Subtasks } from "./task-subtasks.tsx";
 
 const TITLE_MAX = 500;
 const BODY_MAX = 20_000;
-
-/** One task, as an issue reads: its check and title, description and subtasks, and beside them who, when and on what. */
-export function TaskPage({ id }: { id: string }) {
-  const query = useCrmTask(id);
-  if (!query.data) return <RecordState list="tasks" query={query} />;
-  return <TaskView task={query.data.task} />;
-}
 
 /**
  * Saves a change to the task, with a toast when it fails, then `settled`. Saves run one at a time
@@ -73,43 +63,6 @@ export function useDeleteThisTask(id: string, onDeleted: () => void) {
         onError: (error) => crmErrorToast(error, "The task was not deleted"),
       }),
   };
-}
-
-function TaskView({ task }: { task: CrmTask }) {
-  const navigate = useNavigate();
-  const workspace = useWorkspaceSlug();
-  const save = useSaveTask(task.id);
-  const remove = useDeleteThisTask(
-    task.id,
-    () => void navigate({ to: "/$workspace/crm/tasks", params: { workspace } }),
-  );
-  return (
-    <RecordFrame
-      list="tasks"
-      name={task.title}
-      actions={
-        <Button size="sm" intent="danger" isPending={remove.isPending} onPress={remove.run}>
-          <IconTrash />
-          Delete task
-        </Button>
-      }
-    >
-      <div className="flex min-h-0 flex-1 overflow-y-auto max-lg:flex-col lg:overflow-hidden">
-        <main className="flex min-w-0 flex-1 flex-col gap-4 px-5 pt-2.5 pb-5 lg:overflow-y-auto">
-          <div className="flex">
-            <TaskHeading task={task} onSave={save} />
-          </div>
-          <TaskContent task={task} onSave={save} />
-        </main>
-        <aside
-          aria-label="Details"
-          className="flex shrink-0 flex-col gap-0.5 px-5 pt-3 pb-5 lg:w-96 lg:overflow-y-auto lg:border-s"
-        >
-          <TaskDetails task={task} onSave={save} />
-        </aside>
-      </div>
-    </RecordFrame>
-  );
 }
 
 /** The task's check, then its title, which saves when it loses focus. */

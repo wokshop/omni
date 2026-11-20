@@ -14,6 +14,9 @@ import { keys } from "./query-keys.ts";
 type Tasks = Api["crm"]["tasks"];
 type Json<T> = T extends { json: infer J } ? J : never;
 
+/** A task's place in the workspace: open beside everyone's tasks. */
+export const taskPath = (id: string) => `/crm/tasks?assignee=anyone&task=${encodeURIComponent(id)}`;
+
 export type CrmTaskPage = InferResponseType<Tasks["$get"], 200>;
 export type CrmTask = CrmTaskPage["tasks"][number];
 export type CrmTaskCounts = InferResponseType<Tasks["counts"]["$get"], 200>["counts"];
