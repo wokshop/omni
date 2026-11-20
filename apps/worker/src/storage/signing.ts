@@ -3,6 +3,7 @@ import {
   storageSendForSignatureBodySchema,
   storageSignBodySchema,
   storageSigningLinkBodySchema,
+  storageSignerQuerySchema,
   type StorageSignatureRequest as WireRequest,
   type StorageSignatureRequestResponse,
   type StorageSignatureRequestsResponse,
@@ -218,6 +219,7 @@ const signingCookiePath = (requestId: string) =>
   `/api/storage/signing/${encodeURIComponent(requestId)}`;
 
 type SignerDoor = NonNullable<Awaited<ReturnType<typeof linkSigner>>>;
+type Signer = NonNullable<Awaited<ReturnType<typeof signerOf>>>;
 
 async function signerOf(c: Context<AppEnv>, requestId: string) {
   const token = getCookie(c, SIGNING_COOKIE);
@@ -228,6 +230,12 @@ async function signerOf(c: Context<AppEnv>, requestId: string) {
   const { user } = session;
   const door: SignerDoor = forUser(c.var.db, user.id, user.scopeOrgId).storage;
   return { door, actor: user.id, email: user.email };
+}
+
+async function showsOtherSigner(signer: Signer, requestId: string, shown: string | undefined) {
+  if (!shown) return false;
+  const item = await signer.door.signingRequest(requestId);
+  return !!item && item.me.email.toLowerCase() !== shown.trim().toLowerCase();
 }
 
 export const storageSigning = new Hono<AppEnv>()
@@ -274,10 +282,13 @@ export const storageSigning = new Hono<AppEnv>()
     return download(c, await signer.door.signingFile(c.req.param("id"), origin));
   })
 
-  .post("/:id/code", async (c) => {
+  .post("/:id/code", zValidator("query", storageSignerQuerySchema), async (c) => {
     const { config } = c.var;
     const signer = await signerOf(c, c.req.param("id"));
     if (!signer) return apiError(c, "unauthorized", "sign in first");
+    if (await showsOtherSigner(signer, c.req.param("id"), c.req.valid("query").signer)) {
+      return apiError(c, "signer_changed", "this page is open as another signer: reload it");
+    }
     if (!config.SYSTEM_MAIL_FROM) {
       return apiError(c, "unprocessable_entity", "this install sends no mail to send a code with");
     }
@@ -304,25 +315,33 @@ export const storageSigning = new Hono<AppEnv>()
     } satisfies StorageSigningCodeResponse);
   })
 
-  .post("/:id/sign", zValidator("json", storageSignBodySchema), async (c) => {
-    const signer = await signerOf(c, c.req.param("id"));
-    if (!signer) return apiError(c, "unauthorized", "sign in first");
-    const { code, typedName, consentVersion } = c.req.valid("json");
-    if (consentVersion !== STORAGE_SIGNING_CONSENT.version) {
-      return apiError(c, "consent_changed", "the consent sentence changed: read it again");
-    }
-    const signed = await signer.door.sign(c.req.param("id"), {
-      code,
-      typedName,
-      consentVersion,
-      origin: originOf(c, signer.email),
-    });
-    if (signed.status !== "ok") return refusedSigning(c, signed.status);
-    if (signed.completed) {
-      sealAfterResponse(c, signed.item.id, (node) => announceDrives(c, [node]));
-    }
-    return c.json({
-      item: wireItem(signed.item),
-      consent: STORAGE_SIGNING_CONSENT,
-    } satisfies StorageSigningItemResponse);
-  });
+  .post(
+    "/:id/sign",
+    zValidator("query", storageSignerQuerySchema),
+    zValidator("json", storageSignBodySchema),
+    async (c) => {
+      const signer = await signerOf(c, c.req.param("id"));
+      if (!signer) return apiError(c, "unauthorized", "sign in first");
+      if (await showsOtherSigner(signer, c.req.param("id"), c.req.valid("query").signer)) {
+        return apiError(c, "signer_changed", "this page is open as another signer: reload it");
+      }
+      const { code, typedName, consentVersion } = c.req.valid("json");
+      if (consentVersion !== STORAGE_SIGNING_CONSENT.version) {
+        return apiError(c, "consent_changed", "the consent sentence changed: read it again");
+      }
+      const signed = await signer.door.sign(c.req.param("id"), {
+        code,
+        typedName,
+        consentVersion,
+        origin: originOf(c, signer.email),
+      });
+      if (signed.status !== "ok") return refusedSigning(c, signed.status);
+      if (signed.completed) {
+        sealAfterResponse(c, signed.item.id, (node) => announceDrives(c, [node]));
+      }
+      return c.json({
+        item: wireItem(signed.item),
+        consent: STORAGE_SIGNING_CONSENT,
+      } satisfies StorageSigningItemResponse);
+    },
+  );

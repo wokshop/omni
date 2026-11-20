@@ -123,3 +123,31 @@ test("a link opens only its own request: not another one sent to the same signer
   const carolSees = await stack.api(carolJar, "GET", `/signing/${first}`);
   expect(carolSees.body.item.me.email).toBe(carol);
 });
+
+test("a page opened from one signer's link refuses to mail a code or sign once the browser opened a co-signer's link", async () => {
+  const bob = address("bob");
+  const carol = address("carol");
+  const requestId = await sendTo([
+    { email: bob, name: "Bob Client" },
+    { email: carol, name: "Carol Client" },
+  ]);
+  const jar = new CookieJar();
+  await openLink(jar, requestId, await linkIn(bob, requestId));
+  expect((await stack.api(jar, "GET", `/signing/${requestId}`)).body.item.me.email).toBe(bob);
+  await openLink(jar, requestId, await linkIn(carol, requestId));
+
+  const asBob = `/signing/${requestId}/code?signer=${encodeURIComponent(bob)}`;
+  expect((await stack.api(jar, "POST", asBob)).body.code).toBe("SIGNER_CHANGED");
+  const signedAsBob = await stack.api(
+    jar,
+    "POST",
+    `/signing/${requestId}/sign?signer=${encodeURIComponent(bob)}`,
+    { code: "123456", typedName: "Bob Client", consentVersion: STORAGE_SIGNING_CONSENT.version },
+  );
+  expect(signedAsBob.body.code).toBe("SIGNER_CHANGED");
+  expect(await sentMail(stack.worker, carol)).toHaveLength(1);
+
+  const asCarol = `/signing/${requestId}/code?signer=${encodeURIComponent(carol.toUpperCase())}`;
+  expect((await stack.api(jar, "POST", asCarol)).status).toBe(200);
+  expect(await mailedCode(carol)).toMatch(/^\d{6}$/);
+});
