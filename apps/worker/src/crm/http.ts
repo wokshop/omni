@@ -7,6 +7,7 @@ import {
   type CrmEvent as WireEvent,
   type CrmNote as WireNote,
   type CrmPerson as WirePerson,
+  type CrmTask as WireTask,
   type ErrorCode,
 } from "@omni/contracts";
 import {
@@ -20,14 +21,17 @@ import {
   type CrmEvent,
   type CrmNote,
   type CrmPerson,
+  type CrmTask,
   type DomainRefusal,
   type FolderResult,
   type Forbidden,
   type InvalidAddress,
+  type InvalidAssignee,
   type InvalidBody,
   type InvalidContract,
   type InvalidCurrency,
   type InvalidName,
+  type InvalidTitle,
   type InvalidTransition,
   type InvalidValue,
   type NoCrm,
@@ -54,6 +58,8 @@ export type CrmRefusal =
   | InvalidValue
   | DomainRefusal
   | AddressTaken
+  | InvalidTitle
+  | InvalidAssignee
   | Exclude<ReplaceStagesResult, { status: "ok" }>
   | FilesRefusal;
 
@@ -147,6 +153,18 @@ function answerFor(refusal: CrmRefusal) {
         message: "a note needs some text",
         param: "body",
       } satisfies Answer;
+    case "invalid_title":
+      return {
+        code: "bad_request",
+        message: "a task needs a title",
+        param: "title",
+      } satisfies Answer;
+    case "invalid_assignee":
+      return {
+        code: "bad_request",
+        message: "the assignee is not a member of this workspace",
+        param: "assigneeMemberId",
+      } satisfies Answer;
     case "invalid_currency":
       return {
         code: "invalid_currency",
@@ -238,6 +256,15 @@ export const wireNote = (note: CrmNote) =>
     createdAt: iso(note.createdAt),
     updatedAt: iso(note.updatedAt),
   }) satisfies WireNote;
+
+export const wireTask = (task: CrmTask) =>
+  ({
+    ...task,
+    dueAt: isoOrNull(task.dueAt),
+    completedAt: isoOrNull(task.completedAt),
+    createdAt: iso(task.createdAt),
+    updatedAt: iso(task.updatedAt),
+  }) satisfies WireTask;
 
 export const wireEvent = (event: CrmEvent) =>
   ({

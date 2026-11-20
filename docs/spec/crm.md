@@ -30,7 +30,7 @@ mail and the files the workspace already has in Omni.
 **Non-goals for v1** (each is additive later; ADR 0036 "Not in v1")
 
 - Custom fields, lists, saved views, tags, several pipelines.
-- Tasks, reminders, record merging, imports.
+- Reminders, record merging, imports. (Tasks shipped: ADR 0054.)
 - Stored "last contacted" facts, and sharing a personal mailbox's activity with the workspace.
 - AI on records.
 - The client dashboard, deliverables and signing.
@@ -110,6 +110,8 @@ All under `/api/crm` on the Worker, for the active workspace. Shapes live in
 | `GET /lookup?address=`                                              | Up to 50 addresses. The people, companies and open deals that match, for the conversation sidebar.           |
 | `GET /search?q=`                                                    | People, companies and deals whose name, address or domain starts with the words. For pickers.                |
 | `GET /settings` · `PUT /settings`                                   | The default currency.                                                                                        |
+| `GET /tasks` · `POST /tasks` · `GET /tasks/counts`                  | List by `?status=`, `?assignee=`, `?due=`, `?company=`/`?person=`/`?deal=`, `?q=` (ADR 0054). Create. Counts. |
+| `GET /tasks/:id` · `PATCH` · `DELETE`                               | Read. Change, complete or reopen (`done`), move to another record. Delete.                                   |
 
 - Error codes beside `error`: `NOT_FOUND`, `NO_CRM`, `ADDRESS_TAKEN`, `DOMAIN_TAKEN`,
   `WEBMAIL_DOMAIN`, `STAGE_IN_USE`, `STAGE_KIND_REQUIRED` (each kind keeps at least one stage),
