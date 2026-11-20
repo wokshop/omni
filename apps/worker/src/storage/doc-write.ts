@@ -79,6 +79,30 @@ export async function writeText(
   }
 }
 
+/**
+ * Whether `text` could be written now as the next version of `nodeId` (quota, upload caps, its
+ * version), checked by opening that upload and dropping it: a refusal, or null when it fits.
+ */
+export async function refusalFor(
+  deps: WriteDeps,
+  files: MemberStorage,
+  orgId: string,
+  target: { nodeId: string; ifContentVersion: number },
+  text: string,
+) {
+  const { limitBytes } = await storageLimit(deps.db, deps.config, orgId);
+  const opened = await files.openVersionUpload(target.nodeId, {
+    size: new TextEncoder().encode(text).byteLength,
+    mimeType: MARKDOWN,
+    limitBytes,
+    ifContentVersion: target.ifContentVersion,
+    caps: uploadCaps(deps.config),
+  });
+  if (opened.status !== "ok") return failed(opened) as WriteResult;
+  await dropUpload(deps, files, opened.upload.id);
+  return null;
+}
+
 async function putObject(
   bucket: R2Bucket,
   files: MemberStorage,

@@ -3,7 +3,7 @@ import type { EditResult } from "@omni/docs";
 import type { MemberStorage, StoragePlace } from "@omni/db";
 import { s2Basin } from "../s2.ts";
 import { docRecordEvents, LiveFile } from "./doc-live.ts";
-import { writeText, type WriteDeps, type WriteResult } from "./doc-write.ts";
+import { refusalFor, writeText, type WriteDeps, type WriteResult } from "./doc-write.ts";
 
 /** The largest doc an agent may change: what the editor opens whole. */
 export const DOC_MAX_BYTES = 1_000_000;
@@ -81,6 +81,9 @@ export async function editDoc(
       changed.markdown,
     );
   }
+  const target = { nodeId, ifContentVersion: node.contentVersion };
+  const refused = await refusalFor(deps, files, node.orgId, target, changed.markdown);
+  if (refused) return refused;
   const { entry, through } = await live.rewrite(changed.markdown);
   passOn(deps, node.orgId, nodeId, [entry]);
   return saveLive(

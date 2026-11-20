@@ -38,6 +38,7 @@ beforeAll(async () => {
       BETTER_AUTH_URL: `http://127.0.0.1:${port}`,
       S2_BASIN_URL: "http://127.0.0.1:54380/v1",
       S2_BASIN: "omni-docs-dev",
+      STORAGE_PERSONAL_GB: "1",
     },
   });
   const system = await createOrg(db, "system");
@@ -490,6 +491,60 @@ test("an assistant whose person may only view a doc changes nothing in it, even 
     ana.evaluate(async (at) => (await fetch(at)).text(), `/api/storage/files/${id}/content`);
   await expect.poll(saved, { timeout: 20_000 }).toContain("Signed by Ana");
   expect(await saved()).toContain("Pay in 30 days");
+  expect(await pageText(ana)).not.toContain("900");
+  await own.close();
+});
+
+test("an assistant's edit to an open doc in a full workspace changes nothing", async () => {
+  const origin = String(worker.url);
+  const jar = new CookieJar();
+  const email = `full-${Date.now()}@gmail.test`;
+  const cookie = await signIn({ url: new URL(origin) }, db, email, jar);
+  const own = await browser.newContext();
+  await own.addCookies(
+    cookie.split("; ").map((pair) => {
+      const at = pair.indexOf("=");
+      return { name: pair.slice(0, at), value: pair.slice(at + 1), url: origin };
+    }),
+  );
+  const ana = await own.newPage();
+  await ana.goto(new URL("/files/my", origin).toString());
+  await ana
+    .getByRole("button", { name: "Upload", exact: true })
+    .first()
+    .waitFor({ timeout: 15_000 });
+  await ana
+    .locator("input[type=file]")
+    .first()
+    .setInputFiles({
+      name: "budget.md",
+      mimeType: "text/markdown",
+      buffer: Buffer.from("# Budget\n\nSpend 100\n"),
+    });
+  await ana.getByRole("row", { name: /budget\.md/ }).click();
+  await ana.locator("[contenteditable=true]").getByText("Spend 100").waitFor({ timeout: 15_000 });
+  const id = new URL(ana.url()).searchParams.get("file") ?? "";
+  const [file] = await db
+    .select({ orgId: schema.storageNodes.orgId })
+    .from(schema.storageNodes)
+    .where(eq(schema.storageNodes.id, id));
+  await db
+    .update(schema.storageUsage)
+    .set({ bytes: 10 ** 15 })
+    .where(eq(schema.storageUsage.orgId, file?.orgId ?? ""));
+
+  const agent = await connectAgent(origin, jar, {
+    scope: "openid mail:read drive:read drive:write",
+    authURL: origin.replace(/\/$/, ""),
+  });
+  const edited = await agent.callTool({
+    name: "drive_edit_doc",
+    arguments: { id, edits: [{ find: "Spend 100", replace: "Spend 900" }] },
+  });
+  expect(edited.isError).toBe(true);
+
+  await typeAtEnd(ana, "Checked");
+  await expect.poll(() => pageText(ana), { timeout: 15_000 }).toContain("Checked");
   expect(await pageText(ana)).not.toContain("900");
   await own.close();
 });
