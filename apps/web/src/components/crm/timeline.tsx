@@ -411,7 +411,12 @@ function NoteComposer({ kind, id }: { kind: CrmRecordKind; id: string }) {
   };
   return (
     <form
-      className="flex flex-col gap-2 rounded-xl border bg-background px-3 pt-2.5 pb-2.5"
+      className="flex cursor-text flex-col gap-2 rounded-xl border bg-background px-3 pt-2.5 pb-2.5"
+      onMouseDown={(event) => {
+        if ((event.target as HTMLElement).closest("textarea, button")) return;
+        event.preventDefault();
+        event.currentTarget.querySelector("textarea")?.focus();
+      }}
       onSubmit={(event) => {
         event.preventDefault();
         submit();
@@ -424,7 +429,7 @@ function NoteComposer({ kind, id }: { kind: CrmRecordKind; id: string }) {
         aria-label="Note"
         maxLength={20_000}
         placeholder="Write a note…"
-        className="max-h-60 min-h-6 resize-none py-0 sm:py-0"
+        className="field-sizing-content max-h-60 min-h-6 resize-none py-0 sm:py-0"
         onKeyDown={(event) => {
           if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) submit();
         }}

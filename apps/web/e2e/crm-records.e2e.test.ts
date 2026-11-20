@@ -67,7 +67,51 @@ test("a deal value saves in a workspace with no default currency", async () => {
       valueMinor: 1_250_000,
       valueCurrency: "USD",
     });
-  await expect.poll(() => value.inputValue()).toBe("$12,500");
+  await expect.poll(() => value.inputValue()).toBe("12,500");
+  expect(await page.getByText("$12,500").count()).toBe(0);
+});
+
+test("a deal's close date is cleared from inside its calendar", async () => {
+  const team = await workspace("deal-close");
+  const { deal } = await team.api("POST", "/deals", { name: "Renewal" });
+  await db
+    .update(schema.crmDeals)
+    .set({ expectedCloseOn: "2026-12-11" })
+    .where(eq(schema.crmDeals.id, deal.id));
+  const page = await team.page(`/crm/deals/${deal.id}`);
+  await page.getByText("Dec 11, 2026").click();
+  await page.getByRole("button", { name: "Clear date" }).click();
+  await expect
+    .poll(
+      async () => {
+        const [row] = await db
+          .select({ day: schema.crmDeals.expectedCloseOn })
+          .from(schema.crmDeals)
+          .where(eq(schema.crmDeals.id, deal.id));
+        return row?.day ?? null;
+      },
+      { timeout: 10_000 },
+    )
+    .toBeNull();
+  expect(await page.getByRole("button", { name: "Clear date" }).count()).toBe(0);
+});
+
+test("a deal's company is picked in place from its sidebar", async () => {
+  const team = await workspace("deal-company");
+  await team.api("POST", "/companies", { name: "Acme" });
+  const { company } = await team.api("POST", "/companies", { name: "Globex" });
+  const { deal } = await team.api("POST", "/deals", { name: "Rebrand" });
+
+  const page = await team.page(`/crm/deals/${deal.id}`);
+  const field = page.getByRole("combobox", { name: "Company" });
+  await field.fill("Glob");
+  await page.getByRole("option", { name: "Globex" }).click();
+
+  await expect
+    .poll(() => dealRow(deal.id), { timeout: 10_000 })
+    .toMatchObject({ companyId: company.id });
+  await expect.poll(() => field.inputValue()).toBe("Globex");
+  await page.getByRole("link", { name: "Open Globex" }).waitFor();
 });
 
 test("sorting the board by value orders each stage's cards and persists in the URL", async () => {
@@ -477,6 +521,7 @@ async function dealRow(id: string) {
       valueMinor: schema.crmDeals.valueMinor,
       valueCurrency: schema.crmDeals.valueCurrency,
       stageId: schema.crmDeals.stageId,
+      companyId: schema.crmDeals.companyId,
     })
     .from(schema.crmDeals)
     .where(eq(schema.crmDeals.id, id));
