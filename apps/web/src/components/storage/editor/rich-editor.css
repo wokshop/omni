@@ -91,3 +91,10 @@
 .document-page + .ProseMirror-dropcursor {
   @apply bg-primary;
 }
+.collaboration-carets__caret {
+  @apply pointer-events-none relative -mx-px border-x;
+  word-break: normal;
+}
+.collaboration-carets__label {
+  @apply absolute -top-[1.35em] -left-px rounded-sm rounded-bl-none px-1.5 py-px text-xs/4 font-normal whitespace-nowrap text-collaborator-foreground select-none;
+}
