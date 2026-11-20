@@ -8,7 +8,10 @@ import type { CrmTask, TaskChange } from "@/lib/crm-tasks.ts";
 type Step = NonNullable<CrmTask["subtasks"]>[number];
 
 const STEP_MAX = 500;
-const lineClass = "h-8 w-full rounded-md px-2 text-sm hover:bg-hover focus:bg-hover";
+const lineClass = "h-8 w-full rounded-md px-1.5 text-sm hover:bg-hover focus:bg-hover";
+
+/** The cell a check sits in, so its box starts on the content's left edge. */
+export const CHECK_CELL = "flex h-8 w-5 shrink-0 items-center -ms-[1.5px]";
 
 /**
  * The task's checklist: a titled group of steps, each with its check, and a line to add one. While
@@ -31,7 +34,7 @@ export function Subtasks(props: {
   };
   return (
     <section aria-label="Subtasks" className="flex flex-col gap-0.5">
-      <h3 className="flex h-7 items-center px-2 text-sm text-muted-foreground">Subtasks</h3>
+      <h3 className="flex h-7 items-center text-sm text-muted-foreground">Subtasks</h3>
       {steps.map((step) => (
         <SubtaskRow
           key={step.id}
@@ -58,8 +61,8 @@ function SubtaskRow(props: { step: Step; onChange: (step: Step) => void; onRemov
     if (title !== step.title) props.onChange({ ...step, title });
   };
   return (
-    <div className="flex items-center gap-1">
-      <div className="flex size-8 shrink-0 items-center justify-center">
+    <div className="flex items-center">
+      <div className={CHECK_CELL}>
         <CheckboxField
           aria-label={`Complete ${step.title}`}
           isSelected={step.done}
@@ -99,9 +102,11 @@ function NewSubtask(props: { onAdd: (title: string) => void }) {
     setDraft("");
   };
   return (
-    <div className="flex items-center gap-1">
-      <div className="flex size-8 shrink-0 items-center justify-center text-muted-foreground">
-        <IconPlus className="size-3.5" />
+    <div className="flex items-center">
+      <div className={`${CHECK_CELL} text-muted-foreground`}>
+        <span className="flex w-4.25 justify-center">
+          <IconPlus className="size-3.5" />
+        </span>
       </div>
       <TextField
         aria-label="New subtask"

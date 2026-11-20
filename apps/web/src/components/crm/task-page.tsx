@@ -24,12 +24,12 @@ import { FieldRow, LinkValue, PlainValue } from "./record-fields.tsx";
 import { RecordFrame, RecordState } from "./record-layout.tsx";
 import { DAY } from "./record-list.tsx";
 import { AssigneePicker, RecordPicker, useMemberNames } from "./task-dialog.tsx";
-import { Subtasks } from "./task-subtasks.tsx";
+import { CHECK_CELL, Subtasks } from "./task-subtasks.tsx";
 
 const TITLE_MAX = 500;
 const BODY_MAX = 20_000;
 
-/** One task: its check and title, subtasks and notes, and beside them who, when and on what. */
+/** One task, as an issue reads: its check and title, description and subtasks, and beside them who, when and on what. */
 export function TaskPage({ id }: { id: string }) {
   const query = useCrmTask(id);
   if (!query.data) return <RecordState list="tasks" query={query} />;
@@ -88,22 +88,22 @@ function TaskView({ task }: { task: CrmTask }) {
       list="tasks"
       name={task.title}
       actions={
-        <Button size="sm" intent="outline" isPending={remove.isPending} onPress={remove.run}>
+        <Button size="sm" intent="danger" isPending={remove.isPending} onPress={remove.run}>
           <IconTrash />
           Delete task
         </Button>
       }
     >
       <div className="flex min-h-0 flex-1 overflow-y-auto max-lg:flex-col lg:overflow-hidden">
-        <main className="flex min-w-0 flex-1 flex-col gap-4 px-5 py-5 lg:overflow-y-auto">
-          <div className="-ms-2 flex">
+        <main className="flex min-w-0 flex-1 flex-col gap-4 px-5 pt-2.5 pb-5 lg:overflow-y-auto">
+          <div className="flex">
             <TaskHeading task={task} onSave={save} />
           </div>
           <TaskContent task={task} onSave={save} />
         </main>
         <aside
           aria-label="Details"
-          className="flex shrink-0 flex-col gap-0.5 px-5 py-5 lg:w-80 lg:overflow-y-auto lg:border-s"
+          className="flex shrink-0 flex-col gap-0.5 px-5 pt-3 pb-5 lg:w-96 lg:overflow-y-auto lg:border-s"
         >
           <TaskDetails task={task} onSave={save} />
         </aside>
@@ -116,8 +116,8 @@ function TaskView({ task }: { task: CrmTask }) {
 export function TaskHeading(props: { task: CrmTask; onSave: (change: TaskChange) => void }) {
   const { task, onSave } = props;
   return (
-    <div className="flex min-w-0 flex-1 items-center gap-1">
-      <div className="flex size-8 shrink-0 items-center justify-center">
+    <div className="flex min-w-0 flex-1 items-center">
+      <div className={CHECK_CELL}>
         <CheckboxField
           aria-label={task.completedAt ? "Reopen" : "Complete"}
           isSelected={!!task.completedAt}
@@ -131,16 +131,16 @@ export function TaskHeading(props: { task: CrmTask; onSave: (change: TaskChange)
   );
 }
 
-/** Under the heading: the task's subtasks, then its notes. */
+/** Under the heading, as an issue reads: the description, then the subtasks. */
 export function TaskContent(props: {
   task: CrmTask;
   onSave: (change: TaskChange, settled?: () => void) => void;
 }) {
   const { task, onSave } = props;
   return (
-    <div className="-mx-2 flex flex-col gap-4">
-      <Subtasks task={task} onSave={onSave} />
+    <div className="flex flex-col gap-5">
       <BodyField key={task.id} task={task} onSave={(body) => onSave({ body })} />
+      <Subtasks task={task} onSave={onSave} />
     </div>
   );
 }
@@ -183,7 +183,7 @@ function TitleField(props: { task: CrmTask; onSave: (title: string) => void }) {
       <Input
         plain
         autoComplete="off"
-        className="h-9 w-full rounded-md px-2 text-md hover:bg-hover focus:bg-hover"
+        className="h-9 w-full rounded-md px-1.5 text-md hover:bg-hover focus:bg-hover"
         onFocus={onFocus}
         onBlur={commit}
         onKeyDown={(event) => event.key === "Enter" && event.currentTarget.blur()}
@@ -197,12 +197,12 @@ function BodyField(props: { task: CrmTask; onSave: (body: string | null) => void
   return (
     <Textarea
       plain
-      aria-label="Notes"
+      aria-label="Description"
       maxLength={BODY_MAX}
-      placeholder="Notes"
+      placeholder="Add description"
       value={draft}
       onChange={(event) => setDraft(event.target.value)}
-      className="field-sizing-content min-h-16 w-full resize-none rounded-md px-2 py-1.5 text-sm hover:bg-hover focus:bg-hover sm:px-2"
+      className="-mx-1.5 field-sizing-content min-h-8 w-[calc(100%+--spacing(3))] resize-none rounded-md px-1.5 py-1.5 text-sm placeholder:text-muted-foreground hover:bg-hover focus:bg-hover sm:px-1.5"
       onFocus={onFocus}
       onBlur={() => {
         done();

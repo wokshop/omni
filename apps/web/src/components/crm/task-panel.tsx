@@ -90,7 +90,7 @@ function LoadedTask(props: { task: CrmTask; onClose: () => void }) {
       </PanelHeader>
       <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-5 py-4">
         <TaskContent task={task} onSave={save} />
-        <div className="flex flex-col gap-0.5">
+        <div className="-mx-5 flex flex-col gap-0.5 border-t px-5 pt-4">
           <TaskDetails task={task} onSave={save} />
         </div>
       </div>
@@ -104,7 +104,7 @@ function PanelHeader(props: {
   children?: React.ReactNode;
 }) {
   return (
-    <div className="flex h-12 shrink-0 items-center gap-1 border-b ps-3 pe-2.5">
+    <div className="flex h-12 shrink-0 items-center gap-1 border-b ps-5 pe-2.5">
       <div className="flex min-w-0 flex-1 items-center">{props.title}</div>
       {props.children}
       <Button intent="plain" size="sq-sm" aria-label="Close task" onPress={props.onClose}>

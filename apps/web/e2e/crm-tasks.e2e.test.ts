@@ -77,7 +77,7 @@ test("checking a task off in the list completes it, and notes typed on its page 
     .not.toBeNull();
 
   await page.goto(new URL(`/${org.slug}/crm/tasks/${task.id}`, origin).toString());
-  await page.getByRole("textbox", { name: "Notes" }).fill("Ask for the Q1 budget.");
+  await page.getByRole("textbox", { name: "Description" }).fill("Ask for the Q1 budget.");
   await page.getByRole("textbox", { name: "Title" }).click();
   await expect
     .poll(async () => (await row(task.id))?.body ?? null, { timeout: 10_000 })
@@ -118,7 +118,7 @@ test("a task opens beside the list, edits save to that task, and Escape closes i
   await expect.poll(() => new URL(page.url()).searchParams.get("task")).toBe(first);
   expect(new URL(page.url()).pathname).toBe(`/${org.slug}/crm/tasks`);
   const panel = page.getByRole("region", { name: "Task" });
-  await panel.getByRole("textbox", { name: "Notes" }).fill("Ask about parking.");
+  await panel.getByRole("textbox", { name: "Description" }).fill("Ask about parking.");
   await page.getByRole("link", { name: "Book the crew" }).click();
   await expect.poll(() => new URL(page.url()).searchParams.get("task")).toBe(second);
   await expect
