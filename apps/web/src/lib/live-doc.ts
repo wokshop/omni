@@ -183,9 +183,20 @@ export class LiveDoc {
       if (origin !== REMOTE) return this.sendPresence([this.doc.clientID]);
       if (change.added.length > 0) this.announce();
     });
-    const leave = () => removeAwarenessStates(this.awareness, [this.doc.clientID], "close");
+    let away: Record<string, unknown> | null = null;
+    const leave = () => {
+      away = this.awareness.getLocalState();
+      removeAwarenessStates(this.awareness, [this.doc.clientID], "close");
+    };
+    const back = (event: PageTransitionEvent) => {
+      if (event.persisted && away && !this.closed) this.awareness.setLocalState(away);
+    };
     window.addEventListener("pagehide", leave);
-    this.stops.push(() => window.removeEventListener("pagehide", leave));
+    window.addEventListener("pageshow", back);
+    this.stops.push(() => {
+      window.removeEventListener("pagehide", leave);
+      window.removeEventListener("pageshow", back);
+    });
     this.started = true;
     void this.catchUp();
     this.announce();

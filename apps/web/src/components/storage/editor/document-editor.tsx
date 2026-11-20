@@ -106,11 +106,12 @@ export function useEditSession(node: StorageNode, url: string, shareId: string |
 
   const [isLive, setIsLive] = useState(false);
   const saveRef = useRef<() => Promise<boolean>>(async () => false);
+  const running = useRef<Promise<boolean>>(Promise.resolve(true));
   const leaving = useBlocker({
-    shouldBlockFn: () => {
+    shouldBlockFn: async () => {
       if (!dirty || !live.current) return dirty;
-      void saveRef.current();
-      return false;
+      while (inFlight.current) await running.current;
+      return !(await saveRef.current());
     },
     enableBeforeUnload: false,
     withResolver: true,
@@ -118,7 +119,13 @@ export function useEditSession(node: StorageNode, url: string, shareId: string |
 
   useReportEditing(editing && !shareId ? node : undefined);
 
-  const save = async () => {
+  const save = () => {
+    if (inFlight.current) return Promise.resolve(false);
+    running.current = saveNow();
+    return running.current;
+  };
+
+  const saveNow = async () => {
     const text = read.current?.();
     const boundary = live.current?.boundary;
     if (text === undefined || inFlight.current) return false;
