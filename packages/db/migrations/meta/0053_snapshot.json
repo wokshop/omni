@@ -1,5 +1,5 @@
 {
-  "id": "ec10e37d-fac1-4862-a5e0-78e556dee631",
+  "id": "ce98843c-9ef9-403a-b0d1-8d50d61f773f",
   "prevId": "2e4ce019-383a-4111-a704-f7929d9025f0",
   "version": "7",
   "dialect": "postgresql",
@@ -9636,106 +9636,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.storage_upload_links": {
-      "name": "storage_upload_links",
-      "schema": "",
-      "columns": {
-        "upload_id": {
-          "name": "upload_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "org_id": {
-          "name": "org_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "share_id": {
-          "name": "share_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "link_access": {
-          "name": "link_access",
-          "type": "storage_link_access",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'restricted'"
-        },
-        "link_expires_at": {
-          "name": "link_expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "link_password_hash": {
-          "name": "link_password_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "link_downloads": {
-          "name": "link_downloads",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "storage_upload_links_upload_id_storage_uploads_id_fk": {
-          "name": "storage_upload_links_upload_id_storage_uploads_id_fk",
-          "tableFrom": "storage_upload_links",
-          "tableTo": "storage_uploads",
-          "columnsFrom": [
-            "upload_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "storage_upload_links_org_id_organizations_id_fk": {
-          "name": "storage_upload_links_org_id_organizations_id_fk",
-          "tableFrom": "storage_upload_links",
-          "tableTo": "organizations",
-          "columnsFrom": [
-            "org_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "storage_upload_links_share_id_unique": {
-          "name": "storage_upload_links_share_id_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "share_id"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.storage_upload_parts": {
       "name": "storage_upload_parts",
       "schema": "",
@@ -11125,6 +11025,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "owner_member_id": {
+          "name": "owner_member_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "folder_node_id": {
           "name": "folder_node_id",
           "type": "text",
@@ -11185,6 +11091,48 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "crm_companies_updated_at_idx": {
+          "name": "crm_companies_updated_at_idx",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "updated_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "crm_companies_owner_member_id_idx": {
+          "name": "crm_companies_owner_member_id_idx",
+          "columns": [
+            {
+              "expression": "owner_member_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -11199,6 +11147,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "crm_companies_owner_member_id_members_id_fk": {
+          "name": "crm_companies_owner_member_id_members_id_fk",
+          "tableFrom": "crm_companies",
+          "tableTo": "members",
+          "columnsFrom": [
+            "owner_member_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
           "onUpdate": "no action"
         },
         "crm_companies_folder_node_id_storage_nodes_id_fk": {
@@ -11697,6 +11658,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "expected_close_on": {
+          "name": "expected_close_on",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
         "folder_node_id": {
           "name": "folder_node_id",
           "type": "text",
@@ -11793,6 +11760,87 @@
           "columns": [
             {
               "expression": "owner_member_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "crm_deals_updated_at_idx": {
+          "name": "crm_deals_updated_at_idx",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "updated_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "crm_deals_value_idx": {
+          "name": "crm_deals_value_idx",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "value_minor",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "crm_deals_expected_close_on_idx": {
+          "name": "crm_deals_expected_close_on_idx",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "expected_close_on",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -12457,6 +12505,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "owner_member_id": {
+          "name": "owner_member_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_by_member_id": {
           "name": "created_by_member_id",
           "type": "text",
@@ -12526,6 +12580,48 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "crm_people_updated_at_idx": {
+          "name": "crm_people_updated_at_idx",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "updated_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "crm_people_owner_member_id_idx": {
+          "name": "crm_people_owner_member_id_idx",
+          "columns": [
+            {
+              "expression": "owner_member_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -12548,6 +12644,19 @@
           "tableTo": "crm_companies",
           "columnsFrom": [
             "company_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "crm_people_owner_member_id_members_id_fk": {
+          "name": "crm_people_owner_member_id_members_id_fk",
+          "tableFrom": "crm_people",
+          "tableTo": "members",
+          "columnsFrom": [
+            "owner_member_id"
           ],
           "columnsTo": [
             "id"
