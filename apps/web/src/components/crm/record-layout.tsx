@@ -39,6 +39,8 @@ export function RecordLayout(props: {
   square?: boolean;
   /** Whose logo or picture the mark shows. */
   who?: SenderLogoFor | null;
+  /** In place of the mark: a project's own, which can be changed. */
+  mark?: ReactNode;
   /** A line under the name: a person's title, a deal's client. */
   subtitle?: ReactNode;
   /** After the name: a deal's stage, Archived. */
@@ -61,7 +63,9 @@ export function RecordLayout(props: {
             className="flex shrink-0 flex-col gap-6 px-5 py-5 lg:w-(--details-width) lg:overflow-y-auto lg:border-e"
           >
             <div className="flex min-w-0 items-center gap-3">
-              <RecordMark name={props.name} square={props.square} who={props.who} size={40} />
+              {props.mark ?? (
+                <RecordMark name={props.name} square={props.square} who={props.who} size={40} />
+              )}
               <div className="flex min-w-0 flex-col">
                 <div className="flex min-w-0 items-center gap-2">
                   <h2 className="truncate text-md text-foreground">{props.name}</h2>

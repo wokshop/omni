@@ -83,6 +83,8 @@ export type DealPatch = Partial<DealInput> & {
    * carries the key, the same patch changes nothing.
    */
   dedupeKey?: string;
+  /** An uploaded picture's SHA-256, null to go back to the client's logo. Not in the API body. */
+  iconSha256?: string | null;
 };
 
 export type DealResult = { status: "ok"; deal: CrmDeal } | NotFound;
@@ -370,6 +372,9 @@ async function applyFields(
   if (patch.expectedCloseOn !== undefined && patch.expectedCloseOn !== deal.expectedCloseOn) {
     set.expectedCloseOn = patch.expectedCloseOn;
     fields.push("expectedCloseOn");
+  }
+  if (patch.iconSha256 !== undefined && patch.iconSha256 !== deal.iconSha256) {
+    set.iconSha256 = patch.iconSha256;
   }
   const owner = patch.ownerMemberId;
   const ownerChanged = owner !== undefined && owner !== deal.ownerMemberId;

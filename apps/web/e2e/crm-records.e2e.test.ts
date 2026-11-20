@@ -24,6 +24,10 @@ let mailService: Awaited<ReturnType<typeof startMailServiceEndpoint>>;
 let worker: Awaited<ReturnType<typeof startWorkerWithNetwork>>;
 let browser: Browser;
 const SHOTS = process.env.OMNI_E2E_SHOTS;
+const PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+  "base64",
+);
 const contexts: BrowserContext[] = [];
 
 beforeAll(async () => {
@@ -511,6 +515,50 @@ test("a person opened from a project keeps the project in the crumbs, and its ro
   await crumbs.getByRole("link", { name: "Serie Documental" }).click();
   await expect.poll(() => new URL(page.url()).pathname).toContain(`/crm/deals/${deal.id}`);
   expect(new URL(page.url()).searchParams.get("via")).toBeNull();
+});
+
+test("a project's icon is uploaded from its header, and Email drops a composer to its people", async () => {
+  const team = await workspace("icon");
+  const { company } = await team.api("POST", "/companies", { name: "Calpolli" });
+  const { person } = await team.api("POST", "/people", {
+    name: "Marisol Velazquez",
+    address: "marisol@calpolli.test",
+    companyId: company.id,
+  });
+  const { deal } = await team.api("POST", "/deals", {
+    name: "Serie Documental",
+    companyId: company.id,
+    personIds: [person.id],
+  });
+  const box = await createMailbox(db, team.orgId, "studio@icon.test");
+  await grant(db, team.orgId, box.id, team.memberId);
+
+  const page = await team.page(`/crm/deals/${deal.id}`);
+  await page.getByRole("button", { name: "Project icon" }).click();
+  const chooser = page.waitForEvent("filechooser");
+  await page.getByRole("menuitem", { name: "Upload image" }).click();
+  await (await chooser).setFiles({ name: "icon.png", mimeType: "image/png", buffer: PNG });
+  const header = page.getByRole("button", { name: "Project icon" });
+  await expect
+    .poll(
+      async () =>
+        (await header
+          .locator("img")
+          .getAttribute("src")
+          .catch(() => null)) ?? "",
+      {
+        timeout: 10_000,
+      },
+    )
+    .toContain(`/api/crm/deals/${deal.id}/icon/`);
+
+  await page.getByRole("button", { name: "Email", exact: true }).click();
+  await page.getByRole("button", { name: "Send" }).waitFor();
+  await page.getByText("marisol@calpolli.test", { exact: true }).waitFor();
+  if (SHOTS) {
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: `${SHOTS}/project-email.png` });
+  }
 });
 
 async function dealCloseOn(id: string) {
