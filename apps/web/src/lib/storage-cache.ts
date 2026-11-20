@@ -253,10 +253,16 @@ export async function storageNodeAhead(client: QueryClient, id: string) {
   return showing;
 }
 
-/** Puts back the listings `storageNodeAhead` changed. */
+/**
+ * Puts back the listings `storageNodeAhead` changed, then fetches them again: another trash that
+ * succeeded meanwhile is in what was held, and the fetch takes it back out.
+ */
 export function storageListsPut(
   client: QueryClient,
   held: [QueryKey, ListData | undefined][] | undefined,
 ) {
-  for (const [key, data] of held ?? []) client.setQueryData(key, data);
+  for (const [key, data] of held ?? []) {
+    client.setQueryData(key, data);
+    void client.invalidateQueries({ queryKey: key, exact: true });
+  }
 }

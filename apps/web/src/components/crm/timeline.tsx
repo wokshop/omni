@@ -402,15 +402,10 @@ function NoteComposer({ kind, id }: { kind: CrmRecordKind; id: string }) {
     const text = body.trim();
     if (!text) return;
     setBody("");
-    create.mutate(
-      { record: kind, id, body: text },
-      {
-        onError: (error) => {
-          setBody((typed) => typed || text);
-          crmErrorToast(error, "The note was not added");
-        },
-      },
-    );
+    create.mutateAsync({ record: kind, id, body: text }).catch((error: unknown) => {
+      setBody((typed) => typed || text);
+      crmErrorToast(error, "The note was not added");
+    });
   };
   return (
     <form
