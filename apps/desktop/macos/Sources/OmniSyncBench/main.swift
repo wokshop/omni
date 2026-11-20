@@ -56,6 +56,16 @@ func peakMiB() -> Double {
     return Double(info.ri_lifetime_max_phys_footprint) / 1_048_576
 }
 
+/// Threads alive now: a part's writer thread that never ended would show here.
+func threads() -> Int {
+    var list: thread_act_array_t?
+    var count: mach_msg_type_number_t = 0
+    guard task_threads(mach_task_self_, &list, &count) == KERN_SUCCESS, let list else { return -1 }
+    for index in 0..<Int(count) { mach_port_deallocate(mach_task_self_, list[index]) }
+    vm_deallocate(mach_task_self_, vm_address_t(UInt(bitPattern: list)), vm_size_t(Int(count) * MemoryLayout<thread_t>.stride))
+    return Int(count)
+}
+
 /// What fileproviderd reads of every item it is handed.
 func inspect(_ item: NSFileProviderItem) -> Int {
     var touched = item.itemIdentifier.rawValue.count + item.parentItemIdentifier.rawValue.count + item.filename.count
@@ -154,7 +164,7 @@ func items(_ count: Int) -> [String: Any] {
 
 func upload(_ file: URL, sync: Sync, name: String) async throws -> Int {
     let org = sync.settings.workspaces[0]
-    let bytes = try Uploader.measure(file)
+    let bytes = try await Uploader.measure(file)
     let node = try await Uploader(sync: sync, orgId: org, key: "bench-\(UUID().uuidString)").send(bytes, open: { size, sha256 in
         let body = StorageOpenUploadBody(mimeType: nil, name: name, parentId: nil, sha256: sha256, size: size, space: .personal)
         return try await sync.client.openUpload(orgId: org, body)
@@ -185,7 +195,7 @@ do {
     var result: [String: Any]
     switch scenario {
     case "hash":
-        let bytes = try Uploader.measure(URL(fileURLWithPath: arguments[1]))
+        let bytes = try await Uploader.measure(URL(fileURLWithPath: arguments[1]))
         result = ["bytes": bytes.size]
     case "upload":
         let file = URL(fileURLWithPath: arguments[1])
@@ -200,6 +210,9 @@ do {
     result["scenario"] = scenario
     result["seconds"] = (seconds * 100).rounded() / 100
     result["peakMiB"] = (peakMiB() * 10).rounded() / 10
+    // A part's writer thread ends once its request is over; give the last ones a moment.
+    try? await Task.sleep(nanoseconds: 300_000_000)
+    result["threads"] = threads()
     if let bytes = result["bytes"] as? Int, seconds > 0 { result["MiBps"] = (Double(bytes) / 1_048_576 / seconds * 10).rounded() / 10 }
     let line = try JSONSerialization.data(withJSONObject: result, options: [.sortedKeys])
     FileHandle.standardOutput.write(line + Data("\n".utf8))
