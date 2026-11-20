@@ -21,6 +21,7 @@ interface Row {
   id: string;
   name: string;
   archived: boolean;
+  url: string;
   owner: { name: string | null; address: string } | null;
   expected_close_on?: string | null;
   stage?: { name: string; kind: string };
@@ -59,7 +60,7 @@ async function workspace(slug: string) {
 
 describe("records", () => {
   test("an agent archives a company, finds it only when asked, and restores it", async () => {
-    const { agent, crm } = await workspace("agentarchive");
+    const { org, agent, crm } = await workspace("agentarchive");
     const kept = await crm.createCompany({ name: "Keeper Co" });
     const gone = await crm.createCompany({ name: "Gone Co" });
     if (kept.status !== "ok" || gone.status !== "ok") throw new Error("seed");
@@ -68,6 +69,9 @@ describe("records", () => {
       company: { id: gone.company.id, archived: true },
     });
     expect(archived.company.archived).toBe(true);
+    expect(new URL(archived.company.url).pathname).toBe(
+      `/${org.slug}/crm/companies/${gone.company.id}`,
+    );
     expect((await crm.company(gone.company.id)).status).toBe("ok");
 
     const live = await call<Found>(agent, "crm_search", { kind: "company" });

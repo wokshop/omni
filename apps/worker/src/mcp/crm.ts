@@ -17,6 +17,8 @@ import type { ToolContext } from "./server.ts";
 export interface CrmWorkspace {
   orgId: string;
   name: string;
+  /** Where its pages live on the web app: `/<slug>/crm/...`. */
+  slug: string;
   memberId: string;
 }
 
@@ -43,6 +45,7 @@ export const crmWorkspaces: (
     .select({
       orgId: schema.organizations.id,
       name: schema.organizations.name,
+      slug: schema.organizations.slug,
       memberId: schema.members.id,
     })
     .from(schema.members)
@@ -97,9 +100,10 @@ const RECORD_PATH = {
   deal: "deals",
 } as const;
 
-/** `/crm/people/<id>`, `/crm/companies/<id>` or `/crm/deals/<id>` on the web app. */
-export function recordUrl(webAppURL: string, kind: RecordKind, id: string) {
-  return new URL(`/crm/${RECORD_PATH[kind]}/${encodeURIComponent(id)}`, webAppURL).toString();
+/** `/<slug>/crm/people/<id>`, `…/companies/<id>` or `…/deals/<id>` on the web app. */
+export function recordUrl(row: RowContext, kind: RecordKind, id: string) {
+  const path = `/${encodeURIComponent(row.slug)}/crm/${RECORD_PATH[kind]}/${encodeURIComponent(id)}`;
+  return new URL(path, row.webAppURL).toString();
 }
 
 export const personRowSchema = z.object({
@@ -143,6 +147,7 @@ export type DealRow = z.infer<typeof dealRowSchema>;
 /** What rows need beside the record: the workspace, its stages and its owners' names. */
 export interface RowContext {
   workspace: string;
+  slug: string;
   webAppURL: string;
   stages: CrmStage[];
   owners: Map<string, { name: string | null; address: string }>;
@@ -158,7 +163,7 @@ export function personRow(person: CrmPerson, row: RowContext) {
     name: person.name,
     workspace: row.workspace,
     archived: person.archivedAt !== null,
-    url: recordUrl(row.webAppURL, "person", person.id),
+    url: recordUrl(row, "person", person.id),
     owner: ownerOf(person, row),
     email: person.addresses.find((a) => a.isPrimary)?.address ?? null,
     emails: person.addresses.map((a) => a.address),
@@ -175,7 +180,7 @@ export function companyRow(company: CrmCompany, row: RowContext) {
     name: company.name,
     workspace: row.workspace,
     archived: company.archivedAt !== null,
-    url: recordUrl(row.webAppURL, "company", company.id),
+    url: recordUrl(row, "company", company.id),
     owner: ownerOf(company, row),
     description: company.description,
   } satisfies CompanyRow;
@@ -189,7 +194,7 @@ export function dealRow(deal: CrmDeal, row: RowContext) {
     name: deal.name,
     workspace: row.workspace,
     archived: deal.archivedAt !== null,
-    url: recordUrl(row.webAppURL, "deal", deal.id),
+    url: recordUrl(row, "deal", deal.id),
     owner: ownerOf(deal, row),
     company_id: deal.companyId,
     stage: {
@@ -237,6 +242,7 @@ export async function rowContext(context: ToolContext, workspace: CrmWorkspace, 
   ]);
   return {
     workspace: workspace.orgId,
+    slug: workspace.slug,
     webAppURL: context.webAppURL,
     stages: stages?.status === "ok" ? stages.stages : [],
     owners,

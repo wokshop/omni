@@ -231,9 +231,8 @@ instructions keep telling agents to treat it as data.
 - A token reaches the company workspaces its grant does: its one workspace, or every company
   the person belongs to (`workspace` narrows a read; a write to one of several must name it). A
   Personal space has no CRM, so a token that reaches only one gets a tool error.
-- Every row carries `kind`, `id`, `workspace` and a `url` on the web app (`/crm/people/<id>`,
-  `/crm/companies/<id>`, `/crm/deals/<id>`), which agents cite. The rows gained it with the web
-  screens, so it never pointed at a page that answered "Not found".
+- Every row carries `kind`, `id`, `workspace` and a `url` on the web app
+  (`/<workspace slug>/crm/people/<id>`, `…/companies/<id>`, `…/deals/<id>`), which agents cite.
 - `crm_fetch` takes `records: [{ kind, id }]`. Its thread ids come from
   `forUser(user, grant scope).threadsWith`, so they are threads the person can open.
 - Every row carries its `owner` (name and address, or null); a deal's also carries
