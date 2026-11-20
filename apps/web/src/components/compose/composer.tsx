@@ -767,7 +767,7 @@ function ComposerFrame(props: {
       className={({ isDropTarget }) =>
         [
           "flex flex-col bg-background outline-hidden",
-          props.flat ? "" : "rounded-xl border shadow-raised",
+          props.flat ? "" : "rounded-xl border",
           props.fill ? "min-h-0 flex-1" : "",
           props.fill ? "[--composer-row:--spacing(13)]" : "[--composer-row:--spacing(12)]",
           isDropTarget ? (props.flat ? "ring-1 ring-ring ring-inset" : "border-ring") : "",

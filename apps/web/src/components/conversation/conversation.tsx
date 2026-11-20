@@ -52,7 +52,8 @@ const KEEP_LAST = 8;
 
 /**
  * The open conversation beside the list: its actions and subject, then the messages
- * oldest first, ending at the newest, with the reply box docked at the bottom.
+ * oldest first, ending at the newest. The reply box is a card after the newest message, or docked
+ * at the bottom of a single email.
  */
 export function Conversation({ threadId }: { threadId: string }) {
   const { thread, pending, error, fetchStatus } = useThread(threadId);
@@ -112,7 +113,7 @@ export function Conversation({ threadId }: { threadId: string }) {
           onScroll={onScroll}
           className={`${SCROLLER} overflow-y-auto overscroll-none ${fullScreen ? "" : "border-s"}`}
         >
-          <div className={columnClass(single)}>
+          <Column single={single}>
             <Timeline
               key={threadId}
               threadId={threadId}
@@ -125,7 +126,7 @@ export function Conversation({ threadId }: { threadId: string }) {
             {pending.map((send) => (
               <PendingItem key={send.key} send={send} />
             ))}
-          </div>
+          </Column>
           <Foot thread={thread} reader={single ? reader : undefined} />
         </div>
       </ComposerProvider>
@@ -158,8 +159,10 @@ function Foot({
   thread: Thread;
   reader: { index: number; email: Message | undefined; move: (step: number) => void } | undefined;
 }) {
+  const composer = useComposerState();
+  const inFlow = !reader && composer.email && composer.mode === "public";
   return (
-    <div className="sticky bottom-0 w-full shrink-0">
+    <div className={`${inFlow ? "" : "sticky bottom-0"} w-full shrink-0`}>
       {reader && (
         <FloatingPager index={reader.index} count={thread.messages.length} onMove={reader.move} />
       )}
@@ -182,11 +185,15 @@ function isSingleEmail(
 
 const SECTION = "flex min-w-0 flex-1 flex-col";
 const SCROLLER = "flex min-h-0 flex-1 flex-col";
-const COLUMN = "mx-auto flex w-full max-w-3xl grow flex-col gap-6 px-5 pt-6 pb-10";
-const PAGE = "flex w-full grow flex-col gap-6 px-5 pt-5 pb-6";
+const COLUMN = "mx-auto flex w-full max-w-3xl grow flex-col gap-4 px-5 pt-6";
+const PAGE = "flex w-full grow flex-col gap-6 px-5 pt-5";
 
-function columnClass(single: boolean) {
-  return `${single ? PAGE : COLUMN} pb-20`;
+function Column({ single, children }: { single: boolean; children: ReactNode }) {
+  const composer = useComposerState();
+  const replying = !single && composer.email && composer.mode === "public";
+  return (
+    <div className={`${single ? PAGE : COLUMN} ${replying ? "pb-4" : "pb-20"}`}>{children}</div>
+  );
 }
 
 function ConversationPlaceholder(props: { fetchStatus: FetchStatus; error: unknown }) {
@@ -226,7 +233,7 @@ function ConversationSkeleton() {
             <div className={`${SCROLLER} overflow-hidden`}>
               <div className={COLUMN}>
                 <MessageBones width="55%" />
-                <MessageBones width="25%" ours />
+                <MessageBones width="25%" />
                 <MessageBones width="40%" />
               </div>
             </div>
@@ -239,15 +246,15 @@ function ConversationSkeleton() {
   );
 }
 
-function MessageBones({ width, ours = false }: { width: string; ours?: boolean }) {
+function MessageBones({ width }: { width: string }) {
   return (
-    <div className={`flex flex-col gap-3 ${ours ? "items-end" : "items-start"}`}>
-      <div className="flex items-center gap-2">
-        {!ours && <SkeletonBox width={18} height={18} radius={4} />}
-        <SkeletonBox width={56} height={10} />
-        <SkeletonBox width={72} height={10} />
+    <div className="flex gap-3 rounded-xl border p-4">
+      <SkeletonBox width={32} height={32} radius={6} />
+      <div className="flex flex-1 flex-col gap-2">
+        <SkeletonBox width={120} height={10} />
+        <SkeletonBox width={180} height={10} />
+        <SkeletonBox width={width} height={36} radius={8} />
       </div>
-      <SkeletonBox width={width} height={36} radius={12} />
     </div>
   );
 }
