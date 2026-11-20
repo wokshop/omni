@@ -48,6 +48,8 @@ export const crmTasksSearch = z.object({
   q: optional(z.string()),
   view: optional(z.enum(["mine", "all", "done"])),
   assignee: optionalId,
+  /** The task open in the panel beside the list. */
+  task: optionalId,
 });
 
 const crmListFields = {

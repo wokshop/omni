@@ -8,6 +8,6 @@ export const Route = createFileRoute("/_authed/$workspace/crm/tasks/")({
 });
 
 function Tasks() {
-  const { q, view, assignee } = Route.useSearch();
-  return <TasksPage q={q ?? ""} view={view ?? "mine"} assignee={assignee} />;
+  const { q, view, assignee, task } = Route.useSearch();
+  return <TasksPage q={q ?? ""} view={view ?? "mine"} assignee={assignee} task={task} />;
 }
