@@ -253,7 +253,7 @@ test("a signed copy reaches the freelancer after its sender left the team", asyn
 });
 
 test("a freelancer on a project at a second address still opens their contract", async () => {
-  const { org, team, website, pdf } = await studio("money-alias");
+  const { org, teamDoor, team, website, folder, pdf } = await studio("money-alias");
   const iris = await freelancer(org.id, "iris@money-alias.test");
   const [row] = await db.select().from(members).where(eq(members.id, iris.id));
   await db.insert(userEmails).values({
@@ -271,8 +271,14 @@ test("a freelancer on a project at a second address still opens their contract",
   ok(await team.updateContract(contract!.id, { memberIds: [iris.id] }));
   expect((await iris.storage.node(pdf.id))?.role).toBe("viewer");
 
-  ok(await team.revokeProjectAccess(website.id, "iris@studio-alias.test"));
+  ok(await teamDoor.storage.putGrant(pdf.id, "iris@money-alias.test", "viewer"));
+  const sow = await addFile(teamDoor.storage, { parentId: folder }, "sow.pdf");
+  ok(await team.updateContract(contract!.id, { documentNodeId: sow.id }));
   expect(await iris.storage.node(pdf.id)).toBeNull();
+  expect((await iris.storage.node(sow.id))?.role).toBe("viewer");
+
+  ok(await team.revokeProjectAccess(website.id, "iris@studio-alias.test"));
+  expect(await iris.storage.node(sow.id)).toBeNull();
 });
 
 test("leaving one project keeps a file another project's contract still gives", async () => {

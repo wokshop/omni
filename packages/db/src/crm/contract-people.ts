@@ -214,6 +214,7 @@ async function entitledTo(tx: Ex, orgId: string, nodeId: string) {
 
 async function release(tx: Ex, member: CrmMember, nodeId: string, emails: string[]) {
   if (emails.length === 0) return;
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`contract-file:${nodeId}`}))`);
   const keep = await entitledTo(tx, member.orgId, nodeId);
   const storage = memberStorage(tx as Db, member.id);
   for (const email of new Set(emails)) {
@@ -262,12 +263,13 @@ export async function shareContract(
       gone.map((person) => person.email),
     );
   }
+  const everyAddress = await addressesOf(tx, member.orgId, [...people, ...(change.gone ?? [])]);
   for (const nodeId of (change.oldFiles ?? []).filter((id) => !files.includes(id))) {
     await release(
       tx,
       member,
       nodeId,
-      [...now, ...gone].map((person) => person.email),
+      everyAddress.map((person) => person.email),
     );
   }
 }
