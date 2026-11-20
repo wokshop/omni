@@ -70,7 +70,7 @@ test("a deal value saves in a workspace with no default currency", async () => {
   await expect.poll(() => value.inputValue()).toBe("$12,500");
 });
 
-test("sorting the deals list by value persists in the URL and the order", async () => {
+test("sorting the board by value orders each stage's cards and persists in the URL", async () => {
   const team = await workspace("sort");
   for (const [name, value] of [
     ["Small", 100],
@@ -79,21 +79,13 @@ test("sorting the deals list by value persists in the URL and the order", async 
   ] as const) {
     await team.api("POST", "/deals", { name, valueMinor: value * 100, currency: "USD" });
   }
-  const page = await team.page("/crm/deals?view=list");
-  await page.getByRole("row", { name: /Small/ }).waitFor();
-  expect(await names(page)).toEqual(["Large", "Medium", "Small"]);
-
-  await page.getByRole("columnheader", { name: "Value" }).click();
-
-  await expect.poll(() => new URL(page.url()).searchParams.get("sort")).toBe("value");
-  expect(new URL(page.url()).searchParams.get("dir")).toBe("desc");
-  await expect.poll(() => names(page)).toEqual(["Large", "Medium", "Small"]);
-  await page.getByRole("columnheader", { name: "Value" }).click();
-  await expect.poll(() => names(page)).toEqual(["Small", "Medium", "Large"]);
+  const page = await team.page("/crm/deals?sort=value&dir=asc");
+  await card(page, "Small").waitFor();
+  expect(await boardOrder(page)).toEqual(["Small", "Medium", "Large"]);
   await page.reload();
-  await page.getByRole("row", { name: /Small/ }).waitFor();
-  expect(await names(page)).toEqual(["Small", "Medium", "Large"]);
-  expect(new URL(page.url()).searchParams.get("dir")).toBe("asc");
+  await card(page, "Small").waitFor();
+  expect(await boardOrder(page)).toEqual(["Small", "Medium", "Large"]);
+  expect(new URL(page.url()).searchParams.get("sort")).toBe("value");
 });
 
 test("bulk archive moves the selected companies to the archived view and restore brings them back", async () => {
@@ -189,23 +181,28 @@ test("the deal board shows only the owner's deals when filtered by owner", async
   await card(page, "Ana's deal").waitFor();
 });
 
-test("a sort named without a direction starts in its own, and the board falls back to name order", async () => {
+test("the board falls back to name order for a sort it doesn't offer, and has no list view", async () => {
   const team = await workspace("board-sort");
-  await team.api("POST", "/deals", { name: "Alpha deal" });
   await team.api("POST", "/deals", { name: "Zulu deal" });
+  await team.api("POST", "/deals", { name: "Alpha deal" });
   const page = await team.page("/crm/deals?view=list&sort=created");
-  await page.getByRole("row", { name: /Alpha deal/ }).waitFor();
-  expect(await names(page)).toEqual(["Zulu deal", "Alpha deal"]);
-
-  await page.goto(page.url().replace("view=list", "view=board"));
   await card(page, "Alpha deal").waitFor();
-
-  const board = page.getByRole("list", { name: /^Deals in / }).getByRole("listitem");
-  const order = (await board.allInnerTexts()).map((text) =>
-    text.includes("Alpha") ? "Alpha" : "Zulu",
-  );
-  expect(order).toEqual(["Alpha", "Zulu"]);
+  expect(await boardOrder(page)).toEqual(["Alpha deal", "Zulu deal"]);
   await page.getByRole("button", { name: "Name" }).waitFor();
+  expect(await page.getByLabel("Show deals as").count()).toBe(0);
+  expect(await page.getByRole("grid").count()).toBe(0);
+});
+
+test("the Archived filter shows archived deals on the board", async () => {
+  const team = await workspace("board-archived");
+  const { deal } = await team.api("POST", "/deals", { name: "Shelved deal" });
+  await team.api("POST", "/deals", { name: "Live deal" });
+  await team.api("POST", "/deals/bulk", { ids: [deal.id], action: { action: "archive" } });
+  const page = await team.page("/crm/deals");
+  await card(page, "Live deal").waitFor();
+  expect(await card(page, "Shelved deal").count()).toBe(0);
+  await page.goto(`${page.url()}?archived=only`);
+  await card(page, "Shelved deal").waitFor();
 });
 
 test("a deal dragged onto another stage moves there, and a stage's Add deal starts in it", async () => {
@@ -528,4 +525,13 @@ function card(page: Page, name: string) {
     .getByRole("list", { name: /^Deals in / })
     .getByRole("listitem")
     .filter({ has: page.getByText(name, { exact: true }) });
+}
+
+async function boardOrder(page: Page) {
+  const cards = page
+    .getByRole("list", { name: /^Deals in / })
+    .first()
+    .getByRole("listitem");
+  const lines = (text: string) => text.split("\n").map((line) => line.trim());
+  return (await cards.allInnerTexts()).map((text) => lines(text).find((line) => line.length > 1));
 }
