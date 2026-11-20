@@ -249,3 +249,19 @@ test("a freelancer cannot share a file still uploading into their project", asyn
   });
   expect(await door.storage.uploadSharing(opened.upload.id)).toEqual({ status: "forbidden" });
 });
+
+test("Drive search offers a freelancer only their projects' files, before anything is opened", async () => {
+  const { org, team } = await studio("access-search");
+  const { as } = await freelancer(org.id, "fran@search.test");
+  const website = ok(await team.crm.listDeals({})).deals.find((d) => d.name === "website")!;
+  ok(
+    await team.crm.grantProjectAccess(website.id, {
+      email: "fran@search.test",
+      scope: "freelancer",
+    }),
+  );
+  const names = async (query: string) =>
+    (await as.storage.context.wordMatches(query, { limit: 20 })).map((f) => f.name);
+  expect(await names("pdf")).toEqual(["website.pdf"]);
+  expect(await names("pricing")).toEqual([]);
+});

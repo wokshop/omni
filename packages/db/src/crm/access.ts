@@ -114,6 +114,10 @@ async function portalFolder(tx: Ex, member: CrmMember, dealId: string, parentId:
     .onConflictDoUpdate({ target: crmPortals.dealId, set: { folderNodeId: made.node.id } });
   const clients = (await accessOf(tx, member.orgId, dealId)).filter((r) => r.scope === "client");
   for (const client of clients) {
+    if (portal?.folderNodeId) {
+      const removed = await storage.removeGrant(portal.folderNodeId, client.email);
+      if (removed.status === "forbidden") return sharingRefused("forbidden");
+    }
     const put = await storage.putGrant(made.node.id, client.email, "viewer");
     if (put.status !== "ok") return sharingRefused(put.status);
   }

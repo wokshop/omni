@@ -183,6 +183,8 @@ test("a client folder replaced after Trash still opens to every client, and not 
   const brief = await addFile(team.storage, { parentId: fresh.id }, "brief.pdf");
   expect((await forUser(db, cleo.id).storage.node(brief.id))?.node.name).toBe("brief.pdf");
 
+  ok(await team.crm.revokeProjectAccess(website.deal.id, "cleo@trash.test"));
   ok(await team.storage.restore(old));
   expect(await forUser(db, bea.id).storage.node(kept.id)).toBeNull();
+  expect(await forUser(db, cleo.id).storage.node(kept.id)).toBeNull();
 });
