@@ -94,6 +94,8 @@ export function taskRecord(task: CrmTask) {
 
 type Named = { workspace: string | null };
 
+const inOrder = { id: "crm-tasks" };
+
 function named<R, V>(mutation: UseMutationResult<R, Error, V & Named, unknown>) {
   return {
     ...mutation,
@@ -115,7 +117,8 @@ export const useCreateTask = () => {
 
 /**
  * `mutate({ id, ...change })` changes a task. Checking one off or reopening it shows at once in
- * every list and on its screen; the request's failure puts it back.
+ * every list and on its screen; the request's failure puts it back. Changes queue behind each
+ * other, so a quick check-then-uncheck lands in that order.
  */
 export function useUpdateTask() {
   const client = useQueryClient();
@@ -123,6 +126,7 @@ export function useUpdateTask() {
     useMutation({
       mutationFn: ({ id, workspace, ...json }: TaskChange & { id: string } & Named) =>
         call(api.crm.tasks[":id"].$patch({ param: { id }, json }, inWorkspace(workspace))),
+      scope: inOrder,
       onMutate: async ({ id, done }) => {
         if (done === undefined) return;
         const lists = ["crm", "tasks"];
@@ -157,6 +161,7 @@ export const useDeleteTask = () => {
     useMutation({
       mutationFn: ({ id, workspace }: { id: string } & Named) =>
         call(api.crm.tasks[":id"].$delete({ param: { id } }, inWorkspace(workspace))),
+      scope: inOrder,
       onSettled: () => crmChanged(client),
     }),
   );
