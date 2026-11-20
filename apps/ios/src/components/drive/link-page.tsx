@@ -20,6 +20,7 @@ import {
   type DriveLinkUpload,
 } from "@/lib/drive-link.ts";
 import { fileSize, type DriveNode } from "@/lib/drive.ts";
+import { useSplashDone } from "@/lib/splash.ts";
 import { colors, radius, space } from "@/theme/tokens.ts";
 import { NodeRow } from "./node-row.tsx";
 
@@ -30,6 +31,7 @@ import { NodeRow } from "./node-row.tsx";
  */
 export function LinkPage({ shareId, node }: { shareId: string; node?: string | undefined }) {
   const link = useDriveLink(shareId, node);
+  useSplashDone(!link.isPending);
   const first = link.data?.pages[0];
   if (!first) {
     if (link.isPending) return <LoadingPage>{null}</LoadingPage>;
