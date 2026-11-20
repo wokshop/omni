@@ -179,7 +179,7 @@ describe("project icons", () => {
     const first = await upload(path, ana.cookie, PNG, "image/png");
     expect(first.status).toBe(200);
     const icon = ((await first.json()) as { deal: { iconUrl: string } }).deal.iconUrl;
-    expect(icon).toMatch(new RegExp(`^${path}/[0-9a-f]{64}$`));
+    expect(icon).toMatch(new RegExp(`^${path}/[0-9a-f-]{36}$`));
     const served = await send(icon, ana.cookie);
     expect(served.status).toBe(200);
     expect(served.headers.get("content-type")).toBe("image/png");
@@ -199,11 +199,25 @@ describe("project icons", () => {
       415,
     );
 
+    const again = await upload(path, ana.cookie, GIF, "image/gif");
+    const reuploaded = ((await again.json()) as { deal: { iconUrl: string } }).deal.iconUrl;
+    expect(reuploaded).not.toBe(replaced);
+    await Promise.all(
+      Array.from({ length: 6 }, (_, i) =>
+        i % 2
+          ? upload(path, ana.cookie, GIF, "image/gif")
+          : upload(path, ana.cookie, PNG, "image/png"),
+      ),
+    );
+    const settled = await send(`/api/crm/deals/${deal.id}`, ana.cookie);
+    const current = ((await settled.json()) as { deal: { iconUrl: string } }).deal.iconUrl;
+    expect((await send(current, ana.cookie)).status).toBe(200);
+
     const removed = await send(path, ana.cookie, {
       method: "DELETE",
       headers: { origin: String(worker.url) },
     });
     expect(((await removed.json()) as { deal: { iconUrl: null } }).deal.iconUrl).toBeNull();
-    expect((await send(replaced, ana.cookie)).status).toBe(404);
+    expect((await send(current, ana.cookie)).status).toBe(404);
   });
 });

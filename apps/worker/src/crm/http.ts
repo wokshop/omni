@@ -283,13 +283,13 @@ export const wirePerson = (person: CrmPerson) =>
     updatedAt: iso(person.updatedAt),
   }) satisfies WirePerson;
 
-export const dealIconUrl = (dealId: string, sha256: string) =>
-  `/api/crm/deals/${dealId}/icon/${sha256}`;
+export const dealIconUrl = (dealId: string, iconId: string) =>
+  `/api/crm/deals/${dealId}/icon/${iconId}`;
 
-export const wireDeal = ({ iconSha256, ...deal }: CrmDeal) =>
+export const wireDeal = ({ iconId, ...deal }: CrmDeal) =>
   ({
     ...deal,
-    iconUrl: iconSha256 ? dealIconUrl(deal.id, iconSha256) : null,
+    iconUrl: iconId ? dealIconUrl(deal.id, iconId) : null,
     stageEnteredAt: iso(deal.stageEnteredAt),
     wonAt: isoOrNull(deal.wonAt),
     closedAt: isoOrNull(deal.closedAt),

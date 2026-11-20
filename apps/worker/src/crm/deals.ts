@@ -11,7 +11,7 @@ import { Hono, type Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import type { AppEnv } from "../context.ts";
 import { imageHeaders } from "../image-proxy.ts";
-import { MAX_PICTURE_BYTES, pictureUpload, sha256Hex, sniffImageType } from "../routes/pictures.ts";
+import { MAX_PICTURE_BYTES, pictureUpload, sniffImageType } from "../routes/pictures.ts";
 import { zValidator } from "../validator.ts";
 import { lastContactedAt, subjectOf } from "./mail.ts";
 import {
@@ -25,17 +25,17 @@ import {
   wirePerson,
 } from "./http.ts";
 
-const iconKey = (orgId: string, dealId: string, sha256: string) =>
-  `crm/deal-icons/${orgId}/${dealId}/${sha256}`;
+const iconKey = (orgId: string, dealId: string, iconId: string) =>
+  `crm/deal-icons/${orgId}/${dealId}/${iconId}`;
 
-async function setIcon(c: Context<AppEnv>, id: string, sha256: string | null) {
+async function setIcon(c: Context<AppEnv>, id: string, iconId: string | null) {
   const crm = memberCrm(c);
   const found = await crm.deal(id);
   if (found.status !== "ok") return { ok: false, refusal: found } as const;
-  const previous = found.deal.iconSha256;
-  const changed = await crm.updateDeal(id, { iconSha256: sha256 });
+  const previous = found.deal.iconId;
+  const changed = await crm.updateDeal(id, { iconId });
   if (changed.status !== "ok") return { ok: false, refusal: changed } as const;
-  if (previous && previous !== sha256) {
+  if (previous && previous !== iconId) {
     await c.env.MAIL_BUCKET.delete(iconKey(c.var.member.orgId, id, previous));
   }
   await announce(c, "deal", [id]);
@@ -51,11 +51,11 @@ async function storeIcon(c: Context<AppEnv>, dealId: string, file: File) {
   if (!contentType) {
     throw new HTTPException(415, { message: "the picture must be a PNG, JPEG, WebP or GIF" });
   }
-  const sha256 = await sha256Hex(bytes);
-  await c.env.MAIL_BUCKET.put(iconKey(c.var.member.orgId, dealId, sha256), bytes, {
+  const iconId = crypto.randomUUID();
+  await c.env.MAIL_BUCKET.put(iconKey(c.var.member.orgId, dealId, iconId), bytes, {
     httpMetadata: { contentType },
   });
-  return sha256;
+  return iconId;
 }
 
 export const deals = new Hono<AppEnv>()
@@ -109,8 +109,8 @@ export const deals = new Hono<AppEnv>()
     const id = c.req.param("id");
     const found = await memberCrm(c).deal(id);
     if (found.status !== "ok") return refused(c, found);
-    const sha256 = await storeIcon(c, id, c.req.valid("form").file);
-    const set = await setIcon(c, id, sha256);
+    const iconId = await storeIcon(c, id, c.req.valid("form").file);
+    const set = await setIcon(c, id, iconId);
     if (!set.ok) return refused(c, set.refusal);
     return c.json({ deal: wireDeal(set.deal) } satisfies CrmDealResponse);
   })
@@ -121,14 +121,14 @@ export const deals = new Hono<AppEnv>()
     return c.json({ deal: wireDeal(set.deal) } satisfies CrmDealResponse);
   })
 
-  .get("/deals/:id/icon/:sha256{[0-9a-f]{64}}", async (c) => {
-    const { id, sha256 } = c.req.param();
+  .get("/deals/:id/icon/:iconId{[0-9a-f-]{36}}", async (c) => {
+    const { id, iconId } = c.req.param();
     const found = await memberCrm(c).deal(id);
     if (found.status !== "ok") return refused(c, found);
-    if (found.deal.iconSha256 !== sha256) {
+    if (found.deal.iconId !== iconId) {
       throw new HTTPException(404, { message: "not found" });
     }
-    const object = await c.env.MAIL_BUCKET.get(iconKey(c.var.member.orgId, id, sha256));
+    const object = await c.env.MAIL_BUCKET.get(iconKey(c.var.member.orgId, id, iconId));
     if (!object) throw new HTTPException(404, { message: "not found" });
     return new Response(object.body, {
       headers: {

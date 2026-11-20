@@ -1,1 +1,1 @@
-ALTER TABLE "crm_deals" ADD COLUMN "icon_sha256" text;
+ALTER TABLE "crm_deals" ADD COLUMN "icon_id" text;

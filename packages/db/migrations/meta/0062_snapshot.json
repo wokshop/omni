@@ -1,5 +1,5 @@
 {
-  "id": "d27d03f7-0b44-427a-95c6-055e1e233cc4",
+  "id": "4e3e7c86-eb87-4177-b813-2b4fe99f3e27",
   "prevId": "26b0ad53-d896-41a2-b0e7-169a60d3a95c",
   "version": "7",
   "dialect": "postgresql",
@@ -11981,8 +11981,8 @@
           "primaryKey": false,
           "notNull": false
         },
-        "icon_sha256": {
-          "name": "icon_sha256",
+        "icon_id": {
+          "name": "icon_id",
           "type": "text",
           "primaryKey": false,
           "notNull": false
