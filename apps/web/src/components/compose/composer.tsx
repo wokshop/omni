@@ -150,9 +150,16 @@ export function ReplyComposer({ thread, row }: { thread: Thread; row?: boolean }
   const state = useComposerState();
   const showing = state.email && state.mode === "public";
   const key = `${thread.id}:${state.forwardId ? `forward:${state.forwardId}` : `reply:${state.replyToId ?? ""}`}:${state.generation}`;
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!row || !showing) return;
+    const body = box.current?.querySelector<HTMLTextAreaElement>("[data-composer-body]");
+    box.current?.scrollIntoView({ block: "nearest" });
+    body?.focus({ preventScroll: true });
+  }, [row, showing, key]);
   if (!state.email) return null;
   return (
-    <div hidden={!showing} className={row ? "relative" : "relative px-5 pb-4"}>
+    <div ref={box} hidden={!showing} className={row ? "relative" : "relative px-5 pb-4"}>
       <ModeComposer
         row={row}
         key={key}
