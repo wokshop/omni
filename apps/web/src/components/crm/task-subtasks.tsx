@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { IconPlus } from "@/components/icons/central";
 import { Checkbox, CheckboxField } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -13,23 +13,37 @@ const lineClass = "h-8 w-full rounded-md px-1.5 text-sm hover:bg-hover focus:bg-
 /** The cell a check sits in, so its box starts on the content's left edge. */
 export const CHECK_CELL = "flex h-8 w-5 shrink-0 items-center -ms-[1.5px]";
 
+const unsaved = new Map<string, { steps: Step[]; pending: number }>();
+const listeners = new Set<() => void>();
+const notify = () => {
+  for (const listener of listeners) listener();
+};
+const subscribe = (listener: () => void) => {
+  listeners.add(listener);
+  return () => void listeners.delete(listener);
+};
+
 /**
  * The task's checklist: a titled group of steps, each with its check, and a line to add one. While
- * saves are on their way it shows the list as last edited here, not what a refetch brings back.
+ * saves are on their way it shows the list as last edited, even if the panel was closed and opened
+ * again, not what a refetch brings back.
  */
 export function Subtasks(props: {
   task: CrmTask;
   onSave: (change: TaskChange, settled?: () => void) => void;
 }) {
-  const [local, setLocal] = useState<Step[] | null>(null);
-  const pending = useRef(0);
+  const id = props.task.id;
+  const local = useSyncExternalStore(subscribe, () => unsaved.get(id)?.steps);
   const steps = local ?? props.task.subtasks ?? [];
   const put = (subtasks: Step[]) => {
-    setLocal(subtasks);
-    pending.current += 1;
+    unsaved.set(id, { steps: subtasks, pending: (unsaved.get(id)?.pending ?? 0) + 1 });
+    notify();
     props.onSave({ subtasks }, () => {
-      pending.current -= 1;
-      if (pending.current === 0) setLocal(null);
+      const entry = unsaved.get(id);
+      if (!entry) return;
+      if (entry.pending > 1) unsaved.set(id, { ...entry, pending: entry.pending - 1 });
+      else unsaved.delete(id);
+      notify();
     });
   };
   return (

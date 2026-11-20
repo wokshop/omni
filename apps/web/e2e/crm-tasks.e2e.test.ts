@@ -180,6 +180,43 @@ test("subtasks added quickly in the panel all save in order, check off, and a cl
   await context.close();
 });
 
+test("a subtask added just before switching tasks is kept when the next one is added", async () => {
+  const { page, org, context, headers } = await signedIn("subtask-switch");
+  const make = async (title: string) => {
+    const made = await fetch(new URL("/api/crm/tasks", origin()), {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ title }),
+    });
+    return ((await made.json()) as { task: { id: string } }).task.id;
+  };
+  const first = await make("Light the set");
+  await make("Book the van");
+  await page.route(`**/api/crm/tasks/${first}`, async (route) => {
+    if (route.request().method() === "PATCH") await new Promise((done) => setTimeout(done, 1500));
+    await route.continue();
+  });
+  await page.goto(new URL(`/${org.slug}/crm/tasks?task=${first}`, origin()).toString());
+  const panel = page.getByRole("region", { name: "Task" });
+  const add = panel.getByRole("textbox", { name: "New subtask" });
+  await add.fill("Key light");
+  await add.press("Enter");
+  await page.getByRole("link", { name: "Book the van" }).click();
+  await expect
+    .poll(() => panel.getByRole("textbox", { name: "Title" }).inputValue())
+    .toBe("Book the van");
+  await page.getByRole("link", { name: "Light the set" }).click();
+  await expect
+    .poll(() => panel.getByRole("textbox", { name: "Title" }).inputValue())
+    .toBe("Light the set");
+  await add.fill("Fill light");
+  await add.press("Enter");
+  await expect
+    .poll(async () => (await row(first))?.subtasks.map((s) => s.title), { timeout: 10_000 })
+    .toEqual(["Key light", "Fill light"]);
+  await context.close();
+});
+
 test("an open task is found from the command menu and opens beside the task list", async () => {
   const origin = String(worker.url);
   const org = await createOrg(db, "find-task");
