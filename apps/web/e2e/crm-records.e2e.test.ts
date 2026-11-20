@@ -9,6 +9,8 @@ import {
   createMember,
   createOrg,
   createTestDatabase,
+  grant,
+  seedMessage,
   signIn,
   startMailServiceEndpoint,
   startWorkerWithNetwork,
@@ -340,14 +342,40 @@ test("a person opened from a project keeps the project in the crumbs, and its ro
     personIds: [person.id],
   });
   await team.api("PATCH", `/deals/${deal.id}`, { stageId: won.id });
+  const box = await createMailbox(db, team.orgId, "studio@trail.test");
+  await grant(db, team.orgId, box.id, team.memberId);
+  await seedMessage(db, box, {
+    subject: "Contract for the series",
+    fromAddress: "studio@trail.test",
+    fromName: "Studio",
+    to: ["marisol@calpolli.test"],
+    folder: "Sent",
+    uid: 1,
+    text: "Hi Marisol, here is the contract.",
+  });
 
   const page = await team.page(`/crm/deals/${deal.id}`);
+  const timeline = page.getByRole("list", { name: "Timeline" });
+  await timeline.getByText("wrote to").waitFor();
+  await timeline.getByText("Marisol Velazquez").waitFor();
   const details = page.getByRole("complementary", { name: "Details" });
   const row = details.getByRole("link", { name: "Marisol Velazquez" });
   await row.waitFor();
   expect(await details.getByText("Purchaser, Operations Division").count()).toBe(0);
-  await row.getByText("Marisol Velazquez").hover();
-  await page.getByText("Purchaser, Operations Division").waitFor();
+  const role = page.getByText("Purchaser, Operations Division");
+  await expect
+    .poll(
+      async () => {
+        await page.mouse.move(0, 0);
+        await row.getByText("Marisol Velazquez").hover();
+        return role.waitFor({ timeout: 1500 }).then(
+          () => true,
+          () => false,
+        );
+      },
+      { timeout: 15_000 },
+    )
+    .toBe(true);
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/project-page.png` });
 
   await row.click();

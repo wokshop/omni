@@ -20,7 +20,7 @@ const PLAIN_TRIGGER =
 export function FieldRow(props: { label: string; children: ReactNode; htmlFor?: string }) {
   return (
     <div className="flex min-h-8 items-center gap-3">
-      <span className="w-24 shrink-0 truncate text-sm text-muted-foreground">{props.label}</span>
+      <span className="w-28 shrink-0 truncate text-sm text-muted-foreground">{props.label}</span>
       <div className="flex min-w-0 flex-1 items-center">{props.children}</div>
     </div>
   );

@@ -79,7 +79,7 @@ function ActiveProjects({ search }: { search: string }) {
   );
   if (!isPending && projects.length === 0) return null;
   return (
-    <SidebarSection label="Active projects">
+    <SidebarSection label="Projects">
       {isPending ? (
         <SidebarTreeBones depth={0} />
       ) : (

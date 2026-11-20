@@ -195,7 +195,7 @@ export function CrmMenu() {
       {projects.length > 0 ? (
         <>
           <MenuDivider />
-          <MenuSection label="Active projects">
+          <MenuSection label="Projects">
             {projects.map(({ deal, client }) => (
               <MenuRow
                 key={deal.id}

@@ -61,8 +61,8 @@ export function RecordLayout(props: {
             className="flex shrink-0 flex-col gap-6 px-5 py-5 lg:w-(--details-width) lg:overflow-y-auto lg:border-e"
           >
             <div className="flex min-w-0 items-center gap-3">
-              <RecordMark name={props.name} square={props.square} who={props.who} size={32} />
-              <div className="flex min-w-0 flex-col gap-0.5">
+              <RecordMark name={props.name} square={props.square} who={props.who} size={40} />
+              <div className="flex min-w-0 flex-col">
                 <div className="flex min-w-0 items-center gap-2">
                   <h2 className="truncate text-md text-foreground">{props.name}</h2>
                   {props.badge && (
@@ -221,7 +221,7 @@ function RecordBones() {
     <div className="flex gap-0 max-lg:flex-col">
       <div className="flex flex-col gap-4 px-5 py-5 lg:w-(--details-width,384px)">
         <div className="flex items-center gap-3">
-          <SkeletonBox width={32} height={32} radius="999px" />
+          <SkeletonBox width={40} height={40} radius="999px" />
           <SkeletonBox width={140} height={12} />
         </div>
         {Array.from({ length: 5 }, (_, i) => (

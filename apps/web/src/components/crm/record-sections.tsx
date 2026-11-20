@@ -27,10 +27,15 @@ interface RowAction {
 
 export function RowWithMenu(props: { label: string; actions: RowAction[]; children: ReactNode }) {
   return (
-    <div className="flex min-w-0 items-center gap-1">
-      <div className="flex min-w-0 flex-1 flex-col">{props.children}</div>
+    <div className="relative flex min-w-0 flex-col [&:hover_a]:bg-hover">
+      <div className="flex min-w-0 flex-col *:pe-8!">{props.children}</div>
       <MenuTrigger>
-        <Button intent="plain" size="sq-xs" aria-label={`${props.label} actions`}>
+        <Button
+          intent="plain"
+          size="sq-xs"
+          aria-label={`${props.label} actions`}
+          className="absolute end-0 top-1/2 -translate-y-1/2"
+        >
           <IconEllipsis />
         </Button>
         <Menu placement="bottom end" aria-label={props.label}>
