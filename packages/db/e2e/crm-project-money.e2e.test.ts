@@ -8,6 +8,7 @@ import {
   members,
   storageNodes,
   storageSignatureRequests,
+  userEmails,
 } from "../src/schema/index.ts";
 import { addFile, createPerson, setRole } from "./storage-support.ts";
 import { createMember, createOrg, createTestDatabase } from "./support.ts";
@@ -249,6 +250,29 @@ test("a signed copy reaches the freelancer after its sender left the team", asyn
   const { settled } = await settleSentContracts(db);
   expect(settled).toContainEqual({ orgId: org.id, contractId: contract!.id, status: "signed" });
   expect((await franDoor.storage.node(sealed.id))?.role).toBe("viewer");
+});
+
+test("a freelancer on a project at a second address still opens their contract", async () => {
+  const { org, team, website, pdf } = await studio("money-alias");
+  const iris = await freelancer(org.id, "iris@money-alias.test");
+  const [row] = await db.select().from(members).where(eq(members.id, iris.id));
+  await db.insert(userEmails).values({
+    userId: row!.userId,
+    email: "iris@studio-alias.test",
+    verifiedAt: new Date(),
+  });
+  ok(
+    await team.grantProjectAccess(website.id, {
+      email: "iris@studio-alias.test",
+      scope: "freelancer",
+    }),
+  );
+  const [contract] = ok(await team.listContracts({ dealId: website.id })).contracts;
+  ok(await team.updateContract(contract!.id, { memberIds: [iris.id] }));
+  expect((await iris.storage.node(pdf.id))?.role).toBe("viewer");
+
+  ok(await team.revokeProjectAccess(website.id, "iris@studio-alias.test"));
+  expect(await iris.storage.node(pdf.id)).toBeNull();
 });
 
 test("a locked contract filed before the Admin folder is filed when a freelancer joins", async () => {

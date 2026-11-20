@@ -3,6 +3,7 @@ import type { Db } from "../client.ts";
 import { members, users } from "../schema/auth.ts";
 import { crmContractPeople } from "../schema/crm.ts";
 import { crmProjectMembers } from "../schema/crm/projects.ts";
+import { userEmails } from "../schema/identity.ts";
 import { memberStorage } from "../storage.ts";
 import { FREELANCER_ROLE, refuse, type CrmMember, type Ex } from "./core.ts";
 import { dealFolder } from "./folders.ts";
@@ -48,23 +49,48 @@ export async function withPeople<T extends { id: string }>(ex: Ex, contracts: T[
 export const involves = (contractId: Parameters<typeof eq>[0], memberId: string) =>
   sql`exists (select 1 from ${crmContractPeople} where ${crmContractPeople.contractId} = ${contractId} and ${crmContractPeople.memberId} = ${memberId})`;
 
-const onProject = (dealId: string) =>
-  sql`exists (select 1 from ${crmProjectMembers} where ${crmProjectMembers.dealId} = ${dealId} and ${crmProjectMembers.scope} = 'freelancer' and ${crmProjectMembers.email} = lower(${users.email}))`;
-
-async function freelancersOf(ex: Ex, orgId: string, memberIds: string[], dealId?: string | null) {
+async function addressesOf(ex: Ex, orgId: string, memberIds: string[]) {
   if (memberIds.length === 0) return [];
-  return ex
-    .select({ id: members.id, email: sql<string>`lower(${users.email})` })
+  const freelancers = and(
+    eq(members.organizationId, orgId),
+    inArray(members.id, memberIds),
+    isFreelancerRole,
+  );
+  const primary = await ex
+    .select({
+      id: members.id,
+      email: sql<string>`lower(${users.email})`,
+      verified: users.emailVerified,
+    })
     .from(members)
     .innerJoin(users, eq(users.id, members.userId))
+    .where(freelancers);
+  const extra = await ex
+    .select({ id: members.id, email: sql<string>`lower(${userEmails.email})` })
+    .from(members)
+    .innerJoin(userEmails, eq(userEmails.userId, members.userId))
+    .where(freelancers);
+  return [...primary, ...extra.map((row) => ({ ...row, verified: true }))];
+}
+
+async function freelancersOf(ex: Ex, orgId: string, memberIds: string[], dealId?: string | null) {
+  const addresses = await addressesOf(ex, orgId, memberIds);
+  if (!dealId || addresses.length === 0) return addresses;
+  const shared = await ex
+    .select({ email: crmProjectMembers.email })
+    .from(crmProjectMembers)
     .where(
       and(
-        eq(members.organizationId, orgId),
-        inArray(members.id, memberIds),
-        isFreelancerRole,
-        dealId ? onProject(dealId) : undefined,
+        eq(crmProjectMembers.dealId, dealId),
+        eq(crmProjectMembers.scope, "freelancer"),
+        inArray(
+          crmProjectMembers.email,
+          addresses.map((address) => address.email),
+        ),
       ),
     );
+  const on = new Set(shared.map((row) => row.email));
+  return addresses.filter((address) => address.verified && on.has(address.email));
 }
 
 /**
