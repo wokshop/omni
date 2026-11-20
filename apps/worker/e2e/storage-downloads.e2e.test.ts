@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import type { ReadableStream as WebReadableStream } from "node:stream/web";
 import { randomBytes } from "node:crypto";
 import { crc32, deflateSync } from "node:zlib";
 import type { StorageNode } from "@omni/contracts";
@@ -216,7 +217,7 @@ describe("a folder of more than 1 GiB", () => {
       const length = Number(zipped.headers.get("content-length"));
       expect(length).toBeGreaterThan(1024 * MIB);
       const path = join(dir, "Shoot.zip");
-      await pipeline(Readable.fromWeb(zipped.body!), createWriteStream(path));
+      await pipeline(Readable.fromWeb(zipped.body! as WebReadableStream), createWriteStream(path));
       expect(statSync(path).size).toBe(length);
 
       execFileSync("unzip", ["-q", path, "-d", join(dir, "out")]);
@@ -256,7 +257,10 @@ test("a selection zips under unique names; a link visitor zips the share and not
     const dir = mkdtempSync(join(tmpdir(), "omni-zip-"));
     try {
       const path = join(dir, "a.zip");
-      await pipeline(Readable.fromWeb(response.body!), createWriteStream(path));
+      await pipeline(
+        Readable.fromWeb(response.body! as WebReadableStream),
+        createWriteStream(path),
+      );
       execFileSync("unzip", ["-q", path, "-d", join(dir, "out")]);
       const listing = execFileSync("unzip", ["-Z1", path], { encoding: "utf8" });
       return Object.fromEntries(
