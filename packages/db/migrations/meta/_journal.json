@@ -407,13 +407,6 @@
       "when": 1795185917080,
       "tag": "0057_crm_contract_signing",
       "breakpoints": true
-    },
-    {
-      "idx": 58,
-      "version": "7",
-      "when": 1795187387224,
-      "tag": "0058_productive_doctor_octopus",
-      "breakpoints": true
     }
   ]
 }

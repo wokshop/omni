@@ -1,1 +1,0 @@
-ALTER TABLE "storage_tombstones" ADD COLUMN "went_to" text;

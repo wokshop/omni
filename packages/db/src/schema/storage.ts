@@ -190,11 +190,6 @@ export const storageTombstones = pgTable(
     space: storageSpace("space").notNull(),
     ownerMemberId: text("owner_member_id").references(() => members.id, { onDelete: "cascade" }),
     revision: bigint("revision", { mode: "number" }).notNull(),
-    /**
-     * Where it went: `gone` (deleted), `shared`, or `personal:<memberId>`. Null on a tombstone
-     * made before this was kept: a sync client looks the node up instead.
-     */
-    wentTo: text("went_to"),
     createdAt: timestamptz("created_at").notNull().defaultNow(),
   },
   (t) => [

@@ -3,6 +3,7 @@ import { afterAll, expect, test } from "vitest";
 import { forMember } from "../src/for-member.ts";
 import { storageTombstones } from "../src/schema/index.ts";
 import {
+  handOverMemberStorage,
   STORAGE_TOMBSTONE_DAYS,
   sweepStorageTombstones,
   type MemberStorage,
@@ -169,21 +170,23 @@ test("a node moved into one member's My files is moved for them and gone for the
   ]);
 });
 
-test("a tombstone from before destinations were kept leaves the client to look the node up", async () => {
-  const org = await createOrg(db, "sync-old-tombstone");
+test("a node that moved away and was later handed over is not gone for whoever has it now", async () => {
+  const org = await createOrg(db, "sync-handed-back");
   const ana = await createMember(db, org.id, "ana");
-  const storage = forMember(db, ana.id).storage;
-  const file = await addFile(storage, { space: "personal" }, "old.txt");
-  const start = await drain(storage, "personal");
-  expect((await storage.trash(file.id)).status).toBe("ok");
-  expect((await storage.deleteForever(file.id)).status).toBe("ok");
-  await db
-    .update(storageTombstones)
-    .set({ wentTo: null })
-    .where(eq(storageTombstones.nodeId, file.id));
+  const bo = await createMember(db, org.id, "bo");
+  await setRole(db, ana.id, "owner");
+  const anas = forMember(db, ana.id).storage;
+  const bos = forMember(db, bo.id).storage;
+  const file = await addFile(bos, { space: "shared" }, "brief.txt");
+  expect((await bos.move(file.id, { space: "personal" })).status).toBe("ok");
+  expect((await handOverMemberStorage(db, { memberId: bo.id, toMemberId: ana.id })).status).toBe(
+    "ok",
+  );
 
-  expect(summary((await drain(storage, "personal", start.cursor)).changes)).toEqual([
-    { id: file.id, deleted: true, gone: undefined },
+  const mine = await drain(anas, "personal");
+  expect(mine.changes.some((change) => change.id === file.id && !change.deleted)).toBe(true);
+  expect(summary((await drain(anas, "shared")).changes)).toEqual([
+    { id: file.id, deleted: true, gone: false },
   ]);
 });
 

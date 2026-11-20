@@ -204,7 +204,7 @@ const moveInto: (
   }
   const revision = await nextRevision(tx, node.orgId);
   if (crossing) {
-    await leaveTombstones(tx, isSubtree(node.id), revision, dest.drive);
+    await leaveTombstones(tx, isSubtree(node.id), revision);
     await tx
       .update(storageNodes)
       .set({

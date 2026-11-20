@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, lt, sql, type SQL } from "drizzle-orm";
+import { and, asc, eq, inArray, lt, or, sql, type SQL } from "drizzle-orm";
 import type { Db } from "../client.ts";
 import { members, organizations } from "../schema/auth.ts";
 import { personalSpaces } from "../schema/identity.ts";
@@ -34,13 +34,12 @@ export interface StorageSyncCursor {
 
 /**
  * One entry of a drive's feed. A node in Trash, or inside a folder that is, has `inTrash`. A
- * deletion says whether the node is `gone` for the reader (deleted, or moved to a drive they don't
- * sync), or moved to another drive they sync, whose feed reports it; unknown (`undefined`) on a
- * tombstone made before this was kept.
+ * deletion says whether the node is `gone` for the reader: deleted, or now in a drive they don't
+ * sync. Where it is now decides, not where it first went, so a full re-sync converges.
  */
 export type StorageChange =
   | { id: string; revision: number; deleted: false; node: StorageNode; inTrash: boolean }
-  | { id: string; revision: number; deleted: true; gone: boolean | undefined };
+  | { id: string; revision: number; deleted: true; gone: boolean };
 
 export type StorageChangesResult =
   | {
@@ -88,9 +87,19 @@ const after = (
 ) =>
   cursor ? sql`(${table.revision}, ${idColumn}) > (${cursor.revision}, ${cursor.id})` : undefined;
 
-function goneFor(wentTo: string | null, readerMemberId: string) {
-  if (wentTo === null) return undefined;
-  return wentTo !== "shared" && wentTo !== `personal:${readerMemberId}`;
+async function stillSyncedOf(ex: Db, orgId: string, readerMemberId: string, ids: string[]) {
+  if (ids.length === 0) return new Set<string>();
+  const rows = await ex
+    .select({ id: storageNodes.id })
+    .from(storageNodes)
+    .where(
+      and(
+        inArray(storageNodes.id, ids),
+        eq(storageNodes.orgId, orgId),
+        or(eq(storageNodes.space, "shared"), eq(storageNodes.ownerMemberId, readerMemberId)),
+      ),
+    );
+  return new Set(rows.map((row) => row.id));
 }
 
 const before = (a: StorageSyncCursor, b: StorageSyncCursor) =>
@@ -122,6 +131,12 @@ export async function listChanges(
       const taken = await feedPage(tx, drive, cursor, limit);
       const more = taken.length > limit;
       if (more) taken.pop();
+      const stillSynced = await stillSyncedOf(
+        tx,
+        drive.orgId,
+        readerMemberId,
+        taken.flatMap((entry) => (entry.row ? [] : [entry.id])),
+      );
       const trashed = await trashedOf(
         tx,
         taken.flatMap((entry) => (entry.row ? [entry.id] : [])),
@@ -139,7 +154,7 @@ export async function listChanges(
               id: entry.id,
               revision: entry.revision,
               deleted: true,
-              gone: goneFor(entry.wentTo, readerMemberId),
+              gone: !stillSynced.has(entry.id),
             },
       );
       const last = taken.at(-1);
@@ -164,11 +179,7 @@ async function feedPage(tx: Db, drive: Drive, cursor: StorageSyncCursor | null, 
     .orderBy(asc(storageNodes.revision), asc(storageNodes.id))
     .limit(limit + 1);
   const tombstones = await tx
-    .select({
-      id: storageTombstones.nodeId,
-      revision: storageTombstones.revision,
-      wentTo: storageTombstones.wentTo,
-    })
+    .select({ id: storageTombstones.nodeId, revision: storageTombstones.revision })
     .from(storageTombstones)
     .where(
       and(
@@ -179,13 +190,8 @@ async function feedPage(tx: Db, drive: Drive, cursor: StorageSyncCursor | null, 
     .orderBy(asc(storageTombstones.revision), asc(storageTombstones.nodeId))
     .limit(limit + 1);
   return [
-    ...nodes.map((row) => ({
-      id: row.id,
-      revision: row.revision,
-      row: row as NodeRow | null,
-      wentTo: null,
-    })),
-    ...tombstones.map((row) => ({ ...row, row: null })),
+    ...nodes.map((row) => ({ id: row.id, revision: row.revision, row: row as NodeRow | null })),
+    ...tombstones.map((row) => ({ id: row.id, revision: row.revision, row: null })),
   ]
     .toSorted((a, b) => (before(a, b) ? -1 : before(b, a) ? 1 : 0))
     .slice(0, limit + 1);

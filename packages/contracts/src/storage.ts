@@ -541,8 +541,8 @@ export const storageSyncChangesQuerySchema = z.object({ space: storageSpaceSchem
  * `node: null` is a tombstone: the node left this drive for good (deleted forever, purged from
  * Trash, or moved to another drive); `inTrash` is then false. A tombstone's `gone` is true when
  * the node is gone for the caller (deleted, or moved to a drive they don't sync) and false when
- * it moved to another drive they sync, whose changes report it; a tombstone without `gone` (made
- * by an older Worker) has to be looked up.
+ * it moved to another drive they sync, whose changes report it; a tombstone without `gone` (from an
+ * older Worker) has to be looked up.
  */
 export const storageSyncChangeSchema = z.object({
   id,

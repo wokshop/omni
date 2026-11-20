@@ -111,10 +111,22 @@ public final class WorkingSetEnumerator: NSObject, NSFileProviderEnumerator {
     /// Pages read per call before handing back with `moreComing`, so one call stays short
     /// (2,000 changes at most).
     private static let pagesPerCall = 10
+    /// How long to wait before asking again after a rate limit cut a read short.
+    private static let retryAfterLimit: TimeInterval = 30
     private let load: () throws -> Sync
+    private let signalLater: (TimeInterval) -> Void
     private let running = Running()
 
-    public init(load: @escaping () throws -> Sync = Sync.load) { self.load = load }
+    /// `signalLater` asks the system to enumerate changes again after a delay: the extension
+    /// signals the working set, so a read a rate limit cut short goes on even with no change to
+    /// push it.
+    public init(
+        load: @escaping () throws -> Sync = Sync.load,
+        signalLater: @escaping (TimeInterval) -> Void = { _ in }
+    ) {
+        self.load = load
+        self.signalLater = signalLater
+    }
 
     /// The system is done with this enumerator: a read still in flight stops.
     public func invalidate() { running.cancelAll() }
@@ -160,11 +172,13 @@ public final class WorkingSetEnumerator: NSObject, NSFileProviderEnumerator {
 
     public func enumerateChanges(for observer: NSFileProviderChangeObserver, from syncAnchor: NSFileProviderSyncAnchor) {
         let load = load
+        let signalLater = signalLater
         running.start {
             do {
                 let sync = try load()
-                let (anchor, more) = try await Self.changes(from: SyncAnchor(syncAnchor), sync: sync, observer: observer)
+                let (anchor, more, limited) = try await Self.changes(from: SyncAnchor(syncAnchor), sync: sync, observer: observer)
                 observer.finishEnumeratingChanges(upTo: anchor.anchor, moreComing: more)
+                if limited { signalLater(Self.retryAfterLimit) }
             } catch let error as SyncHTTPError where error.status == 410 {
                 observer.finishEnumeratingWithError(NSFileProviderError(.syncAnchorExpired))
             } catch {
@@ -183,7 +197,7 @@ public final class WorkingSetEnumerator: NSObject, NSFileProviderEnumerator {
         from old: SyncAnchor,
         sync: Sync,
         observer: NSFileProviderChangeObserver
-    ) async throws -> (SyncAnchor, Bool) {
+    ) async throws -> (SyncAnchor, Bool, Bool) {
         let workspaces = try await sync.workspaces(fresh: true)
         let drives = workspaces.flatMap { ws in ws.drives.map { (Drive(orgId: ws.orgId, space: $0.space), $0.revision) } }
         var anchor = old.keeping(Set(drives.map(\.0)))
@@ -202,7 +216,7 @@ public final class WorkingSetEnumerator: NSObject, NSFileProviderEnumerator {
         let client = sync.client
         var pages = 0
         for (drive, revision) in drives.sorted(by: { $0.0 < $1.0 }) where !anchor.isCurrent(drive, at: revision) {
-            if pages == pagesPerCall { return (anchor, true) }
+            if pages == pagesPerCall { return (anchor, true, false) }
             var next: Task<StorageSyncChangesResponse, Error>? = Task { [cursor = anchor.cursor(for: drive)] in
                 try await client.changes(drive, cursor: cursor, limit: pageSize)
             }
@@ -212,8 +226,8 @@ public final class WorkingSetEnumerator: NSObject, NSFileProviderEnumerator {
                 do {
                     page = try await fetching.value
                 } catch let error as SyncHTTPError where error.status == 429 && pages > 0 {
-                    // Rate limited partway: keep what was read; the next signal goes on from here.
-                    return (anchor, false)
+                    // Rate limited partway: keep what was read and go on from here after a wait.
+                    return (anchor, false, true)
                 }
                 pages += 1
                 next = page.more && pages < pagesPerCall
@@ -222,10 +236,10 @@ public final class WorkingSetEnumerator: NSObject, NSFileProviderEnumerator {
                 try await report(ChangeBatch(orgId: drive.orgId, changes: page.changes), sync: sync, observer: observer)
                 anchor.set(page.nextCursor, for: drive)
                 if !page.more { anchor.set(revision: revision, for: drive) }
-                if page.more, next == nil { return (anchor, true) }
+                if page.more, next == nil { return (anchor, true, false) }
             }
         }
-        return (anchor, false)
+        return (anchor, false, false)
     }
     /// Updates and deletions; a lone tombstone from an older server is looked up first, since a
     /// node moved between spaces is a tombstone in one feed and still exists (`ChangeBatch`).

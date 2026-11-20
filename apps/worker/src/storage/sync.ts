@@ -94,7 +94,7 @@ function wireChanges(result: Extract<StorageChangesResult, { status: "ok" }>) {
             revision: change.revision,
             node: null,
             inTrash: false,
-            ...(change.gone === undefined ? {} : { gone: change.gone }),
+            gone: change.gone,
           }
         : {
             id: change.id,
