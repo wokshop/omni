@@ -375,7 +375,7 @@ function DeliverableRow(props: {
         </span>
       }
     >
-      <div className="flex min-w-0 flex-col px-2">
+      <div className="@container flex min-w-0 flex-col px-2">
         <RowWithMenu
           label={deliverable.title}
           actions={[
@@ -414,12 +414,15 @@ function DeliverableRow(props: {
           <span className="flex h-10 min-w-0 items-center gap-2">
             <span className="truncate text-sm text-foreground">{deliverable.title}</span>
             {deliverable.status !== "draft" && (
-              <Badge intent={DELIVERABLE_INTENT[deliverable.status]} className="shrink-0">
+              <Badge
+                intent={DELIVERABLE_INTENT[deliverable.status]}
+                className="shrink-0 @max-md:hidden"
+              >
                 {statusLabel(DELIVERABLE_STATUSES, deliverable.status)}
               </Badge>
             )}
             {deliverable.clientVisible && (
-              <Badge intent="outline" className="shrink-0 max-sm:hidden">
+              <Badge intent="outline" className="shrink-0 @max-md:hidden">
                 Client
               </Badge>
             )}
