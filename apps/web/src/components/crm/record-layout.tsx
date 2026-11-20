@@ -12,6 +12,7 @@ import { ApiError } from "@/lib/api.ts";
 import { CRM_LISTS } from "./crm-nav.tsx";
 import type { SenderLogoFor } from "@/lib/sender-logo";
 import { RecordMark } from "./record-list.tsx";
+import { RecordTaskColumn, useOpenTask } from "./task-panel.tsx";
 import {
   TrailCrumbs,
   TrailProvider,
@@ -52,74 +53,85 @@ export function RecordLayout(props: {
   const aside = useRef<HTMLElement>(null);
   const details = useStoredWidth("omni:crm-details-width", 0, DETAILS_MIN, DETAILS_MAX);
   const [resizing, setResizing] = useState(false);
+  const task = useOpenTask();
+  const row = useRef<HTMLDivElement>(null);
+  const content = useRef<HTMLDivElement>(null);
   return (
     <TrailProvider here={props.here}>
       <RecordFrame list={props.list} name={props.name} actions={props.actions}>
-        <div
-          className={`flex min-h-0 flex-1 overflow-y-auto max-lg:flex-col lg:overflow-hidden ${resizing ? "cursor-ew-resize select-none" : ""}`}
-          style={
-            {
-              "--details-width": details.isSet ? `${details.width}px` : DETAILS_THIRD,
-            } as React.CSSProperties
-          }
-        >
-          <aside
-            ref={aside}
-            aria-label="Details"
-            className="flex shrink-0 flex-col gap-6 px-5 py-5 lg:w-(--details-width) lg:overflow-y-auto lg:border-e"
+        <div ref={row} className="flex min-h-0 min-w-0 flex-1">
+          <div
+            ref={content}
+            className={`flex min-h-0 min-w-0 flex-1 overflow-y-auto max-lg:flex-col lg:overflow-hidden ${task.id ? "max-lg:hidden" : ""} ${resizing ? "cursor-ew-resize select-none" : ""}`}
+            style={
+              {
+                "--details-width": details.isSet ? `${details.width}px` : DETAILS_THIRD,
+              } as React.CSSProperties
+            }
           >
-            <div className="flex min-w-0 items-center gap-3">
-              {props.mark ?? (
-                <RecordMark
-                  name={props.name}
-                  square={props.square}
-                  who={props.who}
-                  size={props.subtitle ? 40 : 28}
-                />
-              )}
-              <div className="flex min-w-0 flex-col">
-                <div className="flex min-w-0 items-center gap-2">
-                  <h2 className="truncate text-md text-foreground">{props.name}</h2>
-                  {props.badge && (
-                    <span className="flex shrink-0 items-center gap-1.5">{props.badge}</span>
+            <aside
+              ref={aside}
+              aria-label="Details"
+              className="flex shrink-0 flex-col gap-6 px-5 py-5 lg:w-(--details-width) lg:overflow-y-auto lg:border-e"
+            >
+              <div className="flex min-w-0 items-center gap-3">
+                {props.mark ?? (
+                  <RecordMark
+                    name={props.name}
+                    square={props.square}
+                    who={props.who}
+                    size={props.subtitle ? 40 : 28}
+                  />
+                )}
+                <div className="flex min-w-0 flex-col">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <h2 className="truncate text-md text-foreground">{props.name}</h2>
+                    {props.badge && (
+                      <span className="flex shrink-0 items-center gap-1.5">{props.badge}</span>
+                    )}
+                  </div>
+                  {props.subtitle && (
+                    <span className="truncate text-xs/4 text-muted-foreground">
+                      {props.subtitle}
+                    </span>
                   )}
                 </div>
-                {props.subtitle && (
-                  <span className="truncate text-xs/4 text-muted-foreground">{props.subtitle}</span>
-                )}
               </div>
-            </div>
-            {props.details}
-          </aside>
-          <div className="relative flex min-w-0 flex-1 flex-col lg:min-h-0">
-            <ResizeGrip
-              label="Resize details"
-              className="max-lg:hidden"
-              width={() => aside.current?.offsetWidth ?? details.width}
-              onResize={details.set}
-              onReset={details.reset}
-              onResizingChange={setResizing}
-            />
-            <main className="flex min-h-0 min-w-0 flex-1 flex-col pb-4 lg:overflow-y-auto">
-              <Tabs className="w-full flex-1">
-                <TabList
-                  aria-label="Record"
-                  className="sticky top-0 z-10 bg-background px-5 pt-1.5 [--tab-list-pb:--spacing(1.5)]"
-                >
+              {props.details}
+            </aside>
+            <div className="relative flex min-w-0 flex-1 flex-col lg:min-h-0">
+              <ResizeGrip
+                label="Resize details"
+                className="max-lg:hidden"
+                width={() => aside.current?.offsetWidth ?? details.width}
+                onResize={details.set}
+                onReset={details.reset}
+                onResizingChange={setResizing}
+              />
+              <main className="flex min-h-0 min-w-0 flex-1 flex-col pb-4 lg:overflow-y-auto">
+                <Tabs className="w-full flex-1">
+                  <TabList
+                    aria-label="Record"
+                    className="sticky top-0 z-10 bg-background px-5 pt-1.5 [--tab-list-pb:--spacing(1.5)]"
+                  >
+                    {props.tabs.map((tab) => (
+                      <Tab key={tab.id} id={tab.id}>
+                        {tab.label}
+                      </Tab>
+                    ))}
+                  </TabList>
                   {props.tabs.map((tab) => (
-                    <Tab key={tab.id} id={tab.id}>
-                      {tab.label}
-                    </Tab>
+                    <TabPanel key={tab.id} id={tab.id} className="flex flex-1 flex-col px-5 pt-2">
+                      {tab.panel}
+                    </TabPanel>
                   ))}
-                </TabList>
-                {props.tabs.map((tab) => (
-                  <TabPanel key={tab.id} id={tab.id} className="flex flex-1 flex-col px-5 pt-2">
-                    {tab.panel}
-                  </TabPanel>
-                ))}
-              </Tabs>
-            </main>
+                </Tabs>
+              </main>
+            </div>
           </div>
+          {task.id && (
+            <RecordTaskColumn id={task.id} row={row} content={content} onClose={task.close} />
+          )}
         </div>
       </RecordFrame>
     </TrailProvider>

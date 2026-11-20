@@ -272,6 +272,9 @@ One list, newest first, of four kinds of item:
 - On the web a task opens only in a panel beside the task list (`/crm/tasks?task=<id>`), like an
   email; it has no full page. When the list and the panel don't both fit, as on a phone, the
   panel takes the whole screen. `/crm/tasks/<id>` redirects to the panel.
+- On a record's page a task from its Tasks tab opens in the same panel, on the right of the
+  record (`?task=<id>` on the record's URL), so the page stays put. Below the wide layout the
+  panel takes the whole screen.
 - Subtasks are a checklist on the task, `subtasks` (jsonb, in order, each `{ id, title, done }`
   with an id the client makes). `PATCH { subtasks }` replaces the whole list; blank steps are
   dropped and it holds at most 100. Checking every step does not complete the task. The panel
