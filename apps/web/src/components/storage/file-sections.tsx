@@ -246,7 +246,7 @@ function Items(props: {
     items,
     disabledKeys: [GAP_KEY],
     shouldSelectOnPressUp: true,
-    dependencies: [named],
+    dependencies: [named, props.picking],
     ...props.selection,
     ...(typing ? { keyboardNavigationBehavior: "tab" as const } : {}),
   };

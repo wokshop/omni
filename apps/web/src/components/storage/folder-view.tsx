@@ -365,6 +365,7 @@ function useSelectionKeys(selection: NodeSelection, source: FolderSource) {
     if (event.defaultPrevented || isControl(event.target)) return;
     const mod = event.metaKey || event.ctrlKey;
     if (mod && event.key.toLowerCase() === "a") {
+      event.stopPropagation();
       selection.selectAll();
     } else if (event.key === "Escape" && selection.active) {
       selection.clear();

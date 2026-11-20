@@ -70,8 +70,10 @@ export function useNodeSelection(
         if (ids.size > 0 || event.button !== 0) return;
         const range = event.shiftKey;
         if (!range && !event.metaKey && !event.ctrlKey) return;
-        const id = rowOf(event.target)?.dataset.key;
-        if (!id) return;
+        const row = rowOf(event.target);
+        const id = row?.dataset.key;
+        if (!row || !id) return;
+        row.focus();
         event.preventDefault();
         event.stopPropagation();
         swallowClick.current = true;

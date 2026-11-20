@@ -45,7 +45,7 @@ export function FolderBody(
         if (drag.here) void into(drag.here, event.items);
       }}
     >
-      <div ref={room} className="flex min-h-full flex-col" onKeyDown={props.onKeyDown}>
+      <div ref={room} className="flex min-h-full flex-col" onKeyDownCapture={props.onKeyDown}>
         <Content {...props} drag={drag} />
       </div>
     </DropZone>
