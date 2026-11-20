@@ -11,6 +11,7 @@ import { Text } from "@/components/ui/text.tsx";
 import { TextField } from "@/components/ui/text-field.tsx";
 import { driveErrorText } from "@/lib/drive-actions.ts";
 import {
+  isGone,
   isLocked,
   shareLinkFile,
   useDriveLink,
@@ -33,11 +34,10 @@ export function LinkPage({ shareId, node }: { shareId: string; node?: string | u
   if (!first) {
     if (link.isPending) return <LoadingPage>{null}</LoadingPage>;
     if (isLocked(link.error)) return <Unlock shareId={shareId} />;
+    if (isGone(link.error)) return <EmptyState icon={IconFile} title="Not found" />;
     return (
-      <EmptyState icon={IconFile} title="Not found">
-        {link.error && !(link.error as { status?: number }).status ? (
-          <Button intent="plain" label="Try again" onPress={() => void link.refetch()} />
-        ) : null}
+      <EmptyState icon={IconFile} title="This link didn't load">
+        <Button intent="plain" label="Try again" onPress={() => void link.refetch()} />
       </EmptyState>
     );
   }

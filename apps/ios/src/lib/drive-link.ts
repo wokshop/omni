@@ -47,6 +47,10 @@ export const useDriveLink = (shareId: string, node?: string) =>
       query.state.data?.pages[0]?.uploading?.length ? UPLOADING_POLL_MS : false,
   });
 
+/** The link, or the item it opens, does not exist (or no longer does): trying again won't help. */
+export const isGone = (error: unknown) =>
+  error instanceof ApiError && (error.status === 404 || error.status === 410);
+
 /** The link's first page refused for want of its password. */
 export const isLocked = (error: unknown) =>
   error instanceof ApiError && error.code === "link_locked";
