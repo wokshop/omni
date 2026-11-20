@@ -163,7 +163,7 @@ export function ReplyComposer({ thread, row }: { thread: Thread; row?: boolean }
   if (!state.email) return null;
   return (
     <div ref={box} hidden={!showing} className={row ? "relative" : "relative px-5 pb-4"}>
-      {row && <div aria-hidden className="h-4 border-b bg-secondary" />}
+      {row && <div aria-hidden className="h-4 border-b bg-secondary/50" />}
       <ModeComposer
         row={row}
         key={key}

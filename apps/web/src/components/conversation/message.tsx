@@ -169,7 +169,7 @@ export function MessageItem(props: {
   );
 }
 
-const CARD_BODY = "px-5 pb-4 last:pb-5";
+const CARD_BODY = "pr-5 pb-4 pl-16 last:pb-5";
 
 function HtmlMenuItems(props: { full: boolean; onToggle: () => void }) {
   const label = props.full ? "Show text" : "Show full message";
