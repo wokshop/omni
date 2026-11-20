@@ -8,6 +8,7 @@ import { useInlineRename, type RenameAt } from "@/hooks/use-inline-rename.ts";
 import { useIsMobile } from "@/hooks/use-mobile.ts";
 import { useUploads } from "@/hooks/use-storage.ts";
 import type { StorageNode, StoragePlace } from "@/lib/storage.ts";
+import type { Picked } from "@/lib/storage-upload-tree.ts";
 import { MoveDialog, type MoveScope } from "./file-dialogs.tsx";
 import { FolderIconDialog } from "./folder-icons.tsx";
 import { FolderBody, HeaderActions } from "./folder-body.tsx";
@@ -70,8 +71,8 @@ export function FolderView(props: {
   const { upload } = useUploads();
   const [dialog, setDialog] = useState<FolderDialog>(null);
   const close = () => setDialog(null);
-  const send = (files: File[]) =>
-    files.length > 0 &&
+  const send = (files: File[] | Picked) =>
+    (Array.isArray(files) ? files.length > 0 : files.files.length + files.folders.length > 0) &&
     upload(files, { place: source.place, shareId: source.shareId }, (name, error) =>
       storageErrorToast(error, `“${name}” was not uploaded`),
     );

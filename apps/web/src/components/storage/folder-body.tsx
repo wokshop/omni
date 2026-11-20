@@ -8,6 +8,7 @@ import { DropZone } from "@/components/ui/drop-zone";
 import { FileTrigger } from "@/components/ui/file-trigger";
 import type { InlineRename } from "@/hooks/use-inline-rename.ts";
 import type { StorageNode } from "@/lib/storage.ts";
+import { pickedFromInput, type Picked } from "@/lib/storage-upload-tree.ts";
 import { FileSections, FileSectionsBones, type Drafts } from "./file-sections.tsx";
 import type { FolderSource, OpenFile } from "./folder-view.tsx";
 import { NodeMenu } from "./node-menu.tsx";
@@ -15,7 +16,7 @@ import { dropOperation, useDropInto, useRoomDrop, type NodeDrag } from "./node-d
 
 interface Actions {
   onNewFolder: () => void;
-  onFiles: (files: File[]) => void;
+  onFiles: (files: File[] | Picked) => void;
 }
 
 export function FolderBody(
@@ -143,6 +144,14 @@ export function HeaderActions(props: Actions & { canWrite: boolean }) {
       <Button intent="outline" size="sm" onPress={props.onNewFolder}>
         New folder
       </Button>
+      <FileTrigger
+        acceptDirectory
+        onSelect={(files) => props.onFiles(pickedFromInput([...(files ?? [])]))}
+      >
+        <Button intent="outline" size="sm">
+          Upload folder
+        </Button>
+      </FileTrigger>
       <FileTrigger allowsMultiple onSelect={(files) => props.onFiles([...(files ?? [])])}>
         <Button size="sm">Upload</Button>
       </FileTrigger>
