@@ -68,6 +68,10 @@ test("a client sees only the projects they are a client on, and only what is mea
   ]);
   expect(detail.contracts).toEqual([]);
   expect(detail.folder?.files.map((f) => f.name)).toEqual(["brief.pdf"]);
+  const shareId = detail.folder?.shareId;
+  expect(shareId).toEqual(expect.any(String));
+  const opened = forUser(db, bea.id).storage.under(shareId!);
+  expect((await opened.node(brief.id))?.node.name).toBe("brief.pdf");
 
   expect((await portal.project(app.deal.id)).status).toBe("not_found");
   expect(
