@@ -162,7 +162,7 @@ function Foot({
   const composer = useComposerState();
   const inFlow = !reader && composer.email && composer.mode === "public";
   return (
-    <div className={`${inFlow ? "" : "sticky bottom-0"} w-full shrink-0`}>
+    <div className={`${inFlow ? "flex grow flex-col" : "sticky bottom-0"} w-full shrink-0`}>
       {reader && (
         <FloatingPager index={reader.index} count={thread.messages.length} onMove={reader.move} />
       )}
