@@ -109,7 +109,6 @@ test("a deal's Files tab uploads a large file into the deal's folder, previews i
     }[];
   expect((await pdf()).map((node) => node.parentId)).toEqual([briefs.node.id]);
 
-  await page.screenshot({ path: process.env.CRM_FILES_SHOT ?? "/dev/null" });
   await linked.click({ button: "right" });
   await page.getByRole("menuitem", { name: "Remove from Website rebuild" }).click();
   await linked.waitFor({ state: "hidden" });
