@@ -89,7 +89,7 @@ test("a doc exported as Word keeps its headings, to-dos, marks and table", async
     .first()
     .waitFor({ timeout: 15_000 });
   const text =
-    "# Plan\n\nShip **soon**.\n\n- [x] Draft\n- [ ] Review\n\n| Who | When |\n| --- | --- |\n| Ana | Monday |\n\n```\nfirst();\n\nthird();\n```\n\nUp\\\n\\\nDown\n\n1. Step\n   - Aside\n";
+    "# Plan\n\nShip **soon**.\n\n- [x] Draft\n- [ ] Review\n\n| Who | When |\n| --- | --- |\n| Ana | Monday |\n\n```\nfirst();\n\nthird();\n```\n\nUp\\\n\\\nDown\n\n1. Step\n   - Aside\n\nThen\n\n4. Fourth\n";
   await page
     .locator("input[type=file]")
     .first()
@@ -116,6 +116,8 @@ test("a doc exported as Word keeps its headings, to-dos, marks and table", async
   const numId = (words: string) => /<w:numId w:val="(\d+)"/.exec(holding(words))?.[1];
   expect(numId(">Aside<")).toBeDefined();
   expect(numId(">Aside<")).not.toBe(numId(">Step<"));
+  const numbering = strFromU8(files["word/numbering.xml"] ?? new Uint8Array());
+  expect(numbering).toContain('<w:start w:val="4"/>');
   expect(holding(">first();<")).toMatch(
     />first\(\);<[\s\S]*<w:br\/>[\s\S]*<w:br\/>[\s\S]*>third\(\);</,
   );

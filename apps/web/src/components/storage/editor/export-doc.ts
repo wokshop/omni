@@ -29,17 +29,25 @@ const listStyles = new Map<string, ListStyle>();
 
 function list(state: DocxSerializerState, node: PmNode, style: ListStyle) {
   const outer = state.currentNumbering;
-  if (!outer || listStyles.get(outer.reference) === style) {
+  const start = style === "numbered" ? Number(node.attrs.start ?? 1) : 1;
+  if (start === 1 && (!outer || listStyles.get(outer.reference) === style)) {
     const at = state.numbering.length;
     state.renderList(node, style);
     if (!outer) listStyles.set(state.numbering[at]?.reference ?? "", style);
     return;
   }
+  const level = outer ? outer.level + 1 : 0;
   state.currentNumbering = undefined;
   state.renderList(node.copy(Fragment.empty), style);
-  const reference = state.numbering.at(-1)?.reference ?? "";
-  listStyles.set(reference, style);
-  state.currentNumbering = { reference, level: outer.level + 1 };
+  const last = state.numbering.length - 1;
+  const numbering = state.numbering[last];
+  if (!numbering) return;
+  state.numbering[last] = {
+    ...numbering,
+    levels: numbering.levels.map((each) => (each.level === level ? { ...each, start } : each)),
+  };
+  listStyles.set(numbering.reference, style);
+  state.currentNumbering = { reference: numbering.reference, level };
   state.renderContent(node);
   state.currentNumbering = outer;
 }
