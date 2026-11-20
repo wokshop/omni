@@ -122,7 +122,7 @@ test("a password link stays locked until unlocked; wrong tries are refused, then
   expect((await stack.api(anonymous(), "GET", `/shared/${shareId}`)).status).toBe(200);
 });
 
-test("a view-only link shows the item and refuses /content; the owner still downloads", async () => {
+test("a view-only link shows the item and refuses /content and /zip; the owner still downloads", async () => {
   const { owner } = await company();
   const { file, shareId } = await linked(owner);
   const off = await settings(owner, file.id, { downloads: false });
@@ -134,6 +134,7 @@ test("a view-only link shows the item and refuses /content; the owner still down
   expect(await status(await content(anonymous(), shareId, file.id, { range: "bytes=0-9" }))).toBe(
     403,
   );
+  expect(await status(await stack.get(anonymous(), `/shared/${shareId}/zip`))).toBe(403);
   const own = await content(owner.jar, shareId, file.id);
   expect(own.status).toBe(200);
   await own.body?.cancel();
@@ -225,12 +226,14 @@ test("every view and download through a link writes one audit row; a resumed ran
     206,
   );
   expect(await status(await content(owner.jar, shareId, file.id))).toBe(200);
+  expect(await status(await stack.get(visitor, `/shared/${shareId}/zip`))).toBe(200);
 
   const after = (await events(file.id)).slice(1);
-  expect(after.map((row) => [row.kind, row.via, row.actorUserId])).toEqual([
-    ["viewed", "link", null],
-    ["downloaded", "link", null],
-    ["downloaded", "member", owner.userId],
+  expect(after.map((row) => [row.kind, row.via, row.actorUserId, row.detail.zip])).toEqual([
+    ["viewed", "link", null, undefined],
+    ["downloaded", "link", null, undefined],
+    ["downloaded", "member", owner.userId, undefined],
+    ["downloaded", "link", null, true],
   ]);
 });
 

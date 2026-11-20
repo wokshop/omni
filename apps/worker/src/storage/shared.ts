@@ -38,6 +38,8 @@ import {
   wireView,
   type SharedAccess,
 } from "./http.ts";
+import { thumbnail } from "./thumbnails.ts";
+import { zip } from "./zip.ts";
 
 const UNLOCK_MS = 12 * 60 * 60 * 1000;
 const COOKIE = "omni_link_key";
@@ -53,6 +55,7 @@ const through: (
     node: door.node,
     list: (parentId, page) => door.list({ parentId }, page),
     file: door.file,
+    archive: door.archive,
     writer: door,
     via,
     downloads: true,
@@ -111,6 +114,7 @@ const openShared: (
       node: (nodeId) => link.node(nodeId),
       list: (parentId, page) => link.list({ parentId, ...page }),
       file: link.file,
+      archive: link.archive,
       writer: null,
       via: "link",
       downloads: settings?.linkDownloads ?? false,
@@ -264,6 +268,18 @@ export const storageShared = new Hono<AppEnv>()
     if (found.status === "ok" && response.ok && counted) {
       await audit(c, "downloaded", found.file.id);
     }
+    return response;
+  })
+
+  .get("/:shareId/files/:id/thumbnail", async (c) =>
+    thumbnail(c, await c.var.shared!.file(c.req.param("id"))),
+  )
+
+  .get("/:shareId/zip", async (c) => {
+    const shared = c.var.shared!;
+    if (!shared.downloads) return apiError(c, "forbidden", "this link is view only");
+    const response = await zip(c, shared.archive, shared.root.node.id);
+    if (response.ok) await audit(c, "downloaded", shared.root.node.id, { zip: true });
     return response;
   })
 

@@ -1,4 +1,5 @@
 import type { Db } from "./client.ts";
+import { archiveOperations } from "./storage/archive.ts";
 import {
   grantAddresses,
   grantDoor,
@@ -30,6 +31,7 @@ import {
   type ListResult,
   type StorageNodeView,
 } from "./storage/tree.ts";
+import type { ArchiveResult } from "./storage/archive.ts";
 import { uploadOperations } from "./storage/uploads.ts";
 import { versionOperations } from "./storage/versions.ts";
 
@@ -42,6 +44,7 @@ export {
   type StorageNodeKind,
   type StorageSpace,
 } from "./storage/core.ts";
+export type { ArchiveResult, StorageArchiveEntry } from "./storage/archive.ts";
 export {
   linkState,
   storagePolicyOf,
@@ -183,6 +186,7 @@ export function memberStorage(db: Db, memberId: string) {
   const door = memberDoor(memberId);
   return {
     ...treeOperations(db, door),
+    ...archiveOperations(db, door),
     ...uploadOperations(db, door),
     ...versionOperations(db, door),
     ...commentOperations(db, door),
@@ -222,6 +226,7 @@ export function userStorage(db: Db, userId: string, scopeOrgId?: string | null) 
     const door = grantDoor(userId, scopeOrgId, shareId);
     return {
       ...treeOperations(db, door),
+      ...archiveOperations(db, door),
       ...uploadOperations(db, door),
       ...versionOperations(db, door),
       ...commentOperations(db, door),
@@ -243,8 +248,10 @@ export function userStorage(db: Db, userId: string, scopeOrgId?: string | null) 
  * the shared node and, for a folder, everything inside it. Read only.
  */
 export function publicStorage(db: Db, shareId: string, visitor?: LinkVisitor) {
-  const { node, nodeByShareId, list, file } = treeOperations(db, linkDoor(shareId, visitor));
+  const door = linkDoor(shareId, visitor);
+  const { node, nodeByShareId, list, file } = treeOperations(db, door);
   return {
+    ...archiveOperations(db, door),
     node: (nodeId?: string) => (nodeId ? node(nodeId) : nodeByShareId(shareId)),
     async list(page: { parentId?: string; cursor?: StorageListCursor | null; limit?: number }) {
       const parentId = page.parentId ?? (await nodeByShareId(shareId))?.node.id;
@@ -279,6 +286,8 @@ export interface SharedAccess {
     page: { cursor?: StorageListCursor | null; limit?: number },
   ): Promise<ListResult>;
   file(nodeId: string): Promise<FileResult>;
+  /** The selection as zip entries, through the same door as `file`. */
+  archive(nodeIds: string[], max: number): Promise<ArchiveResult>;
   /** The member or grant door that opened it, for changes. A link alone never writes. */
   writer: MemberStorage | SharedStorage | null;
   /** The door that opened it, as the sharing audit records it. */

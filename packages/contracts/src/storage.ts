@@ -1,4 +1,9 @@
 import { z } from "zod";
+import {
+  storageLinkPasswordSchema,
+  storageLinkSchema,
+  storagePolicySchema,
+} from "./storage-links.ts";
 
 /** Bytes in every part of an upload but the last (R2 wants them uniform). */
 export const STORAGE_PART_BYTES = 16 * 1024 * 1024;
@@ -252,35 +257,6 @@ export const storagePersonSchema = z.object({
   createdAt: isoDate,
 });
 
-/**
- * What a link does beyond who it opens for. None of it limits members or the people it is
- * shared with by address.
- */
-export const storageLinkSchema = z.object({
-  /** After this the link opens for nobody. */
-  expiresAt: isoDate.nullable(),
-  /** A visitor gives a password before the link opens (`POST /shared/:shareId/unlock`). */
-  hasPassword: z.boolean(),
-  /** False: view only. A visitor through the link sees the item and downloads nothing. */
-  downloads: z.boolean(),
-});
-
-/**
- * A workspace's sharing policy (`GET /policy`; owners and admins `PUT` a change to either
- * field). `publicLinks` false: no link opens for anyone, and none can be set to; links open to
- * the workspace still work. `outsideSharing` false: nobody is invited by an address outside the
- * company (its claimed domains, or a member's own address).
- */
-export const storagePolicySchema = z.object({
-  publicLinks: z.boolean(),
-  outsideSharing: z.boolean(),
-});
-export const storagePolicyResponseSchema = z.object({ policy: storagePolicySchema });
-export const storageSetPolicyBodySchema = storagePolicySchema
-  .partial()
-  .strict()
-  .refine((body) => Object.keys(body).length > 0, { message: "change at least one setting" });
-
 /** `GET /nodes/:id/sharing`, and the answer to every change to it. */
 export const storageSharingSchema = z.object({
   nodeId: id,
@@ -296,9 +272,6 @@ export const storageSharingSchema = z.object({
   inherited: z.array(storagePersonSchema.extend({ nodeId: id, nodeName: z.string() })),
 });
 export const storageSharingResponseSchema = z.object({ sharing: storageSharingSchema });
-
-/** A link password: what a visitor types. */
-export const storageLinkPasswordSchema = z.string().min(4).max(128);
 
 /**
  * `PUT /nodes/:id/sharing/link`: set who it opens for, `reset` for a new link (the old one stops
@@ -326,17 +299,6 @@ export const storageEmailSchema = z.string().trim().toLowerCase().pipe(z.email()
  * `{ sharing }`. Only a member who can write the node manages its sharing.
  */
 export const storagePutPersonBodySchema = z.object({ role: storageGrantRoleSchema });
-
-/**
- * `POST /shared/:shareId/unlock`: the password of a link that answered `401 link_locked`.
- * Answers `{ key, expiresAt }` and sets the same key as a cookie scoped to the link, so the
- * browser's downloads carry it; a native client sends it as `x-omni-link-key`. A wrong password
- * is `403 wrong_password`, and tries are rate-limited.
- */
-export const storageUnlockBodySchema = z.object({ password: z.string().min(1).max(128) });
-export const storageUnlockResponseSchema = z.object({ key: z.string(), expiresAt: isoDate });
-/** The header a native client sends an unlock key in. */
-export const STORAGE_LINK_KEY_HEADER = "x-omni-link-key";
 
 /** `GET /shared-with-me`: what was shared with the signed-in person, newest first. */
 export const storageSharedWithMeItemSchema = z.object({
@@ -568,11 +530,15 @@ export const storageRevisionGuardQuerySchema = z.object({
 
 /**
  * On the workspace's realtime socket (`GET /sync/:orgId/realtime` for a provider): something in
- * this drive changed, so read its changes. Sent after the change commits; it names no node.
+ * this drive changed, so read its changes. Sent after the change commits; it names no file.
+ * `parentIds` are the folders whose listing changed, `null` for the drive's top; a folder listed
+ * there may also have been renamed or moved, so a listing under it is stale too. Without it (an
+ * older Worker), any listing in the drive may have changed.
  */
 export const storageChangedEventSchema = z.object({
   type: z.literal("storage.changed"),
   space: storageSpaceSchema,
+  parentIds: z.array(id.nullable()).optional(),
 });
 
 /**
@@ -734,6 +700,49 @@ export const STORAGE_SYNC_NATIVE_TYPES = {
   DesktopSyncTokens: desktopSyncTokensSchema,
 } as const;
 
+/** Longest edge of a thumbnail, in pixels: the only sizes drawn, so each is drawn once. */
+export const STORAGE_THUMBNAIL_SIZES = [256, 640, 1280] as const;
+/** The largest original a thumbnail is drawn from; a larger one answers `415 no_thumbnail`. */
+export const STORAGE_THUMBNAIL_MAX_SOURCE_BYTES = 20_000_000;
+/** The most entries (files and folders) one zip carries; more answers `413 zip_too_large`. */
+export const STORAGE_ZIP_MAX_ENTRIES = 5_000;
+
+/**
+ * `GET /files/:id/thumbnail?size=&v=`: a WebP no wider or taller than `size` (default 640), for
+ * a JPEG, PNG, GIF, WebP, AVIF or HEIC up to 20 MB. Anything else is `415 no_thumbnail`. With
+ * `v` equal to the file's `contentVersion` the answer is cacheable for a year (a new version has
+ * a new `v`); without it, the client revalidates with `If-None-Match`. Also under
+ * `/shared/:shareId/files/:id/thumbnail`.
+ */
+export const storageThumbnailQuerySchema = z.object({
+  size: z.coerce
+    .number()
+    .refine((size) => (STORAGE_THUMBNAIL_SIZES as readonly number[]).includes(size), {
+      message: `size is one of ${STORAGE_THUMBNAIL_SIZES.join(", ")}`,
+    })
+    .default(640),
+  v: z.coerce.number().int().nonnegative().optional(),
+});
+
+/**
+ * `GET /zip?ids=a,b` or `POST /zip` with a form or JSON body `{ ids }`: the selected files and
+ * folders (with everything live inside them) as one streamed zip, an attachment with a known
+ * `content-length`. Paths start at each selected item's own name. Under
+ * `/shared/:shareId/zip` the ids default to the shared node itself. Something the caller cannot
+ * reach is `404`; more than `STORAGE_ZIP_MAX_ENTRIES` entries is `413 zip_too_large`.
+ */
+export const storageZipQuerySchema = z.object({
+  ids: z
+    .union([z.string(), z.array(z.string())])
+    .transform((value) =>
+      (Array.isArray(value) ? value : [value])
+        .flatMap((part) => part.split(","))
+        .map((part) => part.trim())
+        .filter(Boolean),
+    )
+    .pipe(z.array(id).max(STORAGE_ZIP_MAX_ENTRIES)),
+});
+
 export type StorageSpace = z.infer<typeof storageSpaceSchema>;
 export type StorageChangedEvent = z.infer<typeof storageChangedEventSchema>;
 export type StorageFilePresenceEvent = z.infer<typeof storageFilePresenceEventSchema>;
@@ -769,10 +778,6 @@ export type StoragePutPersonBody = z.infer<typeof storagePutPersonBodySchema>;
 export type StorageSharedWithMeItem = z.infer<typeof storageSharedWithMeItemSchema>;
 export type StorageSharedWithMeResponse = z.infer<typeof storageSharedWithMeResponseSchema>;
 export type StorageSharedResponse = z.infer<typeof storageSharedResponseSchema>;
-export type StorageLink = z.infer<typeof storageLinkSchema>;
-export type StoragePolicy = z.infer<typeof storagePolicySchema>;
-export type StoragePolicyResponse = z.infer<typeof storagePolicyResponseSchema>;
-export type StorageUnlockResponse = z.infer<typeof storageUnlockResponseSchema>;
 export type StorageSignatureStatus = z.infer<typeof storageSignatureStatusSchema>;
 export type StorageSendForSignatureBody = z.infer<typeof storageSendForSignatureBodySchema>;
 export type StorageSignatureRequest = z.infer<typeof storageSignatureRequestSchema>;
@@ -797,3 +802,4 @@ export type DesktopWorkspaceSync = z.infer<typeof desktopWorkspaceSyncSchema>;
 export type DesktopSyncStatus = z.infer<typeof desktopSyncStatusSchema>;
 
 export * from "./storage-comments.ts";
+export * from "./storage-links.ts";
