@@ -85,7 +85,11 @@ export const storageNodeSchema = z.object({
   revision: z.number().int().nonnegative().optional(),
   /** Goes up each time a file's bytes are replaced; constant for a folder. Absent as above. */
   contentVersion: z.number().int().nonnegative().optional(),
-  /** Hex sha256 of the bytes, as the uploading client sent it; null when it sent none. */
+  /**
+   * Hex sha256 of the bytes as the uploading client sent it, checked against the stored bytes
+   * for files up to the Worker's `STORAGE_HASH_CHECK_MAX_BYTES` (a mismatch is refused); null
+   * when it sent none.
+   */
   contentSha256: z.string().nullable().optional(),
 });
 
@@ -180,7 +184,8 @@ export const storageOpenUploadBodySchema = z
  * An upload in progress. The file goes up as `partCount` parts numbered from 1, each
  * `partSize` bytes but the last, to `PUT /uploads/:id/parts/:n` (raw bytes, with
  * `content-length`), in any order and several at once. `parts` are those already stored: after a
- * dropped connection, `GET /uploads/:id` and send the rest. A part may be sent again.
+ * dropped connection, `GET /uploads/:id` and send the rest. A part may be sent again. An upload
+ * closes a day after its last part (`expiresAt`), and at most six days after it opened.
  */
 export const storageUploadSchema = z.object({
   id,
@@ -198,11 +203,36 @@ export const storageUploadSchema = z.object({
 });
 export const storageUploadResponseSchema = z.object({ upload: storageUploadSchema });
 
+/**
+ * `PUT /uploads/:id/parts/:n`: the part stored, and when the upload now closes. Each part moves
+ * that forward a day, so an upload only expires after a day with no parts.
+ */
+export const storageUploadPartResponseSchema = z.object({
+  part: z.object({ partNumber: z.number().int().positive(), size: z.number().int() }),
+  expiresAt: isoDate,
+});
+
+/**
+ * `PATCH /uploads/:id`: points an upload in progress somewhere else (and optionally renames it)
+ * without sending its parts again, as after completing answered `parent_trashed`. Not for a new
+ * version of a file.
+ */
+export const storageMoveUploadBodySchema = z
+  .object({ name: name.optional(), ...place })
+  .refine(...onePlace);
+
 /** `POST /uploads/:id/complete?ifContentVersion=`: a checked save's base, checked again. */
 export const storageCompleteUploadQuerySchema = z.object({
   ifContentVersion: z.coerce.number().int().nonnegative().optional(),
 });
 
+/**
+ * `POST /files/:id/versions`: an upload of new bytes for an existing file. On complete the node
+ * keeps its id, name and sharing, and its `contentVersion` goes up. `ifContentVersion` is the
+ * version the client read: a newer one answers `409 version_conflict` (with the server's
+ * `contentVersion` in `details`) and stores nothing. Send it again on complete, which checks it
+ * once more.
+ */
 export const storageOpenVersionBodySchema = z.object({
   size: z.number().int().nonnegative(),
   mimeType: z.string().max(255).nullish(),
@@ -507,20 +537,6 @@ export const storageSyncChangesResponseSchema = z.object({
 });
 
 /**
- * `POST /uploads` that replaces a file's bytes in place. On complete the node keeps its id, name
- * and sharing, takes the new bytes, and its `contentVersion` goes up. `ifContentVersion` is the
- * version the client read: a newer one on the server answers `409 version_conflict` and stores
- * nothing.
- */
-export const storageReplaceUploadBodySchema = z.strictObject({
-  replaces: id,
-  ifContentVersion: z.number().int().nonnegative(),
-  size: z.number().int().nonnegative(),
-  mimeType: z.string().max(255).nullish(),
-  sha256: sha256.optional(),
-});
-
-/**
  * `PATCH /nodes/:id?ifRevision=` and `DELETE /nodes/:id?ifRevision=`: refuse with `409
  * version_conflict` when the node's revision is no longer this one. Without it, unguarded.
  */
@@ -683,7 +699,7 @@ export const STORAGE_SYNC_NATIVE_TYPES = {
   StorageCreateFolderBody: storageCreateFolderBodySchema,
   StorageChangeNodeBody: storageChangeNodeBodySchema,
   StorageOpenUploadBody: storageOpenUploadBodySchema,
-  StorageReplaceUploadBody: storageReplaceUploadBodySchema,
+  StorageOpenVersionBody: storageOpenVersionBodySchema,
   StorageUploadResponse: storageUploadResponseSchema,
   StorageUsage: storageUsageSchema,
   StorageSyncDrive: storageSyncDriveSchema,
@@ -766,6 +782,8 @@ export type StorageChangeNodeBody = z.infer<typeof storageChangeNodeBodySchema>;
 export type StorageOpenUploadBody = z.infer<typeof storageOpenUploadBodySchema>;
 export type StorageUpload = z.infer<typeof storageUploadSchema>;
 export type StorageUploadResponse = z.infer<typeof storageUploadResponseSchema>;
+export type StorageUploadPartResponse = z.infer<typeof storageUploadPartResponseSchema>;
+export type StorageMoveUploadBody = z.infer<typeof storageMoveUploadBodySchema>;
 export type StorageOpenVersionBody = z.infer<typeof storageOpenVersionBodySchema>;
 export type StorageVersion = z.infer<typeof storageVersionSchema>;
 export type StorageVersionsResponse = z.infer<typeof storageVersionsResponseSchema>;
@@ -796,7 +814,6 @@ export type StorageSyncDrivesResponse = z.infer<typeof storageSyncDrivesResponse
 export type StorageSyncChangesQuery = z.infer<typeof storageSyncChangesQuerySchema>;
 export type StorageSyncChange = z.infer<typeof storageSyncChangeSchema>;
 export type StorageSyncChangesResponse = z.infer<typeof storageSyncChangesResponseSchema>;
-export type StorageReplaceUploadBody = z.infer<typeof storageReplaceUploadBodySchema>;
 export type DesktopSyncState = z.infer<typeof desktopSyncStateSchema>;
 export type DesktopWorkspaceSync = z.infer<typeof desktopWorkspaceSyncSchema>;
 export type DesktopSyncStatus = z.infer<typeof desktopSyncStatusSchema>;

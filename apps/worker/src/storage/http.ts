@@ -30,6 +30,7 @@ const FAILURES = {
   invalid_email: ["invalid_email", "that is not an email address"],
   version_conflict: ["version_conflict", "it changed since you read it"],
   policy: ["sharing_policy", "your workspace's sharing policy does not allow that"],
+  too_many_uploads: ["too_many_uploads", "finish or cancel some uploads first"],
 } as const satisfies Record<string, readonly [ErrorCode, string]>;
 
 /** The API's error answer for a result `@omni/db` refused, with a code the client can act on. */
