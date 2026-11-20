@@ -184,6 +184,37 @@ test("a freelancer sees and opens only the contracts that involve them", async (
   expect(await franDoor.storage.node(pdf.id)).toBeNull();
 });
 
+test("a freelancer swapped off a contract with its file keeps neither file", async () => {
+  const { teamDoor, team, website, folder, pdf, franDoor, gusDoor } = await studio("money-swap");
+  const [contract] = ok(await team.listContracts({ dealId: website.id })).contracts;
+  ok(await team.updateContract(contract!.id, { memberIds: [franDoor.id] }));
+  expect((await franDoor.storage.node(pdf.id))?.role).toBe("viewer");
+
+  const sow = await addFile(teamDoor.storage, { parentId: folder }, "sow.pdf");
+  ok(await team.updateContract(contract!.id, { memberIds: [gusDoor.id], documentNodeId: sow.id }));
+  expect(await franDoor.storage.node(pdf.id)).toBeNull();
+  expect(await franDoor.storage.node(sow.id)).toBeNull();
+  expect((await gusDoor.storage.node(sow.id))?.role).toBe("viewer");
+});
+
+test("taking a freelancer off a project takes their contracts' files too", async () => {
+  const { team, website, pdf, franDoor } = await studio("money-revoke");
+  const franAt = "fran@money-revoke.test";
+  const [contract] = ok(await team.listContracts({ dealId: website.id })).contracts;
+  ok(await team.updateContract(contract!.id, { memberIds: [franDoor.id] }));
+  expect((await franDoor.storage.node(pdf.id))?.role).toBe("viewer");
+
+  ok(await team.revokeProjectAccess(website.id, franAt));
+  expect(await franDoor.storage.node(pdf.id)).toBeNull();
+  ok(await team.updateContract(contract!.id, { title: "MSA v2" }));
+  expect(await franDoor.storage.node(pdf.id)).toBeNull();
+
+  ok(await team.grantProjectAccess(website.id, { email: franAt, scope: "freelancer" }));
+  expect((await franDoor.storage.node(pdf.id))?.role).toBe("viewer");
+  ok(await team.grantProjectAccess(website.id, { email: franAt, scope: "client" }));
+  expect(await franDoor.storage.node(pdf.id)).toBeNull();
+});
+
 test("a locked contract filed before the Admin folder is filed when a freelancer joins", async () => {
   const { org, teamDoor, team, website, folder, pdf } = await studio("money-locked");
   ok(await teamDoor.storage.lock(pdf.id));
