@@ -86,33 +86,50 @@ function exact(text: string, anchor: TextAnchor) {
 const EDGE = 12;
 const MIN_EDGE = 4;
 
-const tail = (prefix: string) => prefix.slice(-EDGE).split("\n").at(-1) ?? "";
-const head = (suffix: string) => suffix.slice(0, EDGE).split("\n")[0] ?? "";
+function tails(prefix: string) {
+  const edge = prefix.slice(-EDGE);
+  const line = edge.lastIndexOf("\n");
+  if (line === -1) return edge.length >= MIN_EDGE ? [edge] : [];
+  const rest = edge.slice(line + 1);
+  return rest.length >= MIN_EDGE ? [edge.slice(line), rest] : [edge.slice(line)];
+}
+
+function heads(suffix: string) {
+  const edge = suffix.slice(0, EDGE);
+  const line = edge.indexOf("\n");
+  if (line === -1) return edge.length >= MIN_EDGE ? [edge] : [];
+  const rest = edge.slice(0, line);
+  return rest.length >= MIN_EDGE ? [edge.slice(0, line + 1), rest] : [edge.slice(0, line + 1)];
+}
 
 function startsOf(text: string, prefix: string) {
   const starts = prefix.length < CONTEXT && text.startsWith(prefix) ? [prefix.length] : [];
-  const before = tail(prefix);
-  if (before.length < MIN_EDGE) return starts;
-  return [...starts, ...occurrences(text, before).map((i) => i + before.length)];
+  for (const before of tails(prefix)) {
+    for (const i of occurrences(text, before)) starts.push(i + before.length);
+  }
+  return starts;
 }
 
 function endFrom(text: string, suffix: string, start: number) {
-  const after = head(suffix);
-  const near = after.length < MIN_EDGE ? -1 : text.indexOf(after, start);
-  if (near !== -1 || suffix.length >= CONTEXT || !text.endsWith(suffix)) return near;
-  return text.length - suffix.length;
+  const ends = heads(suffix)
+    .map((after) => text.indexOf(after, start))
+    .filter((at) => at !== -1);
+  if (suffix.length < CONTEXT && text.endsWith(suffix)) ends.push(text.length - suffix.length);
+  return ends.length ? Math.min(...ends) : -1;
 }
 
 function between(text: string, anchor: TextAnchor) {
   const fit = Math.min(anchor.prefix.length, EDGE) + Math.min(anchor.suffix.length, EDGE);
+  const size = anchor.quote.length;
+  let best: Found | null = null;
   for (const start of startsOf(text, anchor.prefix)) {
     const end = endFrom(text, anchor.suffix, start);
-    if (end > start && end - start <= anchor.quote.length * 2 + 20) {
-      const found: Found = { start, end, fit };
-      return found;
+    if (end <= start || end - start > size * 2 + 20) continue;
+    if (!best || Math.abs(end - start - size) < Math.abs(best.end - best.start - size)) {
+      best = { start, end, fit };
     }
   }
-  return null;
+  return best;
 }
 
 function locate(text: string, anchor: TextAnchor) {
