@@ -391,7 +391,7 @@ export async function deleteSubtree(tx: Db, orgId: string, nodeId: string) {
   await lockUsage(tx, orgId);
   const rows = await subtreeOf(tx, nodeId);
   const revision = await nextRevision(tx, orgId);
-  await leaveTombstones(tx, isSubtree(nodeId), revision);
+  await leaveTombstones(tx, isSubtree(nodeId), revision, "gone");
   const versions = await tx
     .select({ size: storageVersions.size, r2Key: storageVersions.r2Key })
     .from(storageVersions)

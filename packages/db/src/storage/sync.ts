@@ -32,10 +32,15 @@ export interface StorageSyncCursor {
   id: string;
 }
 
-/** One entry of a drive's feed. A node in Trash, or inside a folder that is, has `inTrash`. */
+/**
+ * One entry of a drive's feed. A node in Trash, or inside a folder that is, has `inTrash`. A
+ * deletion says whether the node is `gone` for the reader (deleted, or moved to a drive they don't
+ * sync), or moved to another drive they sync, whose feed reports it; unknown (`undefined`) on a
+ * tombstone made before this was kept.
+ */
 export type StorageChange =
   | { id: string; revision: number; deleted: false; node: StorageNode; inTrash: boolean }
-  | { id: string; revision: number; deleted: true };
+  | { id: string; revision: number; deleted: true; gone: boolean | undefined };
 
 export type StorageChangesResult =
   | {
@@ -83,6 +88,11 @@ const after = (
 ) =>
   cursor ? sql`(${table.revision}, ${idColumn}) > (${cursor.revision}, ${cursor.id})` : undefined;
 
+function goneFor(wentTo: string | null, readerMemberId: string) {
+  if (wentTo === null) return undefined;
+  return wentTo !== "shared" && wentTo !== `personal:${readerMemberId}`;
+}
+
 const before = (a: StorageSyncCursor, b: StorageSyncCursor) =>
   a.revision < b.revision || (a.revision === b.revision && a.id < b.id);
 
@@ -94,6 +104,7 @@ const before = (a: StorageSyncCursor, b: StorageSyncCursor) =>
 export async function listChanges(
   db: Db,
   drive: Drive,
+  readerMemberId: string,
   page: { cursor?: StorageSyncCursor | null; limit?: number },
 ) {
   const cursor = page.cursor ?? null;
@@ -124,7 +135,12 @@ export async function listChanges(
               node: toNode(entry.row),
               inTrash: trashed.has(entry.id),
             }
-          : { id: entry.id, revision: entry.revision, deleted: true },
+          : {
+              id: entry.id,
+              revision: entry.revision,
+              deleted: true,
+              gone: goneFor(entry.wentTo, readerMemberId),
+            },
       );
       const last = taken.at(-1);
       let nextCursor: StorageSyncCursor = last
@@ -148,7 +164,11 @@ async function feedPage(tx: Db, drive: Drive, cursor: StorageSyncCursor | null, 
     .orderBy(asc(storageNodes.revision), asc(storageNodes.id))
     .limit(limit + 1);
   const tombstones = await tx
-    .select({ id: storageTombstones.nodeId, revision: storageTombstones.revision })
+    .select({
+      id: storageTombstones.nodeId,
+      revision: storageTombstones.revision,
+      wentTo: storageTombstones.wentTo,
+    })
     .from(storageTombstones)
     .where(
       and(
@@ -159,24 +179,45 @@ async function feedPage(tx: Db, drive: Drive, cursor: StorageSyncCursor | null, 
     .orderBy(asc(storageTombstones.revision), asc(storageTombstones.nodeId))
     .limit(limit + 1);
   return [
-    ...nodes.map((row) => ({ id: row.id, revision: row.revision, row: row as NodeRow | null })),
-    ...tombstones.map((row) => ({ id: row.id, revision: row.revision, row: null })),
+    ...nodes.map((row) => ({
+      id: row.id,
+      revision: row.revision,
+      row: row as NodeRow | null,
+      wentTo: null,
+    })),
+    ...tombstones.map((row) => ({ ...row, row: null })),
   ]
     .toSorted((a, b) => (before(a, b) ? -1 : before(b, a) ? 1 : 0))
     .slice(0, limit + 1);
 }
 
-/** The drive's revision: that of its latest change, 0 when it has none since sync existed. */
-export async function driveRevision(ex: Db, drive: Drive) {
-  const [nodes] = await ex
-    .select({ revision: sql<string | null>`max(${storageNodes.revision})` })
-    .from(storageNodes)
-    .where(inDrive(storageNodes, drive));
-  const [tombstones] = await ex
-    .select({ revision: sql<string | null>`max(${storageTombstones.revision})` })
-    .from(storageTombstones)
-    .where(inDrive(storageTombstones, drive));
-  return Math.max(Number(nodes?.revision ?? 0), Number(tombstones?.revision ?? 0));
+const driveKey = (drive: Drive) => `${drive.orgId}:${drive.space}:${drive.ownerMemberId ?? ""}`;
+
+const latestIn = (table: typeof storageNodes | typeof storageTombstones) =>
+  sql`(select max(t.revision) from ${table} t
+    where t.org_id = d.org_id and t.space = d.space::storage_space
+      and coalesce(t.owner_member_id, '') = d.owner)`;
+
+async function driveRevisions(ex: Db, drives: Drive[]) {
+  if (drives.length === 0) return new Map<string, number>();
+  const rows = (await ex.execute(sql`
+    select d.org_id, d.space, d.owner,
+      greatest(coalesce(${latestIn(storageNodes)}, 0), coalesce(${latestIn(storageTombstones)}, 0)) as revision
+    from (values ${sql.join(
+      drives.map((drive) => sql`(${drive.orgId}, ${drive.space}, ${drive.ownerMemberId ?? ""})`),
+      sql`, `,
+    )}) as d(org_id, space, owner)`)) as unknown as {
+    org_id: string;
+    space: StorageSpace;
+    owner: string;
+    revision: string | number;
+  }[];
+  return new Map(
+    rows.map((row) => [
+      driveKey({ orgId: row.org_id, space: row.space, ownerMemberId: row.owner || null }),
+      Number(row.revision),
+    ]),
+  );
 }
 
 export interface StorageSyncDrive {
@@ -215,25 +256,25 @@ export async function listSyncWorkspaces(db: Db, userId: string, scopeOrgId?: st
       ),
     )
     .orderBy(asc(members.createdAt), asc(members.id));
-  const workspaces: StorageSyncWorkspace[] = [];
-  for (const row of rows) {
+  const drivesOf = (row: (typeof rows)[number]) => {
     const mine: Drive = { orgId: row.orgId, space: "personal", ownerMemberId: row.memberId };
-    const drives: StorageSyncDrive[] = [
-      { space: "personal", revision: await driveRevision(db, mine) },
-    ];
-    if (!row.personal) {
-      const shared: Drive = { orgId: row.orgId, space: "shared", ownerMemberId: null };
-      drives.push({ space: "shared", revision: await driveRevision(db, shared) });
-    }
-    workspaces.push({
-      orgId: row.orgId,
-      name: row.name,
-      slug: row.slug,
-      memberId: row.memberId,
-      drives,
-    });
-  }
-  return workspaces satisfies StorageSyncWorkspace[];
+    const shared: Drive = { orgId: row.orgId, space: "shared", ownerMemberId: null };
+    return row.personal ? [mine] : [mine, shared];
+  };
+  const revisions = await driveRevisions(db, rows.flatMap(drivesOf));
+  return rows.map((row) => ({
+    orgId: row.orgId,
+    name: row.name,
+    slug: row.slug,
+    memberId: row.memberId,
+    drives: drivesOf(row).map(
+      (drive) =>
+        ({
+          space: drive.space,
+          revision: revisions.get(driveKey(drive)) ?? 0,
+        }) satisfies StorageSyncDrive,
+    ),
+  })) satisfies StorageSyncWorkspace[];
 }
 
 /**

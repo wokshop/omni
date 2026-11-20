@@ -95,7 +95,7 @@ export async function handOverMemberStorage(
       createdByMemberId: owner.id,
     });
     const revision = await nextRevision(tx, leaving.orgId);
-    await leaveTombstones(tx, owned, revision);
+    await leaveTombstones(tx, owned, revision, drive);
     const moved = await tx
       .update(storageNodes)
       .set({
