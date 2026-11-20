@@ -158,7 +158,7 @@ export function PeopleSection(props: {
               id={person.id}
               name={person.name}
               who={byAddress(person.addresses[0]?.address)}
-              meta={person.jobTitle}
+              hint={person.jobTitle}
             />
           );
           if (!onRemove) return row;

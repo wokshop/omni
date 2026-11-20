@@ -239,7 +239,7 @@ function Line(props: {
 }) {
   const Icon = props.icon;
   return (
-    <li className="flex flex-col gap-2">
+    <li className="relative flex flex-col gap-2 not-last:before:absolute not-last:before:start-2.5 not-last:before:top-5 not-last:before:-bottom-5 not-last:before:w-px not-last:before:-translate-x-1/2 not-last:before:bg-border not-last:before:content-['']">
       <div className="flex min-h-5 items-center gap-2 text-sm">
         <span className="grid size-5 shrink-0 place-items-center rounded-full bg-secondary text-muted-foreground">
           <Icon className="size-3" />
@@ -255,11 +255,7 @@ function Line(props: {
 }
 
 function Card({ children }: { children: ReactNode }) {
-  return (
-    <div className="rounded-lg border bg-background px-3 py-2.5 shadow-(--shadow-raised)">
-      {children}
-    </div>
-  );
+  return <div className="rounded-lg border bg-background px-3 py-2.5">{children}</div>;
 }
 
 function NoteCard(props: { noteId: string; body: string; author: string | null }) {
