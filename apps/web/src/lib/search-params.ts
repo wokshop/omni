@@ -37,6 +37,14 @@ export const fileSearchSearch = z.object({ mailbox: optionalId, q: optional(z.st
 /** A CRM list (ADR 0039): `q` searches it on the server. */
 export const crmListSearch = z.object({ mailbox: optionalId, q: optional(z.string()) });
 
+/** The tasks (ADR 0054): mine unless `view` says all or done; `assignee` narrows all and done. */
+export const crmTasksSearch = z.object({
+  mailbox: optionalId,
+  q: optional(z.string()),
+  view: optional(z.enum(["mine", "all", "done"])),
+  assignee: optionalId,
+});
+
 /** The deals: the board unless `view=list`. */
 export const crmDealsSearch = z.object({
   mailbox: optionalId,
