@@ -16,8 +16,10 @@ export const openNewTask = (record?: { kind: CrmRecordKind; id: string }) =>
 /** A record's tasks, as the web's Tasks tab: the open ones, then the done ones, with Add task. */
 export function TaskSection({ kind, id }: { kind: CrmRecordKind; id: string }) {
   const filter = recordFilter(kind, id);
-  const open = useTasks({ ...filter, status: "open" }).data ?? [];
-  const done = useTasks({ ...filter, status: "done" }).data ?? [];
+  const openQuery = useTasks({ ...filter, status: "open" });
+  const doneQuery = useTasks({ ...filter, status: "done" });
+  const open = openQuery.data ?? [];
+  const done = doneQuery.data ?? [];
   const names = useMemberNames().data;
   const assignee = (memberId: string | null) => (memberId ? names?.get(memberId) : null);
   return (
@@ -31,10 +33,26 @@ export function TaskSection({ kind, id }: { kind: CrmRecordKind; id: string }) {
       {open.map((task) => (
         <TaskRow key={task.id} task={task} assignee={assignee(task.assigneeMemberId)} onRecord />
       ))}
+      <More query={openQuery} />
       {done.length ? <SectionHeading label="Done" /> : null}
       {done.map((task) => (
         <TaskRow key={task.id} task={task} assignee={assignee(task.assigneeMemberId)} onRecord />
       ))}
+      <More query={doneQuery} />
+    </View>
+  );
+}
+
+function More({ query }: { query: ReturnType<typeof useTasks> }) {
+  if (!query.hasNextPage) return null;
+  return (
+    <View style={styles.more}>
+      <Button
+        intent="plain"
+        label="Show more"
+        isPending={query.isFetchingNextPage}
+        onPress={() => void query.fetchNextPage()}
+      />
     </View>
   );
 }
@@ -42,4 +60,5 @@ export function TaskSection({ kind, id }: { kind: CrmRecordKind; id: string }) {
 const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", paddingHorizontal: gutter },
   title: { flex: 1 },
+  more: { paddingHorizontal: gutter, alignItems: "flex-start" },
 });

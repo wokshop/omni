@@ -174,10 +174,13 @@ function TaskActions(props: { task: CrmTask; onSave: (change: TaskChange) => voi
         text: "Delete task",
         style: "destructive",
         onPress: () =>
-          remove.mutate(task.id, {
-            onSuccess: () => router.back(),
-            onError: (error) => crmErrorAlert(error, "The task was not deleted"),
-          }),
+          remove.mutate(
+            { id: task.id },
+            {
+              onSuccess: () => router.back(),
+              onError: (error) => crmErrorAlert(error, "The task was not deleted"),
+            },
+          ),
       },
     ]);
   return (

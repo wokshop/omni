@@ -6,12 +6,14 @@ import {
   useQuery,
   useQueryClient,
   type InfiniteData,
+  type MutateOptions,
+  type UseMutationResult,
 } from "@tanstack/react-query";
 import type { InferRequestType, InferResponseType } from "hono/client";
-import { api, call } from "./api.ts";
+import { api, call, inWorkspace } from "./api.ts";
 import { crmChanged, type CrmRecordKind } from "./crm-mutations.ts";
 import { keys } from "./query-keys.ts";
-import { cacheEpoch } from "./workspace-id.ts";
+import { cacheEpoch, currentWorkspaceId } from "./workspace-id.ts";
 
 type Tasks = Api["crm"]["tasks"];
 type Json<T> = T extends { json: infer J } ? J : never;
@@ -90,12 +92,25 @@ export function taskRecord(task: CrmTask) {
   return null;
 }
 
+type Named = { workspace: string | null };
+
+function named<R, V>(mutation: UseMutationResult<R, Error, V & Named, unknown>) {
+  return {
+    ...mutation,
+    mutate: (vars: V, options?: MutateOptions<R, Error, V & Named, unknown>) =>
+      mutation.mutate({ ...vars, workspace: currentWorkspaceId() }, options),
+  };
+}
+
 export const useCreateTask = () => {
   const client = useQueryClient();
-  return useMutation({
-    mutationFn: (json: NewTask) => call(api.crm.tasks.$post({ json })),
-    onSettled: () => crmChanged(client),
-  });
+  return named(
+    useMutation({
+      mutationFn: ({ workspace, ...json }: NewTask & Named) =>
+        call(api.crm.tasks.$post({ json }, inWorkspace(workspace))),
+      onSettled: () => crmChanged(client),
+    }),
+  );
 };
 
 /**
@@ -104,41 +119,47 @@ export const useCreateTask = () => {
  */
 export function useUpdateTask() {
   const client = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, ...json }: TaskChange & { id: string }) =>
-      call(api.crm.tasks[":id"].$patch({ param: { id }, json })),
-    onMutate: async ({ id, done }) => {
-      if (done === undefined) return;
-      const lists = ["crm", "tasks"];
-      await client.cancelQueries({ queryKey: lists });
-      const before = client.getQueriesData({ queryKey: lists });
-      const completedAt = done ? new Date().toISOString() : null;
-      const flip = (task: CrmTask) => (task.id === id ? { ...task, completedAt } : task);
-      client.setQueriesData<InfiniteData<TaskPage> | { task: CrmTask }>(
-        { queryKey: lists },
-        (data) => {
-          if (!data) return data;
-          if ("task" in data) return { task: flip(data.task) };
-          if (!("pages" in data)) return data;
-          return { ...data, pages: data.pages.map((p) => ({ ...p, tasks: p.tasks.map(flip) })) };
-        },
-      );
-      return { before, epoch: cacheEpoch() };
-    },
-    onError: (_error, _change, context) => {
-      if (!context || context.epoch !== cacheEpoch()) return;
-      for (const [key, data] of context.before) client.setQueryData(key, data);
-    },
-    onSettled: () => crmChanged(client),
-  });
+  return named(
+    useMutation({
+      mutationFn: ({ id, workspace, ...json }: TaskChange & { id: string } & Named) =>
+        call(api.crm.tasks[":id"].$patch({ param: { id }, json }, inWorkspace(workspace))),
+      onMutate: async ({ id, done }) => {
+        if (done === undefined) return;
+        const lists = ["crm", "tasks"];
+        await client.cancelQueries({ queryKey: lists });
+        const before = client.getQueriesData({ queryKey: lists });
+        const completedAt = done ? new Date().toISOString() : null;
+        const flip = (task: CrmTask) => (task.id === id ? { ...task, completedAt } : task);
+        client.setQueriesData<InfiniteData<TaskPage> | { task: CrmTask }>(
+          { queryKey: lists },
+          (data) => {
+            if (!data) return data;
+            if ("task" in data) return { task: flip(data.task) };
+            if (!("pages" in data)) return data;
+            return { ...data, pages: data.pages.map((p) => ({ ...p, tasks: p.tasks.map(flip) })) };
+          },
+        );
+        return { before, epoch: cacheEpoch() };
+      },
+      onError: (_error, _change, context) => {
+        if (!context || context.epoch !== cacheEpoch()) return;
+        for (const [key, data] of context.before) client.setQueryData(key, data);
+      },
+      onSettled: () => crmChanged(client),
+    }),
+  );
 }
 
+/** `mutate({ id })` deletes a task. */
 export const useDeleteTask = () => {
   const client = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) => call(api.crm.tasks[":id"].$delete({ param: { id } })),
-    onSettled: () => crmChanged(client),
-  });
+  return named(
+    useMutation({
+      mutationFn: ({ id, workspace }: { id: string } & Named) =>
+        call(api.crm.tasks[":id"].$delete({ param: { id } }, inWorkspace(workspace))),
+      onSettled: () => crmChanged(client),
+    }),
+  );
 };
 
 const pad = (n: number) => String(n).padStart(2, "0");
