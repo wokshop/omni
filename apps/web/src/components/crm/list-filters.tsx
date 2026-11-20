@@ -139,7 +139,7 @@ export function FilterMenu(props: FilterProps) {
             <Button
               intent="plain"
               size="text"
-              className="text-primary"
+              className="text-base/6 text-primary sm:text-sm/6"
               isDisabled={!set}
               onPress={reset}
             >
