@@ -24,7 +24,13 @@ public final class ErrorReporter: @unchecked Sendable {
             return
         }
         self.key = key
-        endpoint = URL(string: "\(dsn.scheme ?? "https")://\(host)/api/\(project)/envelope/")
+        var parts = URLComponents()
+        parts.scheme = dsn.scheme ?? "https"
+        parts.host = host
+        parts.port = dsn.port
+        let prefix = dsn.pathComponents.dropFirst().dropLast().joined(separator: "/")
+        parts.path = (prefix.isEmpty ? "" : "/\(prefix)") + "/api/\(project)/envelope/"
+        endpoint = parts.url
     }
 
     /// Reports `summary` (a type name, a status and code) for a Drive sync `stage`, once.

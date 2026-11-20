@@ -252,6 +252,8 @@ public func systemError(_ error: Error) -> Error {
     case is TokenError: return NSFileProviderError(.notAuthenticated)
     default:
         let nsError = error as NSError
+        // The extension's own answers (excluded file, paused, signed out) are expected, not failures.
+        if nsError.domain == NSFileProviderErrorDomain { return error }
         ErrorReporter.shared.report(stage: "sync", summary: "\(type(of: error)) \(nsError.domain) \(nsError.code)")
         return error
     }
