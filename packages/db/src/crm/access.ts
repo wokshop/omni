@@ -99,7 +99,8 @@ async function grantFolder(tx: Ex, member: CrmMember, dealId: string, email: str
 async function revokeFolder(tx: Ex, member: CrmMember, dealId: string, email: string) {
   const deal = await loadDeal(tx, member.orgId, dealId);
   if (!deal?.folderNodeId) return;
-  await memberStorage(tx as Db, member.id).removeGrant(deal.folderNodeId, email);
+  const removed = await memberStorage(tx as Db, member.id).removeGrant(deal.folderNodeId, email);
+  if (removed.status === "forbidden") refuse({ status: "sharing_refused", reason: "forbidden" });
 }
 
 /**
