@@ -410,6 +410,11 @@ test("a task on a record's Tasks tab opens in place of the tab's list without le
 
   expect(await rail.count()).toBe(0);
 
+  await page.reload();
+  await expect
+    .poll(() => panel.getByRole("textbox", { name: "Description" }).inputValue())
+    .toBe("Check the loading dock.");
+
   await panel.getByRole("button", { name: "Close task" }).click();
   await expect.poll(() => new URL(page.url()).searchParams.get("task")).toBeNull();
   await expect.poll(() => rail.isVisible()).toBe(true);
