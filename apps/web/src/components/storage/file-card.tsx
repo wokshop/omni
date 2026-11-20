@@ -52,7 +52,7 @@ export function FileCard(props: {
       id={node.id}
       href={props.href}
       textValue={node.name}
-      className={`flex-col items-stretch gap-2 rounded-xl p-1.5 transition-[background-color,scale] duration-150 ease-out hover:bg-hover active:scale-[.99] selected:bg-accent motion-reduce:transition-none ${CARD_DROP_TARGET} ${LIFTED}`}
+      className={`flex-col items-stretch gap-2 rounded-xl p-1.5 *:data-[slot=control]:absolute *:data-[slot=control]:start-3 *:data-[slot=control]:top-3 *:data-[slot=control]:z-10 transition-[background-color,scale] duration-150 ease-out hover:bg-hover active:scale-[.99] selected:bg-accent motion-reduce:transition-none ${CARD_DROP_TARGET} ${LIFTED}`}
     >
       {node.kind === "folder" ? (
         <FolderArt node={node} peek={props.peek} fileUrl={props.fileUrl} />

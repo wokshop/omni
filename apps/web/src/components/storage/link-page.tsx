@@ -21,7 +21,7 @@ import { FolderCrumbs } from "./folder-crumbs.tsx";
 import { FolderView, type FolderDialog } from "./folder-view.tsx";
 import { LinkFrame } from "./link-frame.tsx";
 import { storageErrorToast } from "./storage-errors.ts";
-import { downloadFile } from "@/lib/download.ts";
+import { downloadFile, downloadZip } from "@/lib/download.ts";
 
 export function LinkPage({ shareId, nodeId }: { shareId: string; nodeId?: string | undefined }) {
   const link = useStorageLink(shareId, nodeId);
@@ -57,9 +57,11 @@ function SharedFolder(props: {
   const menu = useMemo(
     () => (node: StorageNode, open: (dialog: FolderDialog) => void) => {
       const result: SettingsRowMenuItem[] = [
-        ...(node.kind === "file"
-          ? [{ icon: IconDownload, label: "Download", onAction: () => download(node) }]
-          : []),
+        {
+          icon: IconDownload,
+          label: "Download",
+          onAction: () => (node.kind === "file" ? download(node) : downloadZip([node.id], shareId)),
+        },
         ...(node.kind === "file" && canComment
           ? [
               {
@@ -128,6 +130,7 @@ function SharedFolder(props: {
           fileUrl,
           download,
           menu,
+          canTrash: () => canWrite,
           move: { kind: "link", shareId, top, path: below },
           empty: canWrite
             ? { title: "This folder is empty", description: "Drop files here or upload them." }

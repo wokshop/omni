@@ -298,7 +298,7 @@ test("realtime hands the app a Drive change, so an open folder can refetch", asy
     await until(() => (open ? true : undefined));
     const made = await api.storage.folders.$post({ json: { name: "Plans", space: "personal" } });
     expect(made.status).toBe(201);
-    const { node } = await made.json();
+    const { node } = (await made.json()) as { node: { id: string } };
     expect(await until(() => events[0])).toEqual({
       type: "storage.changed",
       space: "personal",
