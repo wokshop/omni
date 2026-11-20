@@ -162,7 +162,7 @@ export function ProjectPlan(props: { dealId: string }) {
         {rows.length === 0 ? (
           <EmptyState figure="cabinet" title="No milestones" />
         ) : (
-          <ol aria-label="Plan" className="group/rail flex flex-col">
+          <ol aria-label="Plan" className="group/rail -mt-2 flex flex-col">
             {rows.map((row, i) => {
               const place = railPlace(i, rows.length);
               switch (row.kind) {
