@@ -90,9 +90,9 @@ function TaskBody({ task }: { task: CrmTask }) {
                 onChange={(done) => save({ done })}
               />
             </View>
-            <TitleField key={task.title} task={task} onSave={(title) => save({ title })} />
+            <TitleField task={task} onSave={(title) => save({ title })} />
           </View>
-          <BodyField key={task.body ?? ""} task={task} onSave={(body) => save({ body })} />
+          <BodyField task={task} onSave={(body) => save({ body })} />
         </View>
         <Fields
           fields={[
@@ -118,9 +118,29 @@ function TaskBody({ task }: { task: CrmTask }) {
   );
 }
 
+function useDraft(saved: string) {
+  const [draft, setDraft] = useState(saved);
+  const [seen, setSeen] = useState(saved);
+  const [editing, setEditing] = useState(false);
+  if (saved !== seen && !editing) {
+    setSeen(saved);
+    setDraft(saved);
+  }
+  return {
+    draft,
+    setDraft,
+    onFocus: () => setEditing(true),
+    done: () => {
+      setEditing(false);
+      setSeen(saved);
+    },
+  };
+}
+
 function TitleField(props: { task: CrmTask; onSave: (title: string) => void }) {
-  const [draft, setDraft] = useState(props.task.title);
+  const { draft, setDraft, onFocus, done } = useDraft(props.task.title);
   const commit = () => {
+    done();
     const title = draft.trim();
     if (!title) return setDraft(props.task.title);
     if (title !== props.task.title) props.onSave(title);
@@ -135,6 +155,7 @@ function TitleField(props: { task: CrmTask; onSave: (title: string) => void }) {
       maxLength={TITLE_MAX}
       value={draft}
       onChangeText={setDraft}
+      onFocus={onFocus}
       onBlur={commit}
       containerStyle={styles.grow}
       style={styles.title}
@@ -143,7 +164,7 @@ function TitleField(props: { task: CrmTask; onSave: (title: string) => void }) {
 }
 
 function BodyField(props: { task: CrmTask; onSave: (body: string | null) => void }) {
-  const [draft, setDraft] = useState(props.task.body ?? "");
+  const { draft, setDraft, onFocus, done } = useDraft(props.task.body ?? "");
   return (
     <TextField
       label="Notes"
@@ -153,7 +174,9 @@ function BodyField(props: { task: CrmTask; onSave: (body: string | null) => void
       maxLength={BODY_MAX}
       value={draft}
       onChangeText={setDraft}
+      onFocus={onFocus}
       onBlur={() => {
+        done();
         const body = draft.trim() || null;
         if (body !== (props.task.body ?? null)) props.onSave(body);
       }}
