@@ -91,6 +91,7 @@ export function RecipientField(props: {
             size="sm"
             className={value.length ? "" : "ps-2"}
             autoFocus={props.autoFocus}
+            data-autofocus={props.autoFocus || undefined}
             onKeyDown={(event) => {
               if ([",", ";", " "].includes(event.key) || (event.key === "Enter" && text)) {
                 if (commit()) event.preventDefault();

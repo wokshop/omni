@@ -94,7 +94,7 @@ test("a reply draft comes back where it was left, in the thread and from Drafts"
   await context.close();
 });
 
-test("in a shared inbox, Reply on an earlier message brings the reply box into view, also after a send", async () => {
+test("in a shared inbox, Reply or Forward on an earlier message brings the composer into view and focus, also after a send", async () => {
   const email = "bea@reopen.test";
   const system = await createOrg(db, "reopen-system");
   await createMailbox(db, system.id, SYSTEM_MAIL_FROM);
@@ -148,5 +148,11 @@ test("in a shared inbox, Reply on an earlier message brings the reply box into v
   await first.getByRole("button", { name: "Reply", exact: true }).click();
   await expect.poll(inView).toBe(true);
   await expect.poll(focused).toBe(true);
+
+  await first.scrollIntoViewIfNeeded();
+  await first.hover();
+  await first.getByRole("button", { name: "Forward", exact: true }).click();
+  const to = page.getByRole("combobox", { name: "To" });
+  await expect.poll(() => to.evaluate((el) => el === document.activeElement)).toBe(true);
   await context.close();
 });

@@ -151,12 +151,15 @@ export function ReplyComposer({ thread, row }: { thread: Thread; row?: boolean }
   const showing = state.email && state.mode === "public";
   const key = `${thread.id}:${state.forwardId ? `forward:${state.forwardId}` : `reply:${state.replyToId ?? ""}`}:${state.generation}`;
   const box = useRef<HTMLDivElement>(null);
+  const forwarding = !!state.forwardId;
   useEffect(() => {
     if (!row || !showing) return;
-    const body = box.current?.querySelector<HTMLTextAreaElement>("[data-composer-body]");
+    const target = box.current?.querySelector<HTMLElement>(
+      forwarding ? "input[data-autofocus]" : "[data-composer-body]",
+    );
     box.current?.scrollIntoView({ block: "nearest" });
-    body?.focus({ preventScroll: true });
-  }, [row, showing, key]);
+    target?.focus({ preventScroll: true });
+  }, [row, showing, forwarding, key]);
   if (!state.email) return null;
   return (
     <div ref={box} hidden={!showing} className={row ? "relative" : "relative px-5 pb-4"}>
