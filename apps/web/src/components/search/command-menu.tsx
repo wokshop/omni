@@ -100,7 +100,7 @@ const FOOTER = [
 const keysOf = (id: ShortcutId) => (SHORTCUTS[id].keys[0] ?? []).flatMap(keyLabel);
 
 const SMART = "smart-search";
-const RECORD = /^(node|company|person|deal|thread):/;
+const RECORD = /^(node|company|person|deal|task|thread):/;
 const filter = (value: string, search: string, keywords?: string[]) =>
   value === SMART || RECORD.test(value) ? 1 : defaultFilter("", search, keywords);
 

@@ -6,26 +6,39 @@ import {
   IconCalendar,
   IconFilter,
   IconMoney,
-  IconUserMinus,
   IconUserRound,
   IconX,
 } from "@/components/icons/central";
-import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { useIsMobile } from "@/hooks/use-mobile.ts";
-import { ButtonGroup } from "@/components/ui/button-group";
-import { Menu, MenuItem, MenuLabel, MenuSubMenu, MenuTrigger } from "@/components/ui/menu";
+import {
+  Menu,
+  MenuItem,
+  MenuLabel,
+  MenuSeparator,
+  MenuSubMenu,
+  MenuTrigger,
+} from "@/components/ui/menu";
 import { useCrmStages, useOwners } from "@/hooks/use-crm.ts";
 import { formatMoney } from "@/lib/crm.ts";
 import { CloseDateDialog, ValueRangeDialog } from "./list-range-dialogs.tsx";
+import { MemberAvatar, NoMemberAvatar } from "./member-avatar.tsx";
 import { DAY } from "./record-list.tsx";
 
 /** The filters a list offers, in the order its menu shows them. */
-export type FilterKind = "owner" | "company" | "stage" | "close" | "value" | "archived";
+export type FilterKind =
+  | "owner"
+  | "assignee"
+  | "company"
+  | "stage"
+  | "close"
+  | "value"
+  | "archived";
 
 /** A list's filters as the URL holds them. */
 export interface FilterValues {
   owner?: string;
+  assignee?: string;
   company?: "with" | "without";
   stage?: string;
   closeAfter?: string;
@@ -39,6 +52,7 @@ type Patch = Partial<Record<keyof FilterValues, unknown>>;
 
 const CLEARS: Record<FilterKind, Patch> = {
   owner: { owner: undefined },
+  assignee: { assignee: undefined },
   company: { company: undefined },
   stage: { stage: undefined },
   close: { closeAfter: undefined, closeBefore: undefined },
@@ -48,6 +62,7 @@ const CLEARS: Record<FilterKind, Patch> = {
 
 const LABELS: Record<FilterKind, string> = {
   owner: "Owner",
+  assignee: "Assignee",
   company: "Company",
   stage: "Stage",
   close: "Close date",
@@ -57,6 +72,7 @@ const LABELS: Record<FilterKind, string> = {
 
 const ICONS: Record<FilterKind, ReactNode> = {
   owner: <IconUserRound data-slot="icon" />,
+  assignee: <IconUserRound data-slot="icon" />,
   company: <IconBuildings data-slot="icon" />,
   stage: <IconBoard data-slot="icon" />,
   close: <IconCalendar data-slot="icon" />,
@@ -82,57 +98,40 @@ const range = (from: string | null, to: string | null) =>
 
 type FilterProps = { kinds: FilterKind[]; values: FilterValues; onChange: (patch: Patch) => void };
 
-/** True when any of `kinds` narrows the list, so its chips need a row. */
-export const anyFilterSet = (kinds: FilterKind[], values: FilterValues) =>
-  kinds.some((kind) => isSet(kind, values));
-
-/** The set filters, each a chip that edits it and an X that clears it. */
-export function FilterChips(props: FilterProps) {
-  const [editing, setEditing] = useState<Editing>(null);
-  const shown = props.kinds.filter((kind) => isSet(kind, props.values));
-  return (
-    <>
-      {shown.map((kind) => (
-        <ButtonGroup key={kind}>
-          <ChipValue
-            kind={kind}
-            values={props.values}
-            onChange={props.onChange}
-            onEdit={setEditing}
-          />
-          <Button
-            intent="outline"
-            size="sq-sm"
-            aria-label={`Remove ${LABELS[kind]} filter`}
-            onPress={() => props.onChange(CLEARS[kind])}
-          >
-            <IconX />
-          </Button>
-        </ButtonGroup>
-      ))}
-      <FilterDialogs {...props} editing={editing} onClose={() => setEditing(null)} />
-    </>
-  );
-}
-
-/** Filter, in the page header: a menu of the filters not set yet. */
+/**
+ * Filter, in the page header: the filters in use, each removed from its own row, then the ones
+ * not set yet. The button counts the filters in use, so the list needs no row of chips.
+ */
 export function FilterMenu(props: FilterProps) {
   const [editing, setEditing] = useState<Editing>(null);
   const phone = useIsMobile();
+  const set = props.kinds.filter((kind) => isSet(kind, props.values));
   const left = props.kinds.filter((kind) => !isSet(kind, props.values));
-  if (!left.length) return null;
   return (
     <>
       <MenuTrigger>
         <Button
-          intent="plain"
-          size={phone ? "sq-sm" : "sm"}
-          aria-label={phone ? "Filter" : undefined}
+          intent="outline"
+          size={phone && !set.length ? "sq-sm" : "sm"}
+          aria-label="Filter"
+          className={set.length ? "bg-primary-subtle" : undefined}
         >
           <IconFilter />
           {!phone && "Filter"}
+          {set.length > 0 && (
+            <span className="tabular-nums text-muted-foreground">{set.length}</span>
+          )}
         </Button>
-        <Menu placement="bottom end" aria-label="Filter by">
+        <Menu placement="bottom end" aria-label="Filter by" className="min-w-56">
+          {set.map((kind) => (
+            <SetFilterEntry
+              key={kind}
+              kind={kind}
+              values={props.values}
+              onChange={props.onChange}
+            />
+          ))}
+          {set.length > 0 && left.length > 0 && <MenuSeparator />}
           {left.map((kind) => (
             <FilterMenuEntry key={kind} kind={kind} onChange={props.onChange} onEdit={setEditing} />
           ))}
@@ -140,6 +139,31 @@ export function FilterMenu(props: FilterProps) {
       </MenuTrigger>
       <FilterDialogs {...props} editing={editing} onClose={() => setEditing(null)} />
     </>
+  );
+}
+
+function SetFilterEntry(props: {
+  kind: FilterKind;
+  values: FilterValues;
+  onChange: (patch: Patch) => void;
+}) {
+  const { kind } = props;
+  const text = useChipText(kind, props.values);
+  return (
+    <MenuItem
+      id={`remove-${kind}`}
+      textValue={`Remove ${LABELS[kind]} filter`}
+      onAction={() => props.onChange(CLEARS[kind])}
+      className="pe-2.5"
+    >
+      {ICONS[kind]}
+      <MenuLabel className="flex min-w-0 items-center gap-1.5">
+        <span className="sr-only">Remove</span>
+        {kind !== "archived" && <span className="text-muted-foreground">{LABELS[kind]}</span>}
+        <span className="truncate tabular-nums">{text}</span>
+        <IconX aria-hidden className="ms-auto size-4 shrink-0 text-muted-foreground" />
+      </MenuLabel>
+    </MenuItem>
   );
 }
 
@@ -191,39 +215,16 @@ function FilterMenuEntry(props: {
   );
 }
 
-function ChipValue(props: {
-  kind: FilterKind;
-  values: FilterValues;
-  onChange: (patch: Patch) => void;
-  onEdit: (kind: "close" | "value") => void;
-}) {
-  const { kind } = props;
-  const text = useChipText(kind, props.values);
-  const button = (onPress?: () => void) => (
-    <Button intent="outline" size="sm" onPress={onPress} aria-label={`${LABELS[kind]}: ${text}`}>
-      {ICONS[kind]}
-      {kind !== "archived" && <span className="text-muted-foreground">{LABELS[kind]}</span>}
-      <span className="max-w-40 truncate tabular-nums">{text}</span>
-    </Button>
-  );
-  if (kind === "archived") return button();
-  if (kind === "close" || kind === "value") return button(() => props.onEdit(kind));
-  return (
-    <MenuTrigger>
-      {button()}
-      <ChoiceMenu kind={kind} onChange={props.onChange} />
-    </MenuTrigger>
-  );
-}
-
 function useChipText(kind: FilterKind, values: FilterValues) {
   const owners = useOwners();
   const stages = useCrmStages().data ?? [];
   switch (kind) {
     case "owner":
-      return values.owner === "none"
-        ? "No owner"
-        : (owners.find((o) => o.id === values.owner)?.name ?? "–");
+    case "assignee": {
+      const id = values[kind];
+      if (id === "none") return kind === "owner" ? "No owner" : "Unassigned";
+      return owners.find((o) => o.id === id)?.name ?? "–";
+    }
     case "company":
       return values.company === "with" ? "Any" : "None";
     case "stage":
@@ -246,24 +247,26 @@ function useChipText(kind: FilterKind, values: FilterValues) {
 function ChoiceMenu(props: { kind: FilterKind; onChange: (patch: Patch) => void }) {
   const owners = useOwners();
   const stages = useCrmStages().data ?? [];
-  if (props.kind === "owner") {
+  if (props.kind === "owner" || props.kind === "assignee") {
+    const { kind } = props;
+    const nobody = kind === "owner" ? "No owner" : "Unassigned";
     return (
-      <Menu placement="bottom start" aria-label="Owner">
-        <MenuItem id="none" textValue="No owner" onAction={() => props.onChange({ owner: "none" })}>
-          <IconUserMinus data-slot="icon" />
-          <MenuLabel>No owner</MenuLabel>
-        </MenuItem>
+      <Menu placement="bottom start" aria-label={LABELS[kind]}>
         {owners.map((owner) => (
           <MenuItem
             key={owner.id}
             id={owner.id}
             textValue={owner.name}
-            onAction={() => props.onChange({ owner: owner.id })}
+            onAction={() => props.onChange({ [kind]: owner.id })}
           >
-            <Avatar src={owner.image} initials={owner.name.slice(0, 1)} />
+            <MemberAvatar name={owner.name} image={owner.image} />
             <MenuLabel>{owner.name}</MenuLabel>
           </MenuItem>
         ))}
+        <MenuItem id="none" textValue={nobody} onAction={() => props.onChange({ [kind]: "none" })}>
+          <NoMemberAvatar />
+          <MenuLabel>{nobody}</MenuLabel>
+        </MenuItem>
       </Menu>
     );
   }

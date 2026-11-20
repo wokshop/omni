@@ -10,9 +10,6 @@ import { Checkbox, CheckboxField } from "@/components/ui/checkbox";
 import { Heading } from "@/components/ui/heading";
 import { ResizeGrip, useStoredWidth } from "@/components/ui/resize-grip";
 import { Link } from "@/components/ui/link";
-import { SearchField, SearchInput } from "@/components/ui/search-field";
-import { ItemLabel } from "@/components/ui/dropdown";
-import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useCrmTaskCounts, useCrmTasks, useUpdateTask } from "@/hooks/use-crm-tasks.ts";
 import { useIsMobile } from "@/hooks/use-mobile.ts";
@@ -28,8 +25,9 @@ import {
   type TaskFilter,
 } from "@/lib/crm-tasks.ts";
 import { crmErrorToast } from "./crm-errors.ts";
-import { useListSearch } from "./record-list.tsx";
 import { RecordMark } from "./record-list.tsx";
+import type { FilterKind } from "./list-filters.tsx";
+import { ListFilter } from "./list-toolbar.tsx";
 import { MemberAvatar } from "./member-avatar.tsx";
 import { NewTaskDialog, useMemberNames } from "./task-dialog.tsx";
 import { TaskPanel, useOpenTask } from "./task-panel.tsx";
@@ -71,38 +69,26 @@ export function TasksPage(props: {
     () => ({ id: props.task ?? null, href: open.href }),
     [props.task, open.href],
   );
-  const search = useListSearch(props.q);
   const [adding, setAdding] = useState(false);
   const filter: TaskFilter = {
     status: props.view === "done" ? "done" : "open",
     assignee: props.view === "mine" ? "me" : props.assignee,
     q: props.q,
   };
-  const views = (
-    <>
-      <ViewTabs view={props.view} />
-      {props.view !== "mine" && <AssigneeFilter value={props.assignee} />}
-    </>
-  );
   const stacked = phone || !!props.task;
   const list = (
     <StorageFrame
       title={
         <div className="flex min-w-0 items-center gap-3">
           <Heading className="truncate text-md">Tasks</Heading>
-          {!stacked && views}
+          {!stacked && <ViewTabs view={props.view} />}
         </div>
       }
       actions={
         <>
-          <SearchField
-            aria-label="Search tasks"
-            value={search.text}
-            onChange={search.setText}
-            className="w-40 sm:w-56"
-          >
-            <SearchInput size="sm" />
-          </SearchField>
+          {props.view !== "mine" && (
+            <ListFilter search={{ assignee: props.assignee }} filters={ASSIGNEE_FILTER} />
+          )}
           <Button
             size={phone ? "sq-sm" : "sm"}
             aria-label={phone ? "New task" : undefined}
@@ -114,7 +100,11 @@ export function TasksPage(props: {
         </>
       }
     >
-      {stacked && <div className="flex shrink-0 items-center gap-2 px-5 pb-2">{views}</div>}
+      {stacked && (
+        <div className="flex shrink-0 items-center gap-2 px-5 pb-2">
+          <ViewTabs view={props.view} />
+        </div>
+      )}
       <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-6">
         <TaskList filter={filter} grouped={props.view !== "done"} showRecord searched={!!props.q} />
       </div>
@@ -152,6 +142,8 @@ export function TasksPage(props: {
     </OpenTaskContext>
   );
 }
+
+const ASSIGNEE_FILTER: FilterKind[] = ["assignee"];
 
 const PANEL_WIDTH = 480;
 const PANEL_MIN = 360;
@@ -203,49 +195,6 @@ function ViewTabs({ view }: { view: TasksView }) {
   );
 }
 
-const ANYONE = "anyone";
-
-function AssigneeFilter({ value }: { value: string | undefined }) {
-  const navigate = useNavigate();
-  const members = useMemberNames();
-  const people = [
-    { id: ANYONE, name: "Anyone", image: null },
-    ...members,
-    { id: "none", name: "Unassigned", image: null },
-  ];
-  const chosen = members.find((member) => member.id === value);
-  return (
-    <Select
-      aria-label="Assignee"
-      value={value ?? ANYONE}
-      onChange={(id) =>
-        void navigate({
-          to: ".",
-          search: (prev: Record<string, unknown>) => ({
-            ...prev,
-            assignee: !id || id === ANYONE ? undefined : String(id),
-          }),
-          replace: true,
-        })
-      }
-      className="w-44"
-    >
-      <SelectTrigger
-        className="h-7"
-        leading={chosen && <MemberAvatar name={chosen.name} image={chosen.image} />}
-      />
-      <SelectContent items={people}>
-        {(person) => (
-          <SelectItem id={person.id} textValue={person.name}>
-            {members.includes(person) && <MemberAvatar name={person.name} image={person.image} />}
-            <ItemLabel>{person.name}</ItemLabel>
-          </SelectItem>
-        )}
-      </SelectContent>
-    </Select>
-  );
-}
-
 /** A record's own tasks, open first then done, with a way to add one. */
 export function RecordTasks(props: { kind: CrmRecordKind; id: string }) {
   const [adding, setAdding] = useState(false);
@@ -275,7 +224,7 @@ function DoneTasks({ filter }: { filter: TaskFilter }) {
   if (!list.tasks.length) return null;
   return (
     <section className="flex flex-col gap-1">
-      <h3 className="flex h-12 items-end px-2 pb-2 text-sm text-muted-foreground">Done</h3>
+      <h3 className="flex h-12 items-end px-2 pb-2 text-xs text-muted-foreground">Done</h3>
       <TaskRows tasks={list.tasks} showRecord={false} />
     </section>
   );
@@ -335,7 +284,7 @@ function TaskList(props: {
           return (
             <section key={id} aria-label={label} className="flex flex-col">
               <h3
-                className={`flex items-end gap-1.5 px-2 pb-2 text-sm text-muted-foreground ${index ? "h-12" : "h-9"}`}
+                className={`flex items-end gap-1.5 px-2 pb-2 text-xs text-muted-foreground ${index ? "h-12" : "h-9"}`}
               >
                 {label}
                 <span className="text-subtle-foreground tabular-nums">{tasks.length}</span>

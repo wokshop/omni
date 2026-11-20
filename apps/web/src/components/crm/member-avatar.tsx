@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { IconUserRound } from "@/components/icons/central";
 import { Avatar } from "@/components/ui/avatar";
 
 /**
@@ -14,5 +15,19 @@ export function MemberAvatar(props: { name: string; image?: string | null; size?
       className="bg-secondary text-muted-foreground outline-0 mix-blend-multiply"
       style={props.size ? ({ "--avatar-size": `${props.size}px` } as CSSProperties) : undefined}
     />
+  );
+}
+
+/** Nobody (no owner, unassigned): a dashed disc the size of a teammate's picture. */
+export function NoMemberAvatar(props: { size?: number }) {
+  return (
+    <span
+      data-slot="avatar"
+      aria-hidden
+      className="inline-flex size-(--avatar-size) shrink-0 items-center justify-center rounded-full border border-dashed border-muted-foreground/60 text-muted-foreground"
+      style={props.size ? ({ "--avatar-size": `${props.size}px` } as CSSProperties) : undefined}
+    >
+      <IconUserRound className="m-0! size-[62%]!" />
+    </span>
   );
 }

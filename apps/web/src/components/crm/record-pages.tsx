@@ -37,7 +37,7 @@ import {
 } from "./record-fields.tsx";
 import { RecordFiles } from "./record-files.tsx";
 import { byAddress } from "@/components/avatar/sender-avatar";
-import { MemberAvatar } from "./member-avatar.tsx";
+import { MemberAvatar, NoMemberAvatar } from "./member-avatar.tsx";
 import { DetailSection, RecordLayout, RecordState } from "./record-layout.tsx";
 import { DAY } from "./record-list.tsx";
 import {
@@ -76,7 +76,11 @@ function OwnerValue(props: {
       options={[...owners, { id: NO_OWNER, name: "No owner", image: null }]}
       onSave={(id) => props.onSave(id === NO_OWNER ? null : id)}
       mark={(owner) =>
-        owner.id === NO_OWNER ? undefined : <MemberAvatar name={owner.name} image={owner.image} />
+        owner.id === NO_OWNER ? (
+          <NoMemberAvatar />
+        ) : (
+          <MemberAvatar name={owner.name} image={owner.image} />
+        )
       }
     />
   );

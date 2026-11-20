@@ -127,7 +127,7 @@ test("bulk archive moves the selected companies to the archived view and restore
   await page.getByRole("button", { name: "Restore", exact: true }).click();
   await page.getByRole("row", { name: /Globex/ }).waitFor({ state: "detached" });
 
-  await page.getByRole("button", { name: "Remove Archived filter" }).click();
+  await removeFilter(page, "Archived");
   await expect.poll(() => names(page)).toEqual(["Acme", "Globex", "Initech"]);
 });
 
@@ -141,7 +141,7 @@ test("a selection is dropped when a filter changes the view, and stays gone when
   await page.getByRole("button", { name: "Filter", exact: true }).click();
   await page.getByRole("menuitem", { name: "Archived" }).click();
   await expect.poll(() => new URL(page.url()).searchParams.get("archived")).toBe("only");
-  await page.getByRole("button", { name: "Remove Archived filter" }).click();
+  await removeFilter(page, "Archived");
   await page.getByRole("row", { name: /Acme/ }).waitFor();
 
   expect(await page.getByText("1 selected").count()).toBe(0);
@@ -172,7 +172,7 @@ test("the company filter narrows the people list and removing its chip lists eve
   await page.getByRole("row", { name: /Gail/ }).waitFor();
   expect(await names(page)).toEqual(["Gail"]);
 
-  await page.getByRole("button", { name: "Remove Company filter" }).click();
+  await removeFilter(page, "Company");
   await expect.poll(() => names(page)).toEqual(["Gail", "Ivo"]);
 });
 
@@ -185,7 +185,7 @@ test("the deal board shows only the owner's deals when filtered by owner", async
   const page = await team.page(`/crm/deals?owner=${bea.id}`);
   await page.getByRole("row", { name: "Bea's deal" }).waitFor();
   expect(await page.getByRole("row", { name: "Ana's deal" }).count()).toBe(0);
-  await page.getByRole("button", { name: "Remove Owner filter" }).click();
+  await removeFilter(page, "Owner");
   await page.getByRole("row", { name: "Ana's deal" }).waitFor();
 });
 
@@ -468,4 +468,9 @@ async function freePort() {
   const { port } = server.address() as AddressInfo;
   await new Promise((resolve) => server.close(resolve));
   return port;
+}
+
+async function removeFilter(page: Page, label: string) {
+  await page.getByRole("button", { name: "Filter", exact: true }).click();
+  await page.getByRole("menuitem", { name: new RegExp(`^Remove ${label}`) }).click();
 }

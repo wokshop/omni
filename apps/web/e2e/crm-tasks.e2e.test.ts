@@ -134,6 +134,45 @@ test("a task opens beside the list, edits save to that task, and Escape closes i
   await context.close();
 });
 
+test("an open task is found from the command menu and opens beside the task list", async () => {
+  const origin = String(worker.url);
+  const org = await createOrg(db, "find-task");
+  await db.insert(schema.orgSetup).values({ orgId: org.id, step: "complete" });
+  const email = `find-${Date.now()}@studio.test`;
+  const member = await createMember(db, org.id, email);
+  await db.update(schema.members).set({ role: "owner" }).where(eq(schema.members.id, member.id));
+  const cookie = await signIn({ url: new URL(origin) }, db, email);
+  const made = await fetch(new URL("/api/crm/tasks", origin), {
+    method: "POST",
+    headers: { cookie, origin, "content-type": "application/json", "omni-workspace": org.id },
+    body: JSON.stringify({ title: "Scout the rooftop location" }),
+  });
+  const { task } = (await made.json()) as { task: { id: string } };
+
+  const context = await browser.newContext();
+  await context.addCookies(
+    cookie.split("; ").map((pair) => {
+      const at = pair.indexOf("=");
+      return { name: pair.slice(0, at), value: pair.slice(at + 1), url: origin };
+    }),
+  );
+  const page = await context.newPage();
+  await page.goto(new URL(`/${org.slug}/crm/companies`, origin).toString());
+  await page.getByRole("main").waitFor();
+  const menu = page.getByRole("dialog", { name: "Search and commands" });
+  await page.keyboard.press("Control+k");
+  await menu.waitFor();
+  await page.keyboard.type("rooftop");
+  await menu.getByRole("option", { name: /Scout the rooftop location/ }).click();
+  await page.waitForURL(new RegExp(`/${org.slug}/crm/tasks\\?`));
+  expect(new URL(page.url()).searchParams.get("task")).toBe(task.id);
+  await page
+    .getByRole("region", { name: "Task" })
+    .getByRole("textbox", { name: "Title" })
+    .waitFor();
+  await context.close();
+});
+
 async function row(id: string) {
   const [found] = await db.select().from(schema.crmTasks).where(eq(schema.crmTasks.id, id));
   return found;

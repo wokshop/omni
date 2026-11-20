@@ -21,7 +21,7 @@ import type {
 import { DealBoard } from "./deal-board.tsx";
 import { COMPANY_COLUMNS, DEAL_COLUMNS, PEOPLE_COLUMNS } from "./list-columns.tsx";
 import type { FilterKind } from "./list-filters.tsx";
-import { ListFilter, ListToolbar } from "./list-toolbar.tsx";
+import { BoardSort, ListFilter } from "./list-toolbar.tsx";
 import { isFiltered, useListView } from "./list-view.tsx";
 import { NewCompanyDialog, NewDealDialog, NewPersonDialog } from "./new-records.tsx";
 import { RecordList, RecordMark, useListSearch } from "./record-list.tsx";
@@ -71,7 +71,6 @@ export function CompaniesPage({ search }: { search: CrmCompaniesSearch }) {
         search={{ ...text, q }}
         source={sourceOf(list, list.companies)}
         columns={COMPANY_COLUMNS}
-        toolbar={<ListToolbar search={search} filters={COMPANY_FILTERS} />}
         filter={<ListFilter search={search} filters={COMPANY_FILTERS} />}
         filtered={isFiltered(search)}
         {...view}
@@ -105,7 +104,6 @@ export function PeoplePage({ search }: { search: CrmPeopleSearch }) {
         search={{ ...text, q }}
         source={sourceOf(list, list.people)}
         columns={PEOPLE_COLUMNS}
-        toolbar={<ListToolbar search={search} filters={PEOPLE_FILTERS} />}
         filter={<ListFilter search={search} filters={PEOPLE_FILTERS} />}
         filtered={isFiltered(search)}
         {...view}
@@ -142,19 +140,17 @@ export function DealsPage({ search }: { search: CrmDealsSearch }) {
         search={{ ...text, q }}
         source={sourceOf(list, list.deals)}
         columns={DEAL_COLUMNS}
-        toolbar={
-          <ListToolbar
-            search={dealSearch}
-            sorts={board ? BOARD_SORTS : undefined}
-            filters={dealFilters}
-          />
-        }
         filtered={isFiltered(search)}
         {...view}
         mark={(deal) => <RecordMark name={deal.name} />}
         href={recordHref(inWorkspace, "deals")}
         onNew={() => setAdding(true)}
-        extra={<ViewToggle view={shown} />}
+        extra={
+          <>
+            {board && <BoardSort search={dealSearch} sorts={BOARD_SORTS} />}
+            <ViewToggle view={shown} />
+          </>
+        }
         filter={<ListFilter search={dealSearch} filters={dealFilters} />}
         replaceBody={board ? <DealBoard deals={list.deals} list={list} /> : undefined}
       />
@@ -177,7 +173,6 @@ export function ProjectsPage({ search }: { search: CrmProjectsSearch }) {
       search={{ ...text, q }}
       source={sourceOf(list, list.deals)}
       columns={DEAL_COLUMNS}
-      toolbar={<ListToolbar search={search} filters={PROJECT_FILTERS} />}
       filter={<ListFilter search={search} filters={PROJECT_FILTERS} />}
       filtered={isFiltered(search)}
       {...view}
