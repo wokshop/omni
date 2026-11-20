@@ -1,7 +1,13 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useCallback } from "react";
 import type { CrmSort } from "@/lib/crm.ts";
-import { FilterBar, type FilterKind, type FilterValues } from "./list-filters.tsx";
+import {
+  anyFilterSet,
+  FilterChips,
+  FilterMenu,
+  type FilterKind,
+  type FilterValues,
+} from "./list-filters.tsx";
 import { SortControl, sortOf, sortParams, type SortState } from "./list-sort.tsx";
 
 /** A list's view as the URL holds it: its sort and its filters. */
@@ -21,9 +27,15 @@ export function useSetListSearch() {
   );
 }
 
+/** Filter, in the page header beside search. */
+export function ListFilter(props: { search: ListSearch; filters: FilterKind[] }) {
+  const set = useSetListSearch();
+  return <FilterMenu kinds={props.filters} values={props.search} onChange={set} />;
+}
+
 /**
- * The filter chips under a list's header (Attio's view bar). A table sorts from its column
- * headers, so only a view without them (the deals' board) passes `sorts` for a sort control.
+ * The row under a list's header: the filters in use as chips, and the deals board's sort (a
+ * table sorts from its column headers). Nothing at all while neither has anything to show.
  */
 export function ListToolbar(props: {
   search: ListSearch;
@@ -32,6 +44,7 @@ export function ListToolbar(props: {
 }) {
   const set = useSetListSearch();
   const sort = sortOf(props.search);
+  if (!props.sorts && !anyFilterSet(props.filters, props.search)) return null;
   return (
     <div
       role="toolbar"
@@ -45,7 +58,7 @@ export function ListToolbar(props: {
           onChange={(next: SortState) => set(sortParams(next))}
         />
       )}
-      <FilterBar kinds={props.filters} values={props.search} onChange={set} />
+      <FilterChips kinds={props.filters} values={props.search} onChange={set} />
     </div>
   );
 }

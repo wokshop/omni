@@ -166,7 +166,7 @@ export function SelectContent<T extends object>({
   popover,
   className,
 }: SelectContentProps<T>) {
-  const { side, align } = toSideAlign(popover?.placement ?? "bottom");
+  const { side, align } = toSideAlign(popover?.placement ?? "bottom start");
   return (
     <SelectContentPrimitive
       side={side}

@@ -38,7 +38,7 @@ export function RecordLayout(props: {
       <div className="flex min-h-0 flex-1 overflow-y-auto max-lg:flex-col lg:overflow-hidden">
         <aside
           aria-label="Details"
-          className="flex shrink-0 flex-col gap-6 px-5 py-5 lg:w-80 lg:overflow-y-auto lg:border-e"
+          className="flex shrink-0 flex-col gap-6 px-5 py-5 lg:w-96 lg:overflow-y-auto lg:border-e"
         >
           <div className="flex min-w-0 items-center gap-3">
             <RecordMark name={props.name} square={props.square} who={props.who} size={32} />
@@ -182,7 +182,7 @@ export function RecordState(props: {
 function RecordBones() {
   return (
     <div className="flex gap-0 max-lg:flex-col">
-      <div className="flex flex-col gap-4 px-5 py-5 lg:w-80">
+      <div className="flex flex-col gap-4 px-5 py-5 lg:w-96">
         <div className="flex items-center gap-3">
           <SkeletonBox width={32} height={32} radius="999px" />
           <SkeletonBox width={140} height={12} />

@@ -50,9 +50,20 @@ export function TasksPage(props: { view: TasksView; assignee?: string; q: string
     assignee: props.view === "mine" ? "me" : props.assignee,
     q: props.q,
   };
+  const views = (
+    <>
+      <ViewTabs view={props.view} />
+      {props.view !== "mine" && <AssigneeFilter value={props.assignee} />}
+    </>
+  );
   return (
     <StorageFrame
-      title={<Heading className="truncate text-md">Tasks</Heading>}
+      title={
+        <div className="flex min-w-0 items-center gap-3">
+          <Heading className="truncate text-md">Tasks</Heading>
+          {!phone && views}
+        </div>
+      }
       actions={
         <>
           <SearchField
@@ -74,10 +85,7 @@ export function TasksPage(props: { view: TasksView; assignee?: string; q: string
         </>
       }
     >
-      <div className="flex shrink-0 items-center gap-2 px-5 pb-2">
-        <ViewTabs view={props.view} />
-        {props.view !== "mine" && <AssigneeFilter value={props.assignee} />}
-      </div>
+      {phone && <div className="flex shrink-0 items-center gap-2 px-5 pb-2">{views}</div>}
       <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-6">
         <TaskList filter={filter} grouped={props.view !== "done"} showRecord searched={!!props.q} />
       </div>
