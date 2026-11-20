@@ -34,7 +34,7 @@ export function DayField(props: {
         popover={{ placement: "bottom start" }}
       >
         <Label>{props.label}</Label>
-        <Group className="flex">
+        <Group data-slot="control" className="flex">
           <AriaButton
             className={cn(
               "flex h-8 w-full min-w-0 cursor-default items-center gap-x-2 rounded-lg border border-input bg-(--control-bg,var(--color-background)) px-2 text-start text-sm text-foreground outline-hidden",

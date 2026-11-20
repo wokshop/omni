@@ -243,7 +243,7 @@ export function DealPage({ id }: { id: string }) {
         list={deal.stageKind === "won" ? "projects" : "deals"}
         here={{ kind: "deals", id }}
         name={deal.name}
-        mark={<DealMark deal={deal} client={company} size={40} />}
+        mark={<DealMark deal={deal} client={company} size={company ? 40 : 28} />}
         subtitle={company?.name}
         badge={
           <>

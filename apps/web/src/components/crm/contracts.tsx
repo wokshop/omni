@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { Button as Pressable } from "react-aria-components/Button";
 import { Skeleton, SkeletonBox } from "skullet/react";
 import { EmptyState } from "@/components/empty/empty-state";
@@ -247,8 +247,8 @@ const titleFrom = (name: string) =>
 
 function NewContractDialog(props: { owner: Owner; folderId: string | null; onClose: () => void }) {
   const create = useCreateContract();
-  const [title, setTitle] = useState("");
-  const fileTitle = useRef("");
+  const [named, setNamed] = useState({ title: "", fromFile: "" });
+  const { title } = named;
   const [file, setFile] = useState<string | null>(null);
   const [effectiveOn, setEffectiveOn] = useState<string | null>(null);
   const [expiresOn, setExpiresOn] = useState<string | null>(null);
@@ -257,11 +257,9 @@ function NewContractDialog(props: { owner: Owner; folderId: string | null; onClo
     setFile(id);
     if (!name) return;
     const next = titleFrom(name);
-    setTitle((current) => {
-      if (current.trim() && current !== fileTitle.current) return current;
-      fileTitle.current = next;
-      return next;
-    });
+    setNamed((now) =>
+      now.title.trim() && now.title !== now.fromFile ? now : { title: next, fromFile: next },
+    );
   };
 
   return (
@@ -289,7 +287,12 @@ function NewContractDialog(props: { owner: Owner; folderId: string | null; onClo
       }
     >
       <FilePicker owner={props.owner} folderId={props.folderId} value={file} onChange={pick} />
-      <TextField isRequired maxLength={NAME_MAX} value={title} onChange={setTitle}>
+      <TextField
+        isRequired
+        maxLength={NAME_MAX}
+        value={title}
+        onChange={(text) => setNamed((now) => ({ ...now, title: text }))}
+      >
         <Label>Title</Label>
         <Input autoComplete="off" />
       </TextField>

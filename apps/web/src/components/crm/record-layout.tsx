@@ -64,7 +64,12 @@ export function RecordLayout(props: {
           >
             <div className="flex min-w-0 items-center gap-3">
               {props.mark ?? (
-                <RecordMark name={props.name} square={props.square} who={props.who} size={40} />
+                <RecordMark
+                  name={props.name}
+                  square={props.square}
+                  who={props.who}
+                  size={props.subtitle ? 40 : 28}
+                />
               )}
               <div className="flex min-w-0 flex-col">
                 <div className="flex min-w-0 items-center gap-2">

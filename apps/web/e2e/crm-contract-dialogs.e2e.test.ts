@@ -63,6 +63,8 @@ test("a new contract takes its title from the uploaded PDF and its dates from th
   const page = await team.page(`/crm/deals/${deal.id}`);
   await page.getByRole("tab", { name: "Contracts" }).click();
   await page.getByText("No contracts yet").waitFor();
+  await page.mouse.move(0, 0);
+  if (SHOTS) await page.waitForTimeout(600);
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/contracts-empty.png` });
 
   await page.getByRole("button", { name: "New contract" }).click();
