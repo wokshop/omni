@@ -19,6 +19,7 @@ import {
   openRequestOf,
   withdrawContract,
 } from "./crm/contract-signing.ts";
+import { recordSignedCopy, type SignedCopyInput } from "./crm/contract-signed-copy.ts";
 import {
   createContract,
   deleteContract,
@@ -114,6 +115,7 @@ export {
   type EndedContract,
 } from "./crm/contract-expiry.ts";
 export type { CrmContractSigner, CrmContractSigning } from "./crm/contract-progress.ts";
+export type { SignedCopyInput } from "./crm/contract-signed-copy.ts";
 export {
   CONTRACT_SETTLE_BATCH,
   settleSentContracts,
@@ -138,6 +140,7 @@ export type {
   ContractPatch,
   ContractResult,
   CrmContract,
+  ContractSignedBy,
   CrmContractRow,
   ListContractsInput,
   SignatureOpen,
@@ -271,6 +274,8 @@ export function memberCrm(db: Db, memberId: string) {
     updateContract: (id: string, patch: ContractPatch) =>
       writeAsMember(door, (m, tx) => updateContract(tx, m, id, patch)),
     deleteContract: (id: string) => writeAsMember(door, (m, tx) => deleteContract(tx, m, id)),
+    recordSignedCopy: (id: string, input: SignedCopyInput) =>
+      writeAsMember(door, (m, tx) => recordSignedCopy(tx, m, id, input)),
     contractToSend: (id: string) => asMember(door, (m, ex) => contractToSend(ex, m, id)),
     markContractSent: (id: string, request: Parameters<typeof markContractSent>[3]) =>
       writeAsMember(door, (m, tx) => markContractSent(tx, m, id, request)),
