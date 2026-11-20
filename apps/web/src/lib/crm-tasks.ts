@@ -132,7 +132,7 @@ export function dayOf(iso: string | null) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
-/** A picked day as the moment the API stores: the end of that day here (ADR 0054). */
+/** A picked day as the moment the API stores: the end of that day here. */
 export function dueAtOf(day: string) {
   if (!day) return null;
   const [year, month, date] = day.split("-").map(Number);

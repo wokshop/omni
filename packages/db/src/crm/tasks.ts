@@ -5,7 +5,7 @@ import { crmTasks } from "../schema/crm/tasks.ts";
 import { NOT_FOUND, pageSize, type CrmMember, type CrmRecordRef, type Ex } from "./core.ts";
 import { recordExists } from "./notes.ts";
 
-/** A task (ADR 0054), with the name of the record it is on. */
+/** A task, with the name of the record it is on. */
 export interface CrmTask {
   id: string;
   title: string;

@@ -8,7 +8,7 @@ const memberRef = (name: string) =>
   text(name).references(() => members.id, { onDelete: "set null" });
 
 /**
- * A to-do for the workspace (ADR 0054), on at most one company, person or deal. Open while
+ * A to-do for the workspace, on at most one company, person or deal. Open while
  * `completed_at` is null. `due_at` is a moment: a client sends the end of the day it picked.
  */
 export const crmTasks = pgTable(

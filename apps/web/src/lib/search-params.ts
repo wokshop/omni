@@ -37,7 +37,7 @@ export const fileSearchSearch = z.object({ mailbox: optionalId, q: optional(z.st
 /** A CRM list: `q` searches it on the server. */
 export const crmListSearch = z.object({ mailbox: optionalId, q: optional(z.string()) });
 
-/** The tasks (ADR 0054): mine unless `view` says all or done; `assignee` narrows all and done. */
+/** The tasks: mine unless `view` says all or done; `assignee` narrows all and done. */
 export const crmTasksSearch = z.object({
   mailbox: optionalId,
   q: optional(z.string()),
