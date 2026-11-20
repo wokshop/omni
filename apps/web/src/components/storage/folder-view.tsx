@@ -393,7 +393,7 @@ function FolderActions(props: {
   selection: NodeSelection;
   source: FolderSource;
   onNewFolder: () => void;
-  onFiles: (files: File[]) => void;
+  onFiles: (files: File[] | Picked) => void;
   onMove: () => void;
 }) {
   const { selection, source } = props;
