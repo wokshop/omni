@@ -125,13 +125,13 @@ public struct Uploader {
         }
     }
 
-    private static let hashQueue = DispatchQueue(label: "omni.sync.hash", qos: .utility, attributes: .concurrent)
+    private static let hashQueue = DispatchQueue(label: "omni.sync.hash", qos: .userInitiated, attributes: .concurrent)
 
     private static func hash(_ file: URL, stop: StopFlag) throws -> Bytes {
         let descriptor = Darwin.open(file.path, O_RDONLY)
         guard descriptor >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
         defer { close(descriptor) }
-        let chunk = 1 << 20
+        let chunk = 4 << 20
         let buffer = UnsafeMutableRawBufferPointer.allocate(byteCount: chunk, alignment: 16)
         defer { buffer.deallocate() }
         var hash = SHA256()
