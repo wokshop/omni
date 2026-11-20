@@ -28,6 +28,8 @@ export function AddPersonPicker(props: {
   /** Already there: left out of the choices. */
   exclude: string[];
   onAdd: (personId: string) => void;
+  /** While an addition saves, so the next one starts from the saved list. */
+  isDisabled?: boolean;
 }) {
   const [button, setButton] = useState<HTMLButtonElement | null>(null);
   const [open, setOpen] = useState(false);
@@ -44,6 +46,7 @@ export function AddPersonPicker(props: {
       query={query}
       onQueryChange={setQuery}
       filter={false}
+      disabled={props.isDisabled}
       autoHighlight
       status={list.isPending ? "loading" : "idle"}
       open={open}

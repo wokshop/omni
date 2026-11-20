@@ -293,6 +293,7 @@ export function DealPage({ id }: { id: string }) {
             </DetailSection>
             <PeopleSection
               people={people}
+              picking={update.isPending}
               onPick={(personId) => save({ id, personIds: [...people.map((p) => p.id), personId] })}
               onRemove={(personId) =>
                 save({ id, personIds: people.map((p) => p.id).filter((p) => p !== personId) })

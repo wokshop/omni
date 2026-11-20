@@ -156,6 +156,8 @@ export function PeopleSection(props: {
   people: CrmPerson[];
   onAdd?: () => void;
   onPick?: (personId: string) => void;
+  /** While a pick saves. */
+  picking?: boolean;
   onRemove?: (personId: string) => void;
 }) {
   const { onRemove, onPick, onAdd } = props;
@@ -164,6 +166,7 @@ export function PeopleSection(props: {
       label="Add person"
       exclude={props.people.map((person) => person.id)}
       onAdd={onPick}
+      isDisabled={props.picking}
     />
   ) : onAdd ? (
     <AddButton label="Add person" onPress={onAdd} />
