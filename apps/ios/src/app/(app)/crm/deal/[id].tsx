@@ -2,6 +2,7 @@ import { Stack, useLocalSearchParams } from "expo-router";
 import { PersonRow } from "@/components/crm/record-rows.tsx";
 import { Fields, RecordView, Section } from "@/components/crm/record-view.tsx";
 import { RecordActions } from "@/components/crm/record-actions.tsx";
+import { ContractsSection } from "@/components/crm/contracts-section.tsx";
 import { RecordFilesSection } from "@/components/crm/record-files.tsx";
 import { TaskSection } from "@/components/crm/task-section.tsx";
 import { TimelineSection } from "@/components/crm/timeline-section.tsx";
@@ -43,6 +44,7 @@ export default function Deal() {
               ]}
             />
             <Section title="People" items={data.people} render={(p) => <PersonRow person={p} />} />
+            <ContractsSection owner={{ kind: "deals", id }} />
             <RecordFilesSection
               kind="deals"
               id={id}

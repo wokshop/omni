@@ -501,6 +501,9 @@ export const storageSignBodySchema = z.object({
   consentVersion: z.string(),
 });
 
+/** `POST /api/storage/signing/:id/link`: the token from the signing mail's link. */
+export const storageSigningLinkBodySchema = z.object({ token: z.string().min(20).max(200) });
+
 /**
  * A drive the person can sync, and its revision now. A provider compares it with the revision it
  * last saw here to know the drive changed; a changes cursor is opaque and is not comparable.
