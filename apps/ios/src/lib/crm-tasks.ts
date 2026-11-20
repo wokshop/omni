@@ -218,7 +218,7 @@ export function dueLabel(iso: string | null, now = new Date()) {
   if (!iso) return null;
   const day = dayOf(iso);
   const shifted = (days: number) =>
-    dayOf(new Date(now.getTime() + days * 86_400_000).toISOString());
+    dayOf(new Date(now.getFullYear(), now.getMonth(), now.getDate() + days, 12).toISOString());
   if (day === shifted(0)) return "Today";
   if (day === shifted(1)) return "Tomorrow";
   if (day === shifted(-1)) return "Yesterday";
