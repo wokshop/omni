@@ -116,12 +116,13 @@ function decodeEntities(text: string) {
   });
 }
 
-const tidy = (text: string) =>
+const squeeze = (text: string) =>
   text
     .replace(/\r\n?/g, "\n")
     .replace(/[ \t\f\v]+\n/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+    .replace(/\n{3,}/g, "\n\n");
+
+const tidy = (text: string) => squeeze(text).trim();
 
 function html(source: string) {
   return decodeEntities(
@@ -264,7 +265,7 @@ function xlsx(bytes: Uint8Array) {
   for (const { name, part } of sheetsInOrder(parts, sheet)) {
     out.push(`--- Sheet: ${name} ---`);
     for (const [, row] of parts.get(part)!.matchAll(/<row\b[^>]*>([\s\S]*?)<\/row>/g)) {
-      const line = sheetRow(row!, strings);
+      const line = squeeze(sheetRow(row!, strings));
       if (!line) continue;
       out.push(line);
       size += line.length + 1;
