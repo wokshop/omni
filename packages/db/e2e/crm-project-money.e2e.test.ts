@@ -275,6 +275,25 @@ test("a freelancer on a project at a second address still opens their contract",
   expect(await iris.storage.node(pdf.id)).toBeNull();
 });
 
+test("leaving one project keeps a file another project's contract still gives", async () => {
+  const { team, website, app, pdf, franDoor } = await studio("money-shared-file");
+  const [msa] = ok(await team.listContracts({ dealId: website.id })).contracts;
+  ok(await team.updateContract(msa!.id, { memberIds: [franDoor.id] }));
+  ok(
+    await team.createContract({
+      title: "MSA, app",
+      dealId: app.id,
+      documentNodeId: pdf.id,
+      memberIds: [franDoor.id],
+    }),
+  );
+
+  ok(await team.revokeProjectAccess(website.id, "fran@money-shared-file.test"));
+  expect((await franDoor.storage.node(pdf.id))?.role).toBe("viewer");
+  ok(await team.revokeProjectAccess(app.id, "fran@money-shared-file.test"));
+  expect(await franDoor.storage.node(pdf.id)).toBeNull();
+});
+
 test("a locked contract filed before the Admin folder is filed when a freelancer joins", async () => {
   const { org, teamDoor, team, website, folder, pdf } = await studio("money-locked");
   ok(await teamDoor.storage.lock(pdf.id));
