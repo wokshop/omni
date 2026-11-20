@@ -214,7 +214,7 @@ export function CrmMenu() {
                   ) : undefined
                 }
                 onPress={() => {
-                  place.openPage("crm", "projects");
+                  place.openPage("crm", deal.stageKind === "won" ? "projects" : "deals");
                   close();
                   router.push({ pathname: "/crm/deal/[id]", params: { id: deal.id } });
                 }}
