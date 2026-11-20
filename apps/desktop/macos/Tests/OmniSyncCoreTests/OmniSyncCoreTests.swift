@@ -74,7 +74,7 @@ private func node(
 
 @Test func aLockedFileIsReadOnlyBeforeTheServerHasToRefuse() {
     let caps = capabilities(of: .node(orgId: org, nodeId: nodeId), node: node(lockedAt: "2026-11-16T00:00:00Z"))
-    #expect(caps == [.allowsReading, .allowsEvicting, .allowsExcludingFromSync])
+    #expect(caps == [.allowsReading, .allowsExcludingFromSync])
 }
 
 @Test func anAnchorWithTheSameCursorsIsTheSameBytes() throws {

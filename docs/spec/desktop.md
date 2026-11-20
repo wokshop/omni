@@ -402,7 +402,7 @@ edges. Schema changes go through `db:generate`, never a hand-written migration.
   `revision`, both as the decimal string's bytes. A folder's content version is constant.
 - **Capabilities.** Made-up levels: read and enumerate; a space folder also allows adding
   children. A locked file (`lockedAt`): read only. Everything else: all of them, with delete
-  meaning Trash. Every node can also be evicted ("Remove Download") and excluded from sync.
+  meaning Trash. Every node can be excluded from sync; "Remove Download" is the system's own default from macOS 13.
 - **Enumeration.** A folder's first listing is `GET /nodes?parent=` paged to the end. Changes
   come from the working-set enumerator only: its sync anchor is a small JSON map,
   `{ "<orgId>:<space>": <cursor> }`, one entry per synced drive, and `enumerateChanges` walks

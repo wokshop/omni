@@ -34,7 +34,7 @@ public func capabilities(of item: ItemID, node: StorageNode? = nil) -> NSFilePro
     case .space:
         return browse.union(.allowsAddingSubItems)
     case .node:
-        let local: NSFileProviderItemCapabilities = [.allowsEvicting, .allowsExcludingFromSync]
+        let local: NSFileProviderItemCapabilities = [.allowsExcludingFromSync]
         if node?.lockedAt != nil { return local.union(.allowsReading) }
         if node?.kind == .folder {
             return browse.union(local).union([.allowsAddingSubItems, .allowsRenaming, .allowsReparenting, .allowsDeleting])
