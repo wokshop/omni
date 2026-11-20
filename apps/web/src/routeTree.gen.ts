@@ -45,6 +45,7 @@ import { Route as AuthedWorkspaceCrmDealsIndexRouteImport } from "./routes/_auth
 import { Route as AuthedWorkspaceCrmDealsIdRouteImport } from "./routes/_authed/$workspace/crm/deals.$id";
 import { Route as AuthedWorkspaceCrmPeopleIndexRouteImport } from "./routes/_authed/$workspace/crm/people.index";
 import { Route as AuthedWorkspaceCrmPeopleIdRouteImport } from "./routes/_authed/$workspace/crm/people.$id";
+import { Route as AuthedWorkspaceCrmProjectsIndexRouteImport } from "./routes/_authed/$workspace/crm/projects.index";
 import { Route as AuthedWorkspaceFilesMyIndexRouteImport } from "./routes/_authed/$workspace/files/my.index";
 import { Route as AuthedWorkspaceFilesMyFolderIdRouteImport } from "./routes/_authed/$workspace/files/my.$folderId";
 import { Route as AuthedWorkspaceFilesSharedIndexRouteImport } from "./routes/_authed/$workspace/files/shared.index";
@@ -259,6 +260,12 @@ const AuthedWorkspaceCrmPeopleIdRoute =
     path: "/people/$id",
     getParentRoute: () => AuthedWorkspaceCrmRoute,
   } as any);
+const AuthedWorkspaceCrmProjectsIndexRoute =
+  AuthedWorkspaceCrmProjectsIndexRouteImport.update({
+    id: "/projects/",
+    path: "/projects/",
+    getParentRoute: () => AuthedWorkspaceCrmRoute,
+  } as any);
 const AuthedWorkspaceFilesMyIndexRoute =
   AuthedWorkspaceFilesMyIndexRouteImport.update({
     id: "/files/my/",
@@ -392,6 +399,7 @@ export interface FileRoutesByFullPath {
   "/$workspace/crm/companies/": typeof AuthedWorkspaceCrmCompaniesIndexRoute;
   "/$workspace/crm/deals/": typeof AuthedWorkspaceCrmDealsIndexRoute;
   "/$workspace/crm/people/": typeof AuthedWorkspaceCrmPeopleIndexRoute;
+  "/$workspace/crm/projects/": typeof AuthedWorkspaceCrmProjectsIndexRoute;
   "/$workspace/files/my/": typeof AuthedWorkspaceFilesMyIndexRoute;
   "/$workspace/files/shared/": typeof AuthedWorkspaceFilesSharedIndexRoute;
 }
@@ -442,6 +450,7 @@ export interface FileRoutesByTo {
   "/$workspace/crm/companies": typeof AuthedWorkspaceCrmCompaniesIndexRoute;
   "/$workspace/crm/deals": typeof AuthedWorkspaceCrmDealsIndexRoute;
   "/$workspace/crm/people": typeof AuthedWorkspaceCrmPeopleIndexRoute;
+  "/$workspace/crm/projects": typeof AuthedWorkspaceCrmProjectsIndexRoute;
   "/$workspace/files/my": typeof AuthedWorkspaceFilesMyIndexRoute;
   "/$workspace/files/shared": typeof AuthedWorkspaceFilesSharedIndexRoute;
 }
@@ -495,6 +504,7 @@ export interface FileRoutesById {
   "/_authed/$workspace/crm/companies/": typeof AuthedWorkspaceCrmCompaniesIndexRoute;
   "/_authed/$workspace/crm/deals/": typeof AuthedWorkspaceCrmDealsIndexRoute;
   "/_authed/$workspace/crm/people/": typeof AuthedWorkspaceCrmPeopleIndexRoute;
+  "/_authed/$workspace/crm/projects/": typeof AuthedWorkspaceCrmProjectsIndexRoute;
   "/_authed/$workspace/files/my/": typeof AuthedWorkspaceFilesMyIndexRoute;
   "/_authed/$workspace/files/shared/": typeof AuthedWorkspaceFilesSharedIndexRoute;
 }
@@ -548,6 +558,7 @@ export interface FileRouteTypes {
     | "/$workspace/crm/companies/"
     | "/$workspace/crm/deals/"
     | "/$workspace/crm/people/"
+    | "/$workspace/crm/projects/"
     | "/$workspace/files/my/"
     | "/$workspace/files/shared/";
   fileRoutesByTo: FileRoutesByTo;
@@ -598,6 +609,7 @@ export interface FileRouteTypes {
     | "/$workspace/crm/companies"
     | "/$workspace/crm/deals"
     | "/$workspace/crm/people"
+    | "/$workspace/crm/projects"
     | "/$workspace/files/my"
     | "/$workspace/files/shared";
   id:
@@ -650,6 +662,7 @@ export interface FileRouteTypes {
     | "/_authed/$workspace/crm/companies/"
     | "/_authed/$workspace/crm/deals/"
     | "/_authed/$workspace/crm/people/"
+    | "/_authed/$workspace/crm/projects/"
     | "/_authed/$workspace/files/my/"
     | "/_authed/$workspace/files/shared/";
   fileRoutesById: FileRoutesById;
@@ -915,6 +928,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof AuthedWorkspaceCrmPeopleIdRouteImport;
       parentRoute: typeof AuthedWorkspaceCrmRoute;
     };
+    "/_authed/$workspace/crm/projects/": {
+      id: "/_authed/$workspace/crm/projects/";
+      path: "/projects";
+      fullPath: "/$workspace/crm/projects/";
+      preLoaderRoute: typeof AuthedWorkspaceCrmProjectsIndexRouteImport;
+      parentRoute: typeof AuthedWorkspaceCrmRoute;
+    };
     "/_authed/$workspace/files/my/": {
       id: "/_authed/$workspace/files/my/";
       path: "/files/my";
@@ -1024,6 +1044,7 @@ interface AuthedWorkspaceCrmRouteChildren {
   AuthedWorkspaceCrmCompaniesIndexRoute: typeof AuthedWorkspaceCrmCompaniesIndexRoute;
   AuthedWorkspaceCrmDealsIndexRoute: typeof AuthedWorkspaceCrmDealsIndexRoute;
   AuthedWorkspaceCrmPeopleIndexRoute: typeof AuthedWorkspaceCrmPeopleIndexRoute;
+  AuthedWorkspaceCrmProjectsIndexRoute: typeof AuthedWorkspaceCrmProjectsIndexRoute;
 }
 
 const AuthedWorkspaceCrmRouteChildren: AuthedWorkspaceCrmRouteChildren = {
@@ -1034,6 +1055,7 @@ const AuthedWorkspaceCrmRouteChildren: AuthedWorkspaceCrmRouteChildren = {
   AuthedWorkspaceCrmCompaniesIndexRoute: AuthedWorkspaceCrmCompaniesIndexRoute,
   AuthedWorkspaceCrmDealsIndexRoute: AuthedWorkspaceCrmDealsIndexRoute,
   AuthedWorkspaceCrmPeopleIndexRoute: AuthedWorkspaceCrmPeopleIndexRoute,
+  AuthedWorkspaceCrmProjectsIndexRoute: AuthedWorkspaceCrmProjectsIndexRoute,
 };
 
 const AuthedWorkspaceCrmRouteWithChildren =
