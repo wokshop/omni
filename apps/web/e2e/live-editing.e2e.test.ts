@@ -148,6 +148,19 @@ test("New doc opens an empty page, and blocks picked from / are saved as Markdow
       { timeout: 20_000 },
     )
     .toMatch(/^# Plan\n\n- \[ \] Ship it\n+\| Who\s*\|/);
+
+  await page.keyboard.press("Tab");
+  await page.keyboard.type("Last words");
+  await page.getByRole("button", { name: "Close", exact: true }).click();
+  await expect.poll(() => body.count()).toBe(0);
+  expect(await page.getByRole("alertdialog").count()).toBe(0);
+  await expect
+    .poll(
+      () =>
+        page.evaluate(async (at) => (await fetch(at)).text(), `/api/storage/files/${id}/content`),
+      { timeout: 20_000 },
+    )
+    .toContain("Last words");
   await own.close();
 });
 

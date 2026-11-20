@@ -35,10 +35,11 @@ const liveExtensions = (doc: Y.Doc) => [
   Collaboration.configure({ document: doc }),
 ];
 
-/** Who this tab is to the others in the doc: a name, and a colour that stays theirs. */
+/** Who this tab is to the others in the doc: a name, a picture, and a colour that stays theirs. */
 export interface Collaborator {
   name: string;
   color: string;
+  image: string | null;
 }
 
 const COLLABORATOR_COLORS = 6;
@@ -51,18 +52,52 @@ export function collaboratorColor(memberId: string) {
   return getComputedStyle(document.documentElement).getPropertyValue(token).trim();
 }
 
+const caret = (user: Record<string, unknown>) => {
+  const color = typeof user.color === "string" ? user.color : "";
+  const name = typeof user.name === "string" ? user.name : "";
+  const line = document.createElement("span");
+  line.className = "collaboration-carets__caret";
+  line.style.borderColor = color;
+  const tag = document.createElement("span");
+  tag.className = "collaboration-carets__label";
+  tag.style.backgroundColor = color;
+  if (typeof user.image === "string" && user.image) {
+    const picture = document.createElement("img");
+    picture.src = user.image;
+    picture.alt = "";
+    picture.className = "collaboration-carets__avatar";
+    tag.append(picture);
+  } else {
+    const initial = document.createElement("span");
+    initial.className = "collaboration-carets__avatar";
+    initial.textContent = name.slice(0, 1).toUpperCase();
+    tag.append(initial);
+  }
+  tag.append(document.createTextNode(name));
+  line.append(tag);
+  return line;
+};
+
 const withCarets = (live: LiveDoc, me: Collaborator) => [
   ...liveExtensions(live.doc),
-  CollaborationCaret.configure({ provider: { awareness: live.awareness }, user: me }),
+  CollaborationCaret.configure({
+    provider: { awareness: live.awareness },
+    user: me,
+    render: caret,
+  }),
 ];
 
 const useCollaborator = () => {
   const session = useQuery(sessionQuery()).data;
   return useMemo(() => {
-    const name = session?.user.name || session?.user.email || "Someone";
-    const me: Collaborator = { name, color: collaboratorColor(session?.member?.id ?? name) };
+    const name = session?.user.name || session?.user.email.split("@")[0] || "Someone";
+    const me: Collaborator = {
+      name,
+      color: collaboratorColor(session?.member?.id ?? name),
+      image: session?.user.image ?? null,
+    };
     return me;
-  }, [session?.user.name, session?.user.email, session?.member?.id]);
+  }, [session?.user.name, session?.user.email, session?.user.image, session?.member?.id]);
 };
 
 function seedFrom(markdown: string) {

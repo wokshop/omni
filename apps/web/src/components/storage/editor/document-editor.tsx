@@ -104,8 +104,14 @@ export function useEditSession(node: StorageNode, url: string, shareId: string |
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
 
+  const [isLive, setIsLive] = useState(false);
+  const saveRef = useRef<() => Promise<boolean>>(async () => false);
   const leaving = useBlocker({
-    shouldBlockFn: () => dirty,
+    shouldBlockFn: () => {
+      if (!dirty || !live.current) return dirty;
+      void saveRef.current();
+      return false;
+    },
     enableBeforeUnload: false,
     withResolver: true,
   });
@@ -160,6 +166,8 @@ export function useEditSession(node: StorageNode, url: string, shareId: string |
     }
   };
 
+  saveRef.current = save;
+
   const fold = () => {
     clearTimeout(foldTimer.current);
     foldTimer.current = setTimeout(() => {
@@ -180,6 +188,7 @@ export function useEditSession(node: StorageNode, url: string, shareId: string |
 
   return {
     editing,
+    live: isLive,
     dirty,
     saving,
     conflict,
@@ -229,6 +238,7 @@ export function useEditSession(node: StorageNode, url: string, shareId: string |
               contentVersion: base.current,
               onLive: (doc: LiveDoc | null) => {
                 live.current = doc;
+                setIsLive(!!doc);
               },
               onReplaced: reopen,
               onAcked: () => latestFold.current(),

@@ -96,5 +96,8 @@
   word-break: normal;
 }
 .collaboration-carets__label {
-  @apply absolute -top-[1.35em] -left-px rounded-sm rounded-bl-none px-1.5 py-px text-xs/4 font-normal whitespace-nowrap text-collaborator-foreground select-none;
+  @apply absolute bottom-[calc(100%+3px)] -left-px flex items-center gap-1 rounded-full py-0.5 ps-0.5 pe-2 text-xs/4 font-normal whitespace-nowrap text-collaborator-foreground shadow-(--shadow-raised) select-none;
+}
+.collaboration-carets__avatar {
+  @apply flex size-4 shrink-0 items-center justify-center overflow-hidden rounded-full bg-collaborator-foreground/25 object-cover text-[9px]/none;
 }
