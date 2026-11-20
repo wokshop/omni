@@ -9,7 +9,12 @@ export const taskSchema = z
   .object({
     id: z.string().min(1).optional().describe("Change this task. Leave out to add one."),
     title: z.string().min(1).max(500).optional(),
-    body: z.string().max(20_000).nullable().optional(),
+    body: z
+      .string()
+      .max(20_000)
+      .nullable()
+      .optional()
+      .describe("Its description, as the app labels it."),
     assignee: z
       .string()
       .min(1)
