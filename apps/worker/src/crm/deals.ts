@@ -7,6 +7,7 @@ import {
   type CrmDealListResponse,
   type CrmDealResponse,
 } from "@omni/contracts";
+import type { CrmDeal } from "@omni/db";
 import { Hono, type Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import type { AppEnv } from "../context.ts";
@@ -28,18 +29,18 @@ import {
 const iconKey = (orgId: string, dealId: string, iconId: string) =>
   `crm/deal-icons/${orgId}/${dealId}/${iconId}`;
 
-async function setIcon(c: Context<AppEnv>, id: string, iconId: string | null) {
-  const crm = memberCrm(c);
-  const found = await crm.deal(id);
-  if (found.status !== "ok") return { ok: false, refusal: found } as const;
-  const previous = found.deal.iconId;
-  const changed = await crm.updateDeal(id, { iconId });
-  if (changed.status !== "ok") return { ok: false, refusal: changed } as const;
-  if (previous && previous !== iconId) {
-    await c.env.MAIL_BUCKET.delete(iconKey(c.var.member.orgId, id, previous));
+async function iconChanged(
+  c: Context<AppEnv>,
+  changed: { deal: CrmDeal; replaced: string | null },
+) {
+  const { deal, replaced } = changed;
+  if (replaced && replaced !== deal.iconId) {
+    await c.env.MAIL_BUCKET.delete(iconKey(c.var.member.orgId, deal.id, replaced)).catch(
+      (error: unknown) => console.error("deal icon cleanup failed", deal.id, error),
+    );
   }
-  await announce(c, "deal", [id]);
-  return { ok: true, deal: changed.deal } as const;
+  await announce(c, "deal", [deal.id]);
+  return c.json({ deal: wireDeal(deal) } satisfies CrmDealResponse);
 }
 
 async function storeIcon(c: Context<AppEnv>, dealId: string, file: File) {
@@ -111,21 +112,23 @@ export const deals = new Hono<AppEnv>()
     if (found.status !== "ok") return refused(c, found);
     const iconId = await storeIcon(c, id, c.req.valid("form").file);
     const drop = () => c.env.MAIL_BUCKET.delete(iconKey(c.var.member.orgId, id, iconId));
-    const set = await setIcon(c, id, iconId).catch(async (error: unknown) => {
+    const changed = await memberCrm(c)
+      .setDealIcon(id, iconId)
+      .catch(async (error: unknown) => {
+        await drop();
+        throw error;
+      });
+    if (changed.status !== "ok") {
       await drop();
-      throw error;
-    });
-    if (!set.ok) {
-      await drop();
-      return refused(c, set.refusal);
+      return refused(c, changed);
     }
-    return c.json({ deal: wireDeal(set.deal) } satisfies CrmDealResponse);
+    return iconChanged(c, changed);
   })
 
   .delete("/deals/:id/icon", async (c) => {
-    const set = await setIcon(c, c.req.param("id"), null);
-    if (!set.ok) return refused(c, set.refusal);
-    return c.json({ deal: wireDeal(set.deal) } satisfies CrmDealResponse);
+    const changed = await memberCrm(c).setDealIcon(c.req.param("id"), null);
+    if (changed.status !== "ok") return refused(c, changed);
+    return iconChanged(c, changed);
   })
 
   .get("/deals/:id/icon/:iconId{[0-9a-f-]{36}}", async (c) => {
