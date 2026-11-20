@@ -68,9 +68,9 @@ export function AddedLine({ message }: { message: Message }) {
 }
 
 /**
- * One message in the conversation, as a full card: the sender's avatar, name and address, who it
- * went to and its subject, the time at the end, then what they newly wrote. A single email (`flat`)
- * is the page itself instead, with its edge gone. Either can open the full message: the sender's
+ * One message in the conversation, as a full-width row: the sender's avatar, name and address, who
+ * it went to and its subject, the time at the end, then what they newly wrote, with a divider
+ * under it. A single email (`flat`) is the page itself instead. Either can open the full message: the sender's
  * HTML in a sandboxed frame, for when reply stripping got it wrong. A message with no text of its
  * own (an HTML-only mail the stripper emptied) opens that way.
  */
@@ -139,9 +139,9 @@ export function MessageItem(props: {
     <article
       id={messageAnchor(message.id)}
       aria-label={label}
-      className="group/item relative flex flex-col gap-3"
+      className="group/item relative flex flex-col border-b"
     >
-      <div className="flex w-full flex-col overflow-hidden rounded-xl border bg-background">
+      <div className="flex w-full flex-col">
         <CardHeader
           message={message}
           sender={sender}
@@ -159,13 +159,17 @@ export function MessageItem(props: {
           </div>
         )}
         {message.attachments.length > 0 && <div className={CARD_BODY}>{attachments}</div>}
+        {message.fromTeam && props.repliedTo && (
+          <div className={CARD_BODY}>
+            <RepliedTo message={props.repliedTo} onShow={props.onShow} />
+          </div>
+        )}
       </div>
-      {message.fromTeam && <RepliedTo message={props.repliedTo} onShow={props.onShow} />}
     </article>
   );
 }
 
-const CARD_BODY = "ps-15 pe-4 pb-4";
+const CARD_BODY = "px-5 pb-4";
 
 function HtmlMenuItems(props: { full: boolean; onToggle: () => void }) {
   const label = props.full ? "Show text" : "Show full message";
@@ -224,7 +228,7 @@ function CardHeader(props: {
     message.subject ? `Subject: ${message.subject}` : undefined,
   ].filter((line): line is string => !!line);
   return (
-    <header className="flex w-full items-start gap-3 p-4">
+    <header className="flex w-full items-start gap-3 px-5 pt-4 pb-3">
       <SenderAvatar
         isSquare
         size="md"
@@ -246,7 +250,7 @@ function CardHeader(props: {
       <div className="flex h-5 shrink-0 items-center gap-2">
         <Toolbar
           aria-label="Message actions"
-          className="gap-0.5 opacity-0 transition-opacity duration-150 ease-out group-focus-within/item:opacity-100 group-hover/item:opacity-100 has-aria-expanded:opacity-100 motion-reduce:transition-none [@media(hover:none)]:opacity-100"
+          className="gap-0.5 bg-transparent p-0 inset-ring-0 opacity-0 transition-opacity duration-150 ease-out group-focus-within/item:opacity-100 group-hover/item:opacity-100 has-aria-expanded:opacity-100 motion-reduce:transition-none [@media(hover:none)]:opacity-100"
         >
           <ReplyActions message={message} small />
           {props.menu}
@@ -425,7 +429,7 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-/** A reply sent from here that has not come back as a message yet: a card, dimmed. */
+/** A reply sent from here that has not come back as a message yet: a row, dimmed. */
 export function PendingItem({ send }: { send: PendingSend }) {
   const failed = send.status === "failed";
   const label = failed
@@ -434,8 +438,8 @@ export function PendingItem({ send }: { send: PendingSend }) {
       ? "Queued"
       : "Sending…";
   return (
-    <article aria-label="You, sending" className="rounded-xl border bg-background">
-      <header className="flex items-baseline gap-3 p-4">
+    <article aria-label="You, sending" className="border-b">
+      <header className="flex items-baseline gap-3 px-5 pt-4 pb-3">
         <span className="flex-1 text-sm">You</span>
         <span
           className={`text-xs ${failed ? "text-danger-subtle-foreground" : "text-subtle-foreground"}`}
@@ -443,7 +447,7 @@ export function PendingItem({ send }: { send: PendingSend }) {
           {label}
         </span>
       </header>
-      <div className={`px-4 pb-4 ${failed ? "" : "opacity-70"}`}>
+      <div className={`px-5 pb-4 ${failed ? "" : "opacity-70"}`}>
         <Body text={send.text} />
       </div>
     </article>

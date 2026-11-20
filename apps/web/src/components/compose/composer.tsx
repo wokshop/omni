@@ -139,20 +139,22 @@ function recipientsFor(kind: ReplyKind, thread: Thread, source: Message | undefi
 }
 
 /**
- * The email being written (a reply, or a forward picked from a message's menu), docked at the
- * bottom of the conversation once Reply or Forward opens it. A shared inbox's hidden notes have
+ * The email being written (a reply, or a forward picked from a message's menu), once Reply or
+ * Forward opens it: a full-width row after the conversation's newest message (`row`), or a card
+ * docked at the bottom of a single email. A shared inbox's hidden notes have
  * their own composer floating at the pane's bottom (`ChatDock`). Replies go from the inbox's
  * address with your name; they show in the thread at once and can be undone while they wait in
  * the outbox. From one of your own mailboxes instead, a reply hands the conversation off to you.
  */
-export function ReplyComposer({ thread }: { thread: Thread }) {
+export function ReplyComposer({ thread, row }: { thread: Thread; row?: boolean }) {
   const state = useComposerState();
   const showing = state.email && state.mode === "public";
   const key = `${thread.id}:${state.forwardId ? `forward:${state.forwardId}` : `reply:${state.replyToId ?? ""}`}:${state.generation}`;
   if (!state.email) return null;
   return (
-    <div hidden={!showing} className="relative px-5 pb-4">
+    <div hidden={!showing} className={row ? "relative" : "relative px-5 pb-4"}>
       <ModeComposer
+        row={row}
         key={key}
         thread={thread}
         mode={state.forwardId ? "forward" : "reply"}
@@ -162,7 +164,12 @@ export function ReplyComposer({ thread }: { thread: Thread }) {
   );
 }
 
-function ModeComposer(props: { thread: Thread; mode: Mode; sourceId: string | undefined }) {
+function ModeComposer(props: {
+  thread: Thread;
+  mode: Mode;
+  sourceId: string | undefined;
+  row?: boolean | undefined;
+}) {
   const { thread, mode } = props;
   const state = useComposerState();
   const latest = thread.messages.at(-1);
@@ -416,7 +423,7 @@ function ModeComposer(props: { thread: Thread; mode: Mode; sourceId: string | un
   };
 
   return (
-    <ComposerFrame onFiles={files.add}>
+    <ComposerFrame flat={props.row} row={props.row} onFiles={files.add}>
       <FromRow
         mailboxes={mode === "reply" ? fromOptions : fromOptions.slice(0, 1)}
         value={handingOff ? fromId : thread.mailboxId}
@@ -668,7 +675,10 @@ function NewMessage(props: {
           if (next.bcc) setBcc(next.bcc);
         }}
       />
-      <div data-composer-head className="flex min-h-(--composer-row) items-center border-b px-3">
+      <div
+        data-composer-head
+        className="flex min-h-(--composer-row) items-center border-b px-[var(--composer-x,--spacing(3))]"
+      >
         <Input
           plain
           size="sm"
@@ -709,7 +719,7 @@ function FromRow(props: {
   return (
     <div
       data-composer-head
-      className="flex min-h-(--composer-row) items-center gap-2.5 border-b px-3 py-1"
+      className="flex min-h-(--composer-row) items-center gap-2.5 border-b px-[var(--composer-x,--spacing(3))] py-1"
     >
       <span className="w-8 shrink-0 text-sm text-muted-foreground">From</span>
       {props.mailboxes.length > 1 ? (
@@ -751,6 +761,7 @@ function FromRow(props: {
 function ComposerFrame(props: {
   onFiles: (files: File[]) => void;
   flat?: boolean | undefined;
+  row?: boolean | undefined;
   fill?: boolean;
   children: ReactNode;
 }) {
@@ -768,6 +779,7 @@ function ComposerFrame(props: {
         [
           "flex flex-col bg-background outline-hidden",
           props.flat ? "" : "rounded-xl border",
+          props.row ? "[--composer-x:--spacing(5)]" : "",
           props.fill ? "min-h-0 flex-1" : "",
           props.fill ? "[--composer-row:--spacing(13)]" : "[--composer-row:--spacing(12)]",
           isDropTarget ? (props.flat ? "ring-1 ring-ring ring-inset" : "border-ring") : "",
@@ -866,7 +878,7 @@ function Body(props: {
         }
       }}
       data-composer-body
-      className={`${props.fill ? "min-h-24 flex-1" : "max-h-[min(24rem,30vh)] min-h-24"} resize-none overscroll-contain px-3 pt-3 pb-1 sm:px-3 sm:pt-3 sm:pb-1`}
+      className={`${props.fill ? "min-h-24 flex-1" : "max-h-[min(24rem,30vh)] min-h-24"} resize-none overscroll-contain px-[var(--composer-x,--spacing(3))] pt-3 pb-1 sm:px-[var(--composer-x,--spacing(3))] sm:pt-3 sm:pb-1`}
     />
   );
 }
