@@ -100,7 +100,7 @@ test("two editors on one Markdown file see each other's typing, and the page is 
     )
     .toMatch(/^# Notes\n\nStart\n\nFrom Ana\n\nFrom Bo\n*$/);
 
-  await bo.goto("about:blank");
+  await bo.getByRole("button", { name: "Close", exact: true }).click();
   await expect
     .poll(() => ana.locator(".collaboration-carets__caret").count(), { timeout: 15_000 })
     .toBe(0);
