@@ -171,7 +171,7 @@ export function DriveMenu() {
   );
 }
 
-/** The CRM's lists, then its active projects with their client's logo, as on the web. */
+/** The CRM's lists, then its active projects and leads with their client's logo, as on the web. */
 export function CrmMenu() {
   const { close } = useMenu();
   const place = useMenuPlace();
@@ -201,7 +201,7 @@ export function CrmMenu() {
                 key={deal.id}
                 nav
                 muted
-                icon={IconProjects}
+                icon={deal.stageKind === "won" ? IconProjects : IconHandshake}
                 label={deal.name}
                 trailing={
                   client ? (
