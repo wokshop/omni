@@ -407,6 +407,13 @@ test("a task on a record's Tasks tab opens beside the record without leaving it,
     .poll(async () => (await row(task.id))?.body ?? null, { timeout: 10_000 })
     .toBe("Check the loading dock.");
 
+  await page.setViewportSize({ width: 1100, height: 900 });
+  await expect
+    .poll(() => page.getByRole("complementary", { name: "Details" }).isVisible())
+    .toBe(false);
+  expect(await page.getByRole("region", { name: "Task", exact: true }).isVisible()).toBe(true);
+  await page.setViewportSize({ width: 1440, height: 900 });
+
   await page.getByRole("tab", { name: "Tasks" }).click();
   await page.keyboard.press("Escape");
   await expect.poll(() => new URL(page.url()).searchParams.get("task")).toBeNull();

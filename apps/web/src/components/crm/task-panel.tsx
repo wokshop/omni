@@ -1,5 +1,5 @@
 import { useRouter, useSearch } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Skeleton, SkeletonBox } from "skullet/react";
 import { EmptyState } from "@/components/empty/empty-state";
 import { IconTrash, IconX } from "@/components/icons/central";
@@ -43,32 +43,64 @@ export const TASK_PANEL_MIN = 360;
 export const TASK_PANEL_MAX = 4096;
 export const TASK_PANEL_KEY = "omni:task-panel-width";
 
+const RECORD_MIN_BESIDE_TASK = 736;
+
+/** Whether a task fits beside the record in `row`, re-measured as the row resizes. */
+export function useTaskFitsBeside(row: React.RefObject<HTMLElement | null>) {
+  const width = useWidth(row);
+  return { beside: width >= RECORD_MIN_BESIDE_TASK + TASK_PANEL_MIN, width };
+}
+
 /**
- * The open task as a column on the right of a record page, the width the Tasks page keeps it.
- * `content` is the page beside it, for the grip to measure.
+ * The open task as a column on the right of a record page, the width the Tasks page keeps it, or
+ * the whole page when the record and the task don't both fit. `content` is the record beside it.
  */
 export function RecordTaskColumn(props: {
   id: string;
-  row: React.RefObject<HTMLElement | null>;
+  /** The row's width, and whether the task fits beside the record in it. */
+  fit: { beside: boolean; width: number };
   content: React.RefObject<HTMLElement | null>;
   onClose: () => void;
 }) {
   const panel = useStoredWidth(TASK_PANEL_KEY, TASK_PANEL_WIDTH, TASK_PANEL_MIN, TASK_PANEL_MAX);
+  const { beside, width } = props.fit;
+  if (!beside) {
+    return (
+      <div className="flex min-w-0 flex-1 *:border-s-0">
+        <TaskPanel key={props.id} id={props.id} onClose={props.onClose} />
+      </div>
+    );
+  }
   return (
     <div
-      style={{ "--task-width": `${panel.width}px` } as React.CSSProperties}
-      className="relative flex min-w-0 max-lg:flex-1 max-lg:*:border-s-0 lg:w-(--task-width) lg:max-w-[calc(100%-46rem)] lg:min-w-90 lg:shrink-0"
+      style={{
+        width: Math.max(TASK_PANEL_MIN, Math.min(panel.width, width - RECORD_MIN_BESIDE_TASK)),
+      }}
+      className="relative flex min-w-0 shrink-0"
     >
       <ResizeGrip
         label="Resize task"
-        className="max-lg:hidden"
         width={() => props.content.current?.offsetWidth ?? 0}
-        onResize={(width) => panel.set((props.row.current?.offsetWidth ?? 0) - width)}
+        onResize={(next) => panel.set(width - next)}
         onReset={panel.reset}
       />
       <TaskPanel key={props.id} id={props.id} onClose={props.onClose} />
     </div>
   );
+}
+
+function useWidth(ref: React.RefObject<HTMLElement | null>) {
+  const [width, setWidth] = useState(Infinity);
+  useEffect(() => {
+    const element = ref.current;
+    if (!element || typeof ResizeObserver === "undefined") return;
+    const measure = () => setWidth(element.offsetWidth);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [ref]);
+  return width;
 }
 
 const isControl = (target: EventTarget | null) =>

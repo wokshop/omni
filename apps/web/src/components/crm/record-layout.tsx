@@ -12,7 +12,7 @@ import { ApiError } from "@/lib/api.ts";
 import { CRM_LISTS } from "./crm-nav.tsx";
 import type { SenderLogoFor } from "@/lib/sender-logo";
 import { RecordMark } from "./record-list.tsx";
-import { RecordTaskColumn, useOpenTask } from "./task-panel.tsx";
+import { RecordTaskColumn, useOpenTask, useTaskFitsBeside } from "./task-panel.tsx";
 import {
   TrailCrumbs,
   TrailProvider,
@@ -56,13 +56,14 @@ export function RecordLayout(props: {
   const task = useOpenTask();
   const row = useRef<HTMLDivElement>(null);
   const content = useRef<HTMLDivElement>(null);
+  const fit = useTaskFitsBeside(row);
   return (
     <TrailProvider here={props.here}>
       <RecordFrame list={props.list} name={props.name} actions={props.actions}>
         <div ref={row} className="flex min-h-0 min-w-0 flex-1">
           <div
             ref={content}
-            className={`flex min-h-0 min-w-0 flex-1 overflow-y-auto max-lg:flex-col lg:overflow-hidden ${task.id ? "max-lg:hidden" : ""} ${resizing ? "cursor-ew-resize select-none" : ""}`}
+            className={`flex min-h-0 min-w-0 flex-1 overflow-y-auto max-lg:flex-col lg:overflow-hidden ${task.id && !fit.beside ? "hidden" : ""} ${resizing ? "cursor-ew-resize select-none" : ""}`}
             style={
               {
                 "--details-width": details.isSet ? `${details.width}px` : DETAILS_THIRD,
@@ -130,7 +131,7 @@ export function RecordLayout(props: {
             </div>
           </div>
           {task.id && (
-            <RecordTaskColumn id={task.id} row={row} content={content} onClose={task.close} />
+            <RecordTaskColumn id={task.id} fit={fit} content={content} onClose={task.close} />
           )}
         </div>
       </RecordFrame>
