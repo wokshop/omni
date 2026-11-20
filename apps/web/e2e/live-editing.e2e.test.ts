@@ -200,10 +200,7 @@ test("an image picked from / goes into Drive beside the doc, and @ links another
   await body.getByText("Start").waitFor({ timeout: 15_000 });
   const notesId = new URL(page.url()).searchParams.get("file") ?? "";
 
-  await body.getByText("Start").click();
-  await page.keyboard.press("End");
-  await page.keyboard.press("Enter");
-  await page.keyboard.type("/image");
+  await typeAtEnd(page, "/image");
   const [chooser] = await Promise.all([
     page.waitForEvent("filechooser"),
     page.getByRole("option", { name: "Image" }).click(),
@@ -252,7 +249,7 @@ test("an image picked from / goes into Drive beside the doc, and @ links another
   await own.close();
 });
 
-async function typeAtEnd(page: Page, text: string) {
+async function toEnd(page: Page) {
   await page.locator("[contenteditable=true]").focus();
   await page.keyboard.press("ControlOrMeta+End");
   await expect
@@ -270,6 +267,10 @@ async function typeAtEnd(page: Page, text: string) {
       }),
     )
     .toBe(1);
+}
+
+async function typeAtEnd(page: Page, text: string) {
+  await toEnd(page);
   await page.keyboard.press("Enter");
   await page.keyboard.type(text);
 }
