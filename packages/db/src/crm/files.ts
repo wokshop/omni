@@ -6,7 +6,7 @@ import { NOT_FOUND, type CrmMember, type Ex } from "./core.ts";
 import { companyFolder, dealFolder } from "./folders.ts";
 import { loadCompany, loadDeal } from "./records.ts";
 
-/** The record a Drive node is linked to: a company or a deal (ADR 0054). */
+/** The record a Drive node is linked to: a company or a deal (`docs/spec/crm.md`, "Keep the files"). */
 export type FileLinkRecord = { companyId: string } | { dealId: string };
 
 /** A linked node as the reading member sees it in Drive. */

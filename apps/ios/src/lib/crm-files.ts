@@ -6,7 +6,7 @@ import { keys } from "./query-keys.ts";
 /** The two records with files: a company and a deal (the project). */
 export type FileRecordKind = "companies" | "deals";
 
-/** Drive files linked to the record where they live (ADR 0054), the ones the reader can open. */
+/** Drive files linked to the record where they live (`docs/spec/crm.md`, "Keep the files"), the ones the reader can open. */
 export const useFileLinks = (kind: FileRecordKind, id: string) =>
   useQuery({
     queryKey: [...keys.crmAll(), "links", kind, id],

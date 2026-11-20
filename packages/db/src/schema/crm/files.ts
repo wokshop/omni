@@ -6,7 +6,7 @@ import { crmCompanies, crmDeals } from "../crm.ts";
 import { storageNodes } from "../storage.ts";
 
 /**
- * A Drive file or folder linked to a company or a deal, where it already lives (ADR 0054): a
+ * A Drive file or folder linked to a company or a deal, where it already lives (`docs/spec/crm.md`, "Keep the files"): a
  * reference, like a symlink, not a copy and not a move. Each member sees the links whose node
  * they can open in Drive. Deleting the node for good, or the record, takes the link with it.
  */

@@ -39,7 +39,7 @@ function useUpload(kind: FileRecordKind, id: string, folderId: string | null) {
 /**
  * A company's or a deal's files on its page: the newest of its folder in Shared (uploads land
  * there, in the background, large ones too) and the Drive files linked to it where they live
- * (ADR 0054). A row opens the file's preview; a long press opens Drive's actions on the
+ * (`docs/spec/crm.md`, "Keep the files"). A row opens the file's preview; a long press opens Drive's actions on the
  * folder's own files and Remove on a link. All files opens the folder in Drive.
  */
 export function RecordFilesSection(props: {

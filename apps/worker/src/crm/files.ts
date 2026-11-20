@@ -52,7 +52,7 @@ async function unlink(c: Context<AppEnv>, kind: Kind, id: string, nodeId: string
 }
 
 /**
- * Drive files linked to a company or a deal where they live (ADR 0054). Linking moves and copies
+ * Drive files linked to a company or a deal where they live (`docs/spec/crm.md`, "Keep the files"). Linking moves and copies
  * nothing; the record's own uploads stay in its folder (`POST /:kind/:id/folder`).
  */
 export const files = new Hono<AppEnv>()

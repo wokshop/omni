@@ -70,7 +70,7 @@ function useBrowse(q: string) {
 }
 
 /**
- * Picks Drive files and folders to link to a company or a deal where they are (ADR 0054): a
+ * Picks Drive files and folders to link to a company or a deal where they are (`docs/spec/crm.md`, "Keep the files"): a
  * search over the member's Drive, or browsing it a folder at a time. Opening a folder's row
  * enters it; its checkbox picks the folder itself.
  */

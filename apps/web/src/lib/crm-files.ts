@@ -16,7 +16,7 @@ export type CrmFileLink = InferResponseType<
 
 const linksKey = (kind: FileRecordKind, id: string) => [...keys.crm(), "links", kind, id] as const;
 
-/** Drive files linked to the record where they live (ADR 0054), the ones the reader can open. */
+/** Drive files linked to the record where they live (`docs/spec/crm.md`, "Keep the files"), the ones the reader can open. */
 export const crmFileLinksQuery = (kind: FileRecordKind, id: string) =>
   queryOptions({
     queryKey: linksKey(kind, id),

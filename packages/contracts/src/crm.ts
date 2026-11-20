@@ -485,7 +485,7 @@ export type CrmChangedKind = z.infer<typeof crmChangedKindSchema>;
 export type CrmChangedEvent = z.infer<typeof crmChangedEventSchema>;
 
 /**
- * A Drive file or folder linked to a company or a deal where it lives (ADR 0054): a reference,
+ * A Drive file or folder linked to a company or a deal where it lives (`docs/spec/crm.md`, "Keep the files"): a reference,
  * not a copy. `GET /companies/:id/links` and `GET /deals/:id/links` list the ones the reader can
  * open in Drive, newest first.
  */

@@ -58,7 +58,7 @@ export function useRecordUpload(kind: FileRecordKind, id: string, folderId: stri
 /**
  * A company's or a deal's files, as Drive shows a folder: its own folder in Shared (uploads land
  * there, large ones resumable) and, at its top, the Drive files linked to it where they live
- * (ADR 0054). Preview, download, rename, move and trash are Drive's; a link is removed, never
+ * (`docs/spec/crm.md`, "Keep the files"). Preview, download, rename, move and trash are Drive's; a link is removed, never
  * trashed.
  */
 export function RecordFiles(props: RecordProps) {
