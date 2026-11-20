@@ -141,6 +141,13 @@ test("in a shared inbox, Reply or Forward on an earlier message brings the compo
   await expect.poll(focused).toBe(true);
 
   await body.fill("Thanks, noted.");
+  await first.scrollIntoViewIfNeeded();
+  await expect.poll(inView).toBe(false);
+  await first.hover();
+  await first.getByRole("button", { name: "Reply", exact: true }).click();
+  await expect.poll(inView).toBe(true);
+  await expect.poll(() => body.inputValue()).toBe("Thanks, noted.");
+
   await page.getByRole("button", { name: "Send" }).click();
   await body.waitFor({ state: "hidden" });
   await first.scrollIntoViewIfNeeded();

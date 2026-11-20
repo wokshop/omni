@@ -159,7 +159,7 @@ export function ReplyComposer({ thread, row }: { thread: Thread; row?: boolean }
     );
     box.current?.scrollIntoView({ block: "nearest" });
     target?.focus({ preventScroll: true });
-  }, [row, showing, forwarding, key]);
+  }, [row, showing, forwarding, key, state.asked]);
   if (!state.email) return null;
   return (
     <div ref={box} hidden={!showing} className={row ? "relative" : "relative px-5 pb-4"}>
