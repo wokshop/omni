@@ -96,6 +96,32 @@ test("the team plans a project and adds a client from the deal page", async () =
   await page.getByRole("menuitem", { name: "In review" }).click();
   await expect.poll(async () => (await deliverables(deal.id))[0]?.status).toBe("in_review");
 
+  for (const title of ["Build", "Launch"]) {
+    await page.getByRole("button", { name: "New milestone" }).click();
+    await page.getByRole("textbox", { name: "Title" }).fill(title);
+    await page.getByRole("button", { name: "Add", exact: true }).click();
+    await page.getByRole("button", { name: `${title} actions` }).waitFor();
+  }
+  await page.getByRole("button", { name: "Build actions" }).click();
+  await page.getByRole("menuitem", { name: "Delete milestone" }).click();
+  await expect.poll(async () => (await milestones(deal.id)).length).toBe(2);
+  await page.getByRole("button", { name: "Launch actions" }).click();
+  await page.getByRole("menuitem", { name: "Move up" }).click();
+  await expect
+    .poll(async () =>
+      (await milestones(deal.id)).sort((a, b) => a.position - b.position).map((m) => m.title),
+    )
+    .toEqual(["Launch", "Design"]);
+
+  await page.getByRole("button", { name: "New deliverable" }).click();
+  await page.getByRole("textbox", { name: "Title" }).fill("Notes");
+  await page.getByRole("combobox", { name: "Milestone" }).click();
+  await page.getByRole("option", { name: "None" }).click();
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await expect
+    .poll(async () => (await deliverables(deal.id)).find((d) => d.title === "Notes")?.milestoneId)
+    .toBeNull();
+
   await page.getByRole("button", { name: "Add someone" }).click();
   await page.getByRole("textbox", { name: "Email" }).fill("bea@client.test");
   await page.getByRole("button", { name: "Add", exact: true }).click();

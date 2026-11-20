@@ -123,7 +123,7 @@ export function ProjectPlan(props: { dealId: string }) {
             <MilestoneGroup
               key={milestone.id}
               milestone={milestone}
-              first={index === 0}
+              index={index}
               last={index === milestones.length - 1}
               deliverables={deliverables.filter((d) => d.milestoneId === milestone.id)}
             />
@@ -143,9 +143,11 @@ export function ProjectPlan(props: { dealId: string }) {
   );
 }
 
+const NO_MILESTONE = "none";
+
 function MilestoneGroup(props: {
   milestone: CrmMilestone;
-  first: boolean;
+  index: number;
   last: boolean;
   deliverables: CrmDeliverable[];
 }) {
@@ -169,14 +171,14 @@ function MilestoneGroup(props: {
               icon: MILESTONE_ICONS[s.id],
               onAction: () => change({ id: milestone.id, status: s.id }),
             })),
-            ...(props.first
+            ...(props.index === 0
               ? []
               : [
                   {
                     id: "up",
                     label: "Move up",
                     icon: <IconArrowUp data-slot="icon" />,
-                    onAction: () => change({ id: milestone.id, position: milestone.position - 1 }),
+                    onAction: () => change({ id: milestone.id, position: props.index - 1 }),
                   },
                 ]),
             ...(props.last
@@ -186,7 +188,7 @@ function MilestoneGroup(props: {
                     id: "down",
                     label: "Move down",
                     icon: <IconArrowDown data-slot="icon" />,
-                    onAction: () => change({ id: milestone.id, position: milestone.position + 1 }),
+                    onAction: () => change({ id: milestone.id, position: props.index + 1 }),
                   },
                 ]),
             {
@@ -331,7 +333,7 @@ function NewDeliverableDialog(props: {
 }) {
   const create = useCreateDeliverable();
   const [title, setTitle] = useState("");
-  const [milestoneId, setMilestoneId] = useState<string | null>(props.milestones[0]?.id ?? null);
+  const [milestoneId, setMilestoneId] = useState(props.milestones[0]?.id ?? NO_MILESTONE);
   const [clientVisible, setClientVisible] = useState(false);
   return (
     <SettingsFormDialog
@@ -343,7 +345,12 @@ function NewDeliverableDialog(props: {
       saving={create.isPending}
       onSubmit={() =>
         create.mutate(
-          { dealId: props.dealId, title: title.trim(), milestoneId, clientVisible },
+          {
+            dealId: props.dealId,
+            title: title.trim(),
+            milestoneId: milestoneId === NO_MILESTONE ? null : milestoneId,
+            clientVisible,
+          },
           {
             onSuccess: props.onClose,
             onError: (error) => crmErrorToast(error, "The deliverable was not added"),
@@ -358,12 +365,11 @@ function NewDeliverableDialog(props: {
       {props.milestones.length > 0 && (
         <Select
           value={milestoneId}
-          onChange={(id) => setMilestoneId(id ? String(id) : null)}
-          placeholder="None"
+          onChange={(id) => setMilestoneId(id ? String(id) : NO_MILESTONE)}
         >
           <Label>Milestone</Label>
           <SelectTrigger />
-          <SelectContent items={props.milestones}>
+          <SelectContent items={[...props.milestones, { id: NO_MILESTONE, title: "None" }]}>
             {(milestone) => (
               <SelectItem id={milestone.id} textValue={milestone.title}>
                 {milestone.title}
