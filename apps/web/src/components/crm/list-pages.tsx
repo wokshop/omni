@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { byAddress } from "@/components/avatar/sender-avatar";
 import { useCrmCompanies, useCrmDeals, useCrmPeople } from "@/hooks/use-crm.ts";
+import { useFreelancer, withoutValue } from "@/hooks/use-freelancer.ts";
 import { useWorkspacePaths } from "@/hooks/use-workspaces.ts";
 import {
   BOARD_SORTS,
@@ -18,9 +19,10 @@ import type {
 import { DealBoard } from "./deal-board.tsx";
 import { COMPANY_COLUMNS, DEAL_COLUMNS, PEOPLE_COLUMNS } from "./list-columns.tsx";
 import type { FilterKind } from "./list-filters.tsx";
-import { ListFilter, ListToolbar } from "./list-toolbar.tsx";
+import { BoardSort, ListFilter } from "./list-toolbar.tsx";
 import { isFiltered, useListView } from "./list-view.tsx";
 import { NewCompanyDialog, NewDealDialog, NewPersonDialog } from "./new-records.tsx";
+import { DealIcon } from "./deal-mark.tsx";
 import { RecordList, RecordMark, useListSearch } from "./record-list.tsx";
 
 export { StageBadge } from "./list-columns.tsx";
@@ -67,7 +69,6 @@ export function CompaniesPage({ search }: { search: CrmCompaniesSearch }) {
         search={{ ...text, q }}
         source={sourceOf(list, list.companies)}
         columns={COMPANY_COLUMNS}
-        toolbar={<ListToolbar search={search} filters={COMPANY_FILTERS} />}
         filter={<ListFilter search={search} filters={COMPANY_FILTERS} />}
         filtered={isFiltered(search)}
         {...view}
@@ -101,7 +102,6 @@ export function PeoplePage({ search }: { search: CrmPeopleSearch }) {
         search={{ ...text, q }}
         source={sourceOf(list, list.people)}
         columns={PEOPLE_COLUMNS}
-        toolbar={<ListToolbar search={search} filters={PEOPLE_FILTERS} />}
         filter={<ListFilter search={search} filters={PEOPLE_FILTERS} />}
         filtered={isFiltered(search)}
         {...view}
@@ -124,6 +124,10 @@ export function DealsPage({ search }: { search: CrmDealsSearch }) {
   const list = useCrmDeals(dealsFilter(search), { all: true });
   const view = useListView("deals", search, list.deals);
   const [adding, setAdding] = useState(false);
+  const freelancer = useFreelancer();
+  const dealFilters = withoutValue(DEAL_FILTERS, (kind) => kind === "value", freelancer);
+  const columns = withoutValue(DEAL_COLUMNS, (column) => column.sort === "value", freelancer);
+  const sorts = withoutValue(BOARD_SORTS, (sort) => sort === "value", freelancer);
   return (
     <>
       <RecordList
@@ -131,14 +135,14 @@ export function DealsPage({ search }: { search: CrmDealsSearch }) {
         noun="deal"
         search={{ ...text, q }}
         source={sourceOf(list, list.deals)}
-        columns={DEAL_COLUMNS}
-        toolbar={<ListToolbar search={search} sorts={BOARD_SORTS} filters={DEAL_FILTERS} />}
+        columns={columns}
         filtered={isFiltered(search)}
         {...view}
-        mark={(deal) => <RecordMark name={deal.name} />}
+        mark={(deal) => <DealIcon deal={deal} />}
         href={recordHref(inWorkspace, "deals")}
         onNew={() => setAdding(true)}
-        filter={<ListFilter search={search} filters={DEAL_FILTERS} />}
+        extra={<BoardSort search={search} sorts={sorts} />}
+        filter={<ListFilter search={search} filters={dealFilters} />}
         replaceBody={<DealBoard deals={list.deals} list={list} />}
       />
       {adding && <NewDealDialog onClose={() => setAdding(false)} />}
@@ -153,18 +157,23 @@ export function ProjectsPage({ search }: { search: CrmProjectsSearch }) {
   const text = useListSearch(q);
   const list = useCrmDeals(projectsFilter(search));
   const view = useListView("deals", search, list.deals);
+  const freelancer = useFreelancer();
   return (
     <RecordList
       title="Projects"
       noun="project"
       search={{ ...text, q }}
       source={sourceOf(list, list.deals)}
-      columns={DEAL_COLUMNS}
-      toolbar={<ListToolbar search={search} filters={PROJECT_FILTERS} />}
-      filter={<ListFilter search={search} filters={PROJECT_FILTERS} />}
+      columns={withoutValue(DEAL_COLUMNS, (column) => column.sort === "value", freelancer)}
+      filter={
+        <ListFilter
+          search={search}
+          filters={withoutValue(PROJECT_FILTERS, (kind) => kind === "value", freelancer)}
+        />
+      }
       filtered={isFiltered(search)}
       {...view}
-      mark={(deal) => <RecordMark name={deal.name} />}
+      mark={(deal) => <DealIcon deal={deal} />}
       href={recordHref(inWorkspace, "deals")}
     />
   );

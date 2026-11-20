@@ -24,6 +24,10 @@ let mailService: Awaited<ReturnType<typeof startMailServiceEndpoint>>;
 let worker: Awaited<ReturnType<typeof startWorkerWithNetwork>>;
 let browser: Browser;
 const SHOTS = process.env.OMNI_E2E_SHOTS;
+const PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+  "base64",
+);
 const contexts: BrowserContext[] = [];
 
 beforeAll(async () => {
@@ -67,7 +71,55 @@ test("a deal value saves in a workspace with no default currency", async () => {
       valueMinor: 1_250_000,
       valueCurrency: "USD",
     });
-  await expect.poll(() => value.inputValue()).toBe("$12,500");
+  await expect.poll(() => value.inputValue()).toBe("12,500");
+  expect(await page.getByText("$12,500").count()).toBe(0);
+});
+
+test("a deal's close date is cleared from inside its calendar", async () => {
+  const team = await workspace("deal-close");
+  const { deal } = await team.api("POST", "/deals", { name: "Renewal" });
+  await db
+    .update(schema.crmDeals)
+    .set({ expectedCloseOn: "2026-12-11" })
+    .where(eq(schema.crmDeals.id, deal.id));
+  const page = await team.page(`/crm/deals/${deal.id}`);
+  await page.getByText("Dec 11, 2026").click();
+  await page.getByRole("grid").waitFor();
+  const clear = page.getByRole("button", { name: "Clear date" });
+  await expect.poll(async () => (await clear.boundingBox())?.y ?? null).not.toBeNull();
+  await page.waitForTimeout(200);
+  await clear.click();
+  await expect
+    .poll(
+      async () => {
+        const [row] = await db
+          .select({ day: schema.crmDeals.expectedCloseOn })
+          .from(schema.crmDeals)
+          .where(eq(schema.crmDeals.id, deal.id));
+        return row?.day ?? null;
+      },
+      { timeout: 10_000 },
+    )
+    .toBeNull();
+  expect(await page.getByRole("button", { name: "Clear date" }).count()).toBe(0);
+});
+
+test("a deal's company is picked in place from its sidebar", async () => {
+  const team = await workspace("deal-company");
+  await team.api("POST", "/companies", { name: "Acme" });
+  const { company } = await team.api("POST", "/companies", { name: "Globex" });
+  const { deal } = await team.api("POST", "/deals", { name: "Rebrand" });
+
+  const page = await team.page(`/crm/deals/${deal.id}`);
+  const field = page.getByRole("combobox", { name: "Company" });
+  await field.fill("Glob");
+  await page.getByRole("option", { name: "Globex" }).click();
+
+  await expect
+    .poll(() => dealRow(deal.id), { timeout: 10_000 })
+    .toMatchObject({ companyId: company.id });
+  await expect.poll(() => field.inputValue()).toBe("Globex");
+  await page.getByRole("link", { name: "Open Globex" }).waitFor();
 });
 
 test("sorting the board by value orders each stage's cards and persists in the URL", async () => {
@@ -111,7 +163,8 @@ test("bulk archive moves the selected companies to the archived view and restore
   );
 
   await page.getByRole("button", { name: "Filter", exact: true }).click();
-  await page.getByRole("menuitem", { name: "Archived" }).click();
+  await page.getByRole("menuitem", { name: /^Archived/ }).click();
+  await page.getByRole("menuitemradio", { name: "Only" }).click();
   await expect.poll(() => new URL(page.url()).searchParams.get("archived")).toBe("only");
   await expect.poll(() => names(page)).toEqual(["Acme", "Globex"]);
   await pick(page, "Acme");
@@ -119,7 +172,7 @@ test("bulk archive moves the selected companies to the archived view and restore
   await page.getByRole("button", { name: "Restore", exact: true }).click();
   await page.getByRole("row", { name: /Globex/ }).waitFor({ state: "detached" });
 
-  await page.getByRole("button", { name: "Remove Archived filter" }).click();
+  await resetFilters(page);
   await expect.poll(() => names(page)).toEqual(["Acme", "Globex", "Initech"]);
 });
 
@@ -131,9 +184,10 @@ test("a selection is dropped when a filter changes the view, and stays gone when
   await page.getByText("1 selected").waitFor();
 
   await page.getByRole("button", { name: "Filter", exact: true }).click();
-  await page.getByRole("menuitem", { name: "Archived" }).click();
+  await page.getByRole("menuitem", { name: /^Archived/ }).click();
+  await page.getByRole("menuitemradio", { name: "Only" }).click();
   await expect.poll(() => new URL(page.url()).searchParams.get("archived")).toBe("only");
-  await page.getByRole("button", { name: "Remove Archived filter" }).click();
+  await resetFilters(page);
   await page.getByRole("row", { name: /Acme/ }).waitFor();
 
   expect(await page.getByText("1 selected").count()).toBe(0);
@@ -155,8 +209,8 @@ test("the company filter narrows the people list and removing its chip lists eve
   await page.getByRole("row", { name: /Gail/ }).waitFor();
 
   await page.getByRole("button", { name: "Filter", exact: true }).click();
-  await page.getByRole("menuitem", { name: "Company" }).click();
-  await page.getByRole("menuitem", { name: "None" }).click();
+  await page.getByRole("menuitem", { name: /^Company/ }).click();
+  await page.getByRole("menuitemradio", { name: "None" }).click();
 
   await expect.poll(() => new URL(page.url()).searchParams.get("company")).toBe("without");
   await expect.poll(() => names(page)).toEqual(["Gail"]);
@@ -164,7 +218,7 @@ test("the company filter narrows the people list and removing its chip lists eve
   await page.getByRole("row", { name: /Gail/ }).waitFor();
   expect(await names(page)).toEqual(["Gail"]);
 
-  await page.getByRole("button", { name: "Remove Company filter" }).click();
+  await resetFilters(page);
   await expect.poll(() => names(page)).toEqual(["Gail", "Ivo"]);
 });
 
@@ -177,7 +231,7 @@ test("the deal board shows only the owner's deals when filtered by owner", async
   const page = await team.page(`/crm/deals?owner=${bea.id}`);
   await card(page, "Bea's deal").waitFor();
   expect(await card(page, "Ana's deal").count()).toBe(0);
-  await page.getByRole("button", { name: "Remove Owner filter" }).click();
+  await resetFilters(page);
   await card(page, "Ana's deal").waitFor();
 });
 
@@ -188,7 +242,9 @@ test("a deal moves to the next stage from the keyboard: Space, Right arrow, Spac
   const { deal } = await team.api("POST", "/deals", { name: "Keyed deal", stageId: lead!.id });
   const page = await team.page("/crm/deals");
   await card(page, "Keyed deal").getByRole("link").focus();
+  const resting = await page.getByText("Keyed deal").count();
   await page.keyboard.press("Space");
+  await expect.poll(() => page.getByText("Keyed deal").count()).toBe(resting + 1);
   await page.keyboard.press("ArrowRight");
   await page
     .getByRole("region", { name: next!.name, exact: true })
@@ -447,6 +503,14 @@ test("a person opened from a project keeps the project in the crumbs, and its ro
     .toBe(true);
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/project-page.png` });
 
+  const grip = page.getByRole("button", { name: "Resize details" });
+  const hitsGripLeftEdge = await grip.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    const hit = document.elementFromPoint(rect.left + 2, rect.top + rect.height / 2);
+    return hit === element || element.contains(hit);
+  });
+  expect(hitsGripLeftEdge).toBe(true);
+
   await row.click();
   await expect.poll(() => new URL(page.url()).pathname).toContain(`/crm/people/${person.id}`);
   const crumbs = page.getByRole("list", { name: "Record" });
@@ -459,6 +523,63 @@ test("a person opened from a project keeps the project in the crumbs, and its ro
   await crumbs.getByRole("link", { name: "Serie Documental" }).click();
   await expect.poll(() => new URL(page.url()).pathname).toContain(`/crm/deals/${deal.id}`);
   expect(new URL(page.url()).searchParams.get("via")).toBeNull();
+});
+
+test("a project's icon is uploaded from its header, and a person's menu opens mail to them", async () => {
+  const team = await workspace("icon");
+  const { company } = await team.api("POST", "/companies", { name: "Calpolli" });
+  const { person } = await team.api("POST", "/people", {
+    name: "Marisol Velazquez",
+    address: "marisol@calpolli.test",
+    companyId: company.id,
+  });
+  const { deal } = await team.api("POST", "/deals", {
+    name: "Serie Documental",
+    companyId: company.id,
+    personIds: [person.id],
+  });
+  const box = await createMailbox(db, team.orgId, "studio@icon.test");
+  await grant(db, team.orgId, box.id, team.memberId);
+
+  const page = await team.page(`/crm/deals/${deal.id}`);
+  await page.getByRole("button", { name: "Project icon" }).click();
+  const chooser = page.waitForEvent("filechooser");
+  await page.getByRole("menuitem", { name: "Upload image" }).click();
+  await (await chooser).setFiles({ name: "icon.png", mimeType: "image/png", buffer: PNG });
+  const header = page.getByRole("button", { name: "Project icon" });
+  await expect
+    .poll(
+      async () =>
+        (await header
+          .locator("img")
+          .getAttribute("src")
+          .catch(() => null)) ?? "",
+      {
+        timeout: 10_000,
+      },
+    )
+    .toContain(`/api/crm/deals/${deal.id}/icon/`);
+  expect(await header.locator("img").getAttribute("src")).toContain(`workspace=${team.orgId}`);
+
+  const signed = await page.request.put(
+    new URL(`/api/mailboxes/${box.id}/signature?scope=mine`, String(worker.url)).toString(),
+    {
+      headers: { origin: String(worker.url) },
+      data: { bodyText: "Ana, Studio Icon" },
+    },
+  );
+  expect(signed.ok()).toBe(true);
+  await page.getByRole("button", { name: "Marisol Velazquez actions" }).click();
+  await page.getByRole("menuitem", { name: "Email" }).click();
+  await page.getByRole("button", { name: "Send" }).waitFor();
+  await page.getByText("marisol@calpolli.test", { exact: true }).waitFor();
+  await expect
+    .poll(() => page.getByRole("dialog").getByRole("textbox").last().inputValue())
+    .toContain("Ana, Studio Icon");
+  if (SHOTS) {
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: `${SHOTS}/project-email.png` });
+  }
 });
 
 async function dealCloseOn(id: string) {
@@ -475,6 +596,7 @@ async function dealRow(id: string) {
       valueMinor: schema.crmDeals.valueMinor,
       valueCurrency: schema.crmDeals.valueCurrency,
       stageId: schema.crmDeals.stageId,
+      companyId: schema.crmDeals.companyId,
     })
     .from(schema.crmDeals)
     .where(eq(schema.crmDeals.id, id));
@@ -538,6 +660,11 @@ async function freePort() {
   const { port } = server.address() as AddressInfo;
   await new Promise((resolve) => server.close(resolve));
   return port;
+}
+
+async function resetFilters(page: Page) {
+  await page.getByRole("button", { name: "Filter", exact: true }).click();
+  await page.getByRole("button", { name: "Reset" }).click();
 }
 
 function card(page: Page, name: string) {

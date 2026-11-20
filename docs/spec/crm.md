@@ -125,7 +125,10 @@ project: milestones in an order the team drags, each with a target day, and the 
 under them. A deliverable's file is a Drive file the member can open, usually in the deal's
 folder. Deleting a milestone keeps its deliverables on the deal, under none. A deal holds at most
 200 of each, so the plan is always read whole. Days are days (`YYYY-MM-DD`), the same on every
-client.
+client. The deal page's Plan tab draws the plan as a rail, like its
+timeline: each milestone opens a phase with its target day in the left column and its status on
+the spine, its deliverables follow with their due days, and a bar above counts the milestones
+done.
 
 **Project access.** Instead of roles and permissions, a project (a deal, usually won) lists the
 people from outside the team who reach it, by address, each with a scope (founder's call, Nov 20,
@@ -141,6 +144,25 @@ people from outside the team who reach it, by address, each with a scope (founde
   operation stays closed to them until it says otherwise. In Drive they have My files and no Shared:
   being added gives them editor on the project's folder, which they open from Shared with me, and
   being taken off removes it. They hear no realtime CRM changes.
+- **What we charge stays with the team** (founder's call, Nov 20, 2026). A freelancer reads no
+  deal value or currency anywhere (the deal, lists, search, the conversation sidebar, MCP), and a
+  filter or sort by value is ignored for them, since it would tell the value as well. They see no
+  contracts and no contract or value events on the timeline, and of the notes only those written
+  by freelancers: a teammate's note is the team's own record (budgets, what we think of the
+  client). The server leaves these out; the apps only stop showing the empty places.
+- **Admin folder.** Each project's folder holds an `Admin` folder that only the team sees
+  (founder's call, Nov 20, 2026: split the administrative files from the creative ones). It is a
+  team-only folder in Drive (`storage_nodes.team_only`): a grant or a link on a folder above it does
+  not reach in, so a freelancer with editor on the project's folder neither lists, opens, searches,
+  downloads nor moves anything into it; a grant on something inside it still works. A deal
+  contract's document and signed copy go there when they sit loose in the project's folder: when
+  the contract is made or changed, when its signed copy is recorded, and, for older contracts,
+  when a freelancer is added. Locked files move too and stay locked; a file the team keeps
+  elsewhere stays where it is. The sealed copy lands beside its document.
+- **People involved in a contract.** A contract lists the members it involves (`memberIds`, at
+  most 20): teammates working it, or the freelancer it is with. A freelancer sees, on their
+  projects, only the contracts that involve them, and gets viewer on those contracts' files;
+  taking them off takes that away.
 - **Clients** reach the project on the client portal only (below). They need no workspace.
 
 A teammate's address cannot be added. A project holds at most 50 people from outside the team.
@@ -245,6 +267,13 @@ One list, newest first, of four kinds of item:
   id, `me` or `none`; `?due=` is `overdue`, `upcoming` or `none`. Each task carries its record's
   name.
 - A record's tasks are its own: a company's panel does not gather its deals' tasks.
+- A record's Tasks tab lays its tasks on the same rail as the Plan: due day on the left, the
+  check on the spine, open tasks first and then the done ones.
+- On the web a task opens in a panel beside the task list (`/crm/tasks?task=<id>`), like an
+  email; `/crm/tasks/<id>` stays its full page.
+- The command menu (⌘K) finds open tasks by title, so the task list has no search of its own.
+- New, in every CRM header, makes a task, company, person or deal. A task first asks which record
+  it is on, unless the page is that record's, which it starts on and can change.
 - Writes publish `crm.changed` with kind `task`, plus the record's kind. Tasks write no timeline
   events yet. Not yet: reminders, recurring tasks, subtasks, several records per task, MCP tools.
 
@@ -290,7 +319,7 @@ Four tools on the MCP server, through the same member door:
 | Tool         | Scope       | Does                                                                                     |
 | ------------ | ----------- | ---------------------------------------------------------------------------------------- |
 | `crm_search` | `crm:read`  | Finds people, companies and deals by words, kind, owner, archived, stage kind or close date. Compact rows. |
-| `crm_fetch`  | `crm:read`  | Reads up to 10 records with their people, deals, contracts, files, open tasks, a deal's plan, recent notes and thread ids. |
+| `crm_fetch`  | `crm:read`  | Reads up to 10 records with their people, deals, contracts, files, open tasks, a deal's plan and project access, recent notes and thread ids. |
 | `crm_tasks`  | `crm:read`  | Lists tasks by status, assignee, due (overdue, upcoming, none), record or title words.    |
 | `crm_write`  | `crm:write` | Adds or changes a record, task, milestone, deliverable or draft contract, archives or restores, links files, adds a note, or changes many at once. Never deletes or sends. |
 
@@ -314,6 +343,21 @@ instructions keep telling agents to treat it as data.
   `crm_write`'s `contract` adds a draft on a company or deal or changes its title, document
   (a file in Shared) and dates. Sending for signature, voiding, and marking a contract sent or
   signed reach people outside Omni or bind the company, so they stay with a person in the app.
+- Paging: an empty `query` or any filter makes `crm_search` list records by name, and
+  `next_cursor` (opaque: where each kind stopped in each workspace) pages through the rest with
+  the same filters. A bare `query` is a ranked match and does not page. Kinds a member may not
+  list (a freelancer's companies and people) come back empty rather than as an error.
+- Project access: a deal's `crm_fetch` carries `access`, the freelancers and clients outside the
+  team who reach it (email, name once they have an account, scope, when added). Adding or
+  removing them shares the project's Drive folder with people outside the company, so it stays
+  with a person in the app (Rodrigo, Nov 20 2026).
+- Retries: `crm_write` takes an optional `idempotency_key`. Before writing, it claims the key
+  with an `mcp.crm_write.key` audit row (subject: the key); when the write lands the row keeps
+  its answer, and when it is refused the claim is dropped. The same member sending the key
+  again within 24 hours gets the answer back with `replayed: true` and nothing is written. A
+  claim with no answer (a write still running, or one that stopped before Omni knew whether it
+  landed) is refused with a tool error telling the agent to check with `crm_search` first, so a
+  retry never writes twice. Two concurrent first sends can both claim; agents send one at a time.
 - Plans: a deal's `crm_fetch` carries its `plan` (milestones in order, deliverables with their
   `file_id`, status and `client_visible`). `crm_write`'s `milestone` and `deliverable` add one
   (`deal` and `title`) or change one by `id`; nothing is deleted.

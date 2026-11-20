@@ -1,9 +1,5 @@
 import { z } from "zod";
-import {
-  storageNodeSchema,
-  storageSendForSignatureBodySchema,
-  storageSignatureStatusSchema,
-} from "./storage.ts";
+import { storageSendForSignatureBodySchema, storageSignatureStatusSchema } from "./storage.ts";
 
 const isoDate = z.iso.datetime();
 const id = z.string().min(1).max(64);
@@ -66,6 +62,8 @@ export const crmDealSchema = z.object({
   closedAt: isoDate.nullable(),
   /** `YYYY-MM-DD`: when the team expects it to close. Optional while an older Worker may answer. */
   expectedCloseOn: z.iso.date().nullable().optional(),
+  /** Its uploaded picture; null shows its client's logo. Optional while an older Worker may answer. */
+  iconUrl: z.string().nullable().optional(),
   folderNodeId: id.nullable(),
   createdByMemberId: id.nullable(),
   archivedAt: isoDate.nullable(),
@@ -156,6 +154,11 @@ export const crmContractSchema = z.object({
     .optional(),
   /** Where it is with its signers when it went out from Omni; null when sent by hand. */
   signing: crmContractSigningSchema.nullable().optional(),
+  /**
+   * Members it involves: teammates working it, or the freelancer it is with. A freelancer sees
+   * only contracts that involve them. Absent from a Worker older than it.
+   */
+  memberIds: z.array(id).optional(),
 });
 
 /** A thread the viewer can open, from any of their mailboxes in the session's scope. */
@@ -350,6 +353,8 @@ export const crmCreateContractBodySchema = z
     documentNodeId: id.nullable().optional(),
     effectiveOn: day.nullable().optional(),
     expiresOn: day.nullable().optional(),
+    /** Members of the workspace it involves. */
+    memberIds: z.array(id).max(20).optional(),
   })
   .refine((contract) => Boolean(contract.companyId || contract.dealId), {
     message: "give a companyId, a dealId or both",
@@ -368,6 +373,8 @@ export const crmUpdateContractBodySchema = z.object({
   signedAt: isoDate.optional(),
   effectiveOn: day.nullable().optional(),
   expiresOn: day.nullable().optional(),
+  /** Replaces the members it involves. */
+  memberIds: z.array(id).max(20).optional(),
 });
 
 /**
@@ -624,23 +631,3 @@ export type CrmDealSort = z.infer<typeof crmDealSortSchema>;
 export type CrmSortDir = z.infer<typeof crmSortDirSchema>;
 export type CrmBulkBody = z.infer<typeof crmBulkBodySchema>;
 export type CrmBulkResponse = z.infer<typeof crmBulkResponseSchema>;
-
-/**
- * A Drive file or folder linked to a company or a deal where it lives (`docs/spec/crm.md`, "Keep the files"): a reference,
- * not a copy. `GET /companies/:id/links` and `GET /deals/:id/links` list the ones the reader can
- * open in Drive, newest first.
- */
-export const crmFileLinkSchema = z.object({
-  node: storageNodeSchema,
-  linkedAt: isoDate,
-  linkedByMemberId: id.nullable(),
-});
-export const crmFileLinksResponseSchema = z.object({ links: z.array(crmFileLinkSchema) });
-/** `POST /companies/:id/links` and `POST /deals/:id/links`: nodes the member can open now. */
-export const crmLinkFilesBodySchema = z.strictObject({
-  nodeIds: z.array(id).min(1).max(200),
-});
-
-export type CrmFileLink = z.infer<typeof crmFileLinkSchema>;
-export type CrmFileLinksResponse = z.infer<typeof crmFileLinksResponseSchema>;
-export type CrmLinkFilesBody = z.infer<typeof crmLinkFilesBodySchema>;

@@ -99,7 +99,11 @@ import {
 } from "./crm/plan.ts";
 import {
   deliverableOnProject,
+  freelancerDeal,
+  freelancerDeals,
+  freelancerEvents,
   freelancerLookup,
+  freelancerNotes,
   freelancerSearch,
   freelancerTasks,
   milestoneOnProject,
@@ -117,6 +121,7 @@ import {
   type ReviewDecision,
 } from "./crm/portal.ts";
 import { lookupCrm, searchCrm } from "./crm/search.ts";
+import { setDealIcon } from "./crm/deal-icon.ts";
 import { getSettings, putSettings } from "./crm/settings.ts";
 import { replaceStages, stagesOf, type StageInput } from "./crm/stages.ts";
 import {
@@ -159,6 +164,11 @@ export {
   endExpiredContracts,
   type EndedContract,
 } from "./crm/contract-expiry.ts";
+export {
+  ADMIN_FOLDER_NAME,
+  CONTRACT_PEOPLE_MAX,
+  type InvalidPeople,
+} from "./crm/contract-people.ts";
 export type { CrmContractSigner, CrmContractSigning } from "./crm/contract-progress.ts";
 export type { SignedCopyInput } from "./crm/contract-signed-copy.ts";
 export {
@@ -334,11 +344,22 @@ export function memberCrm(db: Db, memberId: string) {
     deletePerson: (id: string) => writeAsMember(door, (m, tx) => deletePerson(tx, m, id)),
 
     listDeals: (input: ListDealsInput = {}) =>
-      asMember(door, (m, ex) => listDeals(ex, m, input), ANYONE),
-    deal: (id: string) => asMember(door, (m, ex) => getDeal(ex, m, id), onProject(id)),
+      asMember(
+        door,
+        (m, ex) => (isFreelancer(m) ? freelancerDeals(ex, m, input) : listDeals(ex, m, input)),
+        ANYONE,
+      ),
+    deal: (id: string) =>
+      asMember(
+        door,
+        (m, ex) => (isFreelancer(m) ? freelancerDeal(ex, m, id) : getDeal(ex, m, id)),
+        onProject(id),
+      ),
     createDeal: (input: DealInput) => writeAsMember(door, (m, tx) => createDeal(tx, m, input)),
     updateDeal: (id: string, patch: DealPatch) =>
       writeAsMember(door, (m, tx) => updateDeal(tx, m, id, patch)),
+    setDealIcon: (id: string, iconId: string | null) =>
+      writeAsMember(door, (m, tx) => setDealIcon(tx, m, id, iconId)),
     moveDeals: (input: { dealIds: string[]; stageId: string }) =>
       writeAsMember(door, (m, tx) => moveDeals(tx, m, input)),
     archiveDeal: (id: string) => writeAsMember(door, (m, tx) => archiveDeal(tx, m, id)),
@@ -360,7 +381,7 @@ export function memberCrm(db: Db, memberId: string) {
     listContracts: (input: ListContractsInput) =>
       asMember(
         door,
-        (m, ex) => listContracts(ex, m, input),
+        (m, ex) => listContracts(ex, m, isFreelancer(m) ? { ...input, involving: m.id } : input),
         "dealId" in input ? onProject(input.dealId) : TEAM_ONLY,
       ),
     createContract: (input: ContractInput) =>
@@ -397,9 +418,17 @@ export function memberCrm(db: Db, memberId: string) {
     deleteNote: (id: string) =>
       writeAsMember(door, (m, tx) => deleteNote(tx, m, id), noteOnProject(id)),
     events: (record: CrmRecordRef, page: TimelinePage = {}) =>
-      asMember(door, (m, ex) => eventsOf(ex, m, record, page), onProjectRecord(record)),
+      asMember(
+        door,
+        (m, ex) => eventsOf(ex, m, record, page, isFreelancer(m) ? freelancerEvents : undefined),
+        onProjectRecord(record),
+      ),
     notes: (record: CrmRecordRef, page: TimelinePage = {}) =>
-      asMember(door, (m, ex) => notesOf(ex, m, record, page), onProjectRecord(record)),
+      asMember(
+        door,
+        (m, ex) => notesOf(ex, m, record, page, isFreelancer(m) ? freelancerNotes : undefined),
+        onProjectRecord(record),
+      ),
 
     listTasks: (input: ListTasksInput = {}) =>
       asMember(

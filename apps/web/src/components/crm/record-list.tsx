@@ -1,11 +1,12 @@
+import { CreateMenu } from "./create-menu.tsx";
 import type { ReactNode } from "react";
 import type { Selection } from "react-aria-components";
 import { TableLoadMoreItem } from "react-aria-components/Table";
 import { Skeleton, SkeletonBox } from "skullet/react";
 import { EmptyState } from "@/components/empty/empty-state";
-import { IconPlus } from "@/components/icons/central";
 import { ListFailed } from "@/components/inbox/thread-list";
 import { StorageFrame } from "@/components/storage/storage-frame";
+import { Avatar } from "@/components/ui/avatar";
 import { SenderAvatar } from "@/components/avatar/sender-avatar";
 import type { SenderLogoFor } from "@/lib/sender-logo";
 import type { CrmSort } from "@/lib/crm.ts";
@@ -20,8 +21,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useIsMobile } from "@/hooks/use-mobile.ts";
 import { descriptorOf, fromDescriptor, type SortState } from "./list-sort.tsx";
+import { withWorkspace } from "@/lib/current-workspace.ts";
 
 export const DAY = new Intl.DateTimeFormat(undefined, {
   month: "short",
@@ -65,8 +66,21 @@ export function RecordMark(props: {
   square?: boolean;
   size?: number;
   who?: SenderLogoFor | null;
+  /** An uploaded picture, over `who`: a project's own icon. */
+  src?: string | null;
 }) {
   const size = props.size ?? 20;
+  if (props.src) {
+    return (
+      <Avatar
+        src={withWorkspace(props.src)}
+        initials={props.name.trim().slice(0, 1).toUpperCase() || "?"}
+        isSquare={props.square}
+        className="bg-secondary text-muted-foreground outline-0"
+        style={{ "--avatar-size": `${size}px` } as React.CSSProperties}
+      />
+    );
+  }
   return (
     <SenderAvatar
       who={props.who ?? null}
@@ -103,8 +117,6 @@ interface RecordListProps<T> {
   extra?: ReactNode;
   /** Filter: in the header beside the search, and beside the bulk bar while rows are picked. */
   filter?: ReactNode;
-  /** Under the header: the sort and the filters. */
-  toolbar?: ReactNode;
   /** A filter narrows the list, so an empty one says nothing matches. */
   filtered?: boolean;
   sorting?: { value: SortState; onChange: (next: SortState) => void };
@@ -129,7 +141,6 @@ export function RecordList<T extends { id: string; name: string }>(props: Record
         )
       }
     >
-      {props.toolbar}
       {props.replaceBody ?? (
         <div className="min-h-0 flex-1 overflow-y-auto">
           <Body {...props} />
@@ -140,8 +151,6 @@ export function RecordList<T extends { id: string; name: string }>(props: Record
 }
 
 function HeaderActions<T>(props: RecordListProps<T>) {
-  const phone = useIsMobile();
-  const { onNew } = props;
   return (
     <>
       {props.extra}
@@ -154,16 +163,7 @@ function HeaderActions<T>(props: RecordListProps<T>) {
       >
         <SearchInput size="sm" />
       </SearchField>
-      {onNew && (
-        <Button
-          size={phone ? "sq-sm" : "sm"}
-          aria-label={phone ? `New ${props.noun}` : undefined}
-          onPress={onNew}
-        >
-          <IconPlus />
-          {!phone && `New ${props.noun}`}
-        </Button>
-      )}
+      <CreateMenu />
     </>
   );
 }
@@ -264,9 +264,9 @@ function RecordTable<T extends { id: string; name: string }>(props: RecordListPr
 function ListBones() {
   return (
     <div>
-      <div className="h-9 border-b" />
+      <div className="h-10 border-b" />
       {Array.from({ length: 12 }, (_, i) => (
-        <div key={i} className="flex h-11 items-center gap-3 border-b px-5">
+        <div key={i} className="flex h-12 items-center gap-3 border-b px-5">
           <SkeletonBox width={20} height={20} radius="999px" />
           <span className="min-w-0 flex-1">
             <SkeletonBox width={`${25 + ((i * 17) % 30)}%`} height={10} />

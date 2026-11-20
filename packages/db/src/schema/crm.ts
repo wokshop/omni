@@ -189,6 +189,8 @@ export const crmDeals = pgTable(
     closedAt: timestamptz("closed_at"),
     /** When the team expects it to close. */
     expectedCloseOn: date("expected_close_on", { mode: "string" }),
+    /** The uploaded picture standing for it (its SHA-256 in the bucket); null for its client's logo. */
+    iconId: text("icon_id"),
     folderNodeId: folderRef("folder_node_id"),
     createdByMemberId: memberRef("created_by_member_id"),
     archivedAt: timestamptz("archived_at"),
@@ -391,6 +393,7 @@ export const crmSettings = pgTable("crm_settings", {
   defaultCurrency: text("default_currency"),
   rootFolderNodeId: folderRef("root_folder_node_id"),
 });
+export * from "./crm/contract-people.ts";
 export * from "./crm/files.ts";
 export * from "./crm/projects.ts";
 export * from "./crm/tasks.ts";
