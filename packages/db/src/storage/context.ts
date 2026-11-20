@@ -169,7 +169,13 @@ export function contextOperations(db: Db, userId: string, scopeOrgId?: string | 
     return db
       .select({ id: storageNodes.id })
       .from(storageNodes)
-      .leftJoin(storageTexts, eq(storageTexts.nodeId, storageNodes.id))
+      .leftJoin(
+        storageTexts,
+        and(
+          eq(storageTexts.nodeId, storageNodes.id),
+          eq(storageTexts.contentVersion, storageNodes.contentVersion),
+        ),
+      )
       .where(
         and(
           sql`(${sql.join(within, sql` or `)})`,
@@ -194,6 +200,13 @@ export function contextOperations(db: Db, userId: string, scopeOrgId?: string | 
         matched: sql<boolean>`${storageTexts.searchVector} @@ websearch_to_tsquery('simple', ${query})`,
       })
       .from(storageTexts)
+      .innerJoin(
+        storageNodes,
+        and(
+          eq(storageNodes.id, storageTexts.nodeId),
+          eq(storageNodes.contentVersion, storageTexts.contentVersion),
+        ),
+      )
       .where(inArray(storageTexts.nodeId, ids));
     return new Map(rows.filter((row) => row.matched).map((row) => [row.nodeId, row.snippet]));
   }

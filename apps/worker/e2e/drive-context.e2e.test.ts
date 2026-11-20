@@ -169,6 +169,28 @@ test("an agent finds and reads files by the words inside them, and only files it
   const beaRead = (await call(beaAgent, "drive_fetch", { id: report.id })) as unknown as Fetched;
   expect(beaRead.text).toContain(`forecast for ${word}`);
 
+  const clients = await stack.api(ana.jar, "POST", "/folders", {
+    name: "Clients",
+    space: "personal",
+  });
+  const nested = await stack.upload(
+    ana.jar,
+    { parentId: clients.body.node.id },
+    "brief.md",
+    text(`Nested ${word} brief`),
+  );
+  const folderShare = await stack.api(
+    ana.jar,
+    "PUT",
+    `/nodes/${clients.body.node.id}/sharing/people/${encodeURIComponent(bea.email)}`,
+    { role: "viewer" },
+  );
+  await indexAll();
+  const nestedHit = (await search(beaAgent, word)).find((hit) => hit.id === nested.id);
+  expect(nestedHit?.url).toBe(
+    `${WEB_ORIGIN}/s/${folderShare.body.sharing.shareId}?file=${nested.id}`,
+  );
+
   expect((await stack.api(ana.jar, "DELETE", `/nodes/${plan.id}`)).status).toBe(200);
   expect(await search(carlAgent, word)).toEqual([]);
   expect(await call(carlAgent, "drive_fetch", { id: plan.id })).toHaveProperty("error");
@@ -201,6 +223,7 @@ test("a replaced file is read again, and a token without drive:read is asked to 
 
   const pending = (await call(agent, "drive_fetch", { id: note.id })) as unknown as Fetched;
   expect(pending.metadata.text_status).toBe("pending");
+  expect(await search(agent, before)).toEqual([]);
   await indexAll();
   expect(await search(agent, before)).toEqual([]);
   expect(titles(await search(agent, after))).toEqual(["note.md"]);
@@ -214,4 +237,27 @@ test("a replaced file is read again, and a token without drive:read is asked to 
   await expect(
     mailOnly.callTool({ name: "drive_search", arguments: { query: after } }),
   ).rejects.toThrow(/403|insufficient_scope|drive:read/);
+});
+
+test("an agent pages through a folder whose names are not Latin", async () => {
+  const org = await stack.company("paging");
+  const ana = await stack.member(org.id);
+  for (const name of ["日本.md", "💡ideas.md", "ñandú.md"]) {
+    await stack.upload(ana.jar, { space: "personal" }, name, text(name));
+  }
+  const agent = await agentFor(ana);
+  const seen: string[] = [];
+  let cursor: string | undefined;
+  for (let page = 0; page < 4; page++) {
+    const listed = (await call(agent, "drive_list", {
+      workspace: org.id,
+      space: "my_files",
+      limit: 1,
+      ...(cursor ? { cursor } : {}),
+    })) as { items: Item[]; next_cursor?: string };
+    seen.push(...listed.items.map((item) => item.title));
+    cursor = listed.next_cursor;
+    if (!cursor) break;
+  }
+  expect(seen.toSorted()).toEqual(["ñandú.md", "日本.md", "💡ideas.md"].toSorted());
 });

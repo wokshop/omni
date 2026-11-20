@@ -24,10 +24,15 @@ const DRIVE_PATH = { personal: "my", shared: "shared" } as const;
 export function nodeUrl(webAppURL: string, found: ContextNode) {
   const { node, workspace } = found;
   if (found.via === "grant") {
-    const path = found.shareId
-      ? `/s/${encodeURIComponent(found.shareId)}`
-      : "/files/shared-with-me";
-    return new URL(path, webAppURL).toString();
+    if (!found.shareId) return new URL("/files/shared-with-me", webAppURL).toString();
+    const url = new URL(`/s/${encodeURIComponent(found.shareId)}`, webAppURL);
+    const top = found.path[0]?.id;
+    if (node.kind === "folder" && node.id !== top) url.searchParams.set("node", node.id);
+    if (node.kind === "file" && node.id !== top) {
+      if (node.parentId && node.parentId !== top) url.searchParams.set("node", node.parentId);
+      url.searchParams.set("file", node.id);
+    }
+    return url.toString();
   }
   const drive = `/${encodeURIComponent(workspace.slug)}/files/${DRIVE_PATH[node.space]}`;
   if (node.kind === "folder") {

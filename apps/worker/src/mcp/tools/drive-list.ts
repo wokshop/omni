@@ -40,15 +40,20 @@ const outputSchema = z.object({
     .describe("Without a folder or space: what others shared with the person, newest first."),
 });
 
-const encodeCursor = (cursor: StorageListCursor | null) =>
-  cursor ? btoa(JSON.stringify([cursor.kind, cursor.name, cursor.id])) : undefined;
+const encodeCursor = (cursor: StorageListCursor | null) => {
+  if (!cursor) return undefined;
+  const bytes = new TextEncoder().encode(JSON.stringify([cursor.kind, cursor.name, cursor.id]));
+  return btoa(String.fromCharCode(...bytes));
+};
 
 const decodeCursor: (cursor: string | undefined) => StorageListCursor | null | undefined = (
   cursor,
 ) => {
   if (cursor === undefined) return undefined;
   try {
-    const [kind, name, id] = JSON.parse(atob(cursor)) as [string, string, string];
+    const binary = atob(cursor);
+    const json = new TextDecoder().decode(Uint8Array.from(binary, (char) => char.charCodeAt(0)));
+    const [kind, name, id] = JSON.parse(json) as [string, string, string];
     if (
       (kind !== "file" && kind !== "folder") ||
       typeof name !== "string" ||
