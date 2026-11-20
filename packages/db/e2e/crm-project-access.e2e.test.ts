@@ -228,3 +228,24 @@ test("removing a freelancer while the project's folder is in Trash still takes i
   ok(await team.storage.restore(website.folder));
   expect(await as.storage.node(website.file.id)).toBeNull();
 });
+
+test("a freelancer cannot share a file still uploading into their project", async () => {
+  const { org, team, website } = await studio("access-upload-link");
+  const { door } = await freelancer(org.id, "fran@upload.test");
+  ok(
+    await team.crm.grantProjectAccess(website.deal.id, {
+      email: "fran@upload.test",
+      scope: "freelancer",
+    }),
+  );
+  const opened = ok(
+    await door.storage.openUpload(
+      { parentId: website.folder },
+      { name: "cut.mp4", size: 100, mimeType: "video/mp4", limitBytes: null },
+    ),
+  );
+  expect(await door.storage.setUploadLinkAccess(opened.upload.id, "anyone")).toEqual({
+    status: "forbidden",
+  });
+  expect(await door.storage.uploadSharing(opened.upload.id)).toEqual({ status: "forbidden" });
+});

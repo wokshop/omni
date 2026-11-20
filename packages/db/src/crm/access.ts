@@ -112,6 +112,11 @@ async function portalFolder(tx: Ex, member: CrmMember, dealId: string, parentId:
     .insert(crmPortals)
     .values({ dealId, orgId: member.orgId, folderNodeId: made.node.id })
     .onConflictDoUpdate({ target: crmPortals.dealId, set: { folderNodeId: made.node.id } });
+  const clients = (await accessOf(tx, member.orgId, dealId)).filter((r) => r.scope === "client");
+  for (const client of clients) {
+    const put = await storage.putGrant(made.node.id, client.email, "viewer");
+    if (put.status !== "ok") return sharingRefused(put.status);
+  }
   return made.node.id;
 }
 
