@@ -208,6 +208,16 @@ export function contextOperations(db: Db, userId: string, scopeOrgId?: string | 
       .limit(limit);
   }
 
+  const noTrashAbove = sql`not exists (
+    with recursive up(parent_id, trashed, depth) as (
+      select p.parent_id, p.trashed_at is not null, 1 from ${storageNodes} p
+        where p.id = ${storageNodes.parentId}
+      union all
+      select p.parent_id, p.trashed_at is not null, up.depth + 1 from ${storageNodes} p
+        join up on p.id = up.parent_id
+        where not up.trashed and up.depth < ${MAX_WALK}
+    ) select 1 from up where trashed)`;
+
   async function facts(ids: string[]) {
     if (!ids.length) return [] satisfies ContextFile[];
     const reached = await workspaces();
@@ -232,7 +242,7 @@ export function contextOperations(db: Db, userId: string, scopeOrgId?: string | 
           eq(storageTexts.contentVersion, storageNodes.contentVersion),
         ),
       )
-      .where(inArray(storageNodes.id, ids));
+      .where(and(inArray(storageNodes.id, ids), noTrashAbove));
     const byId = new Map(
       rows.map((row) => {
         const member = reached.find((w) => w.id === row.orgId);

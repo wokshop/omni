@@ -36,7 +36,7 @@ function recordedJudgments() {
 const uploadedName = (name: string) => `${name}.md`;
 const recordedName = (name: string) => name.replace(/\.md$/, "");
 
-const jev = { mode: "replay" as "replay" | "fail", requests: 0 };
+const jev = { mode: "replay" as "replay" | "fail", requests: 0, sent: [] as string[] };
 let server: Server;
 let stack: StorageStack;
 
@@ -51,6 +51,7 @@ beforeAll(async () => {
       state: { query: string };
       questions: Record<string, Question>;
     };
+    jev.sent.push(...Object.values(body.questions).map((q) => q.instructions.file.name));
     const byName = judgments.get(body.state.query);
     const answers = Object.entries(body.questions).map(([id, q]) => [
       id,
@@ -165,4 +166,36 @@ test("when the relevance judge fails, search answers with word matches alone", a
   } finally {
     jev.mode = "replay";
   }
+});
+
+test("a file under a trashed folder is never sent to the relevance judge, even to a person it was shared with", async () => {
+  const acme = await stack.company("owner");
+  const ana = await stack.member(acme.id);
+  const other = await stack.company("guest");
+  const bea = await stack.member(other.id);
+  const lease = fixture.files.find((file) => file.id === "office-lease")!;
+  const folder = await stack.api(ana.jar, "POST", "/folders", { name: "Legal", space: "shared" });
+  const node = await stack.upload(
+    ana.jar,
+    { parentId: folder.body.node.id },
+    uploadedName(lease.name),
+    new TextEncoder().encode(lease.text),
+  );
+  const shared = await stack.api(
+    ana.jar,
+    "PUT",
+    `/nodes/${node.id}/sharing/people/${encodeURIComponent(bea.email)}`,
+    { role: "viewer" },
+  );
+  expect(shared.status).toBe(200);
+  for (let run = 0; run < 3; run++) expect(await stack.cron("* * * * *")).toBe("ok");
+  const agent = await connectAgent(stack.worker.url, bea.jar, {
+    scope: "openid mail:read drive:read",
+  });
+  expect((await search(agent, "office rent agreement")).map((hit) => hit.id)).toEqual([node.id]);
+
+  expect((await stack.api(ana.jar, "DELETE", `/nodes/${folder.body.node.id}`)).status).toBe(200);
+  jev.sent = [];
+  expect(await search(agent, "october salaries")).toEqual([]);
+  expect(jev.sent).not.toContain(uploadedName(lease.name));
 });
