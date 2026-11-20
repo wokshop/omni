@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { IconPlus } from "@/components/icons/central";
 import { Checkbox, CheckboxField } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -10,10 +10,25 @@ type Step = NonNullable<CrmTask["subtasks"]>[number];
 const STEP_MAX = 500;
 const lineClass = "h-8 w-full rounded-md px-2 text-sm hover:bg-hover focus:bg-hover";
 
-/** The task's checklist: a titled group of steps, each with its check, and a line to add one. */
-export function Subtasks(props: { task: CrmTask; onSave: (change: TaskChange) => void }) {
-  const steps = props.task.subtasks ?? [];
-  const put = (subtasks: Step[]) => props.onSave({ subtasks });
+/**
+ * The task's checklist: a titled group of steps, each with its check, and a line to add one. While
+ * saves are on their way it shows the list as last edited here, not what a refetch brings back.
+ */
+export function Subtasks(props: {
+  task: CrmTask;
+  onSave: (change: TaskChange, settled?: () => void) => void;
+}) {
+  const [local, setLocal] = useState<Step[] | null>(null);
+  const pending = useRef(0);
+  const steps = local ?? props.task.subtasks ?? [];
+  const put = (subtasks: Step[]) => {
+    setLocal(subtasks);
+    pending.current += 1;
+    props.onSave({ subtasks }, () => {
+      pending.current -= 1;
+      if (pending.current === 0) setLocal(null);
+    });
+  };
   return (
     <section aria-label="Subtasks" className="flex flex-col gap-0.5">
       <h3 className="flex h-7 items-center px-2 text-sm text-muted-foreground">Subtasks</h3>

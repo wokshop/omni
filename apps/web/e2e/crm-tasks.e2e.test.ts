@@ -134,7 +134,7 @@ test("a task opens beside the list, edits save to that task, and Escape closes i
   await context.close();
 });
 
-test("subtasks added in the panel save in order, check off, and a cleared one is removed", async () => {
+test("subtasks added quickly in the panel all save in order, check off, and a cleared one is removed", async () => {
   const { page, org, context, headers } = await signedIn("subtasks");
   const made = await fetch(new URL("/api/crm/tasks", origin()), {
     method: "POST",
@@ -145,25 +145,25 @@ test("subtasks added in the panel save in order, check off, and a cleared one is
   await page.goto(new URL(`/${org.slug}/crm/tasks?task=${task.id}`, origin()).toString());
   const panel = page.getByRole("region", { name: "Task" });
   const add = panel.getByRole("textbox", { name: "New subtask" });
-  await add.fill("Scout");
-  await add.press("Enter");
-  await add.fill("Permits");
-  await add.press("Enter");
+  for (const title of ["Scout", "Permits", "Crew", "Drone"]) {
+    await add.fill(title);
+    await add.press("Enter");
+  }
   await expect
     .poll(async () => (await row(task.id))?.subtasks.map((s) => s.title))
-    .toEqual(["Scout", "Permits"]);
+    .toEqual(["Scout", "Permits", "Crew", "Drone"]);
 
   await panel.getByRole("checkbox", { name: "Complete Scout" }).click({ force: true });
   await expect
     .poll(async () => (await row(task.id))?.subtasks.map((s) => s.done))
-    .toEqual([true, false]);
+    .toEqual([true, false, false, false]);
   expect((await row(task.id))?.completedAt).toBeNull();
 
   await panel.getByRole("textbox", { name: "Subtask" }).nth(1).fill("");
   await panel.getByRole("checkbox", { name: "Complete" }).first().focus();
   await expect
     .poll(async () => (await row(task.id))?.subtasks.map((s) => s.title))
-    .toEqual(["Scout"]);
+    .toEqual(["Scout", "Crew", "Drone"]);
 
   await page.reload();
   await panel.getByRole("checkbox", { name: "Complete Scout" }).waitFor();

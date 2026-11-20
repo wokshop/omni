@@ -6,13 +6,16 @@ import { Checkbox, CheckboxField } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { TextField } from "@/components/ui/text-field";
 import { Textarea } from "@/components/ui/textarea";
-import { useCrmTask, useDeleteTask, useUpdateTask } from "@/hooks/use-crm-tasks.ts";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useCrmTask, useDeleteTask } from "@/hooks/use-crm-tasks.ts";
 import { useWorkspaceSlug } from "@/hooks/use-workspaces.ts";
 import {
   dayOf,
   dueAtOf,
   onRecord,
+  taskKeys,
   taskRecord,
+  updateTaskMutation,
   type CrmTask,
   type TaskChange,
 } from "@/lib/crm-tasks.ts";
@@ -33,13 +36,32 @@ export function TaskPage({ id }: { id: string }) {
   return <TaskView task={query.data.task} />;
 }
 
-/** Saves a change to the task, with a toast when it fails. */
+/**
+ * Saves a change to the task, with a toast when it fails, then `settled`. Saves run one at a time
+ * per task, so a checklist sent whole never lands over a newer one sent after it, and the task is
+ * fetched again only after the last queued save.
+ */
 export function useSaveTask(id: string) {
-  const update = useUpdateTask();
-  return (change: TaskChange) =>
+  const client = useQueryClient();
+  const base = updateTaskMutation(client);
+  const mutationKey = ["crm-task-save", id];
+  const update = useMutation({
+    ...base,
+    mutationKey,
+    scope: { id: `crm-task:${id}` },
+    onSettled: (...args) => {
+      if (client.isMutating({ mutationKey }) > 1) return;
+      if (args[0]) client.setQueryData(taskKeys.one(id), args[0]);
+      return base.onSettled?.(...args);
+    },
+  });
+  return (change: TaskChange, settled?: () => void) =>
     update.mutate(
       { id, ...change },
-      { onError: (error) => crmErrorToast(error, "The task was not changed") },
+      {
+        onError: (error) => crmErrorToast(error, "The task was not changed"),
+        onSettled: settled,
+      },
     );
 }
 
@@ -113,7 +135,10 @@ export function TaskHeading(props: { task: CrmTask; onSave: (change: TaskChange)
 }
 
 /** Under the heading: the task's subtasks, then its notes. */
-export function TaskContent(props: { task: CrmTask; onSave: (change: TaskChange) => void }) {
+export function TaskContent(props: {
+  task: CrmTask;
+  onSave: (change: TaskChange, settled?: () => void) => void;
+}) {
   const { task, onSave } = props;
   return (
     <div className="-mx-2 flex flex-col gap-4">
