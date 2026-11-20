@@ -106,10 +106,16 @@ All under `/api/crm` on the Worker, for the active workspace. Shapes live in
 | `GET /companies/:id/timeline` · same for people and deals           | The merged timeline, newest first.                                                                           |
 | `POST /companies/:id/folder` · `POST /deals/:id/folder`             | Finds or makes the record's folder and returns its node id. The apps then use `/api/storage` on it.          |
 | `GET /contracts` · `POST /contracts` · `PATCH /contracts/:id` · `DELETE` | List by `?company=` or `?deal=`. Create. Change status, dates or file. Delete (never a signed one).     |
+| `POST /companies/:id/restore` · same for people and deals          | Brings an archived record back (ADR 0054).                                                                   |
+| `POST /companies/bulk` · same for people and deals                 | One action (`archive`, `restore`, `delete`, `owner`; deals `stage`) on up to 200 ids, each by its own rules. |
 | `GET /lookup?address=`                                              | Up to 50 addresses. The people, companies and open deals that match, for the conversation sidebar.           |
 | `GET /search?q=`                                                    | People, companies and deals whose name, address or domain starts with the words. For pickers.                |
 | `GET /settings` · `PUT /settings`                                   | The default currency.                                                                                        |
 
+- Every list takes `sort` (`name`, `created`, `updated`; deals also `value`, `closeOn`,
+  `stageEntered`), `dir`, `owner` (an id or `none`), `createdAfter`, `createdBefore` and
+  `archived` (`1` with archived, `only` archived alone). Companies take `domain`; people
+  `hasCompany`; deals `closeAfter`, `closeBefore`, `minValue`, `maxValue` (ADR 0054).
 - Error codes beside `error`: `NOT_FOUND`, `NO_CRM`, `ADDRESS_TAKEN`, `DOMAIN_TAKEN`,
   `WEBMAIL_DOMAIN`, `STAGE_IN_USE`, `STAGE_KIND_REQUIRED` (each kind keeps at least one stage),
   `INVALID_CURRENCY`, `CONTRACT_SIGNED`, and the platform's `BILLING_INACTIVE`.
