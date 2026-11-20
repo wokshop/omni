@@ -13,21 +13,24 @@ interface Range {
 const CONTEXT = 32;
 
 function flatten(doc: PmNode) {
-  let text = "";
+  const parts: string[] = [];
   const at: number[] = [];
+  let broken = true;
   doc.descendants((node, pos) => {
     if (node.isText) {
-      text += node.text;
+      parts.push(node.text ?? "");
       for (let i = 0; i < node.nodeSize; i++) at.push(pos + i);
+      broken = false;
       return false;
     }
-    if (node.isTextblock && text && !text.endsWith("\n")) {
-      text += "\n";
+    if (node.isTextblock && !broken) {
+      parts.push("\n");
       at.push(-1);
+      broken = true;
     }
     return true;
   });
-  return { text, at };
+  return { text: parts.join(""), at };
 }
 
 /** The passage from `from` to `to`, kept by its words and what is around them; null if it is blank. */
@@ -113,7 +116,10 @@ function startsOf(text: string, prefix: string) {
 function endsFrom(text: string, suffix: string, start: number, most: number) {
   const ends: number[] = [];
   for (const after of heads(suffix)) {
-    for (const at of occurrences(text, after)) if (at > start && at - start <= most) ends.push(at);
+    for (let at = text.indexOf(after, start + 1); at !== -1 && at - start <= most;) {
+      ends.push(at);
+      at = text.indexOf(after, at + 1);
+    }
   }
   const last = text.length - suffix.length;
   if (suffix.length < CONTEXT && text.endsWith(suffix) && last > start && last - start <= most) {
@@ -139,6 +145,7 @@ function between(text: string, anchor: TextAnchor) {
 
 function locate(text: string, anchor: TextAnchor) {
   const same = exact(text, anchor);
+  if (same && same.fit === anchor.prefix.length + anchor.suffix.length) return same;
   const near = between(text, anchor);
   if (!near) return same;
   return same && same.fit >= near.fit ? same : near;
