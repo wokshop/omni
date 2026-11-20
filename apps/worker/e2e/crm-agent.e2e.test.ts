@@ -329,6 +329,27 @@ describe("tasks", () => {
     expect(stored.status === "ok" && stored.task.completedAt).toBeInstanceOf(Date);
   });
 
+  test("an agent pages through more tasks than one call returns", async () => {
+    const { agent, crm } = await workspace("agenttaskpages");
+    for (let i = 0; i < 5; i++) {
+      const made = await crm.createTask({ title: `Follow up ${i}` });
+      if (made.status !== "ok") throw new Error("seed");
+    }
+    const seen: string[] = [];
+    let cursor: string | undefined;
+    for (let page = 0; page < 5; page++) {
+      const answer: { tasks: Task[]; next_cursor: string | null } = await call(agent, "crm_tasks", {
+        limit: 2,
+        ...(cursor ? { cursor } : {}),
+      });
+      seen.push(...answer.tasks.map((t) => t.title));
+      if (!answer.next_cursor) break;
+      cursor = answer.next_cursor;
+    }
+    expect(seen.toSorted()).toEqual([0, 1, 2, 3, 4].map((i) => `Follow up ${i}`));
+    expect(await refusal(agent, "crm_tasks", { cursor: "not-a-cursor" })).toMatch(/cursor/);
+  });
+
   test("tasks stay in their workspace, and reading them needs crm:read", async () => {
     const ours = await workspace("agenttaskours");
     const theirs = await workspace("agenttasktheirs");
