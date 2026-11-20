@@ -57,6 +57,28 @@ test("crm_search pages through every deal once, then says there are no more", as
   expect((forged.content as { text: string }[])[0]!.text).toContain("not one `crm_search` gave");
 });
 
+test("a filtered company search pages through name and domain matches, each once", async () => {
+  const org = await stack.company("agentdomains");
+  const ana = await stack.member(org.id, "owner");
+  const crm = forMember(stack.db, ana.id).crm;
+  await crm.createCompany({ name: "Alpha One" });
+  await crm.createCompany({ name: "Alpha Two", domains: ["alpha.io"] });
+  await crm.createCompany({ name: "Zeta", domains: ["alphazeta.com"] });
+  await crm.createCompany({ name: "Omega" });
+  const agent = await connectAgent(stack.worker.url, ana.jar, { scope: CRM });
+
+  type Companies = { companies: { name: string }[]; next_cursor: string | null };
+  const ask = { kind: "company", query: "alpha", archived: "include", limit: 1 };
+  const seen: string[] = [];
+  let page = await call<Companies>(agent, "crm_search", ask);
+  seen.push(...page.companies.map((c) => c.name));
+  while (page.next_cursor) {
+    page = await call<Companies>(agent, "crm_search", { ...ask, cursor: page.next_cursor });
+    seen.push(...page.companies.map((c) => c.name));
+  }
+  expect(seen).toEqual(["Alpha One", "Alpha Two", "Zeta"]);
+});
+
 test("a retried add with the same idempotency_key writes once and replays the answer", async () => {
   const org = await stack.company("agentretry");
   const ana = await stack.member(org.id, "owner");

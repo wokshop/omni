@@ -72,16 +72,18 @@ const outputSchema = z.object({
 
 type Kind = "person" | "company" | "deal";
 
+const listCursorSchema = z.object({
+  key: z.enum(["name", "created", "updated", "value", "closeOn", "stageEntered"]),
+  dir: z.enum(["asc", "desc"]),
+  value: z.string().nullable(),
+  id: z.string(),
+});
+
 const cursorSchema = z.record(
   z.string(),
   z.partialRecord(
-    z.enum(["person", "company", "deal"]),
-    z.object({
-      key: z.enum(["name", "created", "updated", "value", "closeOn", "stageEntered"]),
-      dir: z.enum(["asc", "desc"]),
-      value: z.string().nullable(),
-      id: z.string(),
-    }),
+    z.enum(["person", "company", "domain", "deal"]),
+    z.union([listCursorSchema, z.literal("start")]),
   ),
 );
 type Pages = z.infer<typeof cursorSchema>;
@@ -114,17 +116,42 @@ async function ownerFilter(context: ToolContext, workspace: CrmWorkspace, owner?
   return id === null ? null : { id };
 }
 
-async function companiesIn(crm: MemberCrm, input: ListCompaniesInput) {
+const atCursor = (cursor: Page[keyof Page]) => (cursor === "start" ? null : (cursor ?? null));
+
+const nameHit = (name: string, word: string) => {
+  const lower = name.toLowerCase();
+  const w = word.toLowerCase();
+  return lower.startsWith(w) || lower.includes(` ${w}`);
+};
+
+async function companiesIn(crm: MemberCrm, input: ListCompaniesInput, page: Page | undefined) {
   const q = input.q ?? "";
-  const byDomainToo = q && !/\s/.test(q) && !input.cursor;
-  const [byName, byDomain] = await Promise.all([
-    crm.listCompanies(input),
-    byDomainToo ? crm.listCompanies({ ...input, q: undefined, domain: q, cursor: null }) : null,
-  ]);
-  if (byName.status !== "ok" || byDomain?.status !== "ok") return byName;
-  const seen = new Set(byName.companies.map((c) => c.id));
-  const extra = byDomain.companies.filter((c) => !seen.has(c.id));
-  return { ...byName, companies: [...byName.companies, ...extra].slice(0, input.limit) };
+  const limit = input.limit ?? 20;
+  const companies: CrmCompany[] = [];
+  const next: Page = {};
+  if (!page || page.company) {
+    const byName = await crm.listCompanies({ ...input, cursor: atCursor(page?.company) });
+    if (byName.status !== "ok") return byName;
+    companies.push(...byName.companies);
+    if (byName.nextCursor) next.company = byName.nextCursor;
+    else if (q && !/\s/.test(q)) next.domain = "start";
+  }
+  const domainFrom = next.domain ?? page?.domain;
+  const room = limit - companies.length;
+  if (domainFrom && room > 0) {
+    const byDomain = await crm.listCompanies({
+      ...input,
+      q: undefined,
+      domain: q,
+      limit: room,
+      cursor: atCursor(domainFrom),
+    });
+    if (byDomain.status !== "ok") return byDomain;
+    companies.push(...byDomain.companies.filter((c) => !nameHit(c.name, q)));
+    delete next.domain;
+    if (byDomain.nextCursor) next.domain = byDomain.nextCursor;
+  }
+  return { status: "ok" as const, companies, next };
 }
 
 type Listed<R> = { rows: R[]; next: CrmListCursor | null } | { error: string };
@@ -154,18 +181,20 @@ async function listIn(
   const crm = crmOf(context, workspace);
   const owner = await ownerFilter(context, workspace, input.owner);
   if (owner === null) return NOTHING;
-  const listing = (kind: Kind) => wants(kind) && (page === undefined || page[kind] !== undefined);
+  const listing = (kind: Kind) =>
+    wants(kind) &&
+    (page === undefined || page[kind] !== undefined || (kind === "company" && !!page.domain));
   const common = (kind: Kind) => ({
     q: input.query.trim(),
     limit: input.limit,
     ownerMemberId: owner.id,
     includeArchived: input.archived === "include",
     archivedOnly: input.archived === "only",
-    cursor: page?.[kind] ?? null,
+    cursor: atCursor(page?.[kind]),
   });
   const [people, companies, deals] = await Promise.all([
     listing("person") ? crm.listPeople(common("person")) : null,
-    listing("company") ? companiesIn(crm, common("company")) : null,
+    listing("company") ? companiesIn(crm, common("company"), page) : null,
     listing("deal")
       ? crm.listDeals({
           ...common("deal"),
@@ -181,9 +210,8 @@ async function listIn(
   if ("error" in p) return p;
   if ("error" in c) return c;
   if ("error" in d) return d;
-  const next: Page = {};
+  const next: Page = { ...(companies?.status === "ok" ? companies.next : {}) };
   if (p.next) next.person = p.next;
-  if (c.next) next.company = c.next;
   if (d.next) next.deal = d.next;
   return { people: p.rows, companies: c.rows, deals: d.rows, next };
 }
