@@ -1,14 +1,18 @@
 import {
+  closestCenter,
   DndContext,
   DragOverlay,
+  KeyboardSensor,
   PointerSensor,
   pointerWithin,
   useDraggable,
   useDroppable,
   useSensor,
   useSensors,
+  type CollisionDetection,
   type DragEndEvent,
   type DragStartEvent,
+  type KeyboardCoordinateGetter,
 } from "@dnd-kit/core";
 import { useState } from "react";
 import { Skeleton, SkeletonBox } from "skullet/react";
@@ -23,6 +27,19 @@ import { DealCard, LiftedDealCard } from "./deal-card.tsx";
 import { NewDealDialog } from "./new-records.tsx";
 
 const COLUMN = "flex w-72 shrink-0 flex-col";
+const COLUMN_STEP = 288 + 12;
+const ARROW_STEPS: Record<string, number> = { ArrowRight: COLUMN_STEP, ArrowLeft: -COLUMN_STEP };
+const SPACE_ONLY = { start: ["Space"], cancel: ["Escape"], end: ["Space"] };
+
+const byPointerOrCenter: CollisionDetection = (args) =>
+  args.pointerCoordinates ? pointerWithin(args) : closestCenter(args);
+
+const stepColumns: KeyboardCoordinateGetter = (event, { currentCoordinates }) => {
+  const step = ARROW_STEPS[event.code];
+  if (!step) return undefined;
+  event.preventDefault();
+  return { ...currentCoordinates, x: currentCoordinates.x + step };
+};
 
 export function DealBoard(props: {
   deals: CrmDeal[];
@@ -53,7 +70,7 @@ export function DealBoard(props: {
   return (
     <DndContext
       sensors={drag.sensors}
-      collisionDetection={pointerWithin}
+      collisionDetection={byPointerOrCenter}
       onDragStart={drag.start}
       onDragEnd={drag.end}
       onDragCancel={drag.cancel}
@@ -78,7 +95,10 @@ export function DealBoard(props: {
 }
 
 function useBoardDrag(deals: CrmDeal[], stages: CrmStage[]) {
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { keyboardCodes: SPACE_ONLY, coordinateGetter: stepColumns }),
+  );
   const move = useMoveDeal();
   const [lifted, setLifted] = useState<CrmDeal | null>(null);
   const start = (event: DragStartEvent) =>
@@ -145,7 +165,8 @@ function DraggableDeal({ deal }: { deal: CrmDeal }) {
     <li
       ref={setNodeRef}
       onPointerDownCapture={listeners?.onPointerDown as React.PointerEventHandler | undefined}
-      className={`flex flex-col ${isDragging ? "invisible" : ""}`}
+      onKeyDownCapture={listeners?.onKeyDown as React.KeyboardEventHandler | undefined}
+      className={`flex flex-col ${isDragging ? "opacity-0" : ""}`}
     >
       <DealCard deal={deal} />
     </li>
