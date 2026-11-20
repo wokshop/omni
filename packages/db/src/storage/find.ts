@@ -7,7 +7,7 @@ import { lockJoin, MAX_WALK, nodeColumns, toNode, type Drive, type StorageNode }
 /** Search shows this many; it does not page. */
 export const STORAGE_FIND_LIMIT = 50;
 
-function liveIn(drives: Drive[]) {
+export function liveIn(drives: Drive[]) {
   const roots = drives.map(
     (drive) =>
       sql`(r.org_id = ${drive.orgId} and r.space = ${drive.space} and coalesce(r.owner_member_id, '') = ${drive.ownerMemberId ?? ""})`,
@@ -23,7 +23,7 @@ function liveIn(drives: Drive[]) {
     ) select id from live)` satisfies SQL;
 }
 
-const likeEscaped = (text: string) => text.replace(/[\\%_]/g, (char) => `\\${char}`);
+export const likeEscaped = (text: string) => text.replace(/[\\%_]/g, (char) => `\\${char}`);
 
 export function findOperations(db: Db, door: Door) {
   const drives = async () => {
