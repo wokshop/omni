@@ -98,6 +98,7 @@ function SubtaskRow(props: { step: Step; onChange: (step: Step) => void; onRemov
           className={`${lineClass} ${step.done ? "text-muted-foreground line-through" : ""}`}
           onBlur={commit}
           onKeyDown={(event) => {
+            if (event.nativeEvent.isComposing) return;
             if (event.key === "Enter") event.currentTarget.blur();
             if (event.key === "Escape") setDraft(null);
           }}
@@ -135,7 +136,7 @@ function NewSubtask(props: { onAdd: (title: string) => void }) {
           placeholder="Add subtask"
           className={`${lineClass} placeholder:text-muted-foreground`}
           onBlur={add}
-          onKeyDown={(event) => event.key === "Enter" && add()}
+          onKeyDown={(event) => event.key === "Enter" && !event.nativeEvent.isComposing && add()}
         />
       </TextField>
     </div>

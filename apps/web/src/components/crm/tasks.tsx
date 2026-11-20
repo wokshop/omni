@@ -128,7 +128,7 @@ export function TasksPage(props: {
         {props.task && (
           <div
             style={phone ? undefined : { width }}
-            className={`relative flex min-w-0 ${phone ? "flex-1" : "shrink"}`}
+            className={`relative flex min-w-0 ${phone ? "flex-1 *:border-s-0" : "shrink"}`}
           >
             {!phone && (
               <ResizeGrip

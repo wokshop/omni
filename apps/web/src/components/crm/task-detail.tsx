@@ -18,7 +18,7 @@ import {
   type TaskChange,
 } from "@/lib/crm-tasks.ts";
 import { crmErrorToast } from "./crm-errors.ts";
-import { FieldRow, LinkValue, PlainValue } from "./record-fields.tsx";
+import { DayValue, FieldRow, LinkValue, PlainValue } from "./record-fields.tsx";
 import { DAY } from "./record-list.tsx";
 import { AssigneePicker, RecordPicker, useMemberNames } from "./task-dialog.tsx";
 import { CHECK_CELL, Subtasks } from "./task-subtasks.tsx";
@@ -139,7 +139,9 @@ function TitleField(props: { task: CrmTask; onSave: (title: string) => void }) {
         className="h-9 w-full rounded-md px-1.5 text-md hover:bg-hover focus:bg-hover"
         onFocus={onFocus}
         onBlur={commit}
-        onKeyDown={(event) => event.key === "Enter" && event.currentTarget.blur()}
+        onKeyDown={(event) =>
+          event.key === "Enter" && !event.nativeEvent.isComposing && event.currentTarget.blur()
+        }
       />
     </TextField>
   );
@@ -188,20 +190,11 @@ export function TaskDetails(props: { task: CrmTask; onSave: (change: TaskChange)
           />
         </div>
       </FieldRow>
-      <FieldRow label="Due">
-        <TextField
-          aria-label="Due"
-          type="date"
-          value={dayOf(task.dueAt)}
-          onChange={(day) => onSave({ dueAt: dueAtOf(day) })}
-          className="w-full"
-        >
-          <Input
-            plain
-            className="h-8 w-full rounded-md px-2 text-sm hover:bg-hover focus:bg-hover"
-          />
-        </TextField>
-      </FieldRow>
+      <DayValue
+        label="Due"
+        value={dayOf(task.dueAt) || null}
+        onSave={(day) => onSave({ dueAt: dueAtOf(day ?? "") })}
+      />
       {record ? (
         <LinkValue
           label="Record"
