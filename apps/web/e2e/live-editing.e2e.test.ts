@@ -8,6 +8,7 @@ import { connectAgent } from "../../worker/e2e/mcp-support.ts";
 import {
   CookieJar,
   createMailbox,
+  createMember,
   createOrg,
   createTestDatabase,
   signIn,
@@ -417,5 +418,78 @@ test("an assistant's edit lands live in an open doc, merged with what the person
     .poll(saved, { timeout: 20_000 })
     .toMatch(/^# Agenda\n\nOpen the meeting at nine\n\nReview the budget\n\nThen lunch\n*$/);
   expect(await ana.getByRole("alertdialog").count()).toBe(0);
+  await own.close();
+});
+
+test("an assistant whose person may only view a doc changes nothing in it, even while it is open", async () => {
+  const origin = String(worker.url);
+  const acme = await createOrg(db, "acme");
+  const anaEmail = `owner-${Date.now()}@acme.test`;
+  const fredEmail = `fred-${Date.now()}@acme.test`;
+  await createMember(db, acme.id, anaEmail);
+  const fred = await createMember(db, acme.id, fredEmail);
+  await db.update(schema.members).set({ role: "freelancer" }).where(eq(schema.members.id, fred.id));
+  const cookie = await signIn({ url: new URL(origin) }, db, anaEmail);
+  const own = await browser.newContext();
+  await own.addCookies(
+    cookie.split("; ").map((pair) => {
+      const at = pair.indexOf("=");
+      return { name: pair.slice(0, at), value: pair.slice(at + 1), url: origin };
+    }),
+  );
+  const ana = await own.newPage();
+  await ana.goto(new URL(`/${acme.slug}/files/shared`, origin).toString());
+  await ana
+    .getByRole("button", { name: "Upload", exact: true })
+    .first()
+    .waitFor({ timeout: 15_000 });
+  await ana
+    .locator("input[type=file]")
+    .first()
+    .setInputFiles({
+      name: "terms.md",
+      mimeType: "text/markdown",
+      buffer: Buffer.from("# Terms\n\nPay in 30 days\n"),
+    });
+  await ana.getByRole("row", { name: /terms\.md/ }).click();
+  await ana
+    .locator("[contenteditable=true]")
+    .getByText("Pay in 30 days")
+    .waitFor({ timeout: 15_000 });
+  const id = new URL(ana.url()).searchParams.get("file") ?? "";
+  const shared = await ana.evaluate(
+    async ([at, body]) =>
+      (
+        await fetch(at, {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body,
+        })
+      ).status,
+    [
+      `/api/storage/nodes/${id}/sharing/people/${encodeURIComponent(fredEmail)}`,
+      JSON.stringify({ role: "viewer" }),
+    ] as const,
+  );
+  expect(shared).toBe(200);
+
+  const jar = new CookieJar();
+  await signIn({ url: new URL(origin) }, db, fredEmail, jar);
+  const agent = await connectAgent(origin, jar, {
+    scope: "openid mail:read drive:read drive:write",
+    authURL: origin.replace(/\/$/, ""),
+  });
+  const edited = await agent.callTool({
+    name: "drive_edit_doc",
+    arguments: { id, edits: [{ find: "Pay in 30 days", replace: "Pay in 900 days" }] },
+  });
+  expect(edited.isError).toBe(true);
+
+  await typeAtEnd(ana, "Signed by Ana");
+  const saved = () =>
+    ana.evaluate(async (at) => (await fetch(at)).text(), `/api/storage/files/${id}/content`);
+  await expect.poll(saved, { timeout: 20_000 }).toContain("Signed by Ana");
+  expect(await saved()).toContain("Pay in 30 days");
+  expect(await pageText(ana)).not.toContain("900");
   await own.close();
 });

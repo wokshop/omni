@@ -62,6 +62,8 @@ export async function editDoc(
   if (!isDocName(node.name)) return { status: "not_a_doc" } as const;
   if (node.lockedAt) return { status: "locked" } as const;
   if (node.size > DOC_MAX_BYTES) return { status: "too_large" } as const;
+  const writable = await files.mayWrite(nodeId);
+  if (writable !== "ok") return { status: writable } as const;
   const basin = s2Basin(deps.config);
   const live = basin ? await LiveFile.open(basin, nodeId, node.contentVersion) : null;
   const before = live ? live.markdown : await readText(deps.env.STORAGE_BUCKET, found.r2Key);
@@ -110,7 +112,8 @@ async function saveLive(
     if (written.status !== "version_conflict" || tries >= SAVE_TRIES) return written;
     const [fold, now] = await Promise.all([live.lastFold(), files.file(at.nodeId)]);
     if (now.status !== "ok") return { status: "refused", reason: now.status } satisfies WriteResult;
-    if (fold && fold.s >= through) return { status: "ok", node: now.file } satisfies WriteResult;
+    if (!fold || fold.cv !== now.file.contentVersion) return written;
+    if (fold.s >= through) return { status: "ok", node: now.file } satisfies WriteResult;
     base = now.file.contentVersion;
   }
 }
