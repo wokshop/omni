@@ -144,4 +144,20 @@ test("a photo read before OCR was set up is read again, and a model outage is tr
   const row = await textRow(photo.id);
   expect(row).toMatchObject({ status: "ok", ocr: true });
   expect(row?.text).toContain("TAQUERÍA EL FAROLITO");
+
+  const untyped = await stack.upload(
+    ana.jar,
+    { space: "personal" },
+    "Ticket.JPG",
+    fixture("receipt.jpg"),
+  );
+  expect(untyped.mimeType).toBeNull();
+  await stack.db.insert(schema.storageTexts).values({
+    nodeId: untyped.id,
+    orgId: org.id,
+    contentVersion: untyped.contentVersion ?? 1,
+    status: "unsupported",
+  });
+  await indexAll();
+  expect(await textRow(untyped.id)).toMatchObject({ status: "ok", ocr: true });
 });
