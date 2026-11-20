@@ -69,6 +69,9 @@ export async function editDoc(
   const before = live ? live.markdown : await readText(deps.env.STORAGE_BUCKET, found.r2Key);
   const changed = change(before);
   if (!changed.ok) return { status: "invalid", error: changed.error, markdown: before } as const;
+  if (new TextEncoder().encode(changed.markdown).byteLength > DOC_MAX_BYTES) {
+    return { status: "too_large_after" } as const;
+  }
   if (!live) {
     return writeText(
       deps,

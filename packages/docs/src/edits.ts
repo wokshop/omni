@@ -8,7 +8,7 @@ export type EditResult = { ok: true; markdown: string } | { ok: false; error: st
 
 const count = (text: string, words: string) => {
   let n = 0;
-  for (let i = text.indexOf(words); i !== -1; i = text.indexOf(words, i + words.length)) n++;
+  for (let i = text.indexOf(words); i !== -1; i = text.indexOf(words, i + 1)) n++;
   return n;
 };
 

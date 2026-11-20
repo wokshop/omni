@@ -71,6 +71,24 @@ test("an agent writes a doc and edits it, only where its person may", async () =
   expect((missed as { error: string }).error).toContain("Send invites by Friday");
   expect(await contentOf(ana, made.doc.id)).toContain("Send invites by Friday");
 
+  expect(
+    await call(anaAgent, "drive_edit_doc", {
+      id: made.doc.id,
+      edits: [
+        { find: "Book the venue", replace: "Book the banana venue" },
+        { find: "ana", replace: "x" },
+      ],
+    }),
+  ).toHaveProperty("error");
+  const grown = await call(anaAgent, "drive_edit_doc", {
+    id: made.doc.id,
+    edits: [{ find: "Send invites by Friday", replace: "x".repeat(1_000_001) }],
+  });
+  expect((grown as { error: string }).error).toContain("larger than 1 MB");
+  expect(await contentOf(ana, made.doc.id)).toBe(
+    "# Launch plan\n\n- [x] Book the venue\n- [ ] Send invites by Friday",
+  );
+
   const carlAgent = await connectAgent(stack.worker.url, carl.jar, { scope: WRITE });
   expect(
     await call(carlAgent, "drive_edit_doc", { id: made.doc.id, markdown: "# Mine now" }),

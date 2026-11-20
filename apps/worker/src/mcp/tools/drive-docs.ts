@@ -74,6 +74,7 @@ const REFUSED: Record<string, string> = {
   not_found: "No doc with that id you can change. Ids come from `drive_search` or `drive_list`.",
   not_a_doc: "That file is not a doc. Only Markdown files (.md) are docs.",
   too_large: "That doc is too large to change here.",
+  too_large_after: "That change would make the doc larger than 1 MB. Nothing was changed.",
   full: "The workspace's storage is full.",
   invalid_name: "That name cannot be a file's name.",
   too_many_uploads: "Too many files are being written right now. Try again in a minute.",
