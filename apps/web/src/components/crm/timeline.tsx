@@ -411,7 +411,7 @@ function NoteComposer({ kind, id }: { kind: CrmRecordKind; id: string }) {
   };
   return (
     <form
-      className="flex flex-col gap-2 rounded-xl border bg-background px-3 pt-2.5 pb-2.5 shadow-(--shadow-raised)"
+      className="flex flex-col gap-2 rounded-xl border bg-background px-3 pt-2.5 pb-2.5"
       onSubmit={(event) => {
         event.preventDefault();
         submit();

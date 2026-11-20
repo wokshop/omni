@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { IconUserRound } from "@/components/icons/central";
+import { IconUserRound, IconUsers } from "@/components/icons/central";
 import { Avatar } from "@/components/ui/avatar";
 
 /**
@@ -28,6 +28,20 @@ export function NoMemberAvatar(props: { size?: number }) {
       style={props.size ? ({ "--avatar-size": `${props.size}px` } as CSSProperties) : undefined}
     >
       <IconUserRound className="m-0! size-[62%]!" />
+    </span>
+  );
+}
+
+/** Everyone (all owners, all assignees): a muted disc of two people. */
+export function EveryoneAvatar(props: { size?: number }) {
+  return (
+    <span
+      data-slot="avatar"
+      aria-hidden
+      className="inline-flex size-(--avatar-size) shrink-0 items-center justify-center rounded-full bg-secondary text-muted-foreground"
+      style={props.size ? ({ "--avatar-size": `${props.size}px` } as CSSProperties) : undefined}
+    >
+      <IconUsers className="m-0! size-[62%]!" />
     </span>
   );
 }

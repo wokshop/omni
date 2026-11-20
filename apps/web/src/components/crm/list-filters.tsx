@@ -22,7 +22,8 @@ import {
 import { useCrmStages, useOwners } from "@/hooks/use-crm.ts";
 import { formatMoney } from "@/lib/crm.ts";
 import { CloseDateDialog, ValueRangeDialog } from "./list-range-dialogs.tsx";
-import { MemberAvatar, NoMemberAvatar } from "./member-avatar.tsx";
+import { EveryoneAvatar, MemberAvatar, NoMemberAvatar } from "./member-avatar.tsx";
+import { useSelfMemberId } from "./task-dialog.tsx";
 import { DAY } from "./record-list.tsx";
 
 /** The filters a list offers, in the order its menu shows them. */
@@ -195,7 +196,7 @@ function FilterRow(props: {
   const { kind } = props;
   const text = useValueText(kind, props.values);
   const row = (onAction?: () => void) => (
-    <MenuItem id={kind} textValue={LABELS[kind]} onAction={onAction}>
+    <MenuItem id={kind} textValue={LABELS[kind]} onAction={onAction} className="pe-7">
       {ICONS[kind]}
       <MenuLabel className="flex min-w-0 items-center gap-3">
         <span className="shrink-0">{LABELS[kind]}</span>
@@ -260,7 +261,12 @@ function useValueText(kind: FilterKind, values: FilterValues) {
 type Choice = { id: string; label: string; mark?: ReactNode; patch: Patch };
 
 function useChoices(kind: FilterKind) {
-  const choices: Choice[] = choicesFor(kind, useOwners(), useCrmStages().data ?? []);
+  const owners = useOwners();
+  const selfId = useSelfMemberId();
+  const stages = useCrmStages().data ?? [];
+  const me = owners.find((owner) => owner.id === selfId);
+  const self = me && <MemberAvatar name={me.name} image={me.image} />;
+  const choices: Choice[] = choicesFor(kind, owners, stages, self);
   return choices;
 }
 
@@ -268,6 +274,7 @@ function choicesFor(
   kind: FilterKind,
   owners: ReturnType<typeof useOwners>,
   stages: NonNullable<ReturnType<typeof useCrmStages>["data"]>,
+  self: ReactNode,
 ) {
   const people = (key: "owner" | "assignee") =>
     owners.map((owner) => ({
@@ -279,14 +286,14 @@ function choicesFor(
   switch (kind) {
     case "owner":
       return [
-        { id: "all", label: "All", patch: { owner: undefined } },
+        { id: "all", label: "All", mark: <EveryoneAvatar />, patch: { owner: undefined } },
         ...people("owner"),
         { id: "none", label: "No owner", mark: <NoMemberAvatar />, patch: { owner: "none" } },
       ];
     case "assignee":
       return [
-        { id: "me", label: "Me", patch: { assignee: undefined } },
-        { id: "anyone", label: "All", patch: { assignee: "anyone" } },
+        { id: "me", label: "Me", mark: self, patch: { assignee: undefined } },
+        { id: "anyone", label: "All", mark: <EveryoneAvatar />, patch: { assignee: "anyone" } },
         ...people("assignee"),
         { id: "none", label: "Unassigned", mark: <NoMemberAvatar />, patch: { assignee: "none" } },
       ];

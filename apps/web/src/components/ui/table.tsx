@@ -337,8 +337,8 @@ export function TableColumn({ isResizable = false, className, ...props }: TableC
           {values.allowsSorting && (
             <span
               className={twJoin(
-                "touch-target bg-secondary text-foreground grid size-[1.15rem] flex-none shrink-0 place-content-center rounded *:[svg]:size-3.5 *:[svg]:shrink-0 *:[svg]:transition-transform *:[svg]:duration-200",
-                values.isHovered ? "bg-secondary-foreground/10" : "",
+                "touch-target text-muted-foreground grid size-[1.15rem] flex-none shrink-0 place-content-center rounded transition-colors duration-150 ease-out *:[svg]:size-3.5 *:[svg]:shrink-0 *:[svg]:transition-transform *:[svg]:duration-200",
+                values.isHovered && "bg-secondary text-foreground",
                 !values.sortDirection && !values.isHovered && "invisible",
               )}
             >
