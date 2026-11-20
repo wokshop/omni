@@ -2,7 +2,6 @@ import { Skeleton, SkeletonBox } from "skullet/react";
 import { ListFailed } from "@/components/inbox/thread-list";
 import { Button } from "@/components/ui/button";
 import { Checkbox, CheckboxField } from "@/components/ui/checkbox";
-import { Link } from "@/components/ui/link";
 import { useCrmTasks, useUpdateTask } from "@/hooks/use-crm-tasks.ts";
 import { useWorkspacePaths } from "@/hooks/use-workspaces.ts";
 import { dueLabel, type CrmTask, type TaskFilter } from "@/lib/crm-tasks.ts";
@@ -36,7 +35,7 @@ export function TaskRail({ filter }: { filter: TaskFilter }) {
       <Button
         size="sm"
         intent="plain"
-        className="ms-31 self-start"
+        className="ms-29 self-start max-sm:ms-25"
         isPending={list.isFetchingNextPage}
         onPress={() => void list.fetchNextPage()}
       >
@@ -45,7 +44,7 @@ export function TaskRail({ filter }: { filter: TaskFilter }) {
     );
   return (
     <div className="flex flex-col gap-1">
-      <ol aria-label="Tasks" className="flex flex-col">
+      <ol aria-label="Tasks" className="group/rail flex flex-col">
         {items.map((item, i) => {
           const place = railPlace(i, items.length);
           return item.kind === "done" ? (
@@ -78,13 +77,15 @@ function TaskRailRow(props: { task: CrmTask; place: RailPlace }) {
   return (
     <RailRow
       place={props.place}
+      href={href(`/crm/tasks/${encodeURIComponent(task.id)}`)}
+      label={task.title}
       date={
         <span className={overdue ? "text-danger" : "text-muted-foreground"}>
           {dueLabel(done ? task.completedAt : task.dueAt)}
         </span>
       }
       mark={
-        <span className="grid size-5 place-items-center rounded-full bg-background">
+        <span className="pointer-events-auto grid size-5 place-items-center rounded-full bg-background">
           <CheckboxField
             aria-label={done ? `Reopen ${task.title}` : `Complete ${task.title}`}
             isSelected={done}
@@ -95,13 +96,12 @@ function TaskRailRow(props: { task: CrmTask; place: RailPlace }) {
         </span>
       }
     >
-      <div className="flex h-10 min-w-0 items-center gap-3 rounded-lg px-2 transition-colors duration-150 ease-out hover:bg-hover">
-        <Link
-          href={href(`/crm/tasks/${encodeURIComponent(task.id)}`)}
+      <div className="flex h-10 min-w-0 items-center gap-3 px-2">
+        <span
           className={`min-w-0 flex-1 truncate text-sm ${done ? "text-muted-foreground" : "text-foreground"}`}
         >
           {task.title}
-        </Link>
+        </span>
         <span className="flex w-5 shrink-0 justify-center" title={assignee?.name}>
           {assignee && <MemberAvatar name={assignee.name} image={assignee.image} size={20} />}
         </span>
@@ -116,9 +116,9 @@ function RailBones() {
       {Array.from({ length: 6 }, (_, i) => (
         <div
           key={i}
-          className="grid h-10 grid-cols-[4.5rem_1.25rem_minmax(0,1fr)] max-sm:grid-cols-[3.25rem_1.25rem_minmax(0,1fr)] max-sm:gap-x-2 items-center gap-x-3"
+          className="grid h-10 grid-cols-[4rem_1.25rem_minmax(0,1fr)] max-sm:grid-cols-[3.25rem_1.25rem_minmax(0,1fr)] max-sm:gap-x-2 items-center gap-x-3"
         >
-          <span className="flex justify-end">
+          <span className="flex justify-start">
             <SkeletonBox width={36} height={10} />
           </span>
           <span className="flex justify-center">

@@ -36,6 +36,7 @@ import {
   type CrmMilestoneStatus,
 } from "@/lib/crm-project.ts";
 import { crmErrorToast } from "./crm-errors.ts";
+import { PlanPanel, useOpenPlanItem, type PlanItem } from "./plan-panel.tsx";
 import { NewDeliverableDialog, NewMilestoneDialog } from "./project-plan-dialogs.tsx";
 import { RailRow, railPlace, type RailPlace } from "./rail-row.tsx";
 import { RowWithMenu } from "./record-sections.tsx";
@@ -110,6 +111,7 @@ function planRows(milestones: CrmMilestone[], deliverables: CrmDeliverable[]) {
 /** A project's plan: its milestones as phases on a rail, each with its deliverables. */
 export function ProjectPlan(props: { dealId: string }) {
   const plan = useCrmPlan(props.dealId);
+  const opened = useOpenPlanItem();
   const [adding, setAdding] = useState<"milestone" | "deliverable" | null>(null);
   const dialogs = (
     <>
@@ -135,55 +137,81 @@ export function ProjectPlan(props: { dealId: string }) {
   if (plan.isError) return <ListFailed retry={() => void plan.refetch()} />;
   const { milestones, deliverables } = plan.data;
   const rows = planRows(milestones, deliverables);
-  return (
-    <div className="flex flex-col gap-4">
-      <div className="flex min-h-8 flex-wrap items-center justify-end gap-x-4 gap-y-2">
-        <PlanProgress milestones={milestones} />
-        <div className="flex gap-2">
-          <Button size="sm" intent="secondary" onPress={() => setAdding("deliverable")}>
-            <IconPlus />
-            New deliverable
-          </Button>
-          <Button size="sm" onPress={() => setAdding("milestone")}>
-            <IconPlus />
-            New milestone
-          </Button>
-        </div>
+  const item = openItem(opened.id, milestones, deliverables);
+  const controls = (
+    <div className="flex min-h-8 flex-wrap items-center justify-end gap-x-4 gap-y-2">
+      <PlanProgress milestones={milestones} />
+      <div className="flex gap-2">
+        <Button size="sm" intent="secondary" onPress={() => setAdding("deliverable")}>
+          <IconPlus />
+          New deliverable
+        </Button>
+        <Button size="sm" onPress={() => setAdding("milestone")}>
+          <IconPlus />
+          New milestone
+        </Button>
       </div>
-      {rows.length === 0 ? (
-        <EmptyState figure="cabinet" title="No milestones" />
-      ) : (
-        <ol aria-label="Plan" className="flex flex-col">
-          {rows.map((row, i) => {
-            const place = railPlace(i, rows.length);
-            switch (row.kind) {
-              case "milestone":
-                return <MilestoneRow key={row.milestone.id} {...row} place={place} />;
-              case "loose":
-                return <LooseRow key="loose" place={place} />;
-              case "deliverable":
-                return (
-                  <DeliverableRow
-                    key={row.deliverable.id}
-                    deliverable={row.deliverable}
-                    open={row.open}
-                    place={place}
-                  />
-                );
-            }
-          })}
-        </ol>
-      )}
+    </div>
+  );
+  const href = (id: string) => opened.href(id);
+  return (
+    <div className="flex min-w-0 gap-6 max-lg:flex-col">
+      <div className={`flex min-w-0 flex-1 flex-col gap-6 ${item ? "max-lg:hidden" : ""}`}>
+        {rows.length === 0 ? (
+          <EmptyState figure="cabinet" title="No milestones" />
+        ) : (
+          <ol aria-label="Plan" className="group/rail flex flex-col">
+            {rows.map((row, i) => {
+              const place = railPlace(i, rows.length);
+              switch (row.kind) {
+                case "milestone":
+                  return (
+                    <MilestoneRow
+                      key={row.milestone.id}
+                      {...row}
+                      place={place}
+                      href={href(row.milestone.id)}
+                      current={opened.id === row.milestone.id}
+                    />
+                  );
+                case "loose":
+                  return <LooseRow key="loose" place={place} />;
+                case "deliverable":
+                  return (
+                    <DeliverableRow
+                      key={row.deliverable.id}
+                      deliverable={row.deliverable}
+                      open={row.open}
+                      place={place}
+                      href={href(row.deliverable.id)}
+                      current={opened.id === row.deliverable.id}
+                    />
+                  );
+              }
+            })}
+          </ol>
+        )}
+        {controls}
+      </div>
+      {item && <PlanPanel item={item} milestones={milestones} onClose={opened.close} />}
       {dialogs}
     </div>
   );
+}
+
+function openItem(id: string | null, milestones: CrmMilestone[], deliverables: CrmDeliverable[]) {
+  if (!id) return null;
+  const milestone = milestones.find((m) => m.id === id);
+  if (milestone) return { kind: "milestone", milestone } satisfies PlanItem;
+  const deliverable = deliverables.find((d) => d.id === id);
+  return deliverable ? ({ kind: "deliverable", deliverable } satisfies PlanItem) : null;
 }
 
 function PlanProgress({ milestones }: { milestones: CrmMilestone[] }) {
   if (!milestones.length) return null;
   const done = milestones.filter((m) => m.status === "done").length;
   return (
-    <div className="me-auto flex min-w-0 items-center gap-3 ps-31 max-sm:ps-0">
+    <div className="me-auto flex min-w-0 items-center gap-3">
       <span className="flex w-40 gap-1" aria-hidden>
         {milestones.map((m) => (
           <span
@@ -235,6 +263,8 @@ function MilestoneRow(props: {
   index: number;
   count: number;
   place: RailPlace;
+  href: string;
+  current: boolean;
 }) {
   const { milestone, index } = props;
   const update = useUpdateMilestone();
@@ -254,6 +284,9 @@ function MilestoneRow(props: {
     <RailRow
       opens
       place={props.place}
+      href={props.href}
+      label={milestone.title}
+      current={props.current}
       mark={<MilestoneMark status={milestone.status} />}
       date={
         <span className={late ? "text-danger" : "text-foreground"}>
@@ -261,7 +294,7 @@ function MilestoneRow(props: {
         </span>
       }
     >
-      <section aria-label={milestone.title} className="rounded-lg px-2">
+      <div className="px-2">
         <RowWithMenu
           label={milestone.title}
           actions={[
@@ -289,7 +322,7 @@ function MilestoneRow(props: {
             <span className="truncate text-sm text-foreground">{milestone.title}</span>
           </span>
         </RowWithMenu>
-      </section>
+      </div>
     </RailRow>
   );
 }
@@ -310,7 +343,13 @@ function LooseRow({ place }: { place: RailPlace }) {
   );
 }
 
-function DeliverableRow(props: { deliverable: CrmDeliverable; open: boolean; place: RailPlace }) {
+function DeliverableRow(props: {
+  deliverable: CrmDeliverable;
+  open: boolean;
+  place: RailPlace;
+  href: string;
+  current: boolean;
+}) {
   const { deliverable } = props;
   const update = useUpdateDeliverable();
   const remove = useDeleteDeliverable();
@@ -322,6 +361,9 @@ function DeliverableRow(props: { deliverable: CrmDeliverable; open: boolean; pla
   return (
     <RailRow
       place={props.place}
+      href={props.href}
+      label={deliverable.title}
+      current={props.current}
       mark={
         <span
           className={`size-1.5 rounded-full ring-2 ring-background ${DELIVERABLE_DOT[deliverable.status]}`}
@@ -333,7 +375,7 @@ function DeliverableRow(props: { deliverable: CrmDeliverable; open: boolean; pla
         </span>
       }
     >
-      <div className="flex min-w-0 flex-col rounded-lg px-2 transition-colors duration-150 ease-out hover:bg-hover">
+      <div className="flex min-w-0 flex-col px-2">
         <RowWithMenu
           label={deliverable.title}
           actions={[
@@ -383,12 +425,6 @@ function DeliverableRow(props: { deliverable: CrmDeliverable; open: boolean; pla
             )}
           </span>
         </RowWithMenu>
-        {deliverable.status === "changes_requested" && deliverable.reviewNote && (
-          <p className="flex min-w-0 gap-1.5 pb-2.5 text-sm">
-            <span className="shrink-0 text-muted-foreground">{deliverable.reviewedByEmail}</span>
-            <span className="whitespace-pre-wrap text-foreground">{deliverable.reviewNote}</span>
-          </p>
-        )}
       </div>
     </RailRow>
   );
@@ -400,9 +436,9 @@ function PlanBones() {
       {Array.from({ length: 6 }, (_, i) => (
         <div
           key={i}
-          className="grid h-10 grid-cols-[4.5rem_1.25rem_minmax(0,1fr)] max-sm:grid-cols-[3.25rem_1.25rem_minmax(0,1fr)] max-sm:gap-x-2 items-center gap-x-3"
+          className="grid h-10 grid-cols-[4rem_1.25rem_minmax(0,1fr)] max-sm:grid-cols-[3.25rem_1.25rem_minmax(0,1fr)] max-sm:gap-x-2 items-center gap-x-3"
         >
-          <span className="flex justify-end">
+          <span className="flex justify-start">
             <SkeletonBox width={36} height={10} />
           </span>
           <span className="flex justify-center">
