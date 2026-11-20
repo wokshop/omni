@@ -73,6 +73,11 @@ async function openInbox(slug: string, options: { reducedMotion?: "reduce" } = {
     const start = document.startViewTransition.bind(document);
     document.startViewTransition = (update) => {
       const transition = start(update);
+      const w = window as unknown as { transitioning: number };
+      w.transitioning = (w.transitioning ?? 0) + 1;
+      void transition.finished.finally(() => {
+        w.transitioning -= 1;
+      });
       const direction = document.documentElement.dataset.moduleSlide ?? "none";
       void transition.ready.then(() => {
         for (const animation of document.getAnimations()) {
@@ -223,6 +228,33 @@ test("stepping slides the sidebar and the pill across, and not with reduced moti
   await shows(still, "Drive");
   await still.waitForTimeout(400);
   expect(await slides(still)).toEqual([]);
+});
+
+test("leaving a document with unsaved edits asks at once, and stepping on after Don't save still works", async () => {
+  const page = await openInbox("blocked");
+  await page.getByRole("button", { name: "Go to Drive" }).click();
+  await shows(page, "Drive");
+  await page.getByRole("button", { name: "Upload", exact: true }).first().waitFor();
+  await page
+    .locator("input[type=file]")
+    .first()
+    .setInputFiles({ name: "plan.md", mimeType: "text/markdown", buffer: Buffer.from("# Plan\n") });
+  await page.getByRole("row", { name: /plan\.md/ }).click();
+  await page.getByRole("button", { name: "Edit" }).click();
+  const editor = page.locator("[contenteditable=true]");
+  await editor.getByRole("heading", { name: "Plan" }).click();
+  await page.keyboard.press("End");
+  await page.keyboard.type(" B");
+
+  await page.getByRole("button", { name: "Go to CRM" }).click();
+  const leaving = page.getByRole("alertdialog", { name: "Save your changes?" });
+  await leaving.waitFor({ timeout: 1000 });
+  const frozen = () =>
+    page.evaluate(() => (window as unknown as { transitioning?: number }).transitioning ?? 0);
+  expect(await frozen()).toBe(0);
+  await leaving.getByRole("button", { name: "Don’t save" }).click();
+  await page.waitForURL((url) => place(url) === "/crm/companies");
+  await shows(page, "CRM");
 });
 
 function slides(page: Page) {

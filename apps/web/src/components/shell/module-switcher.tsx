@@ -178,7 +178,9 @@ function slideNavigation(id: ModuleId, by: 1 | -1, navigate: () => Promise<void>
 /**
  * `open(id)` goes to a module's home, keeping the workspace and the mailbox shown in mail: it
  * rides along both ways, so coming back to Mail shows the same one. The switcher and `g f` both
- * open modules through this; the switcher passes `slide`, the direction the sidebar moves.
+ * open modules through this; the switcher passes `slide`, the direction the sidebar moves. While
+ * a page can block leaving (unsaved edits), it doesn't slide: a view transition freezes rendering
+ * until navigation ends, which would hide the page's Save your changes? dialog.
  */
 export function useOpenModule() {
   const router = useRouter();
@@ -192,7 +194,8 @@ export function useOpenModule() {
         params: { workspace },
         search: mailbox ? { mailbox } : {},
       });
-    if (slide && canSlide()) slideNavigation(id, slide, navigate);
+    const mayBlock = router.history._getBlockers().length > 0;
+    if (slide && !mayBlock && canSlide()) slideNavigation(id, slide, navigate);
     else void navigate();
   };
 }
