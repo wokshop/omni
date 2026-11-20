@@ -1,4 +1,3 @@
-import { useNavigate } from "@tanstack/react-router";
 import { createContext, use, useEffect, useMemo, useRef, useState } from "react";
 import { Skeleton, SkeletonBox } from "skullet/react";
 import { EmptyState } from "@/components/empty/empty-state";
@@ -10,8 +9,7 @@ import { Checkbox, CheckboxField } from "@/components/ui/checkbox";
 import { Heading } from "@/components/ui/heading";
 import { ResizeGrip, useStoredWidth } from "@/components/ui/resize-grip";
 import { Link } from "@/components/ui/link";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { useCrmTaskCounts, useCrmTasks, useUpdateTask } from "@/hooks/use-crm-tasks.ts";
+import { useCrmTasks, useUpdateTask } from "@/hooks/use-crm-tasks.ts";
 import { useIsMobile } from "@/hooks/use-mobile.ts";
 import { useWorkspacePaths } from "@/hooks/use-workspaces.ts";
 import type { CrmRecordKind } from "@/lib/crm.ts";
@@ -32,18 +30,11 @@ import { MemberAvatar } from "./member-avatar.tsx";
 import { NewTaskDialog, useMemberNames } from "./task-dialog.tsx";
 import { TaskPanel, useOpenTask } from "./task-panel.tsx";
 
-export type TasksView = "mine" | "all" | "done";
-
-const VIEWS: { id: TasksView; label: string }[] = [
-  { id: "mine", label: "My tasks" },
-  { id: "all", label: "All" },
-  { id: "done", label: "Done" },
-];
-
 /** Every task in the workspace: mine, everyone's (by assignee and due), or done. */
 export function TasksPage(props: {
-  view: TasksView;
-  assignee?: string;
+  /** A member id, `none` or `anyone`; left out, the person's own. */
+  assignee?: string | undefined;
+  status?: "done" | undefined;
   q: string;
   /** The task open in the panel beside the list. */
   task?: string;
@@ -71,24 +62,23 @@ export function TasksPage(props: {
   );
   const [adding, setAdding] = useState(false);
   const filter: TaskFilter = {
-    status: props.view === "done" ? "done" : "open",
-    assignee: props.view === "mine" ? "me" : props.assignee,
+    status: props.status ?? "open",
+    assignee: props.assignee === "anyone" ? undefined : (props.assignee ?? "me"),
     q: props.q,
   };
-  const stacked = phone || !!props.task;
   const list = (
     <StorageFrame
       title={
         <div className="flex min-w-0 items-center gap-3">
           <Heading className="truncate text-md">Tasks</Heading>
-          {!stacked && <ViewTabs view={props.view} />}
         </div>
       }
       actions={
         <>
-          {props.view !== "mine" && (
-            <ListFilter search={{ assignee: props.assignee }} filters={ASSIGNEE_FILTER} />
-          )}
+          <ListFilter
+            search={{ assignee: props.assignee, status: props.status }}
+            filters={TASK_FILTERS}
+          />
           <Button
             size={phone ? "sq-sm" : "sm"}
             aria-label={phone ? "New task" : undefined}
@@ -100,13 +90,13 @@ export function TasksPage(props: {
         </>
       }
     >
-      {stacked && (
-        <div className="flex shrink-0 items-center gap-2 px-5 pb-2">
-          <ViewTabs view={props.view} />
-        </div>
-      )}
       <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-6">
-        <TaskList filter={filter} grouped={props.view !== "done"} showRecord searched={!!props.q} />
+        <TaskList
+          filter={filter}
+          grouped={props.status !== "done"}
+          showRecord
+          searched={!!props.q}
+        />
       </div>
       {adding && <NewTaskDialog onClose={() => setAdding(false)} />}
     </StorageFrame>
@@ -143,7 +133,7 @@ export function TasksPage(props: {
   );
 }
 
-const ASSIGNEE_FILTER: FilterKind[] = ["assignee"];
+const TASK_FILTERS: FilterKind[] = ["assignee", "status"];
 
 const PANEL_WIDTH = 480;
 const PANEL_MIN = 360;
@@ -158,42 +148,6 @@ const OpenTaskContext = createContext<{
   id: string | null;
   href: (id: string) => string;
 } | null>(null);
-
-function ViewTabs({ view }: { view: TasksView }) {
-  const navigate = useNavigate();
-  const counts = useCrmTaskCounts().data;
-  const count = (id: TasksView) =>
-    id === "mine" ? counts?.mine : id === "all" ? counts?.open : undefined;
-  return (
-    <ToggleGroup
-      size="xs"
-      aria-label="Tasks"
-      selectedKeys={[view]}
-      disallowEmptySelection
-      onSelectionChange={(keys) => {
-        const next = [...keys][0] as TasksView | undefined;
-        if (!next) return;
-        void navigate({
-          to: ".",
-          search: (prev: Record<string, unknown>) => ({
-            ...prev,
-            view: next === "mine" ? undefined : next,
-          }),
-          replace: true,
-        });
-      }}
-    >
-      {VIEWS.map(({ id, label }) => (
-        <ToggleGroupItem key={id} id={id} className="whitespace-nowrap">
-          {label}
-          {count(id) ? (
-            <span className="text-muted-foreground tabular-nums">{count(id)}</span>
-          ) : null}
-        </ToggleGroupItem>
-      ))}
-    </ToggleGroup>
-  );
-}
 
 /** A record's own tasks, open first then done, with a way to add one. */
 export function RecordTasks(props: { kind: CrmRecordKind; id: string }) {

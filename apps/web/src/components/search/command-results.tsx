@@ -136,7 +136,7 @@ export function CrmGroups(props: {
               key={task.id}
               value={`task:${task.id}`}
               keywords={[task.title]}
-              onSelect={() => props.onOpen(`/crm/tasks?view=all&task=${task.id}`)}
+              onSelect={() => props.onOpen(`/crm/tasks?assignee=anyone&task=${task.id}`)}
             >
               <IconChecklist />
               <span className="min-w-0 truncate">{task.title}</span>

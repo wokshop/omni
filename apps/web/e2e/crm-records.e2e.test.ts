@@ -119,7 +119,8 @@ test("bulk archive moves the selected companies to the archived view and restore
   );
 
   await page.getByRole("button", { name: "Filter", exact: true }).click();
-  await page.getByRole("menuitem", { name: "Archived" }).click();
+  await page.getByRole("menuitem", { name: /^Archived/ }).click();
+  await page.getByRole("menuitemradio", { name: "Only" }).click();
   await expect.poll(() => new URL(page.url()).searchParams.get("archived")).toBe("only");
   await expect.poll(() => names(page)).toEqual(["Acme", "Globex"]);
   await pick(page, "Acme");
@@ -127,7 +128,7 @@ test("bulk archive moves the selected companies to the archived view and restore
   await page.getByRole("button", { name: "Restore", exact: true }).click();
   await page.getByRole("row", { name: /Globex/ }).waitFor({ state: "detached" });
 
-  await removeFilter(page, "Archived");
+  await resetFilters(page);
   await expect.poll(() => names(page)).toEqual(["Acme", "Globex", "Initech"]);
 });
 
@@ -139,9 +140,10 @@ test("a selection is dropped when a filter changes the view, and stays gone when
   await page.getByText("1 selected").waitFor();
 
   await page.getByRole("button", { name: "Filter", exact: true }).click();
-  await page.getByRole("menuitem", { name: "Archived" }).click();
+  await page.getByRole("menuitem", { name: /^Archived/ }).click();
+  await page.getByRole("menuitemradio", { name: "Only" }).click();
   await expect.poll(() => new URL(page.url()).searchParams.get("archived")).toBe("only");
-  await removeFilter(page, "Archived");
+  await resetFilters(page);
   await page.getByRole("row", { name: /Acme/ }).waitFor();
 
   expect(await page.getByText("1 selected").count()).toBe(0);
@@ -163,8 +165,8 @@ test("the company filter narrows the people list and removing its chip lists eve
   await page.getByRole("row", { name: /Gail/ }).waitFor();
 
   await page.getByRole("button", { name: "Filter", exact: true }).click();
-  await page.getByRole("menuitem", { name: "Company" }).click();
-  await page.getByRole("menuitem", { name: "None" }).click();
+  await page.getByRole("menuitem", { name: /^Company/ }).click();
+  await page.getByRole("menuitemradio", { name: "None" }).click();
 
   await expect.poll(() => new URL(page.url()).searchParams.get("company")).toBe("without");
   await expect.poll(() => names(page)).toEqual(["Gail"]);
@@ -172,7 +174,7 @@ test("the company filter narrows the people list and removing its chip lists eve
   await page.getByRole("row", { name: /Gail/ }).waitFor();
   expect(await names(page)).toEqual(["Gail"]);
 
-  await removeFilter(page, "Company");
+  await resetFilters(page);
   await expect.poll(() => names(page)).toEqual(["Gail", "Ivo"]);
 });
 
@@ -185,7 +187,7 @@ test("the deal board shows only the owner's deals when filtered by owner", async
   const page = await team.page(`/crm/deals?owner=${bea.id}`);
   await page.getByRole("row", { name: "Bea's deal" }).waitFor();
   expect(await page.getByRole("row", { name: "Ana's deal" }).count()).toBe(0);
-  await removeFilter(page, "Owner");
+  await resetFilters(page);
   await page.getByRole("row", { name: "Ana's deal" }).waitFor();
 });
 
@@ -470,7 +472,7 @@ async function freePort() {
   return port;
 }
 
-async function removeFilter(page: Page, label: string) {
+async function resetFilters(page: Page) {
   await page.getByRole("button", { name: "Filter", exact: true }).click();
-  await page.getByRole("menuitem", { name: new RegExp(`^Remove ${label}`) }).click();
+  await page.getByRole("button", { name: "Reset" }).click();
 }

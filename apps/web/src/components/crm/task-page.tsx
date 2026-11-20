@@ -165,11 +165,10 @@ function BodyField(props: { task: CrmTask; onSave: (body: string | null) => void
       plain
       aria-label="Notes"
       maxLength={BODY_MAX}
-      rows={8}
       placeholder="Notes"
       value={draft}
       onChange={(event) => setDraft(event.target.value)}
-      className="min-h-40 w-full resize-none rounded-md px-2 py-1.5 text-sm hover:bg-hover focus:bg-hover sm:px-2"
+      className="field-sizing-content min-h-16 w-full resize-none rounded-md px-2 py-1.5 text-sm hover:bg-hover focus:bg-hover sm:px-2"
       onFocus={onFocus}
       onBlur={() => {
         done();

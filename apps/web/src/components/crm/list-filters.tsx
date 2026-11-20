@@ -4,18 +4,18 @@ import {
   IconBoard,
   IconBuildings,
   IconCalendar,
+  IconCircleCheck,
   IconFilter,
   IconMoney,
   IconUserRound,
-  IconX,
 } from "@/components/icons/central";
 import { Button } from "@/components/ui/button";
 import { useIsMobile } from "@/hooks/use-mobile.ts";
 import {
   Menu,
+  MenuHeader,
   MenuItem,
   MenuLabel,
-  MenuSeparator,
   MenuSubMenu,
   MenuTrigger,
 } from "@/components/ui/menu";
@@ -29,16 +29,19 @@ import { DAY } from "./record-list.tsx";
 export type FilterKind =
   | "owner"
   | "assignee"
+  | "status"
   | "company"
   | "stage"
   | "close"
   | "value"
   | "archived";
 
-/** A list's filters as the URL holds them. */
+/** A list's filters as the URL holds them. Each left out is its default. */
 export interface FilterValues {
   owner?: string;
+  /** Tasks: a member id, `none` or `anyone`; left out, the person's own. */
   assignee?: string;
+  status?: "done";
   company?: "with" | "without";
   stage?: string;
   closeAfter?: string;
@@ -53,6 +56,7 @@ type Patch = Partial<Record<keyof FilterValues, unknown>>;
 const CLEARS: Record<FilterKind, Patch> = {
   owner: { owner: undefined },
   assignee: { assignee: undefined },
+  status: { status: undefined },
   company: { company: undefined },
   stage: { stage: undefined },
   close: { closeAfter: undefined, closeBefore: undefined },
@@ -63,6 +67,7 @@ const CLEARS: Record<FilterKind, Patch> = {
 const LABELS: Record<FilterKind, string> = {
   owner: "Owner",
   assignee: "Assignee",
+  status: "Status",
   company: "Company",
   stage: "Stage",
   close: "Close date",
@@ -73,6 +78,7 @@ const LABELS: Record<FilterKind, string> = {
 const ICONS: Record<FilterKind, ReactNode> = {
   owner: <IconUserRound data-slot="icon" />,
   assignee: <IconUserRound data-slot="icon" />,
+  status: <IconCircleCheck data-slot="icon" />,
   company: <IconBuildings data-slot="icon" />,
   stage: <IconBoard data-slot="icon" />,
   close: <IconCalendar data-slot="icon" />,
@@ -98,42 +104,56 @@ const range = (from: string | null, to: string | null) =>
 
 type FilterProps = { kinds: FilterKind[]; values: FilterValues; onChange: (patch: Patch) => void };
 
+type Editing = "close" | "value" | null;
+
 /**
- * Filter, in the page header: the filters in use, each removed from its own row, then the ones
- * not set yet. The button counts the filters in use, so the list needs no row of chips.
+ * Filter, in the page header: one row per filter with its value, each opening its choices, and
+ * Reset. The button counts the filters changed from their default, so the list needs no chips.
  */
 export function FilterMenu(props: FilterProps) {
   const [editing, setEditing] = useState<Editing>(null);
   const phone = useIsMobile();
-  const set = props.kinds.filter((kind) => isSet(kind, props.values));
-  const left = props.kinds.filter((kind) => !isSet(kind, props.values));
+  const set = props.kinds.filter((kind) => isSet(kind, props.values)).length;
+  const reset = () =>
+    props.onChange(Object.assign({}, ...props.kinds.map((kind) => CLEARS[kind])) as Patch);
   return (
     <>
       <MenuTrigger>
         <Button
           intent="outline"
-          size={phone && !set.length ? "sq-sm" : "sm"}
+          size={phone && !set ? "sq-sm" : "sm"}
           aria-label="Filter"
-          className={set.length ? "bg-primary-subtle" : undefined}
+          className={set ? "bg-primary-subtle" : undefined}
         >
           <IconFilter />
           {!phone && "Filter"}
-          {set.length > 0 && (
-            <span className="tabular-nums text-muted-foreground">{set.length}</span>
-          )}
+          {set > 0 && <span className="text-muted-foreground tabular-nums">{set}</span>}
         </Button>
-        <Menu placement="bottom end" aria-label="Filter by" className="min-w-56">
-          {set.map((kind) => (
-            <SetFilterEntry
+        <Menu
+          placement="bottom end"
+          aria-label="Filters"
+          popover={{ className: "w-72 max-w-[calc(100vw-32px)]" }}
+        >
+          <MenuHeader className="flex items-center justify-between py-1.5 text-muted-foreground">
+            Filters
+            <Button
+              intent="plain"
+              size="text"
+              className="text-primary"
+              isDisabled={!set}
+              onPress={reset}
+            >
+              Reset
+            </Button>
+          </MenuHeader>
+          {props.kinds.map((kind) => (
+            <FilterRow
               key={kind}
               kind={kind}
               values={props.values}
               onChange={props.onChange}
+              onEdit={setEditing}
             />
-          ))}
-          {set.length > 0 && left.length > 0 && <MenuSeparator />}
-          {left.map((kind) => (
-            <FilterMenuEntry key={kind} kind={kind} onChange={props.onChange} onEdit={setEditing} />
           ))}
         </Menu>
       </MenuTrigger>
@@ -141,33 +161,6 @@ export function FilterMenu(props: FilterProps) {
     </>
   );
 }
-
-function SetFilterEntry(props: {
-  kind: FilterKind;
-  values: FilterValues;
-  onChange: (patch: Patch) => void;
-}) {
-  const { kind } = props;
-  const text = useChipText(kind, props.values);
-  return (
-    <MenuItem
-      id={`remove-${kind}`}
-      textValue={`Remove ${LABELS[kind]} filter`}
-      onAction={() => props.onChange(CLEARS[kind])}
-      className="pe-2.5"
-    >
-      {ICONS[kind]}
-      <MenuLabel className="flex min-w-0 items-center gap-1.5">
-        <span className="sr-only">Remove</span>
-        {kind !== "archived" && <span className="text-muted-foreground">{LABELS[kind]}</span>}
-        <span className="truncate tabular-nums">{text}</span>
-        <IconX aria-hidden className="ms-auto size-4 shrink-0 text-muted-foreground" />
-      </MenuLabel>
-    </MenuItem>
-  );
-}
-
-type Editing = "close" | "value" | null;
 
 function FilterDialogs(props: FilterProps & { editing: Editing; onClose: () => void }) {
   if (props.editing === "close") {
@@ -193,112 +186,174 @@ function FilterDialogs(props: FilterProps & { editing: Editing; onClose: () => v
   return null;
 }
 
-function FilterMenuEntry(props: {
+function FilterRow(props: {
   kind: FilterKind;
+  values: FilterValues;
   onChange: (patch: Patch) => void;
   onEdit: (kind: "close" | "value") => void;
 }) {
   const { kind } = props;
+  const text = useValueText(kind, props.values);
   const row = (onAction?: () => void) => (
     <MenuItem id={kind} textValue={LABELS[kind]} onAction={onAction}>
       {ICONS[kind]}
-      <MenuLabel>{LABELS[kind]}</MenuLabel>
+      <MenuLabel className="flex min-w-0 items-center gap-3">
+        <span className="shrink-0">{LABELS[kind]}</span>
+        <span className="ms-auto truncate text-muted-foreground tabular-nums">{text}</span>
+      </MenuLabel>
     </MenuItem>
   );
   if (kind === "close" || kind === "value") return row(() => props.onEdit(kind));
-  if (kind === "archived") return row(() => props.onChange({ archived: "only" }));
   return (
     <MenuSubMenu>
       {row()}
-      <ChoiceMenu kind={kind} onChange={props.onChange} />
+      <Choices kind={kind} values={props.values} onChange={props.onChange} />
     </MenuSubMenu>
   );
 }
 
-function useChipText(kind: FilterKind, values: FilterValues) {
+const memberText = (
+  kind: "owner" | "assignee",
+  values: FilterValues,
+  names: Map<string, string>,
+) => {
+  const id = values[kind] ?? (kind === "assignee" ? "me" : "anyone");
+  if (id === "anyone") return "All";
+  if (id === "me") return "Me";
+  if (id === "none") return kind === "owner" ? "No owner" : "Unassigned";
+  return names.get(id) ?? "–";
+};
+
+const rangeText = (from: string | null, to: string | null) =>
+  from || to ? range(from, to) : "Any";
+
+const money = (value: number | undefined) =>
+  value === undefined ? null : formatMoney(value * 100, null);
+
+const COMPANY_TEXT = { with: "Any", without: "None" } as const;
+
+function useValueText(kind: FilterKind, values: FilterValues) {
   const owners = useOwners();
   const stages = useCrmStages().data ?? [];
   switch (kind) {
     case "owner":
-    case "assignee": {
-      const id = values[kind];
-      if (id === "none") return kind === "owner" ? "No owner" : "Unassigned";
-      return owners.find((o) => o.id === id)?.name ?? "–";
-    }
+    case "assignee":
+      return memberText(kind, values, new Map(owners.map((o) => [o.id, o.name])));
+    case "status":
+      return values.status === "done" ? "Done" : "Open";
     case "company":
-      return values.company === "with" ? "Any" : "None";
+      return values.company ? COMPANY_TEXT[values.company] : "All";
     case "stage":
-      return stages.find((s) => s.id === values.stage)?.name ?? "–";
+      return stages.find((s) => s.id === values.stage)?.name ?? "All";
     case "close":
-      return range(
+      return rangeText(
         values.closeAfter ? shortDay(values.closeAfter) : null,
         values.closeBefore ? shortDay(values.closeBefore) : null,
       );
     case "value":
-      return range(
-        values.minValue === undefined ? null : formatMoney(values.minValue * 100, null),
-        values.maxValue === undefined ? null : formatMoney(values.maxValue * 100, null),
-      );
+      return rangeText(money(values.minValue), money(values.maxValue));
     case "archived":
-      return "Archived";
+      return values.archived ? "Only" : "Hidden";
   }
 }
 
-function ChoiceMenu(props: { kind: FilterKind; onChange: (patch: Patch) => void }) {
-  const owners = useOwners();
-  const stages = useCrmStages().data ?? [];
-  if (props.kind === "owner" || props.kind === "assignee") {
-    const { kind } = props;
-    const nobody = kind === "owner" ? "No owner" : "Unassigned";
-    return (
-      <Menu placement="bottom start" aria-label={LABELS[kind]}>
-        {owners.map((owner) => (
-          <MenuItem
-            key={owner.id}
-            id={owner.id}
-            textValue={owner.name}
-            onAction={() => props.onChange({ [kind]: owner.id })}
-          >
-            <MemberAvatar name={owner.name} image={owner.image} />
-            <MenuLabel>{owner.name}</MenuLabel>
-          </MenuItem>
-        ))}
-        <MenuItem id="none" textValue={nobody} onAction={() => props.onChange({ [kind]: "none" })}>
-          <NoMemberAvatar />
-          <MenuLabel>{nobody}</MenuLabel>
-        </MenuItem>
-      </Menu>
-    );
+type Choice = { id: string; label: string; mark?: ReactNode; patch: Patch };
+
+function useChoices(kind: FilterKind) {
+  const choices: Choice[] = choicesFor(kind, useOwners(), useCrmStages().data ?? []);
+  return choices;
+}
+
+function choicesFor(
+  kind: FilterKind,
+  owners: ReturnType<typeof useOwners>,
+  stages: NonNullable<ReturnType<typeof useCrmStages>["data"]>,
+) {
+  const people = (key: "owner" | "assignee") =>
+    owners.map((owner) => ({
+      id: owner.id,
+      label: owner.name,
+      mark: <MemberAvatar name={owner.name} image={owner.image} />,
+      patch: { [key]: owner.id },
+    }));
+  switch (kind) {
+    case "owner":
+      return [
+        { id: "all", label: "All", patch: { owner: undefined } },
+        ...people("owner"),
+        { id: "none", label: "No owner", mark: <NoMemberAvatar />, patch: { owner: "none" } },
+      ];
+    case "assignee":
+      return [
+        { id: "me", label: "Me", patch: { assignee: undefined } },
+        { id: "anyone", label: "All", patch: { assignee: "anyone" } },
+        ...people("assignee"),
+        { id: "none", label: "Unassigned", mark: <NoMemberAvatar />, patch: { assignee: "none" } },
+      ];
+    case "status":
+      return [
+        { id: "open", label: "Open", patch: { status: undefined } },
+        { id: "done", label: "Done", patch: { status: "done" } },
+      ];
+    case "company":
+      return [
+        { id: "all", label: "All", patch: { company: undefined } },
+        { id: "with", label: "Any", patch: { company: "with" } },
+        { id: "without", label: "None", patch: { company: "without" } },
+      ];
+    case "stage":
+      return [
+        { id: "all", label: "All", patch: { stage: undefined } },
+        ...stages.map((stage) => ({ id: stage.id, label: stage.name, patch: { stage: stage.id } })),
+      ];
+    case "archived":
+      return [
+        { id: "hidden", label: "Hidden", patch: { archived: undefined } },
+        { id: "only", label: "Only", patch: { archived: "only" } },
+      ];
+    default:
+      return [];
   }
-  if (props.kind === "company") {
-    return (
-      <Menu placement="bottom start" aria-label="Company">
-        <MenuItem id="with" textValue="Any" onAction={() => props.onChange({ company: "with" })}>
-          <IconBuildings data-slot="icon" />
-          <MenuLabel>Any</MenuLabel>
-        </MenuItem>
-        <MenuItem
-          id="without"
-          textValue="None"
-          onAction={() => props.onChange({ company: "without" })}
-        >
-          <IconX data-slot="icon" />
-          <MenuLabel>None</MenuLabel>
-        </MenuItem>
-      </Menu>
-    );
+}
+
+const chosenOf = (kind: FilterKind, values: FilterValues) => {
+  switch (kind) {
+    case "assignee":
+      return values.assignee ?? "me";
+    case "status":
+      return values.status ?? "open";
+    case "archived":
+      return values.archived ?? "hidden";
+    case "owner":
+    case "company":
+    case "stage":
+      return values[kind] ?? "all";
+    default:
+      return "all";
   }
+};
+
+function Choices(props: {
+  kind: FilterKind;
+  values: FilterValues;
+  onChange: (patch: Patch) => void;
+}) {
+  const choices = useChoices(props.kind);
   return (
-    <Menu placement="bottom start" aria-label="Stage">
-      {stages.map((stage) => (
+    <Menu
+      aria-label={LABELS[props.kind]}
+      selectionMode="single"
+      selectedKeys={[chosenOf(props.kind, props.values)]}
+    >
+      {choices.map((choice) => (
         <MenuItem
-          key={stage.id}
-          id={stage.id}
-          textValue={stage.name}
-          onAction={() => props.onChange({ stage: stage.id })}
+          key={choice.id}
+          id={choice.id}
+          textValue={choice.label}
+          onAction={() => props.onChange(choice.patch)}
         >
-          <IconBoard data-slot="icon" />
-          <MenuLabel>{stage.name}</MenuLabel>
+          {choice.mark}
+          <MenuLabel>{choice.label}</MenuLabel>
         </MenuItem>
       ))}
     </Menu>
