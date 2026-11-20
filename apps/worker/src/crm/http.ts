@@ -69,7 +69,10 @@ export type CrmRefusal =
   | PlanRefusal;
 
 /** What a project's plan adds: a milestone on another deal, a file the caller cannot open. */
-type PlanRefusal = { status: "invalid_milestone" } | { status: "invalid_file" };
+type PlanRefusal =
+  | { status: "invalid_milestone" }
+  | { status: "invalid_file" }
+  | { status: "plan_full" };
 
 /** What contracts and record folders add: Storage's refusals to make a folder among them. */
 type FilesRefusal =
@@ -142,13 +145,15 @@ const PLAN_ANSWERS: Record<PlanRefusal["status"], Answer> = {
     message: "that is not a file you can open",
     param: "nodeId",
   },
+  plan_full: { code: "conflict", message: "a project holds at most 200 of these" },
 };
+
+const isPlanRefusal = (refusal: CrmRefusal): refusal is PlanRefusal =>
+  Object.hasOwn(PLAN_ANSWERS, refusal.status);
 
 function answerFor(refusal: CrmRefusal) {
   if (isFilesRefusal(refusal)) return filesAnswerFor(refusal) satisfies Answer;
-  if (refusal.status === "invalid_milestone" || refusal.status === "invalid_file") {
-    return PLAN_ANSWERS[refusal.status];
-  }
+  if (isPlanRefusal(refusal)) return PLAN_ANSWERS[refusal.status];
   switch (refusal.status) {
     case "no_crm":
       return { code: "no_crm", message: "a Personal space has no CRM" } satisfies Answer;
