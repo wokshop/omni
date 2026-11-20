@@ -169,7 +169,7 @@ export function MessageItem(props: {
   );
 }
 
-const CARD_BODY = "px-5 pb-4";
+const CARD_BODY = "px-5 pb-4 last:pb-5";
 
 function HtmlMenuItems(props: { full: boolean; onToggle: () => void }) {
   const label = props.full ? "Show text" : "Show full message";
@@ -228,7 +228,7 @@ function CardHeader(props: {
     message.subject ? `Subject: ${message.subject}` : undefined,
   ].filter((line): line is string => !!line);
   return (
-    <header className="flex w-full items-start gap-3 px-5 pt-4 pb-3">
+    <header className="flex w-full items-start gap-3 px-5 pt-5 pb-3">
       <SenderAvatar
         isSquare
         size="md"
@@ -439,7 +439,7 @@ export function PendingItem({ send }: { send: PendingSend }) {
       : "Sending…";
   return (
     <article aria-label="You, sending" className="border-b">
-      <header className="flex items-baseline gap-3 px-5 pt-4 pb-3">
+      <header className="flex items-baseline gap-3 px-5 pt-5 pb-3">
         <span className="flex-1 text-sm">You</span>
         <span
           className={`text-xs ${failed ? "text-danger-subtle-foreground" : "text-subtle-foreground"}`}
@@ -447,7 +447,7 @@ export function PendingItem({ send }: { send: PendingSend }) {
           {label}
         </span>
       </header>
-      <div className={`px-5 pb-4 ${failed ? "" : "opacity-70"}`}>
+      <div className={`px-5 pb-5 ${failed ? "" : "opacity-70"}`}>
         <Body text={send.text} />
       </div>
     </article>

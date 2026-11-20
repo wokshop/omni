@@ -244,7 +244,7 @@ function ConversationSkeleton() {
 
 function MessageBones({ width }: { width: string }) {
   return (
-    <div className="flex gap-3 border-b px-5 py-4">
+    <div className="flex gap-3 border-b px-5 py-5">
       <SkeletonBox width={32} height={32} radius={6} />
       <div className="flex flex-1 flex-col gap-2">
         <SkeletonBox width={120} height={10} />
