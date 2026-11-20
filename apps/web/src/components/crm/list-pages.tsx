@@ -20,7 +20,6 @@ import type {
 } from "@/lib/search-params.ts";
 import { DealBoard } from "./deal-board.tsx";
 import { COMPANY_COLUMNS, DEAL_COLUMNS, PEOPLE_COLUMNS } from "./list-columns.tsx";
-import { DEAL_SORTS, RECORD_SORTS } from "./list-sort.tsx";
 import { ListToolbar } from "./list-toolbar.tsx";
 import { isFiltered, useListView } from "./list-view.tsx";
 import { NewCompanyDialog, NewDealDialog, NewPersonDialog } from "./new-records.tsx";
@@ -65,9 +64,7 @@ export function CompaniesPage({ search }: { search: CrmCompaniesSearch }) {
         search={{ ...text, q }}
         source={sourceOf(list, list.companies)}
         columns={COMPANY_COLUMNS}
-        toolbar={
-          <ListToolbar search={search} sorts={RECORD_SORTS} filters={["owner", "archived"]} />
-        }
+        toolbar={<ListToolbar search={search} filters={["owner", "archived"]} />}
         filtered={isFiltered(search)}
         {...view}
         mark={(company) => (
@@ -100,13 +97,7 @@ export function PeoplePage({ search }: { search: CrmPeopleSearch }) {
         search={{ ...text, q }}
         source={sourceOf(list, list.people)}
         columns={PEOPLE_COLUMNS}
-        toolbar={
-          <ListToolbar
-            search={search}
-            sorts={RECORD_SORTS}
-            filters={["owner", "company", "archived"]}
-          />
-        }
+        toolbar={<ListToolbar search={search} filters={["owner", "company", "archived"]} />}
         filtered={isFiltered(search)}
         {...view}
         mark={(person) => (
@@ -143,7 +134,7 @@ export function DealsPage({ search }: { search: CrmDealsSearch }) {
         toolbar={
           <ListToolbar
             search={board ? { ...search, archived: undefined } : search}
-            sorts={board ? BOARD_SORTS : DEAL_SORTS}
+            sorts={board ? BOARD_SORTS : undefined}
             filters={
               board ? ["owner", "close", "value"] : ["owner", "stage", "close", "value", "archived"]
             }
@@ -176,13 +167,7 @@ export function ProjectsPage({ search }: { search: CrmProjectsSearch }) {
       search={{ ...text, q }}
       source={sourceOf(list, list.deals)}
       columns={DEAL_COLUMNS}
-      toolbar={
-        <ListToolbar
-          search={search}
-          sorts={DEAL_SORTS}
-          filters={["owner", "close", "value", "archived"]}
-        />
-      }
+      toolbar={<ListToolbar search={search} filters={["owner", "close", "value", "archived"]} />}
       filtered={isFiltered(search)}
       {...view}
       mark={(deal) => <RecordMark name={deal.name} />}

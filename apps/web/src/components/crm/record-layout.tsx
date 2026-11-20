@@ -54,9 +54,9 @@ export function RecordLayout(props: {
           </div>
           {props.details}
         </aside>
-        <main className="min-w-0 flex-1 px-5 py-4 lg:overflow-y-auto">
+        <main className="min-w-0 flex-1 pb-4 lg:overflow-y-auto">
           <Tabs className="w-full">
-            <TabList aria-label="Record">
+            <TabList aria-label="Record" className="px-5 pt-2">
               {props.tabs.map((tab) => (
                 <Tab key={tab.id} id={tab.id}>
                   {tab.label}
@@ -64,7 +64,7 @@ export function RecordLayout(props: {
               ))}
             </TabList>
             {props.tabs.map((tab) => (
-              <TabPanel key={tab.id} id={tab.id} className="pt-2">
+              <TabPanel key={tab.id} id={tab.id} className="px-5 pt-2">
                 {tab.panel}
               </TabPanel>
             ))}
@@ -95,20 +95,23 @@ export function RecordFrame(props: {
         </Breadcrumbs>
       }
       actions={props.actions}
+      bordered
     >
       {props.children}
     </StorageFrame>
   );
 }
 
-/** A titled group in the left pane: Details, People, Deals. */
-export function DetailSection(props: { title: string; action?: ReactNode; children: ReactNode }) {
+/** A group in the left pane: the record's fields (untitled), then People, Deals. */
+export function DetailSection(props: { title?: string; action?: ReactNode; children: ReactNode }) {
   return (
-    <section className="flex flex-col gap-2">
-      <div className="flex h-7 items-center justify-between">
-        <h3 className="text-sm text-muted-foreground">{props.title}</h3>
-        {props.action}
-      </div>
+    <section className="flex flex-col gap-1">
+      {props.title && (
+        <div className="flex h-7 items-center justify-between">
+          <h3 className="text-sm text-muted-foreground">{props.title}</h3>
+          {props.action}
+        </div>
+      )}
       <div className="flex flex-col gap-0.5">{props.children}</div>
     </section>
   );

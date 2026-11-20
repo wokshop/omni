@@ -21,10 +21,13 @@ export function useSetListSearch() {
   );
 }
 
-/** The sort control and filter chips under a list's header (Attio's view bar). */
+/**
+ * The filter chips under a list's header (Attio's view bar). A table sorts from its column
+ * headers, so only a view without them (the deals' board) passes `sorts` for a sort control.
+ */
 export function ListToolbar(props: {
   search: ListSearch;
-  sorts: CrmSort[];
+  sorts?: CrmSort[];
   filters: FilterKind[];
 }) {
   const set = useSetListSearch();
@@ -35,11 +38,13 @@ export function ListToolbar(props: {
       aria-label="View"
       className="flex h-11 shrink-0 items-center gap-1.5 overflow-x-auto px-5"
     >
-      <SortControl
-        fields={props.sorts}
-        value={props.sorts.includes(sort.sort) ? sort : { sort: "name", dir: "asc" }}
-        onChange={(next: SortState) => set(sortParams(next))}
-      />
+      {props.sorts && (
+        <SortControl
+          fields={props.sorts}
+          value={props.sorts.includes(sort.sort) ? sort : { sort: "name", dir: "asc" }}
+          onChange={(next: SortState) => set(sortParams(next))}
+        />
+      )}
       <FilterBar kinds={props.filters} values={props.search} onChange={set} />
     </div>
   );
