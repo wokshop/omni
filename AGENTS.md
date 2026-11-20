@@ -102,6 +102,14 @@ Each test must catch a bug we would plausibly ship; name it before writing the t
     `echo '{"pull_requests":[<bottom>,…,<top>]}' | gh api -X POST repos/{owner}/{repo}/stacks
     --input -` (a new top layer: `POST …/stacks/<n>/add`). Check with
     `gh api "repos/{owner}/{repo}/stacks?pull_request=<n>"`.
+  - A PR's base is always the next unmerged layer below it, or `main`; never pick one by hand.
+    An unlinked chain is not a stack: GitHub won't retarget it, so a child of a merged parent
+    merges into a dead branch (#582). When a layer merges, the layers above it must move down:
+    `git fetch origin`, `gh stack rebase`, `gh stack push --remote origin`, and on the laptop
+    `gh stack sync`; in the cloud set each child's base with
+    `gh api -X PATCH repos/{owner}/{repo}/pulls/<n> -f base=<new base>`. Before merging any PR,
+    check `gh api repos/{owner}/{repo}/pulls/<n> --jq .base.ref` is `main`; merge stacks only
+    with `gh stack merge`.
   - When the layer below changes, `gh stack rebase`, then `gh stack push --remote origin`.
   - A first `gh stack push` that fails with `stale info` means the session's
     `origin/<branch>` ref points at a branch that doesn't exist yet: `git push -u origin <branch>`
