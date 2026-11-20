@@ -3,7 +3,6 @@ import {
   infiniteQueryOptions,
   queryOptions,
   useInfiniteQuery,
-  useQueries,
   useQuery,
 } from "@tanstack/react-query";
 import type { InferResponseType } from "hono/client";
@@ -97,42 +96,34 @@ export function useDeals(
   );
 }
 
-const companyQuery = (id: string) =>
-  queryOptions({
+export const useCompany = (id: string) =>
+  useQuery({
     queryKey: keys.crmRecord("company", id),
     queryFn: ({ signal }) =>
       call(api.crm.companies[":id"].$get({ param: { id } }, { init: { signal } })),
   });
 
-export const useCompany = (id: string) => useQuery(companyQuery(id));
-
-/**
- * The active projects (deals in a `won` stage), by name, each with its client's name and domain,
- * read from the company record its page caches.
- */
-export function useActiveProjects() {
-  const query = useDeals(DEFAULT_VIEW, { projects: true, whole: true });
+function useDrained<
+  T extends { hasNextPage: boolean; isFetchingNextPage: boolean; fetchNextPage: () => unknown },
+>(query: T) {
   const { hasNextPage, isFetchingNextPage, fetchNextPage } = query;
   useEffect(() => {
     if (hasNextPage && !isFetchingNextPage) void fetchNextPage();
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
-  const projects = query.data ?? [];
-  const ids = [...new Set(projects.flatMap((deal) => (deal.companyId ? [deal.companyId] : [])))];
-  const clients = new Map(
-    useQueries({ queries: ids.map(companyQuery) }).flatMap((query) =>
-      query.data
-        ? [
-            [
-              query.data.company.id,
-              { name: query.data.company.name, domain: query.data.domains[0] ?? null },
-            ] as const,
-          ]
-        : [],
-    ),
-  );
+  return query;
+}
+
+/**
+ * The active projects (deals in a `won` stage), by name, each with its client from the company
+ * list (its name and a domain for the logo).
+ */
+export function useActiveProjects() {
+  const projects = useDrained(useDeals(DEFAULT_VIEW, { projects: true, whole: true })).data ?? [];
+  const companies = useDrained(useCompanies()).data ?? [];
+  const clients = new Map(companies.map((company) => [company.id, company]));
   return projects
     .map((deal) => ({ deal, client: deal.companyId ? clients.get(deal.companyId) : undefined }))
-    .sort((a, b) => a.deal.name.localeCompare(b.deal.name, undefined, { sensitivity: "base" }));
+    .toSorted((a, b) => a.deal.name.localeCompare(b.deal.name, undefined, { sensitivity: "base" }));
 }
 
 export const usePerson = (id: string) =>
