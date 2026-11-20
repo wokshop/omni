@@ -86,8 +86,8 @@ export const updateTaskMutation = (client: QueryClient) =>
     meta: { handlesError: true },
     mutationFn: ({ id, ...json }: TaskChange & { id: string }) =>
       call(api.crm.tasks[":id"].$patch({ param: { id }, json })),
-    onMutate: async ({ id, done, dueAt }) => {
-      if (done === undefined && dueAt === undefined) return;
+    onMutate: async ({ id, done, dueAt, subtasks }) => {
+      if (done === undefined && dueAt === undefined && subtasks === undefined) return;
       await client.cancelQueries({ queryKey: taskKeys.all() });
       const before = client.getQueriesData<InfiniteData<CrmTaskPage>>({
         queryKey: taskKeys.lists(),
@@ -96,6 +96,7 @@ export const updateTaskMutation = (client: QueryClient) =>
         ...task,
         ...(done === undefined ? {} : { completedAt: done ? new Date().toISOString() : null }),
         ...(dueAt === undefined ? {} : { dueAt }),
+        ...(subtasks === undefined ? {} : { subtasks }),
       });
       client.setQueryData(taskKeys.one(id), (data: { task: CrmTask } | undefined) =>
         data ? { task: patch(data.task) } : data,

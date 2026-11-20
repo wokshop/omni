@@ -271,11 +271,16 @@ One list, newest first, of four kinds of item:
   check on the spine, open tasks first and then the done ones.
 - On the web a task opens in a panel beside the task list (`/crm/tasks?task=<id>`), like an
   email; `/crm/tasks/<id>` stays its full page.
+- Subtasks are a checklist on the task, `subtasks` (jsonb, in order, each `{ id, title, done }`
+  with an id the client makes). `PATCH { subtasks }` replaces the whole list; blank steps are
+  dropped and it holds at most 100. Checking every step does not complete the task. The panel
+  and page put the task's check beside its title on top, then a Subtasks group (a check and a
+  line each, and a line to add one), then the notes, then the fields.
 - The command menu (⌘K) finds open tasks by title, so the task list has no search of its own.
 - New, in every CRM header, makes a task, company, person or deal. A task first asks which record
   it is on, unless the page is that record's, which it starts on and can change.
 - Writes publish `crm.changed` with kind `task`, plus the record's kind. Tasks write no timeline
-  events yet. Not yet: reminders, recurring tasks, subtasks, several records per task, MCP tools.
+  events yet. Not yet: reminders, recurring tasks, several records per task, MCP tools.
 
 ## Records parity
 

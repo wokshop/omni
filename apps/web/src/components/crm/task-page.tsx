@@ -21,11 +21,12 @@ import { FieldRow, LinkValue, PlainValue } from "./record-fields.tsx";
 import { RecordFrame, RecordState } from "./record-layout.tsx";
 import { DAY } from "./record-list.tsx";
 import { AssigneePicker, RecordPicker, useMemberNames } from "./task-dialog.tsx";
+import { Subtasks } from "./task-subtasks.tsx";
 
 const TITLE_MAX = 500;
 const BODY_MAX = 20_000;
 
-/** One task: its title and notes, and beside them who, when and on what. */
+/** One task: its check and title, subtasks and notes, and beside them who, when and on what. */
 export function TaskPage({ id }: { id: string }) {
   const query = useCrmTask(id);
   if (!query.data) return <RecordState list="tasks" query={query} />;
@@ -75,7 +76,10 @@ function TaskView({ task }: { task: CrmTask }) {
       }
     >
       <div className="flex min-h-0 flex-1 overflow-y-auto max-lg:flex-col lg:overflow-hidden">
-        <main className="flex min-w-0 flex-1 flex-col gap-3 px-5 py-5 lg:overflow-y-auto">
+        <main className="flex min-w-0 flex-1 flex-col gap-4 px-5 py-5 lg:overflow-y-auto">
+          <div className="-ms-2 flex">
+            <TaskHeading task={task} onSave={save} />
+          </div>
           <TaskContent task={task} onSave={save} />
         </main>
         <aside
@@ -89,12 +93,12 @@ function TaskView({ task }: { task: CrmTask }) {
   );
 }
 
-/** The task's check, title and notes. */
-export function TaskContent(props: { task: CrmTask; onSave: (change: TaskChange) => void }) {
+/** The task's check, then its title, which saves when it loses focus. */
+export function TaskHeading(props: { task: CrmTask; onSave: (change: TaskChange) => void }) {
   const { task, onSave } = props;
   return (
-    <div className="flex gap-3">
-      <div className="flex h-9 items-center">
+    <div className="flex min-w-0 flex-1 items-center gap-1">
+      <div className="flex size-8 shrink-0 items-center justify-center">
         <CheckboxField
           aria-label={task.completedAt ? "Reopen" : "Complete"}
           isSelected={!!task.completedAt}
@@ -103,10 +107,18 @@ export function TaskContent(props: { task: CrmTask; onSave: (change: TaskChange)
           <Checkbox />
         </CheckboxField>
       </div>
-      <div className="flex min-w-0 flex-1 flex-col gap-3">
-        <TitleField key={task.id} task={task} onSave={(title) => onSave({ title })} />
-        <BodyField key={task.id} task={task} onSave={(body) => onSave({ body })} />
-      </div>
+      <TitleField key={task.id} task={task} onSave={(title) => onSave({ title })} />
+    </div>
+  );
+}
+
+/** Under the heading: the task's subtasks, then its notes. */
+export function TaskContent(props: { task: CrmTask; onSave: (change: TaskChange) => void }) {
+  const { task, onSave } = props;
+  return (
+    <div className="-mx-2 flex flex-col gap-4">
+      <Subtasks task={task} onSave={onSave} />
+      <BodyField key={task.id} task={task} onSave={(body) => onSave({ body })} />
     </div>
   );
 }
@@ -144,7 +156,7 @@ function TitleField(props: { task: CrmTask; onSave: (title: string) => void }) {
       maxLength={TITLE_MAX}
       value={draft}
       onChange={setDraft}
-      className="flex-1"
+      className="min-w-0 flex-1"
     >
       <Input
         plain

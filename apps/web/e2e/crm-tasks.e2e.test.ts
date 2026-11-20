@@ -127,10 +127,47 @@ test("a task opens beside the list, edits save to that task, and Escape closes i
   await expect.poll(async () => (await row(first))?.body ?? null).toBe("Ask about parking.");
   expect((await row(second))?.body ?? null).toBeNull();
 
-  await page.getByRole("heading", { name: "Tasks" }).click();
+  await page.getByRole("heading", { name: "Tasks", exact: true }).click();
   await page.keyboard.press("Escape");
   await expect.poll(() => new URL(page.url()).searchParams.get("task")).toBeNull();
   await expect.poll(() => panel.count()).toBe(0);
+  await context.close();
+});
+
+test("subtasks added in the panel save in order, check off, and a cleared one is removed", async () => {
+  const { page, org, context, headers } = await signedIn("subtasks");
+  const made = await fetch(new URL("/api/crm/tasks", origin()), {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ title: "Plan the shoot" }),
+  });
+  const { task } = (await made.json()) as { task: { id: string } };
+  await page.goto(new URL(`/${org.slug}/crm/tasks?task=${task.id}`, origin()).toString());
+  const panel = page.getByRole("region", { name: "Task" });
+  const add = panel.getByRole("textbox", { name: "New subtask" });
+  await add.fill("Scout");
+  await add.press("Enter");
+  await add.fill("Permits");
+  await add.press("Enter");
+  await expect
+    .poll(async () => (await row(task.id))?.subtasks.map((s) => s.title))
+    .toEqual(["Scout", "Permits"]);
+
+  await panel.getByRole("checkbox", { name: "Complete Scout" }).click({ force: true });
+  await expect
+    .poll(async () => (await row(task.id))?.subtasks.map((s) => s.done))
+    .toEqual([true, false]);
+  expect((await row(task.id))?.completedAt).toBeNull();
+
+  await panel.getByRole("textbox", { name: "Subtask" }).nth(1).fill("");
+  await panel.getByRole("checkbox", { name: "Complete" }).first().focus();
+  await expect
+    .poll(async () => (await row(task.id))?.subtasks.map((s) => s.title))
+    .toEqual(["Scout"]);
+
+  await page.reload();
+  await panel.getByRole("checkbox", { name: "Complete Scout" }).waitFor();
+  expect(await panel.getByRole("checkbox", { name: "Complete Scout" }).isChecked()).toBe(true);
   await context.close();
 });
 
