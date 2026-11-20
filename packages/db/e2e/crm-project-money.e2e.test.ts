@@ -1,8 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { afterAll, expect, test } from "vitest";
+import { settleSentContracts } from "../src/crm.ts";
 import { forMember } from "../src/for-member.ts";
-import { members, storageNodes } from "../src/schema/index.ts";
+import {
+  crmContracts,
+  members,
+  storageNodes,
+  storageSignatureRequests,
+} from "../src/schema/index.ts";
 import { addFile, createPerson, setRole } from "./storage-support.ts";
 import { createMember, createOrg, createTestDatabase } from "./support.ts";
 
@@ -213,6 +219,36 @@ test("taking a freelancer off a project takes their contracts' files too", async
   expect((await franDoor.storage.node(pdf.id))?.role).toBe("viewer");
   ok(await team.grantProjectAccess(website.id, { email: franAt, scope: "client" }));
   expect(await franDoor.storage.node(pdf.id)).toBeNull();
+});
+
+test("a signed copy reaches the freelancer after its sender left the team", async () => {
+  const { org, teamDoor, team, website, folder, pdf, franDoor } = await studio("money-sealed");
+  const [contract] = ok(await team.listContracts({ dealId: website.id })).contracts;
+  ok(await team.updateContract(contract!.id, { memberIds: [franDoor.id] }));
+  const admin = ok(await teamDoor.storage.list({ parentId: folder })).nodes.find(
+    (node) => node.name === "Admin",
+  )!;
+  const sealed = await addFile(teamDoor.storage, { parentId: admin.id }, "msa-signed.pdf");
+  const [request] = await db
+    .insert(storageSignatureRequests)
+    .values({
+      orgId: org.id,
+      nodeId: pdf.id,
+      contentVersion: 1,
+      documentSha256: "0".repeat(64),
+      status: "completed",
+      completedAt: new Date(),
+      sealedNodeId: sealed.id,
+    })
+    .returning();
+  await db
+    .update(crmContracts)
+    .set({ status: "sent", signatureRequestId: request!.id, createdByMemberId: null })
+    .where(eq(crmContracts.id, contract!.id));
+
+  const { settled } = await settleSentContracts(db);
+  expect(settled).toContainEqual({ orgId: org.id, contractId: contract!.id, status: "signed" });
+  expect((await franDoor.storage.node(sealed.id))?.role).toBe("viewer");
 });
 
 test("a locked contract filed before the Admin folder is filed when a freelancer joins", async () => {
