@@ -23,6 +23,9 @@ export type PersonChange = Json<InferRequestType<Crm["people"][":id"]["$patch"]>
 export type DealChange = Json<InferRequestType<Crm["deals"][":id"]["$patch"]>>;
 export type NewContract = Json<InferRequestType<Crm["contracts"]["$post"]>>;
 export type ContractChange = Json<InferRequestType<Crm["contracts"][":id"]["$patch"]>>;
+export type ContractSigners = Json<
+  InferRequestType<Crm["contracts"][":id"]["send"]["$post"]>
+>["signers"];
 export type StageInput = Json<InferRequestType<Crm["stages"]["$put"]>>["stages"][number];
 
 const settle = (client: QueryClient) => ({ onSettled: () => crmChanged(client) });
@@ -78,6 +81,90 @@ export const addDomainMutation = (client: QueryClient) =>
     meta: { handlesError: true },
     mutationFn: ({ id, domain }: { id: string; domain: string }) =>
       call(api.crm.companies[":id"].domains[":domain"].$put({ param: { id, domain } })),
+    ...settle(client),
+  });
+
+/** `mutate({ id, domain })` takes a domain off a company. */
+export const removeDomainMutation = (client: QueryClient) =>
+  mutationOptions({
+    meta: { handlesError: true },
+    mutationFn: ({ id, domain }: { id: string; domain: string }) =>
+      call(api.crm.companies[":id"].domains[":domain"].$delete({ param: { id, domain } })),
+    ...settle(client),
+  });
+
+export type RecordLifecycle = "archive" | "restore" | "delete";
+
+const DELETE_QUERY: Record<Exclude<RecordLifecycle, "restore">, { forever?: "1" }> = {
+  archive: {},
+  delete: { forever: "1" },
+};
+
+async function lifecycle(kind: CrmRecordKind, id: string, action: RecordLifecycle) {
+  const param = { id };
+  if (action === "restore") {
+    if (kind === "companies") await call(api.crm.companies[":id"].restore.$post({ param }));
+    else if (kind === "people") await call(api.crm.people[":id"].restore.$post({ param }));
+    else await call(api.crm.deals[":id"].restore.$post({ param }));
+    return;
+  }
+  const query = DELETE_QUERY[action];
+  if (kind === "companies") await call(api.crm.companies[":id"].$delete({ param, query }));
+  else if (kind === "people") await call(api.crm.people[":id"].$delete({ param, query }));
+  else await call(api.crm.deals[":id"].$delete({ param, query }));
+}
+
+/** `mutate({ kind, id, action })`: archive, bring back, or delete for good (owners and admins). */
+export const recordLifecycleMutation = (client: QueryClient) =>
+  mutationOptions({
+    meta: { handlesError: true },
+    mutationFn: ({
+      kind,
+      id,
+      action,
+    }: {
+      kind: CrmRecordKind;
+      id: string;
+      action: RecordLifecycle;
+    }) => lifecycle(kind, id, action),
+    ...settle(client),
+  });
+
+export type BulkAction = Json<InferRequestType<Crm["companies"]["bulk"]["$post"]>>["action"];
+
+const bulkRoute = (kind: CrmRecordKind) =>
+  kind === "companies"
+    ? api.crm.companies.bulk
+    : kind === "people"
+      ? api.crm.people.bulk
+      : api.crm.deals.bulk;
+
+const BULK_BATCH = 200;
+
+async function bulk(kind: CrmRecordKind, ids: string[], action: BulkAction) {
+  const result = { done: [] as string[], refused: [] as { id: string; code: string }[] };
+  for (let start = 0; start < ids.length; start += BULK_BATCH) {
+    const batch = ids.slice(start, start + BULK_BATCH);
+    const answer = await call(bulkRoute(kind).$post({ json: { ids: batch, action } }));
+    result.done.push(...answer.done);
+    result.refused.push(...answer.refused);
+  }
+  return result;
+}
+
+/** `mutateAsync({ kind, ids, action })` → what changed and what was refused, by id. */
+export const bulkMutation = (client: QueryClient) =>
+  mutationOptions({
+    meta: { handlesError: true },
+    mutationFn: ({
+      kind,
+      ids,
+      action,
+    }: {
+      kind: CrmRecordKind;
+      ids: string[];
+      action: BulkAction;
+    }) => bulk(kind, ids, action),
     ...settle(client),
   });
 
@@ -159,6 +246,23 @@ export const updateContractMutation = (client: QueryClient) =>
     meta: { handlesError: true },
     mutationFn: ({ id, ...json }: ContractChange & { id: string }) =>
       call(api.crm.contracts[":id"].$patch({ param: { id }, json })),
+    onSettled: () => Promise.all([crmChanged(client), storageChanged(client)]),
+  });
+
+/** Sends a draft's PDF to its signers; the file locks, so Storage refetches too. */
+export const sendContractMutation = (client: QueryClient) =>
+  mutationOptions({
+    meta: { handlesError: true },
+    mutationFn: ({ id, signers }: { id: string; signers: ContractSigners }) =>
+      call(api.crm.contracts[":id"].send.$post({ param: { id }, json: { signers } })),
+    onSettled: () => Promise.all([crmChanged(client), storageChanged(client)]),
+  });
+
+/** Voids the open signature request; the contract is a draft again. */
+export const voidContractMutation = (client: QueryClient) =>
+  mutationOptions({
+    meta: { handlesError: true },
+    mutationFn: (id: string) => call(api.crm.contracts[":id"].void.$post({ param: { id } })),
     onSettled: () => Promise.all([crmChanged(client), storageChanged(client)]),
   });
 
