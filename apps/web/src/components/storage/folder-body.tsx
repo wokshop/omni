@@ -101,7 +101,7 @@ function Content(props: Parameters<typeof FolderBody>[0] & { drag: NodeDrag }) {
       <Centered>
         <EmptyState figure="drawer" {...source.empty}>
           {props.extra}
-          <HeaderActions {...props} canWrite={source.canWrite} />
+          <HeaderActions {...props} canWrite={source.canWrite} empty />
         </EmptyState>
       </Centered>
     );
@@ -144,7 +144,7 @@ function Centered({ children }: { children: ReactNode }) {
  * New doc, New folder and Upload, for whoever may write: labels alone, as the page's text actions
  * in the header, or centered in the empty state while the folder holds nothing.
  */
-export function HeaderActions(props: Actions & { canWrite: boolean }) {
+export function HeaderActions(props: Actions & { canWrite: boolean; empty?: boolean }) {
   if (!props.canWrite) return null;
   return (
     <>
@@ -156,14 +156,16 @@ export function HeaderActions(props: Actions & { canWrite: boolean }) {
       <Button intent="outline" size="sm" onPress={props.onNewFolder}>
         New folder
       </Button>
-      <FileTrigger
-        acceptDirectory
-        onSelect={(files) => props.onFiles(pickedFromInput([...(files ?? [])]))}
-      >
-        <Button intent="outline" size="sm">
-          Upload folder
-        </Button>
-      </FileTrigger>
+      {!props.empty && (
+        <FileTrigger
+          acceptDirectory
+          onSelect={(files) => props.onFiles(pickedFromInput([...(files ?? [])]))}
+        >
+          <Button intent="outline" size="sm">
+            Upload folder
+          </Button>
+        </FileTrigger>
+      )}
       <FileTrigger allowsMultiple onSelect={(files) => props.onFiles([...(files ?? [])])}>
         <Button size="sm">Upload</Button>
       </FileTrigger>
