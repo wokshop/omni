@@ -352,6 +352,13 @@ test("a comment on selected text is marked for every editor, follows its words, 
   await expect.poll(() => pageText(bo), { timeout: 15_000 }).toContain("First, ");
   expect(await marked.allInnerTexts()).toEqual(["the plan"]);
 
+  for (let i = 0; i < 5; i++) await ana.keyboard.press("ArrowRight");
+  for (let i = 0; i < 3; i++) await ana.keyboard.press("Shift+ArrowRight");
+  await ana.keyboard.type("our");
+  await expect
+    .poll(async () => (await marked.allInnerTexts()).join(""), { timeout: 15_000 })
+    .toBe("our plan");
+
   await ana.getByRole("button", { name: "Resolve" }).click();
   await expect.poll(() => marked.count(), { timeout: 15_000 }).toBe(0);
   await own.close();
