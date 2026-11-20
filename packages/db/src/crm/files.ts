@@ -3,6 +3,7 @@ import type { Db } from "../client.ts";
 import { crmFileLinks } from "../schema/crm/files.ts";
 import { memberStorage, type StorageNode } from "../storage.ts";
 import { NOT_FOUND, type CrmMember, type Ex } from "./core.ts";
+import { companyFolder, dealFolder } from "./folders.ts";
 import { loadCompany, loadDeal } from "./records.ts";
 
 /** The record a Drive node is linked to: a company or a deal (ADR 0054). */
@@ -67,7 +68,8 @@ export async function fileLinksOf(ex: Ex, member: CrmMember, record: FileLinkRec
 /**
  * Links Drive nodes to the record where they are: nothing moves or copies. Every node must be one
  * the member can open now and not in Trash, or nothing is linked. A node already linked stays
- * linked once, so a retried call changes nothing.
+ * linked once, so a retried call changes nothing. The record's folder is found or made too, as
+ * for its first upload, so a record with files always has one.
  */
 export async function linkFiles(
   tx: Ex,
@@ -79,6 +81,11 @@ export async function linkFiles(
   const ids = [...new Set(nodeIds)];
   const nodes = await openable(tx, member, ids);
   if (ids.some((id) => !nodes.has(id))) return NOT_FOUND;
+  const folder =
+    "companyId" in record
+      ? await companyFolder(tx, member, record.companyId)
+      : await dealFolder(tx, member, record.dealId);
+  if (folder.status !== "ok") return folder;
   await tx
     .insert(crmFileLinks)
     .values(

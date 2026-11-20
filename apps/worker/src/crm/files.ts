@@ -35,30 +35,20 @@ async function list(c: Context<AppEnv>, kind: Kind, id: string) {
   return c.json({ links: listed.links.map(wireLink) } satisfies CrmFileLinksResponse);
 }
 
-function linkRoutes<K extends Kind>(kind: K) {
-  return new Hono<AppEnv>()
-    .get(`/${kind}/:id/links` as `/${K}/:id/links`, (c) => list(c, kind, c.req.param("id")))
-    .post(
-      `/${kind}/:id/links` as `/${K}/:id/links`,
-      zValidator("json", crmLinkFilesBodySchema),
-      async (c) => {
-        const id = c.req.param("id");
-        const linked = await memberCrm(c).linkFiles(
-          recordOf(kind, id),
-          c.req.valid("json").nodeIds,
-        );
-        if (linked.status !== "ok") return refused(c, linked);
-        announce(c, announced(kind), [id]);
-        return list(c, kind, id);
-      },
-    )
-    .delete(`/${kind}/:id/links/:nodeId` as `/${K}/:id/links/:nodeId`, async (c) => {
-      const id = c.req.param("id");
-      const unlinked = await memberCrm(c).unlinkFile(recordOf(kind, id), c.req.param("nodeId"));
-      if (unlinked.status !== "ok") return refused(c, unlinked);
-      if (unlinked.removed) announce(c, announced(kind), [id]);
-      return c.body(null, 204);
-    });
+const linkFilesBody = zValidator("json", crmLinkFilesBodySchema);
+
+async function link(c: Context<AppEnv>, kind: Kind, id: string, nodeIds: string[]) {
+  const linked = await memberCrm(c).linkFiles(recordOf(kind, id), nodeIds);
+  if (linked.status !== "ok") return refused(c, linked);
+  announce(c, announced(kind), [id]);
+  return list(c, kind, id);
+}
+
+async function unlink(c: Context<AppEnv>, kind: Kind, id: string, nodeId: string) {
+  const unlinked = await memberCrm(c).unlinkFile(recordOf(kind, id), nodeId);
+  if (unlinked.status !== "ok") return refused(c, unlinked);
+  if (unlinked.removed) announce(c, announced(kind), [id]);
+  return c.body(null, 204);
 }
 
 /**
@@ -66,5 +56,17 @@ function linkRoutes<K extends Kind>(kind: K) {
  * nothing; the record's own uploads stay in its folder (`POST /:kind/:id/folder`).
  */
 export const files = new Hono<AppEnv>()
-  .route("/", linkRoutes("companies"))
-  .route("/", linkRoutes("deals"));
+  .get("/companies/:id/links", (c) => list(c, "companies", c.req.param("id")))
+  .post("/companies/:id/links", linkFilesBody, (c) =>
+    link(c, "companies", c.req.param("id"), c.req.valid("json").nodeIds),
+  )
+  .delete("/companies/:id/links/:nodeId", (c) =>
+    unlink(c, "companies", c.req.param("id"), c.req.param("nodeId")),
+  )
+  .get("/deals/:id/links", (c) => list(c, "deals", c.req.param("id")))
+  .post("/deals/:id/links", linkFilesBody, (c) =>
+    link(c, "deals", c.req.param("id"), c.req.valid("json").nodeIds),
+  )
+  .delete("/deals/:id/links/:nodeId", (c) =>
+    unlink(c, "deals", c.req.param("id"), c.req.param("nodeId")),
+  );
