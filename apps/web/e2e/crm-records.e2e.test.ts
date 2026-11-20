@@ -183,10 +183,10 @@ test("the deal board shows only the owner's deals when filtered by owner", async
   await team.api("POST", "/deals", { name: "Bea's deal", ownerMemberId: bea.id });
 
   const page = await team.page(`/crm/deals?owner=${bea.id}`);
-  await page.getByRole("row", { name: "Bea's deal" }).waitFor();
-  expect(await page.getByRole("row", { name: "Ana's deal" }).count()).toBe(0);
+  await card(page, "Bea's deal").waitFor();
+  expect(await card(page, "Ana's deal").count()).toBe(0);
   await page.getByRole("button", { name: "Remove Owner filter" }).click();
-  await page.getByRole("row", { name: "Ana's deal" }).waitFor();
+  await card(page, "Ana's deal").waitFor();
 });
 
 test("a sort named without a direction starts in its own, and the board falls back to name order", async () => {
@@ -198,14 +198,57 @@ test("a sort named without a direction starts in its own, and the board falls ba
   expect(await names(page)).toEqual(["Zulu deal", "Alpha deal"]);
 
   await page.goto(page.url().replace("view=list", "view=board"));
-  await page.getByRole("row", { name: "Alpha deal" }).waitFor();
+  await card(page, "Alpha deal").waitFor();
 
-  const board = page.getByRole("row", { name: /^(Alpha|Zulu) deal$/ });
+  const board = page.getByRole("list", { name: /^Deals in / }).getByRole("listitem");
   const order = (await board.allInnerTexts()).map((text) =>
     text.includes("Alpha") ? "Alpha" : "Zulu",
   );
   expect(order).toEqual(["Alpha", "Zulu"]);
   await page.getByRole("button", { name: "Name" }).waitFor();
+});
+
+test("a deal dragged onto another stage moves there, and a stage's Add deal starts in it", async () => {
+  const team = await workspace("board-drag");
+  const { stages } = await team.api("GET", "/stages");
+  const [lead, next] = stages as { id: string; name: string }[];
+  const { deal } = await team.api("POST", "/deals", { name: "Moving deal", stageId: lead!.id });
+  const page = await team.page("/crm/deals?view=board");
+  const from = card(page, "Moving deal");
+  await from.waitFor();
+
+  const native = await from
+    .getByRole("link")
+    .evaluate(
+      (link) =>
+        !link.dispatchEvent(new DragEvent("dragstart", { bubbles: true, cancelable: true })),
+    );
+  expect(native).toBe(true);
+
+  const to = page.getByRole("region", { name: next!.name, exact: true });
+  const start = (await from.boundingBox())!;
+  const end = (await to.boundingBox())!;
+  await page.mouse.move(start.x + 20, start.y + 20);
+  await page.mouse.down();
+  await page.mouse.move(start.x + 40, start.y + 30, { steps: 4 });
+  await page.mouse.move(end.x + end.width / 2, end.y + 60, { steps: 8 });
+  await page.mouse.up();
+  await to.getByRole("listitem").filter({ hasText: "Moving deal" }).waitFor();
+  await expect
+    .poll(() => dealRow(deal.id), { timeout: 10_000 })
+    .toMatchObject({ stageId: next!.id });
+  expect(page.url()).toContain("/crm/deals?");
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/deals-board.png` });
+
+  await to.getByRole("button", { name: "Add deal" }).click();
+  await page.getByRole("textbox", { name: "Name" }).fill("Added in place");
+  await page.getByRole("button", { name: "Create" }).click();
+  await page.waitForURL(/\/crm\/deals\/[^?]+$/);
+  const [added] = await db
+    .select({ stageId: schema.crmDeals.stageId })
+    .from(schema.crmDeals)
+    .where(eq(schema.crmDeals.name, "Added in place"));
+  expect(added?.stageId).toBe(next!.id);
 });
 
 test("a won deal is listed under Projects, and its page sits under Projects", async () => {
@@ -405,6 +448,7 @@ async function dealRow(id: string) {
     .select({
       valueMinor: schema.crmDeals.valueMinor,
       valueCurrency: schema.crmDeals.valueCurrency,
+      stageId: schema.crmDeals.stageId,
     })
     .from(schema.crmDeals)
     .where(eq(schema.crmDeals.id, id));
@@ -468,4 +512,11 @@ async function freePort() {
   const { port } = server.address() as AddressInfo;
   await new Promise((resolve) => server.close(resolve));
   return port;
+}
+
+function card(page: Page, name: string) {
+  return page
+    .getByRole("list", { name: /^Deals in / })
+    .getByRole("listitem")
+    .filter({ has: page.getByText(name, { exact: true }) });
 }
