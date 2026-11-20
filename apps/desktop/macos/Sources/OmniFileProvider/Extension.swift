@@ -1,6 +1,7 @@
 import FileProvider
 import OmniSyncClient
 import OmniSyncCore
+import OmniSyncEngine
 @preconcurrency import StorageSync
 import SystemConfiguration
 import UniformTypeIdentifiers

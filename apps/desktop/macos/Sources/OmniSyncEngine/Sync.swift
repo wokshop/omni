@@ -6,12 +6,18 @@ import OmniSyncCore
 /// What every call of the extension needs: the shared identity and settings, and a client for
 /// the server they name. Built per call, so a change to `sync.json` (a workspace switched on, a
 /// pause) is seen without restarting the extension.
-struct Sync {
-    let identity: SharedIdentity
-    let settings: SyncSettings
-    let client: SyncClient
+public struct Sync {
+    public let identity: SharedIdentity
+    public let settings: SyncSettings
+    public let client: SyncClient
 
-    static func load() throws -> Sync {
+    public init(identity: SharedIdentity, settings: SyncSettings, client: SyncClient) {
+        self.identity = identity
+        self.settings = settings
+        self.client = client
+    }
+
+    public static func load() throws -> Sync {
         guard let identity = SharedIdentity(), let container = identity.container else {
             throw NSFileProviderError(.providerNotFound)
         }
@@ -25,13 +31,13 @@ struct Sync {
 
     /// The workspaces with sync on that the person still belongs to, with their drives. One the
     /// person left is not in `/drives`, so its folder goes away.
-    func workspaces() async throws -> [StorageSyncWorkspace] {
+    public func workspaces() async throws -> [StorageSyncWorkspace] {
         let on = Set(settings.workspaces)
         return try await client.drives().workspaces.filter { on.contains($0.orgId) }
     }
 
     /// What a node's parent is on the server: a folder, or the top of a space.
-    static func place(of parent: ItemID) throws -> (orgId: String, parentId: String?, space: Space?) {
+    public static func place(of parent: ItemID) throws -> (orgId: String, parentId: String?, space: Space?) {
         switch parent {
         case let .space(orgId, space): return (orgId, nil, space)
         case let .node(orgId, nodeId): return (orgId, nodeId, nil)
@@ -42,7 +48,7 @@ struct Sync {
 }
 
 /// The error the system hears for anything a call threw (docs/spec/desktop.md "Errors").
-func systemError(_ error: Error) -> Error {
+public func systemError(_ error: Error) -> Error {
     // Cancelled by the system (Finder's cancel, an eviction): it hears that, not a failure, so
     // it does not retry what nobody wants any more.
     if error is CancellationError || (error as? URLError)?.code == .cancelled {
@@ -65,7 +71,7 @@ func systemError(_ error: Error) -> Error {
 }
 
 /// Runs `work` as a task the system can cancel through the returned `Progress`.
-func task(_ progress: Progress = Progress(totalUnitCount: 1), _ work: @escaping @Sendable () async -> Void) -> Progress {
+public func task(_ progress: Progress = Progress(totalUnitCount: 1), _ work: @escaping @Sendable () async -> Void) -> Progress {
     let running = Task { await work() }
     progress.cancellationHandler = { running.cancel() }
     return progress

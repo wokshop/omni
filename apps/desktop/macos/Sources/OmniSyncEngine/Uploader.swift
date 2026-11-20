@@ -8,24 +8,30 @@ import OmniSyncCore
 /// parts four at a time, completes. What it opened is kept in the App Group container under the
 /// item's identifier (`UploadRecord`), so an extension stopped halfway resumes from the parts the
 /// server already has (`GET /uploads/:id`) instead of starting over, but only for the same bytes.
-struct Uploader {
+public struct Uploader {
     let sync: Sync
     let orgId: String
     /// Where the open upload's record is kept while it runs.
     let key: String
 
+    public init(sync: Sync, orgId: String, key: String) {
+        self.sync = sync
+        self.orgId = orgId
+        self.key = key
+    }
+
     private static let parallelParts = 4
 
     /// The bytes to send, measured once by the caller (`measure`).
-    struct Bytes {
-        let file: URL
-        let size: Int
-        let sha256: String
+    public struct Bytes {
+        public let file: URL
+        public let size: Int
+        public let sha256: String
     }
 
     /// Uploads `bytes`. With `replaces`, as a new version of that file based on content version
     /// `ifContentVersion`, checked again on complete; `open` opens the matching upload.
-    func send(
+    public func send(
         _ bytes: Bytes,
         replaces: String? = nil,
         ifContentVersion: Int? = nil,
@@ -85,7 +91,7 @@ struct Uploader {
     }
 
     /// The file's size and sha256, read once in 1 MiB chunks.
-    static func measure(_ file: URL) throws -> Bytes {
+    public static func measure(_ file: URL) throws -> Bytes {
         let handle = try FileHandle(forReadingFrom: file)
         defer { try? handle.close() }
         var hash = SHA256()
