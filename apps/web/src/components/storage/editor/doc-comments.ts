@@ -110,12 +110,16 @@ function startsOf(text: string, prefix: string) {
   return starts;
 }
 
-function endFrom(text: string, suffix: string, start: number) {
-  const ends = heads(suffix)
-    .map((after) => text.indexOf(after, start))
-    .filter((at) => at !== -1);
-  if (suffix.length < CONTEXT && text.endsWith(suffix)) ends.push(text.length - suffix.length);
-  return ends.length ? Math.min(...ends) : -1;
+function endsFrom(text: string, suffix: string, start: number, most: number) {
+  const ends: number[] = [];
+  for (const after of heads(suffix)) {
+    for (const at of occurrences(text, after)) if (at > start && at - start <= most) ends.push(at);
+  }
+  const last = text.length - suffix.length;
+  if (suffix.length < CONTEXT && text.endsWith(suffix) && last > start && last - start <= most) {
+    ends.push(last);
+  }
+  return ends;
 }
 
 function between(text: string, anchor: TextAnchor) {
@@ -123,12 +127,12 @@ function between(text: string, anchor: TextAnchor) {
   const off = (found: Found) => Math.abs(found.end - found.start - size);
   let best: Found | null = null;
   for (const start of startsOf(text, anchor.prefix)) {
-    const end = endFrom(text, anchor.suffix, start);
-    if (end <= start || end - start > size * 2 + 20) continue;
-    const fit =
-      sharedEnd(text.slice(0, start), anchor.prefix) + sharedStart(text.slice(end), anchor.suffix);
-    const found: Found = { start, end, fit };
-    if (!best || fit > best.fit || (fit === best.fit && off(found) < off(best))) best = found;
+    const before = sharedEnd(text.slice(0, start), anchor.prefix);
+    for (const end of endsFrom(text, anchor.suffix, start, size * 2 + 20)) {
+      const fit = before + sharedStart(text.slice(end), anchor.suffix);
+      const found: Found = { start, end, fit };
+      if (!best || fit > best.fit || (fit === best.fit && off(found) < off(best))) best = found;
+    }
   }
   return best;
 }
