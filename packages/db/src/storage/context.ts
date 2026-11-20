@@ -14,7 +14,7 @@ import {
   type StorageNode,
   type StorageSpace,
 } from "./core.ts";
-import { likeEscaped, liveIn } from "./find.ts";
+import { inDrives, likeEscaped } from "./find.ts";
 import { listSharedWith } from "./sharing.ts";
 import type { StorageTextStatus } from "./texts.ts";
 import { reach, treeOperations, type ListResult } from "./tree.ts";
@@ -159,7 +159,9 @@ export function contextOperations(db: Db, userId: string, scopeOrgId?: string | 
     ]);
     const addresses = await grantAddresses(db, userId, scopeOrgId);
     const within = [
-      ...(drives.length ? [liveIn(drives)] : []),
+      ...(drives.length
+        ? [sql`(${inDrives(drives, "storage_nodes")} and ${storageNodes.trashedAt} is null)`]
+        : []),
       ...(addresses.length ? [grantedIn(addresses, only)] : []),
     ];
     if (!within.length) return [];
@@ -220,7 +222,7 @@ export function contextOperations(db: Db, userId: string, scopeOrgId?: string | 
       const text = query.trim();
       if (!text) return [] satisfies ContextHit[];
       const limit = Math.min(options.limit, STORAGE_CONTEXT_SEARCH_MAX);
-      const found = await candidates(text, limit * 2, options.workspace);
+      const found = await candidates(text, limit * 3, options.workspace);
       const opened: Opened[] = [];
       for (const { id } of found) {
         if (opened.length >= limit) break;

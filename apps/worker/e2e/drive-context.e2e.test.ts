@@ -194,6 +194,11 @@ test("an agent finds and reads files by the words inside them, and only files it
   expect((await stack.api(ana.jar, "DELETE", `/nodes/${plan.id}`)).status).toBe(200);
   expect(await search(carlAgent, word)).toEqual([]);
   expect(await call(carlAgent, "drive_fetch", { id: plan.id })).toHaveProperty("error");
+
+  expect(titles(await search(anaAgent, word))).toContain("brief.md");
+  expect((await stack.api(ana.jar, "DELETE", `/nodes/${clients.body.node.id}`)).status).toBe(200);
+  expect(titles(await search(anaAgent, word))).not.toContain("brief.md");
+  expect(titles(await search(beaAgent, word))).not.toContain("brief.md");
 });
 
 test("a replaced file is read again, and a token without drive:read is asked to step up", async () => {
