@@ -1,5 +1,5 @@
 {
-  "id": "8a12aee6-2663-417b-8e4d-031f7dc0a9ef",
+  "id": "6e002a33-72ba-43c1-91e9-faeb6723c648",
   "prevId": "5b01b125-2780-4003-9ee3-1f5302824f35",
   "version": "7",
   "dialect": "postgresql",
@@ -11097,142 +11097,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.storage_texts": {
-      "name": "storage_texts",
-      "schema": "",
-      "columns": {
-        "node_id": {
-          "name": "node_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "org_id": {
-          "name": "org_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "content_version": {
-          "name": "content_version",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "storage_text_status",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "text": {
-          "name": "text",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "''"
-        },
-        "truncated": {
-          "name": "truncated",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "attempts": {
-          "name": "attempts",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "search_vector": {
-          "name": "search_vector",
-          "type": "tsvector",
-          "primaryKey": false,
-          "notNull": true,
-          "generated": {
-            "as": "to_tsvector('simple', left(text, 150000))",
-            "type": "stored"
-          }
-        },
-        "read_at": {
-          "name": "read_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "storage_texts_org_id_idx": {
-          "name": "storage_texts_org_id_idx",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "storage_texts_search_vector_idx": {
-          "name": "storage_texts_search_vector_idx",
-          "columns": [
-            {
-              "expression": "search_vector",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "gin",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "storage_texts_org_id_organizations_id_fk": {
-          "name": "storage_texts_org_id_organizations_id_fk",
-          "tableFrom": "storage_texts",
-          "tableTo": "organizations",
-          "columnsFrom": [
-            "org_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "storage_texts_node_org_fk": {
-          "name": "storage_texts_node_org_fk",
-          "tableFrom": "storage_texts",
-          "tableTo": "storage_nodes",
-          "columnsFrom": [
-            "node_id",
-            "org_id"
-          ],
-          "columnsTo": [
-            "id",
-            "org_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.crm_companies": {
       "name": "crm_companies",
       "schema": "",
@@ -11578,6 +11442,18 @@
           "primaryKey": false,
           "notNull": false
         },
+        "signature_request_id": {
+          "name": "signature_request_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "signed_node_id": {
+          "name": "signed_node_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "effective_on": {
           "name": "effective_on",
           "type": "date",
@@ -11641,6 +11517,36 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "crm_contracts_signature_request_id_idx": {
+          "name": "crm_contracts_signature_request_id_idx",
+          "columns": [
+            {
+              "expression": "signature_request_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "crm_contracts_signed_node_id_idx": {
+          "name": "crm_contracts_signed_node_id_idx",
+          "columns": [
+            {
+              "expression": "signed_node_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -11663,6 +11569,19 @@
           "tableTo": "storage_nodes",
           "columnsFrom": [
             "document_node_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "crm_contracts_signed_node_id_storage_nodes_id_fk": {
+          "name": "crm_contracts_signed_node_id_storage_nodes_id_fk",
+          "tableFrom": "crm_contracts",
+          "tableTo": "storage_nodes",
+          "columnsFrom": [
+            "signed_node_id"
           ],
           "columnsTo": [
             "id"
@@ -11711,6 +11630,19 @@
             "org_id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "crm_contracts_signature_request_fk": {
+          "name": "crm_contracts_signature_request_fk",
+          "tableFrom": "crm_contracts",
+          "tableTo": "storage_signature_requests",
+          "columnsFrom": [
+            "signature_request_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },
@@ -14030,17 +13962,6 @@
         "sent",
         "completed",
         "voided"
-      ]
-    },
-    "public.storage_text_status": {
-      "name": "storage_text_status",
-      "schema": "public",
-      "values": [
-        "ok",
-        "empty",
-        "unsupported",
-        "too_large",
-        "failed"
       ]
     },
     "public.crm_contract_status": {
