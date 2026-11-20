@@ -44,9 +44,19 @@ type ListParams = Omit<CrmListFilter, "q"> & { q?: string; sort?: CrmSort };
 type DealParams = ListParams &
   Pick<CrmDealFilter, "stage" | "closeAfter" | "closeBefore" | "minValue" | "maxValue">;
 
+/** The direction each sort starts in when the URL names a sort and no direction. */
+export const SORT_START_DIR: Record<CrmSort, "asc" | "desc"> = {
+  name: "asc",
+  created: "desc",
+  updated: "desc",
+  value: "desc",
+  closeOn: "asc",
+  stageEntered: "desc",
+};
+
 const listParams = (search: ListParams) => ({
   q: search.q,
-  dir: search.dir,
+  dir: search.dir ?? (search.sort ? SORT_START_DIR[search.sort] : undefined),
   owner: search.owner,
   archived: search.archived,
 });
@@ -66,7 +76,10 @@ export const BOARD_SORTS: CrmSort[] = ["name", "value", "closeOn", "updated"];
 const dealSort = (search: DealParams, board: boolean) =>
   board && search.sort && !BOARD_SORTS.includes(search.sort)
     ? { sort: undefined, dir: undefined }
-    : { sort: search.sort, dir: search.dir };
+    : {
+        sort: search.sort,
+        dir: search.dir ?? (search.sort ? SORT_START_DIR[search.sort] : undefined),
+      };
 
 /**
  * The board never shows archived deals, keeps every other filter, and falls back to name order

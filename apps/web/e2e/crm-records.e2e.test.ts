@@ -167,11 +167,11 @@ test("the deal board shows only the owner's deals when filtered by owner", async
   await page.getByRole("row", { name: "Ana's deal" }).waitFor();
 });
 
-test("a list sort the board can't use falls back to name order on the board, in the query too", async () => {
+test("a sort named without a direction starts in its own, and the board falls back to name order", async () => {
   const team = await workspace("board-sort");
   await team.api("POST", "/deals", { name: "Alpha deal" });
   await team.api("POST", "/deals", { name: "Zulu deal" });
-  const page = await team.page("/crm/deals?view=list&sort=created&dir=desc");
+  const page = await team.page("/crm/deals?view=list&sort=created");
   await page.getByRole("row", { name: /Alpha deal/ }).waitFor();
   expect(await names(page)).toEqual(["Zulu deal", "Alpha deal"]);
 

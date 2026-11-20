@@ -14,17 +14,26 @@ import { Button } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/button-group";
 import { Menu, MenuItem, MenuLabel, MenuTrigger } from "@/components/ui/menu";
 import type { CrmSort } from "@/lib/crm.ts";
+import { SORT_START_DIR } from "@/lib/crm-lists.ts";
 
 type Dir = "asc" | "desc";
 
 /** Each sortable field: its label, its icon, and the direction it starts in. */
 export const SORT_FIELDS: Record<CrmSort, { label: string; icon: ReactNode; dir: Dir }> = {
-  name: { label: "Name", icon: <IconText data-slot="icon" />, dir: "asc" },
-  created: { label: "Created", icon: <IconPlus data-slot="icon" />, dir: "desc" },
-  updated: { label: "Updated", icon: <IconClock3 data-slot="icon" />, dir: "desc" },
-  value: { label: "Value", icon: <IconMoney data-slot="icon" />, dir: "desc" },
-  closeOn: { label: "Close date", icon: <IconCalendar data-slot="icon" />, dir: "asc" },
-  stageEntered: { label: "Stage entered", icon: <IconBoard data-slot="icon" />, dir: "desc" },
+  name: { label: "Name", icon: <IconText data-slot="icon" />, dir: SORT_START_DIR.name },
+  created: { label: "Created", icon: <IconPlus data-slot="icon" />, dir: SORT_START_DIR.created },
+  updated: { label: "Updated", icon: <IconClock3 data-slot="icon" />, dir: SORT_START_DIR.updated },
+  value: { label: "Value", icon: <IconMoney data-slot="icon" />, dir: SORT_START_DIR.value },
+  closeOn: {
+    label: "Close date",
+    icon: <IconCalendar data-slot="icon" />,
+    dir: SORT_START_DIR.closeOn,
+  },
+  stageEntered: {
+    label: "Stage entered",
+    icon: <IconBoard data-slot="icon" />,
+    dir: SORT_START_DIR.stageEntered,
+  },
 };
 
 export const RECORD_SORTS: CrmSort[] = ["name", "created", "updated"];
