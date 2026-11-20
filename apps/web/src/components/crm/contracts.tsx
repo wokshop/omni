@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Button as Pressable } from "react-aria-components/Button";
 import { Skeleton, SkeletonBox } from "skullet/react";
 import { EmptyState } from "@/components/empty/empty-state";
@@ -248,18 +248,22 @@ const titleFrom = (name: string) =>
 function NewContractDialog(props: { owner: Owner; folderId: string | null; onClose: () => void }) {
   const create = useCreateContract();
   const [title, setTitle] = useState("");
-  const [fileTitle, setFileTitle] = useState("");
+  const fileTitle = useRef("");
   const [file, setFile] = useState<string | null>(null);
   const [effectiveOn, setEffectiveOn] = useState<string | null>(null);
   const [expiresOn, setExpiresOn] = useState<string | null>(null);
   const backwards = !!effectiveOn && !!expiresOn && effectiveOn > expiresOn;
   const pick = (id: string | null, name: string | null) => {
     setFile(id);
-    if (!name || (title.trim() && title !== fileTitle)) return;
+    if (!name) return;
     const next = titleFrom(name);
-    setTitle(next);
-    setFileTitle(next);
+    setTitle((current) => {
+      if (current.trim() && current !== fileTitle.current) return current;
+      fileTitle.current = next;
+      return next;
+    });
   };
+
   return (
     <SettingsFormDialog
       isOpen
