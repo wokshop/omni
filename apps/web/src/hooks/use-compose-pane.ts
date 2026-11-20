@@ -59,3 +59,8 @@ export function takeComposeDraft() {
   draft = undefined;
   return taken;
 }
+
+/** Opens new mail addressed to `to`, from the first mailbox. False while the dialog is already open. */
+export function openComposeTo(to: string[]) {
+  return reopenCompose({ mailboxId: "", to, cc: [], bcc: [], subject: "", text: "", files: [] });
+}

@@ -503,6 +503,14 @@ test("a person opened from a project keeps the project in the crumbs, and its ro
     .toBe(true);
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/project-page.png` });
 
+  const grip = page.getByRole("button", { name: "Resize details" });
+  const hitsGripLeftEdge = await grip.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    const hit = document.elementFromPoint(rect.left + 2, rect.top + rect.height / 2);
+    return hit === element || element.contains(hit);
+  });
+  expect(hitsGripLeftEdge).toBe(true);
+
   await row.click();
   await expect.poll(() => new URL(page.url()).pathname).toContain(`/crm/people/${person.id}`);
   const crumbs = page.getByRole("list", { name: "Record" });
@@ -517,7 +525,7 @@ test("a person opened from a project keeps the project in the crumbs, and its ro
   expect(new URL(page.url()).searchParams.get("via")).toBeNull();
 });
 
-test("a project's icon is uploaded from its header, and Email drops a composer to its people", async () => {
+test("a project's icon is uploaded from its header, and a person's menu opens mail to them", async () => {
   const team = await workspace("icon");
   const { company } = await team.api("POST", "/companies", { name: "Calpolli" });
   const { person } = await team.api("POST", "/people", {
@@ -552,7 +560,8 @@ test("a project's icon is uploaded from its header, and Email drops a composer t
     )
     .toContain(`/api/crm/deals/${deal.id}/icon/`);
 
-  await page.getByRole("button", { name: "Email", exact: true }).click();
+  await page.getByRole("button", { name: "Marisol Velazquez actions" }).click();
+  await page.getByRole("menuitem", { name: "Email" }).click();
   await page.getByRole("button", { name: "Send" }).waitFor();
   await page.getByText("marisol@calpolli.test", { exact: true }).waitFor();
   if (SHOTS) {

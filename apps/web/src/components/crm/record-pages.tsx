@@ -25,7 +25,6 @@ import { RecordFiles } from "./record-files.tsx";
 import { byAddress } from "@/components/avatar/sender-avatar";
 import { MemberAvatar, NoMemberAvatar } from "./member-avatar.tsx";
 import { DealMark } from "./deal-mark.tsx";
-import { EmailButton } from "./email-button.tsx";
 import { DetailSection, RecordLayout, RecordState } from "./record-layout.tsx";
 import { DAY } from "./record-list.tsx";
 import {
@@ -253,12 +252,7 @@ export function DealPage({ id }: { id: string }) {
             {archived && <ArchivedBadge />}
           </>
         }
-        actions={
-          <>
-            <EmailButton people={people} />
-            <RecordActions kind="deals" id={id} name={deal.name} archived={archived} />
-          </>
-        }
+        actions={<RecordActions kind="deals" id={id} name={deal.name} archived={archived} />}
         details={
           <>
             <DetailSection>

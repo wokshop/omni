@@ -80,7 +80,7 @@ export function RecordLayout(props: {
             </div>
             {props.details}
           </aside>
-          <main className="relative min-w-0 flex-1 pb-4 lg:overflow-y-auto">
+          <div className="relative flex min-w-0 flex-1 flex-col lg:min-h-0">
             <ResizeGrip
               label="Resize details"
               className="max-lg:hidden"
@@ -89,21 +89,23 @@ export function RecordLayout(props: {
               onReset={details.reset}
               onResizingChange={setResizing}
             />
-            <Tabs className="w-full">
-              <TabList aria-label="Record" className="px-5 pt-1.5 [--tab-list-pb:--spacing(1.5)]">
+            <main className="min-h-0 min-w-0 flex-1 pb-4 lg:overflow-y-auto">
+              <Tabs className="w-full">
+                <TabList aria-label="Record" className="px-5 pt-1.5 [--tab-list-pb:--spacing(1.5)]">
+                  {props.tabs.map((tab) => (
+                    <Tab key={tab.id} id={tab.id}>
+                      {tab.label}
+                    </Tab>
+                  ))}
+                </TabList>
                 {props.tabs.map((tab) => (
-                  <Tab key={tab.id} id={tab.id}>
-                    {tab.label}
-                  </Tab>
+                  <TabPanel key={tab.id} id={tab.id} className="px-5 pt-2">
+                    {tab.panel}
+                  </TabPanel>
                 ))}
-              </TabList>
-              {props.tabs.map((tab) => (
-                <TabPanel key={tab.id} id={tab.id} className="px-5 pt-2">
-                  {tab.panel}
-                </TabPanel>
-              ))}
-            </Tabs>
-          </main>
+              </Tabs>
+            </main>
+          </div>
         </div>
       </RecordFrame>
     </TrailProvider>
