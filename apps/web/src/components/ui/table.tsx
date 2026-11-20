@@ -386,11 +386,9 @@ export function TableHeader<T extends object>({
       {selectionBehavior === "toggle" && (
         <Column
           data-slot="table-column"
-          width={32}
-          minWidth={32}
           focusMode="child"
           allowsArrowNavigation
-          style={{ width: 32 }}
+          style={{ width: "calc(var(--gutter, 0.5rem) + 1.5rem)" }}
           className={cn("first:ps-(--gutter,--spacing(2))", !bleed && "sm:last:pe-1 sm:first:ps-1")}
         >
           {selectionMode === "multiple" && (

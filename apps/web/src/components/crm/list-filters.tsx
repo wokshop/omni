@@ -120,12 +120,7 @@ export function FilterMenu(props: FilterProps) {
   return (
     <>
       <MenuTrigger>
-        <Button
-          intent="outline"
-          size={phone && !set ? "sq-sm" : "sm"}
-          aria-label="Filter"
-          className={set ? "bg-primary-subtle" : undefined}
-        >
+        <Button intent="outline" size={phone && !set ? "sq-sm" : "sm"} aria-label="Filter">
           <IconFilter />
           {!phone && "Filter"}
           {set > 0 && <span className="text-muted-foreground tabular-nums">{set}</span>}

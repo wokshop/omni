@@ -32,13 +32,13 @@ export function NoMemberAvatar(props: { size?: number }) {
   );
 }
 
-/** Everyone (all owners, all assignees): a muted disc of two people. */
+/** Everyone (all owners, all assignees): two people in an outlined disc, like No owner. */
 export function EveryoneAvatar(props: { size?: number }) {
   return (
     <span
       data-slot="avatar"
       aria-hidden
-      className="inline-flex size-(--avatar-size) shrink-0 items-center justify-center rounded-full bg-secondary text-muted-foreground"
+      className="inline-flex size-(--avatar-size) shrink-0 items-center justify-center rounded-full border border-muted-foreground/60 text-muted-foreground"
       style={props.size ? ({ "--avatar-size": `${props.size}px` } as CSSProperties) : undefined}
     >
       <IconUsers className="m-0! size-[62%]!" />
