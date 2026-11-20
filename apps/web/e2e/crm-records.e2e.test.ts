@@ -181,6 +181,26 @@ test("the deal board shows only the owner's deals when filtered by owner", async
   await card(page, "Ana's deal").waitFor();
 });
 
+test("a deal moves to the next stage from the keyboard: Space, Right arrow, Space", async () => {
+  const team = await workspace("board-keys");
+  const { stages } = await team.api("GET", "/stages");
+  const [lead, next] = stages as { id: string; name: string }[];
+  const { deal } = await team.api("POST", "/deals", { name: "Keyed deal", stageId: lead!.id });
+  const page = await team.page("/crm/deals");
+  await card(page, "Keyed deal").getByRole("link").focus();
+  await page.keyboard.press("Space");
+  await page.keyboard.press("ArrowRight");
+  await page
+    .getByRole("region", { name: next!.name, exact: true })
+    .and(page.locator("[data-taking]"))
+    .waitFor();
+  await page.keyboard.press("Space");
+  await expect
+    .poll(() => dealRow(deal.id), { timeout: 10_000 })
+    .toMatchObject({ stageId: next!.id });
+  expect(new URL(page.url()).pathname).toMatch(/\/crm\/deals$/);
+});
+
 test("the board falls back to name order for a sort it doesn't offer, and has no list view", async () => {
   const team = await workspace("board-sort");
   await team.api("POST", "/deals", { name: "Zulu deal" });
