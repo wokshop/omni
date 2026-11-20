@@ -56,13 +56,10 @@ export function useSaveTask(id: string) {
     },
   });
   return (change: TaskChange, settled?: () => void) =>
-    update.mutate(
-      { id, ...change },
-      {
-        onError: (error) => crmErrorToast(error, "The task was not changed"),
-        onSettled: settled,
-      },
-    );
+    void update
+      .mutateAsync({ id, ...change })
+      .catch((error: unknown) => crmErrorToast(error, "The task was not changed"))
+      .finally(settled);
 }
 
 /** Deletes the task, then `onDeleted` (back to the list). */

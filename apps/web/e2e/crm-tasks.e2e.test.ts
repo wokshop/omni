@@ -152,6 +152,15 @@ test("subtasks added quickly in the panel all save in order, check off, and a cl
   await expect
     .poll(async () => (await row(task.id))?.subtasks.map((s) => s.title))
     .toEqual(["Scout", "Permits", "Crew", "Drone"]);
+  const fromElsewhere = (await row(task.id))!.subtasks.map((s) =>
+    s.title === "Drone" ? { ...s, title: "Drone shots" } : s,
+  );
+  await fetch(new URL(`/api/crm/tasks/${task.id}`, origin()), {
+    method: "PATCH",
+    headers,
+    body: JSON.stringify({ subtasks: fromElsewhere }),
+  });
+  await panel.getByRole("checkbox", { name: "Complete Drone shots" }).waitFor();
 
   await panel.getByRole("checkbox", { name: "Complete Scout" }).click({ force: true });
   await expect
@@ -163,7 +172,7 @@ test("subtasks added quickly in the panel all save in order, check off, and a cl
   await panel.getByRole("checkbox", { name: "Complete" }).first().focus();
   await expect
     .poll(async () => (await row(task.id))?.subtasks.map((s) => s.title))
-    .toEqual(["Scout", "Crew", "Drone"]);
+    .toEqual(["Scout", "Crew", "Drone shots"]);
 
   await page.reload();
   await panel.getByRole("checkbox", { name: "Complete Scout" }).waitFor();
