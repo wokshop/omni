@@ -1,10 +1,11 @@
 import { Editor } from "@tiptap/core";
-import type { Node as PmNode } from "@tiptap/pm/model";
-import { Packer } from "docx";
+import { Fragment, type Node as PmNode } from "@tiptap/pm/model";
+import { Packer, TextRun } from "docx";
 import {
   defaultMarks,
   defaultNodes,
   DocxSerializer,
+  type DocxSerializerState,
   type MarkSerializer,
   type NodeSerializer,
 } from "prosemirror-docx";
@@ -22,6 +23,27 @@ const parse = (markdown: string) =>
     contentType: "markdown",
   });
 
+type ListStyle = "bullets" | "numbered";
+
+const listStyles = new Map<string, ListStyle>();
+
+function list(state: DocxSerializerState, node: PmNode, style: ListStyle) {
+  const outer = state.currentNumbering;
+  if (!outer || listStyles.get(outer.reference) === style) {
+    const at = state.numbering.length;
+    state.renderList(node, style);
+    if (!outer) listStyles.set(state.numbering[at]?.reference ?? "", style);
+    return;
+  }
+  state.currentNumbering = undefined;
+  state.renderList(node.copy(Fragment.empty), style);
+  const reference = state.numbering.at(-1)?.reference ?? "";
+  listStyles.set(reference, style);
+  state.currentNumbering = { reference, level: outer.level + 1 };
+  state.renderContent(node);
+  state.currentNumbering = outer;
+}
+
 const nodes: NodeSerializer = {
   ...defaultNodes,
   codeBlock: (state, node) => {
@@ -36,9 +58,11 @@ const nodes: NodeSerializer = {
     state.closeBlock(node, { thematicBreak: true });
     state.closeBlock(node);
   },
-  hardBreak: (state) => state.addRunOptions({ break: 1 }),
-  bulletList: (state, node) => state.renderList(node, "bullets"),
-  orderedList: (state, node) => state.renderList(node, "numbered"),
+  hardBreak: (state) => {
+    state.current.push(new TextRun({ break: 1 }));
+  },
+  bulletList: (state, node) => list(state, node, "bullets"),
+  orderedList: (state, node) => list(state, node, "numbered"),
   listItem: (state, node) => state.renderListItem(node),
   taskList: (state, node) => state.renderContent(node),
   taskItem: (state, node: PmNode) => {

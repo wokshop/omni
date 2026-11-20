@@ -89,7 +89,7 @@ test("a doc exported as Word keeps its headings, to-dos, marks and table", async
     .first()
     .waitFor({ timeout: 15_000 });
   const text =
-    "# Plan\n\nShip **soon**.\n\n- [x] Draft\n- [ ] Review\n\n| Who | When |\n| --- | --- |\n| Ana | Monday |\n\n```\nfirst();\n\nthird();\n```\n";
+    "# Plan\n\nShip **soon**.\n\n- [x] Draft\n- [ ] Review\n\n| Who | When |\n| --- | --- |\n| Ana | Monday |\n\n```\nfirst();\n\nthird();\n```\n\nUp\\\n\\\nDown\n\n1. Step\n   - Aside\n";
   await page
     .locator("input[type=file]")
     .first()
@@ -112,6 +112,10 @@ test("a doc exported as Word keeps its headings, to-dos, marks and table", async
   expect(holding(">Review<")).toContain("☐ ");
   const table = xml.slice(xml.indexOf("<w:tbl>"), xml.indexOf("</w:tbl>"));
   for (const cell of ["Who", "When", "Ana", "Monday"]) expect(table).toContain(`>${cell}<`);
+  expect(holding(">Up<")).toMatch(/>Up<[\s\S]*<w:br\/>[\s\S]*<w:br\/>[\s\S]*>Down</);
+  const numId = (words: string) => /<w:numId w:val="(\d+)"/.exec(holding(words))?.[1];
+  expect(numId(">Aside<")).toBeDefined();
+  expect(numId(">Aside<")).not.toBe(numId(">Step<"));
   expect(holding(">first();<")).toMatch(
     />first\(\);<[\s\S]*<w:br\/>[\s\S]*<w:br\/>[\s\S]*>third\(\);</,
   );
