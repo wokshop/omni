@@ -13,23 +13,28 @@ export function DocBar(props: {
   node: StorageNode;
   items: SettingsRowMenuItem[];
   text: (() => string | undefined) | undefined;
+  /** Side by side with the folder: the line between them runs down its edge too. */
+  border: boolean;
 }) {
   const { text } = props;
   if (!text) return null;
-  return <Bar node={props.node} items={props.items} text={text} />;
+  return <Bar node={props.node} items={props.items} text={text} border={props.border} />;
 }
 
 function Bar(props: {
   node: StorageNode;
   items: SettingsRowMenuItem[];
   text: () => string | undefined;
+  border: boolean;
 }) {
   const run = useDocExport(props.node, props.text);
   const share = props.items.find((item) => item.label === "Share");
   const downloads = DOC_EXPORTS.filter((each) => each.format !== "copy");
   const copy = DOC_EXPORTS.filter((each) => each.format === "copy");
   return (
-    <div className="flex h-11 shrink-0 items-center justify-end gap-1 border-b bg-background px-2.5">
+    <div
+      className={`flex h-11 shrink-0 items-center justify-end gap-1 border-b bg-background px-2.5 ${props.border ? "border-s" : ""}`}
+    >
       <MenuTrigger>
         <Button intent="plain" size="sm">
           <IconExport data-slot="icon" />
