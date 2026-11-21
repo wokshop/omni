@@ -1,8 +1,8 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate, useRouter } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { appToast } from "@/components/ui/toast";
+import { useJustMe, usePendingInvitations, useRefreshInvitations } from "@/hooks/use-invitations";
 import { useOnboarding } from "@/hooks/use-onboarding";
 import {
   useAcceptInvitation,
@@ -10,8 +10,7 @@ import {
   useSession,
   useSignOut,
 } from "@/hooks/use-session";
-import { chooseJustMe, markInvitationsSeen, pendingInvitationsQuery } from "@/lib/invitations";
-import { keys } from "@/lib/query-keys";
+import { markInvitationsSeen } from "@/lib/invitations";
 import { workspaceHome } from "@/lib/workspaces";
 import type { PendingInvitation } from "@/lib/types";
 import { EntryCard, inviterName, roleLabel } from "./entry-card";
@@ -23,22 +22,21 @@ import { EntryCard, inviterName, roleLabel } from "./entry-card";
  */
 export function Welcome() {
   const navigate = useNavigate();
-  const router = useRouter();
-  const client = useQueryClient();
   const session = useSession();
-  const pending = useQuery(pendingInvitationsQuery());
+  const pending = usePendingInvitations();
+  const refresh = useRefreshInvitations();
   const status = useOnboarding();
   const signOut = useSignOut();
   const userId = session.data?.user.id;
-  const justMe = useMutation({
-    meta: { handlesError: true },
-    mutationFn: () => chooseJustMe(client, router),
-    onSuccess: (slug) => {
-      markInvitationsSeen(userId);
-      void navigate({ href: workspaceHome(slug) });
-    },
-    onError: (error) => appToast.error(error.message || "That didn't work. Try again."),
-  });
+  const justMe = useJustMe();
+  const chooseJustMe = () =>
+    justMe.mutate(undefined, {
+      onSuccess: (slug) => {
+        markInvitationsSeen(userId);
+        void navigate({ href: workspaceHome(slug) });
+      },
+      onError: (error) => appToast.error(error.message || "That didn't work. Try again."),
+    });
   const invitations = pending.data?.invitations ?? [];
   const inWorkspace = !!session.data?.member;
   const leave = (to: "/" | "/onboarding") => {
@@ -61,12 +59,7 @@ export function Welcome() {
             </Button>
           )}
           {!inWorkspace && status.data?.canCreatePersonalSpace && (
-            <Button
-              size="lg"
-              intent="outline"
-              isPending={justMe.isPending}
-              onPress={() => justMe.mutate()}
-            >
+            <Button size="lg" intent="outline" isPending={justMe.isPending} onPress={chooseJustMe}>
               Just me
             </Button>
           )}
@@ -96,11 +89,7 @@ export function Welcome() {
             <InvitationRow
               key={invitation.id}
               invitation={invitation}
-              onDeclined={() =>
-                void client
-                  .invalidateQueries({ queryKey: keys.pendingInvitations() })
-                  .then(() => router.invalidate())
-              }
+              onDeclined={() => void refresh()}
             />
           ))}
         </ul>

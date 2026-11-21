@@ -170,6 +170,23 @@ test("the invite page tells another account, and an expired link, plainly", asyn
     .waitFor({ timeout: 15_000 });
 });
 
+test("a missing invitation says so; one that fails to load offers to try again", async () => {
+  const email = `flaky-${stamp()}@gmail.test`;
+  const { invitationId } = await invitedTo("Epsilon", email);
+  const page = await signedIn(email, `/invite/${crypto.randomUUID()}`);
+  await page
+    .getByRole("heading", { name: "This invitation doesn't exist" })
+    .waitFor({ timeout: 15_000 });
+
+  await page.route(`**/api/invitations/${invitationId}`, (route) => route.abort());
+  await page.goto(new URL(`/invite/${invitationId}`, origin()).toString());
+  await page.getByRole("heading", { name: "This invitation couldn't load" }).waitFor();
+  await page.unroute(`**/api/invitations/${invitationId}`);
+  await page.getByRole("button", { name: "Try again" }).click();
+  await page.getByRole("heading", { name: "Rosa invited you to Epsilon" }).waitFor();
+  expect(await page.getByRole("button", { name: "Join" }).count()).toBe(1);
+});
+
 async function freePort() {
   const server = createServer();
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));

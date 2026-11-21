@@ -1,18 +1,17 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { appToast } from "@/components/ui/toast";
+import { useInvitationStatus, useRefreshInvitations } from "@/hooks/use-invitations";
 import { useAcceptInvitation, useRejectInvitation, useSignOut } from "@/hooks/use-session";
-import { invitationStatusQuery } from "@/lib/invitations";
-import { keys } from "@/lib/query-keys";
 import type { InvitationStatus } from "@/lib/types";
 import { EntryCard, inviterName } from "./entry-card";
 
-type Shown = InvitationStatus | { status: "not_found" };
+type Shown = InvitationStatus | { status: "not_found" } | { status: "unavailable" };
 
 function title(shown: Shown) {
   if (shown.status === "wrong_account") return "This invitation is for another email";
   if (shown.status === "not_found") return "This invitation doesn't exist";
+  if (shown.status === "unavailable") return "This invitation couldn't load";
   const workspace = shown.invitation.organization.name;
   if (shown.status === "expired") return `Your invitation to ${workspace} has expired`;
   if (shown.status === "accepted") return `You're in ${workspace}`;
@@ -23,13 +22,14 @@ function title(shown: Shown) {
 /** `/invite/<id>`: the invitation emailed to the person, in the sign-in card's frame. */
 export function Invite(props: { invitationId: string }) {
   const navigate = useNavigate();
-  const client = useQueryClient();
-  const status = useQuery(invitationStatusQuery(props.invitationId));
+  const status = useInvitationStatus(props.invitationId);
+  const refresh = useRefreshInvitations();
   const accept = useAcceptInvitation();
   const reject = useRejectInvitation();
   const signOut = useSignOut();
   if (status.isPending) return null;
-  const shown: Shown = status.data ?? { status: "not_found" };
+  const shown: Shown =
+    status.data ?? (status.missing ? { status: "not_found" } : { status: "unavailable" });
   const home = () => void navigate({ to: "/" });
   const busy = accept.isPending || reject.isPending;
 
@@ -56,11 +56,7 @@ export function Invite(props: { invitationId: string }) {
           isPending={reject.isPending}
           onPress={() =>
             reject.mutate(props.invitationId, {
-              onSuccess: () =>
-                void Promise.all([
-                  client.invalidateQueries({ queryKey: keys.invitationStatus(props.invitationId) }),
-                  client.invalidateQueries({ queryKey: keys.pendingInvitations() }),
-                ]),
+              onSuccess: () => void refresh(props.invitationId),
               onError: (error) =>
                 appToast.error(error.message || "The invitation was not declined."),
             })
@@ -69,6 +65,10 @@ export function Invite(props: { invitationId: string }) {
           Decline
         </Button>
       </>
+    ) : shown.status === "unavailable" ? (
+      <Button size="lg" isPending={status.isFetching} onPress={() => void status.refetch()}>
+        Try again
+      </Button>
     ) : shown.status === "wrong_account" ? (
       <Button size="lg" isPending={signOut.isPending} onPress={() => signOut.mutate()}>
         Use another account
