@@ -203,6 +203,8 @@ export function useEditSession(node: StorageNode, url: string, shareId: string |
     latestFold.current = fold;
   });
   const reopen = (contentVersion: number) => {
+    session.current += 1;
+    clearTimeout(foldTimer.current);
     base.current = contentVersion;
     changes.current = 0;
     setDirty(false);
