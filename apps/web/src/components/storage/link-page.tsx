@@ -21,6 +21,8 @@ import { unlockLink, type StorageLinkUpload } from "@/lib/storage-sharing.ts";
 import { sharedFileUrl } from "@/lib/urls.ts";
 import { useIsMobile } from "@/hooks/use-mobile.ts";
 import { CommentsPanel } from "./comments-panel.tsx";
+import { isDoc } from "./editor/document-editor.tsx";
+import { PreviewPanel } from "./preview/preview-panel.tsx";
 import { FileGlyph } from "./file-glyph.tsx";
 import { FolderCrumbs } from "./folder-crumbs.tsx";
 import { FolderView, type FolderDialog } from "./folder-view.tsx";
@@ -43,6 +45,23 @@ export function LinkPage({ shareId, nodeId }: { shareId: string; nodeId?: string
   const downloads = first?.downloads !== false;
   const upload = first?.uploading?.find((pending) => pending.id === item.node.id);
   if (upload) return <UploadingCard shareId={shareId} upload={upload} />;
+  if (item.node.kind === "file" && isDoc(item.node)) {
+    return (
+      <LinkFrame>
+        <PreviewPanel
+          node={item.node}
+          url={sharedFileUrl(shareId, item.node.id)}
+          menu={[]}
+          fullScreen
+          shell={false}
+          canWrite={item.role === "member" || item.role === "editor"}
+          canComment={item.role !== "viewer"}
+          canExport={downloads}
+          shareId={shareId}
+        />
+      </LinkFrame>
+    );
+  }
   if (item.node.kind === "file") {
     return (
       <FileCard
