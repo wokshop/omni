@@ -61,7 +61,13 @@ function ModeMenu(props: { session: EditSession }) {
         {current.label}
         <IconChevronDown data-slot="icon" />
       </Button>
-      <Menu aria-label="Mode" placement="bottom end" selectionMode="single" selectedKeys={[mode]}>
+      <Menu
+        aria-label="Mode"
+        placement="bottom end"
+        popover={{ offset: 4 }}
+        selectionMode="single"
+        selectedKeys={[mode]}
+      >
         {MODES.map((each) => (
           <MenuItem
             key={each.id}
@@ -92,7 +98,7 @@ function ShareMenu(props: {
         <IconLock data-slot="icon" />
         Share
       </Button>
-      <Menu aria-label="Share" placement="bottom end">
+      <Menu aria-label="Share" placement="bottom end" popover={{ offset: 4 }}>
         {share && (
           <MenuSection label="Share">
             <MenuItem id="people" textValue="Invite people" onAction={share.onAction}>

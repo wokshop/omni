@@ -40,7 +40,7 @@ export function DocOutline(props: { page: () => Element | null }) {
       <Menu
         aria-label="Outline"
         placement="bottom start"
-        popover={{ className: "min-w-64" }}
+        popover={{ className: "min-w-64", offset: 4 }}
         renderEmptyState={() => (
           <div className="px-2.5 py-1.5 text-muted-foreground">No headings</div>
         )}
