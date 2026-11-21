@@ -276,6 +276,19 @@ test("a brand-new user with no invitation gets no Personal space until they choo
   });
 });
 
+test("Just me opens the Personal space at once, even for someone whose session was in a company", async () => {
+  const acme = await company(`switch-${randomUUID().slice(0, 8)}`);
+  expect((await json(acme.jar, "/api/me")).body).toMatchObject({ orgId: acme.orgId });
+  const chosen = acme.jar.store(
+    await api(acme.jar, "/api/onboarding/personal", { method: "POST" }),
+  );
+  expect(chosen.status).toBe(200);
+  const { organization } = (await chosen.json()) as { organization: { id: string } };
+  expect((await json(acme.jar, "/api/me?personal=on-demand")).body).toMatchObject({
+    orgId: organization.id,
+  });
+});
+
 test("a web app from before on-demand Personal spaces reads /me and finds the person in their Personal space", async () => {
   const email = `oldweb-${randomUUID().slice(0, 8)}@gmail.test`;
   const jar = await signedIn(email);

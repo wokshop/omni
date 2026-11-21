@@ -159,10 +159,12 @@ export const onboarding = new Hono<AppEnv>()
       });
     }
     const orgId = await ensurePersonalSpace(c.var.db, resolved.user.id);
-    await c.var.auth.api.setActiveOrganization({
+    const { headers } = await c.var.auth.api.setActiveOrganization({
       headers: c.req.raw.headers,
       body: { organizationId: orgId },
+      returnHeaders: true,
     });
+    for (const cookie of headers.getSetCookie()) c.header("set-cookie", cookie, { append: true });
     const [org] = await c.var.db
       .select({ slug: schema.organizations.slug })
       .from(schema.organizations)
