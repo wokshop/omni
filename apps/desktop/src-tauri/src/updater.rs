@@ -33,6 +33,18 @@ const FIRST_CHECK: Duration = Duration::from_secs(60);
 const EVERY: Duration = Duration::from_secs(6 * 60 * 60);
 /// Left in the app's data folder by an update restart: the relaunch keeps the window hidden.
 const RELAUNCH_HIDDEN: &str = "relaunch-hidden";
+/// Left by "Restart to update": the relaunch shows the window, even for a launch at login
+/// (whose `--hidden` argument the restart keeps).
+const RELAUNCH_SHOWN: &str = "relaunch-shown";
+
+/// What a check found.
+enum Checked {
+    /// An update is downloaded, now or by an earlier check.
+    Ready,
+    UpToDate,
+    /// Another check is running.
+    Busy,
+}
 
 /// The event the page hears when an update is downloaded, with its version.
 const READY_EVENT: &str = "update-ready";
@@ -74,7 +86,8 @@ pub fn start<R: Runtime>(app: &AppHandle<R>) {
         tokio::time::sleep(FIRST_CHECK).await;
         loop {
             match check(&app).await {
-                Ok(_) => install_if_idle(&app),
+                Ok(Checked::Ready) => install_if_idle(&app),
+                Ok(Checked::UpToDate | Checked::Busy) => {}
                 Err(error) => eprintln!("update check failed: {error}"),
             }
             tokio::time::sleep(EVERY).await;
@@ -82,23 +95,23 @@ pub fn start<R: Runtime>(app: &AppHandle<R>) {
     });
 }
 
-/// Checks for an update and downloads it. `Ok(true)` when one is downloaded, now or before.
-async fn check<R: Runtime>(app: &AppHandle<R>) -> Result<bool, String> {
+/// Checks for an update and downloads it.
+async fn check<R: Runtime>(app: &AppHandle<R>) -> Result<Checked, String> {
     let pending = app.state::<Pending>();
     if pending.version().is_some() {
-        return Ok(true);
+        return Ok(Checked::Ready);
     }
     if pending.checking.swap(true, Ordering::AcqRel) {
-        return Ok(false);
+        return Ok(Checked::Busy);
     }
     let checked = download(app).await;
     pending.checking.store(false, Ordering::Release);
     checked
 }
 
-async fn download<R: Runtime>(app: &AppHandle<R>) -> Result<bool, String> {
+async fn download<R: Runtime>(app: &AppHandle<R>) -> Result<Checked, String> {
     let Some(server) = app.state::<Server>().current() else {
-        return Ok(false);
+        return Ok(Checked::UpToDate);
     };
     let url = endpoint(ENDPOINT, &server).ok_or("no update feed")?;
     let updater = app
@@ -107,7 +120,7 @@ async fn download<R: Runtime>(app: &AppHandle<R>) -> Result<bool, String> {
         .and_then(|builder| builder.build())
         .map_err(|e| e.to_string())?;
     let Some(update) = updater.check().await.map_err(|e| e.to_string())? else {
-        return Ok(false);
+        return Ok(Checked::UpToDate);
     };
     let bytes = update
         .download(|_, _| {}, || {})
@@ -123,7 +136,7 @@ async fn download<R: Runtime>(app: &AppHandle<R>) -> Result<bool, String> {
         .lock()
         .unwrap_or_else(PoisonError::into_inner) = Some((update, bytes));
     let _ = app.emit(READY_EVENT, version);
-    Ok(true)
+    Ok(Checked::Ready)
 }
 
 /// "Check for Updates…": checks now. A downloaded update brings the window forward, where the
@@ -137,8 +150,9 @@ pub fn check_now<R: Runtime>(app: &AppHandle<R>) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         match check(&app).await {
-            Ok(true) => crate::window::show(&app),
-            Ok(false) => notify(&app, "Omni is up to date"),
+            Ok(Checked::Ready) => crate::window::show(&app),
+            Ok(Checked::UpToDate) => notify(&app, "Omni is up to date"),
+            Ok(Checked::Busy) => notify(&app, "Omni is already checking for updates"),
             Err(error) => {
                 eprintln!("update check failed: {error}");
                 notify(&app, "Omni couldn’t check for updates");
@@ -163,7 +177,18 @@ pub fn update_ready<R: Runtime>(app: AppHandle<R>) -> Option<String> {
 #[tauri::command]
 pub fn update_install<R: Runtime>(app: AppHandle<R>) {
     if update_ready(app.clone()).is_some() {
+        mark_relaunch(&app, RELAUNCH_SHOWN);
         app.request_restart();
+    }
+}
+
+/// Leaves `mark` in the app's data folder for the relaunch to read (`relaunch`).
+fn mark_relaunch<R: Runtime>(app: &AppHandle<R>, mark: &str) {
+    if let Ok(dir) = app.path().app_data_dir()
+        && let Err(error) =
+            std::fs::create_dir_all(&dir).and_then(|()| std::fs::write(dir.join(mark), b""))
+    {
+        eprintln!("could not mark the update relaunch: {error}");
     }
 }
 
@@ -180,21 +205,21 @@ pub fn install_if_idle<R: Runtime>(app: &AppHandle<R>) {
     if !pending || open {
         return;
     }
-    if let Ok(dir) = app.path().app_data_dir()
-        && let Err(error) = std::fs::create_dir_all(&dir)
-            .and_then(|()| std::fs::write(dir.join(RELAUNCH_HIDDEN), b""))
-    {
-        eprintln!("could not mark the update relaunch as hidden: {error}");
-    }
+    mark_relaunch(app, RELAUNCH_HIDDEN);
     app.request_restart();
 }
 
-/// Whether this launch is the relaunch after an update, which keeps the window hidden. Answers
-/// once: the mark is removed as it is read.
-pub fn relaunched<R: Runtime, M: Manager<R>>(app: &M) -> bool {
-    app.path()
-        .app_data_dir()
-        .is_ok_and(|dir| std::fs::remove_file(dir.join(RELAUNCH_HIDDEN)).is_ok())
+/// How an update relaunch shows the window: `Some(false)` keeps it hidden (the update installed
+/// while nobody was looking), `Some(true)` shows it ("Restart to update"), `None` is an ordinary
+/// launch. Answers once: the marks are removed as they are read.
+pub fn relaunch<R: Runtime, M: Manager<R>>(app: &M) -> Option<bool> {
+    let dir = app.path().app_data_dir().ok()?;
+    let take = |mark: &str| std::fs::remove_file(dir.join(mark)).is_ok();
+    let hidden = take(RELAUNCH_HIDDEN);
+    if take(RELAUNCH_SHOWN) {
+        return Some(true);
+    }
+    hidden.then_some(false)
 }
 
 /// Installs a downloaded update, if any. Called once, as the app exits.
