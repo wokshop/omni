@@ -45,6 +45,7 @@ import { workspaceAdmin } from "./routes/workspace-admin.ts";
 import { aiSettings } from "./routes/ai-settings.ts";
 import { workspaceInboxes } from "./routes/workspace-inboxes.ts";
 import { workspaceInvitations } from "./routes/workspace-invitations.ts";
+import { invitations } from "./routes/invitations.ts";
 import { onboarding } from "./routes/onboarding.ts";
 import { account as accountPicture, pictures, workspaceLogo } from "./routes/pictures.ts";
 import { storage } from "./storage/routes.ts";
@@ -195,6 +196,7 @@ export const app = new Hono<AppEnv>()
   .route("/api/onboarding", onboarding)
   .route("/api/workspaces", workspaces)
   .route("/api/join", join)
+  .route("/api/invitations", invitations)
   .route("/api/oauth", oauth)
   .route("/api/account", account)
   .route("/api/account", accountPicture)

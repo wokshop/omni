@@ -150,7 +150,7 @@ export const resolveSession: (
 
 /**
  * `userId`'s member in `orgId`, or null. Without `orgId`, their oldest company membership, or their
- * Personal space when they are in no company. A session scoped to a company
+ * Personal space when they are in no company (null when they have neither). A session scoped to a company
  * (`scopeOrgId`) finds only its member there, whatever `orgId` asks for.
  */
 export const findMember: (

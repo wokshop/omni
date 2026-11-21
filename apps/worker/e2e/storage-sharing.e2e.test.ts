@@ -93,6 +93,7 @@ test("a grant on a folder opens a file two levels down for that address only, by
   expect(Buffer.from(await got.arrayBuffer())).toEqual(bytes);
 
   const stranger = await signedIn(address("stranger"));
+  await stack.justMe(stranger);
   for (const jar of [stranger, anonymous]) {
     expect((await stack.api(jar, "GET", `/shared/${shareId}`)).status).toBe(404);
     const refused = await stack.get(jar, `/shared/${shareId}/files/${deep.id}/content`);
