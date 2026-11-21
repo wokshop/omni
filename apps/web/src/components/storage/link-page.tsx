@@ -18,7 +18,7 @@ import { useLinkUploading, useStorageLink, useTrashNode } from "@/hooks/use-stor
 import { fileType } from "@/lib/file-kind.ts";
 import { formatBytes, type StorageNode } from "@/lib/storage.ts";
 import { unlockLink, type StorageLinkUpload } from "@/lib/storage-sharing.ts";
-import { sharedDocTextUrl, sharedFileUrl } from "@/lib/urls.ts";
+import { sharedViewUrl, sharedFileUrl } from "@/lib/urls.ts";
 import { useIsMobile } from "@/hooks/use-mobile.ts";
 import { CommentsPanel } from "./comments-panel.tsx";
 import { isDoc } from "./editor/document-editor.tsx";
@@ -50,7 +50,7 @@ export function LinkPage({ shareId, nodeId }: { shareId: string; nodeId?: string
       <LinkFrame>
         <PreviewPanel
           node={item.node}
-          url={sharedDocTextUrl(shareId, item.node.id)}
+          url={sharedViewUrl(shareId, item.node.id)}
           menu={[]}
           fullScreen
           shell={false}
@@ -205,7 +205,7 @@ function SharedFolder(props: {
   const [top = { id: item.node.id, name: item.node.name }, ...below] = item.path;
   const fileUrl = useCallback(
     (node: StorageNode) =>
-      isDoc(node) ? sharedDocTextUrl(shareId, node.id) : sharedFileUrl(shareId, node.id),
+      isDoc(node) ? sharedViewUrl(shareId, node.id) : sharedFileUrl(shareId, node.id),
     [shareId],
   );
   const folderHref = useCallback((node: StorageNode) => linkHref(shareId, node.id), [shareId]);
@@ -296,6 +296,7 @@ function SharedFolder(props: {
           shareId,
           canWrite,
           canComment,
+          canExport: canDownload,
           list: props.link,
           folderHref,
           fileUrl,

@@ -38,6 +38,8 @@ async function linked(owner: Person, linkAccess = "anyone", name = "brief.pdf") 
   return { file, bytes, shareId: set.body.sharing.shareId as string };
 }
 
+const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4]);
+
 const settings = (owner: Person, nodeId: string, body: object) =>
   stack.api(owner.jar, "PUT", `/nodes/${nodeId}/sharing/link`, body);
 
@@ -141,7 +143,7 @@ test("a view-only link shows the item and refuses /content and /zip; the owner s
   await own.body?.cancel();
 });
 
-test("a view-only link still reads a doc as text on its page, and only a doc", async () => {
+test("a view-only link still shows a doc and its images on its page, and nothing else", async () => {
   const { owner } = await company();
   const markdown = "# Contrato\n\nCláusulas.";
   const doc = await stack.upload(
@@ -158,13 +160,25 @@ test("a view-only link still reads a doc as text on its page, and only a doc", a
   await settings(owner, doc.id, { downloads: false });
 
   expect(await status(await content(anonymous(), shareId, doc.id))).toBe(403);
-  const text = await stack.get(anonymous(), `/shared/${shareId}/files/${doc.id}/text`);
+  const text = await stack.get(anonymous(), `/shared/${shareId}/files/${doc.id}/view`);
   expect(text.status).toBe(200);
   expect(await text.text()).toBe(markdown);
 
+  const pasted = await stack.upload(
+    owner.jar,
+    { parentId: doc.id },
+    "pasted.png",
+    PNG,
+    "image/png",
+  );
+  const image = await stack.get(anonymous(), `/shared/${shareId}/files/${pasted.id}/view`);
+  expect(image.status).toBe(200);
+  expect(Buffer.from(await image.arrayBuffer())).toEqual(Buffer.from(PNG));
+  expect(await status(await content(anonymous(), shareId, pasted.id))).toBe(403);
+
   const { file, shareId: pdfShare } = await linked(owner);
   await settings(owner, file.id, { downloads: false });
-  const refused = await stack.get(anonymous(), `/shared/${pdfShare}/files/${file.id}/text`);
+  const refused = await stack.get(anonymous(), `/shared/${pdfShare}/files/${file.id}/view`);
   expect(await status(refused)).toBe(403);
 });
 

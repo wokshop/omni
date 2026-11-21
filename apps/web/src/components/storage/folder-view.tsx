@@ -49,6 +49,8 @@ export interface FolderSource {
   canWrite: boolean;
   /** False for a shared link's viewer: a doc opens with no comments. */
   canComment?: boolean;
+  /** False on a shared link that forbids downloads: a doc has no Export. */
+  canExport?: boolean;
   list: {
     nodes: StorageNode[];
     isPending: boolean;
@@ -226,6 +228,7 @@ export function FolderView(props: {
             shell={shell}
             canWrite={source.canWrite}
             canComment={source.canComment}
+            canExport={source.canExport}
             shareId={source.shareId}
           />
         </div>

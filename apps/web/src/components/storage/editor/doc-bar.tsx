@@ -51,6 +51,7 @@ export function DocBar(props: {
         items={props.items}
         text={text}
         canExport={props.canExport ?? true}
+        shareId={props.session.editor.shareId}
       />
     </div>
   );
@@ -94,8 +95,9 @@ function ShareMenu(props: {
   items: SettingsRowMenuItem[];
   text: () => string | undefined;
   canExport: boolean;
+  shareId: string | undefined;
 }) {
-  const run = useDocExport(props.node, props.text);
+  const run = useDocExport(props.node, props.text, props.shareId);
   const share = props.items.find((item) => item.label === "Share");
   if (!share && !props.canExport) return null;
   return (
