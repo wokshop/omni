@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import type { StorageNode } from "@omni/contracts";
 import { schema } from "@omni/db";
 import { and, eq } from "drizzle-orm";
+import { DOC_TYPE } from "@omni/docs/file";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { startStorageStack, type Person, type StorageStack } from "./storage-support.ts";
 import { CookieJar, sentMail, signIn, WEB_ORIGIN } from "./support.ts";
@@ -138,6 +139,33 @@ test("a view-only link shows the item and refuses /content and /zip; the owner s
   const own = await content(owner.jar, shareId, file.id);
   expect(own.status).toBe(200);
   await own.body?.cancel();
+});
+
+test("a view-only link still reads a doc as text on its page, and only a doc", async () => {
+  const { owner } = await company();
+  const markdown = "# Contrato\n\nCláusulas.";
+  const doc = await stack.upload(
+    owner.jar,
+    { space: "personal" },
+    "Contrato",
+    new TextEncoder().encode(markdown),
+    DOC_TYPE,
+  );
+  const set = await stack.api(owner.jar, "PUT", `/nodes/${doc.id}/sharing/link`, {
+    linkAccess: "anyone",
+  });
+  const shareId = set.body.sharing.shareId as string;
+  await settings(owner, doc.id, { downloads: false });
+
+  expect(await status(await content(anonymous(), shareId, doc.id))).toBe(403);
+  const text = await stack.get(anonymous(), `/shared/${shareId}/files/${doc.id}/text`);
+  expect(text.status).toBe(200);
+  expect(await text.text()).toBe(markdown);
+
+  const { file, shareId: pdfShare } = await linked(owner);
+  await settings(owner, file.id, { downloads: false });
+  const refused = await stack.get(anonymous(), `/shared/${pdfShare}/files/${file.id}/text`);
+  expect(await status(refused)).toBe(403);
 });
 
 test("a link open to the workspace opens for its members only, not for a visitor or another workspace", async () => {

@@ -47,6 +47,7 @@ import {
   type SharedAccess,
 } from "./http.ts";
 import { thumbnail } from "./thumbnails.ts";
+import { isDocFile } from "@omni/docs/file";
 import { zip } from "./zip.ts";
 
 const UNLOCK_MS = 12 * 60 * 60 * 1000;
@@ -361,6 +362,14 @@ export const storageShared = new Hono<AppEnv>()
       await audit(c, "downloaded", found.file.id);
     }
     return response;
+  })
+
+  .get("/:shareId/files/:id/text", async (c) => {
+    const found = await c.var.shared!.file(c.req.param("id"));
+    if (found.status === "ok" && !isDocFile(found.file.name, found.file.mimeType)) {
+      return apiError(c, "forbidden", "only a doc reads as text here");
+    }
+    return download(c, found);
   })
 
   .get("/:shareId/files/:id/thumbnail", async (c) =>

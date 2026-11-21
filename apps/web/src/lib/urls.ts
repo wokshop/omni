@@ -37,6 +37,13 @@ export function storageFileUrl(fileId: string) {
   return withWorkspace(api.storage.files[":id"].content.$url({ param: { id: fileId } }).toString());
 }
 
+/** A doc's text through a shared link's door, read on its page even when the link forbids downloads. */
+export function sharedDocTextUrl(shareId: string, fileId: string) {
+  return api.storage.shared[":shareId"].files[":id"].text
+    .$url({ param: { shareId, id: fileId } })
+    .toString();
+}
+
 /** A file's bytes through a shared link's door: what `/s/<shareId>` downloads. */
 export function sharedFileUrl(shareId: string, fileId: string) {
   return api.storage.shared[":shareId"].files[":id"].content

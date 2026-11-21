@@ -18,7 +18,7 @@ import { useLinkUploading, useStorageLink, useTrashNode } from "@/hooks/use-stor
 import { fileType } from "@/lib/file-kind.ts";
 import { formatBytes, type StorageNode } from "@/lib/storage.ts";
 import { unlockLink, type StorageLinkUpload } from "@/lib/storage-sharing.ts";
-import { sharedFileUrl } from "@/lib/urls.ts";
+import { sharedDocTextUrl, sharedFileUrl } from "@/lib/urls.ts";
 import { useIsMobile } from "@/hooks/use-mobile.ts";
 import { CommentsPanel } from "./comments-panel.tsx";
 import { isDoc } from "./editor/document-editor.tsx";
@@ -50,7 +50,7 @@ export function LinkPage({ shareId, nodeId }: { shareId: string; nodeId?: string
       <LinkFrame>
         <PreviewPanel
           node={item.node}
-          url={sharedFileUrl(shareId, item.node.id)}
+          url={sharedDocTextUrl(shareId, item.node.id)}
           menu={[]}
           fullScreen
           shell={false}
@@ -203,9 +203,16 @@ function SharedFolder(props: {
   const canComment = item.role !== "viewer";
   const trash = useTrashNode();
   const [top = { id: item.node.id, name: item.node.name }, ...below] = item.path;
-  const fileUrl = useCallback((node: StorageNode) => sharedFileUrl(shareId, node.id), [shareId]);
+  const fileUrl = useCallback(
+    (node: StorageNode) =>
+      isDoc(node) ? sharedDocTextUrl(shareId, node.id) : sharedFileUrl(shareId, node.id),
+    [shareId],
+  );
   const folderHref = useCallback((node: StorageNode) => linkHref(shareId, node.id), [shareId]);
-  const download = useCallback((node: StorageNode) => downloadFile(fileUrl(node)), [fileUrl]);
+  const download = useCallback(
+    (node: StorageNode) => downloadFile(sharedFileUrl(shareId, node.id)),
+    [shareId],
+  );
   const trashNode = trash.mutate;
   const menu = useMemo(
     () => (node: StorageNode, open: (dialog: FolderDialog) => void) => {
@@ -288,6 +295,7 @@ function SharedFolder(props: {
           place: { parentId: item.node.id },
           shareId,
           canWrite,
+          canComment,
           list: props.link,
           folderHref,
           fileUrl,
