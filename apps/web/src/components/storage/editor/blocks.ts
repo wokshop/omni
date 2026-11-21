@@ -30,6 +30,27 @@ export interface BlockKind {
 
 const chain = (editor: Editor) => editor.chain().focus();
 
+function addDropdown(editor: Editor) {
+  const { $from } = editor.state.selection;
+  if ($from.parent.type.name !== "paragraph") return chain(editor).setDetails().run();
+  const text = $from.parent.textContent;
+  const at = $from.before();
+  return chain(editor)
+    .insertContentAt(
+      { from: at, to: $from.after() },
+      {
+        type: "details",
+        attrs: { open: true },
+        content: [
+          { type: "detailsSummary", content: text ? [{ type: "text", text }] : [] },
+          { type: "detailsContent", content: [{ type: "paragraph" }] },
+        ],
+      },
+    )
+    .setTextSelection(at + 2 + text.length)
+    .run();
+}
+
 export const BLOCKS: BlockKind[] = [
   {
     id: "text",
@@ -99,7 +120,7 @@ export const BLOCKS: BlockKind[] = [
     label: "Dropdown",
     icon: IconDropdown,
     words: ["toggle", "collapse", "details", "fold", "accordion"],
-    run: (editor) => chain(editor).setDetails().run(),
+    run: (editor) => addDropdown(editor),
   },
   {
     id: "quote",

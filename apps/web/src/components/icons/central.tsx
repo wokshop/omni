@@ -141,3 +141,4 @@ export { IconTextSize } from "central-icons-outlined/IconTextSize";
 export { IconArrowOutOfBox as IconExport } from "central-icons-outlined/IconArrowOutOfBox";
 export { IconArrowRight } from "central-icons-outlined/IconArrowRight";
 export { IconSquareArrowDown as IconDropdown } from "central-icons-outlined/IconSquareArrowDown";
+export { IconShapesPlusXSquareCircle as IconCanvas } from "central-icons-outlined/IconShapesPlusXSquareCircle";

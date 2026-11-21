@@ -240,8 +240,8 @@ function Page(props: EditorProps & { doc: LiveDoc | null }) {
   useCommentMarks(editor, comments);
 
   return (
-    <div className="min-h-0 flex-1 overflow-auto overscroll-contain">
-      <EditorContent editor={editor} />
+    <div className="flex min-h-0 flex-1 flex-col overflow-auto overscroll-contain">
+      <EditorContent editor={editor} className="flex-1" />
       <BlockHandle editor={editor} />
       <FormatBar
         editor={editor}

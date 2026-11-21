@@ -1,5 +1,4 @@
 import { useEditorState, type Editor } from "@tiptap/react";
-import { cn } from "cn";
 import type { ComponentType, ReactNode } from "react";
 import {
   IconArrowDown,
@@ -15,7 +14,6 @@ import {
 } from "@/components/icons/central";
 import { Button } from "@/components/ui/button";
 import { Menu, MenuItem, MenuLabel, MenuSection, MenuTrigger } from "@/components/ui/menu";
-import { popupSurface } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipTrigger } from "@/components/ui/tooltip";
 import { block, type BlockKind } from "./blocks.ts";
@@ -57,7 +55,7 @@ function Tool(props: {
   return (
     <TooltipTrigger delay={400}>
       <Button
-        intent={props.isPressed ? "secondary" : "plain"}
+        intent="plain"
         size="sq-sm"
         aria-label={props.label}
         aria-pressed={props.isPressed}
@@ -74,17 +72,12 @@ function Tool(props: {
 function ToolMenu(props: {
   label: string;
   icon: ComponentType<{ className?: string }>;
-  isPressed?: boolean;
   children: ReactNode;
   selected?: string;
 }) {
   return (
     <MenuTrigger>
-      <Button
-        intent={props.isPressed ? "secondary" : "plain"}
-        size="sq-sm"
-        aria-label={props.label}
-      >
+      <Button intent="plain" size="sq-sm" aria-label={props.label}>
         <props.icon />
       </Button>
       <Menu
@@ -132,7 +125,7 @@ function TableMenu(props: { editor: Editor }) {
   const run = (change: (chain: ReturnType<Editor["chain"]>) => ReturnType<Editor["chain"]>) => () =>
     change(props.editor.chain().focus()).run();
   return (
-    <ToolMenu label="Table" icon={IconTable} isPressed>
+    <ToolMenu label="Table" icon={IconTable}>
       <MenuSection label="Rows">
         <Item label="Add row above" icon={IconArrowUp} onAction={run((c) => c.addRowBefore())} />
         <Item label="Add row below" icon={IconArrowDown} onAction={run((c) => c.addRowAfter())} />
@@ -173,10 +166,7 @@ export function DocToolbar(props: { editor: Editor; onComment?: (() => void) | u
       role="toolbar"
       aria-label="Format"
       aria-orientation="horizontal"
-      className={cn(
-        popupSurface,
-        "sticky bottom-4 mx-auto mb-4 flex w-fit max-w-[calc(100%-2rem)] items-center gap-0.5 overflow-x-auto p-1",
-      )}
+      className="sticky bottom-4 mx-auto mb-4 flex w-fit max-w-[calc(100%-2rem)] shrink-0 items-center gap-0.5 overflow-x-auto rounded-lg border border-border bg-overlay p-1 text-overlay-foreground"
     >
       <ToolMenu label={`Text style: ${style.label}`} icon={IconTextSize} selected={style.id}>
         {STYLES.map((kind) => (
