@@ -294,7 +294,10 @@ function Stage(props: {
     <>
       <PdfMarksContext value={marks}>
         <PreviewBody
-          key={shown?.key ?? `current:${props.node.contentVersion ?? contentVersion ?? ""}`}
+          key={
+            shown?.key ??
+            `current:${props.node.id}:${props.node.contentVersion ?? contentVersion ?? ""}`
+          }
           node={shown?.node ?? props.node}
           url={shown?.url ?? props.url}
           onDownload={props.onDownload}
