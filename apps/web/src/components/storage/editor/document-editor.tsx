@@ -100,6 +100,7 @@ export function useEditSession(node: StorageNode, url: string, shareId: string |
 
   useEffect(() => {
     session.current += 1;
+    clearTimeout(foldTimer.current);
     setEditing(false);
     setDirty(false);
     setConflict(null);
@@ -118,6 +119,7 @@ export function useEditSession(node: StorageNode, url: string, shareId: string |
   const leaving = useBlocker({
     shouldBlockFn: async () => {
       if (!dirty || !(live.current || autosaves)) return dirty;
+      clearTimeout(foldTimer.current);
       while (inFlight.current) await running.current;
       return !(await saveRef.current());
     },
@@ -188,13 +190,12 @@ export function useEditSession(node: StorageNode, url: string, shareId: string |
 
   const fold = () => {
     clearTimeout(foldTimer.current);
-    if (!live.current) {
-      foldTimer.current = setTimeout(() => void save(), AUTOSAVE_MS);
-      return;
-    }
-    foldTimer.current = setTimeout(() => {
-      if (live.current?.needsFold) void save();
-    }, FOLD_MS);
+    const mine = session.current;
+    const due = () => session.current === mine && (!live.current || live.current.needsFold);
+    foldTimer.current = setTimeout(
+      () => due() && void saveRef.current(),
+      live.current ? FOLD_MS : AUTOSAVE_MS,
+    );
   };
   useEffect(() => () => clearTimeout(foldTimer.current), []);
   const latestFold = useRef(fold);
