@@ -238,6 +238,10 @@ function Page(props: EditorProps & { doc: LiveDoc | null }) {
     onReady(() => editor.getMarkdown());
   }, [editor, onReady]);
   useCommentMarks(editor, comments);
+  const editable = props.editable ?? true;
+  useEffect(() => {
+    editor.setEditable(editable);
+  }, [editor, editable]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-auto overscroll-contain">
@@ -247,10 +251,7 @@ function Page(props: EditorProps & { doc: LiveDoc | null }) {
         editor={editor}
         onComment={comments ? () => commentOnSelection(editor, comments) : undefined}
       />
-      <DocToolbar
-        editor={editor}
-        onComment={comments ? () => commentOnSelection(editor, comments) : undefined}
-      />
+      <DocToolbar editor={editor} comments={comments} />
     </div>
   );
 }

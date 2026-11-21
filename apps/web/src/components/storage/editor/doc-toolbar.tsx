@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Menu, MenuItem, MenuLabel, MenuSection, MenuTrigger } from "@/components/ui/menu";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipTrigger } from "@/components/ui/tooltip";
+import type { DocComments } from "@/hooks/use-doc-comments.ts";
 import { block, type BlockKind } from "./blocks.ts";
 
 const STYLES = ["text", "h1", "h2", "h3"].map(block);
@@ -40,7 +41,7 @@ function useToolbarState(editor: Editor) {
       style: styleOf(e),
       list: LISTS.find((each) => e.isActive(LIST_NODE[each.id]!))?.id ?? null,
       table: e.isActive("table"),
-      empty: e.state.selection.empty,
+      editable: e.isEditable,
     }),
   });
 }
@@ -152,22 +153,11 @@ function TableMenu(props: { editor: Editor }) {
   );
 }
 
-/**
- * The doc's toolbar, floating at the bottom of the page: the text style, lists, a table, an
- * image, a dropdown, the rarer blocks, and a comment on the selected text.
- */
-export function DocToolbar(props: { editor: Editor; onComment?: (() => void) | undefined }) {
-  const { editor } = props;
-  const state = useToolbarState(editor);
+function BlockTools(props: { editor: Editor; state: ReturnType<typeof useToolbarState> }) {
+  const { editor, state } = props;
   const style = STYLES.find((each) => each.id === state.style) ?? STYLES[0]!;
-  if (!editor.isEditable) return null;
   return (
-    <div
-      role="toolbar"
-      aria-label="Format"
-      aria-orientation="horizontal"
-      className="sticky bottom-4 mx-auto mb-4 flex w-fit max-w-[calc(100%-2rem)] shrink-0 items-center gap-0.5 overflow-x-auto rounded-lg border border-border bg-overlay p-1 text-overlay-foreground"
-    >
+    <>
       <ToolMenu label={`Text style: ${style.label}`} icon={IconTextSize} selected={style.id}>
         {STYLES.map((kind) => (
           <BlockItem key={kind.id} editor={editor} kind={kind} />
@@ -199,14 +189,36 @@ export function DocToolbar(props: { editor: Editor; onComment?: (() => void) | u
           <BlockItem key={kind.id} editor={editor} kind={kind} />
         ))}
       </ToolMenu>
-      {props.onComment && (
+    </>
+  );
+}
+
+/**
+ * The doc's toolbar, floating at the bottom of the page: the text style, lists, a table, an
+ * image, a dropdown, the rarer blocks, and the comments panel, shown or hidden.
+ */
+export function DocToolbar(props: { editor: Editor; comments: DocComments | null }) {
+  const { editor, comments } = props;
+  const state = useToolbarState(editor);
+  if (!state.editable && !comments) return null;
+  return (
+    <div
+      role="toolbar"
+      aria-label="Format"
+      aria-orientation="horizontal"
+      className="sticky bottom-4 mx-auto mb-4 flex w-fit max-w-[calc(100%-2rem)] shrink-0 items-center gap-0.5 overflow-x-auto rounded-lg border border-border bg-overlay p-1 text-overlay-foreground"
+    >
+      {state.editable && <BlockTools editor={editor} state={state} />}
+      {comments && (
         <>
-          <Separator orientation="vertical" className="mx-0.5 h-4 self-center" />
+          {state.editable && (
+            <Separator orientation="vertical" className="mx-0.5 h-4 self-center" />
+          )}
           <Tool
-            label="Comment"
+            label={comments.open ? "Hide comments" : "Show comments"}
             icon={IconCommentPlain}
-            isDisabled={state.empty}
-            onPress={props.onComment}
+            isPressed={comments.open}
+            onPress={comments.toggle}
           />
         </>
       )}

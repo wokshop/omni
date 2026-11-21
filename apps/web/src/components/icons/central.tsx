@@ -142,3 +142,6 @@ export { IconArrowOutOfBox as IconExport } from "central-icons-outlined/IconArro
 export { IconArrowRight } from "central-icons-outlined/IconArrowRight";
 export { IconSquareArrowDown as IconDropdown } from "central-icons-outlined/IconSquareArrowDown";
 export { IconShapesPlusXSquareCircle as IconCanvas } from "central-icons-outlined/IconShapesPlusXSquareCircle";
+export { IconEyeOpen as IconEye } from "central-icons-outlined/IconEyeOpen";
+export { IconPencilWave as IconSuggest } from "central-icons-outlined/IconPencilWave";
+export { IconAlignmentLeft as IconOutline } from "central-icons-outlined/IconAlignmentLeft";

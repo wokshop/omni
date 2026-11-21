@@ -106,7 +106,13 @@ export function PreviewPanel(props: {
           </Action>
         </div>
       </div>
-      <DocBar node={node} items={props.menu} text={exports} border={!props.fullScreen} />
+      <DocBar
+        node={node}
+        items={props.menu}
+        session={session}
+        text={exports}
+        border={!props.fullScreen}
+      />
       <div
         className={`flex min-h-0 flex-1 flex-col bg-surface ${props.fullScreen ? "" : "border-s"}`}
       >
