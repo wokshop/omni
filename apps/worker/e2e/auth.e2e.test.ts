@@ -150,7 +150,10 @@ test("a brand-new email with no invitation signs up by magic link and has no wor
       )
       .where(eq(schema.members.userId, users[0]!.id)),
   ).toEqual([]);
-  expect((await me(jar)).status).toBe(403);
+  const onDemand = await fetch(new URL("/api/me?personal=on-demand", worker.url), {
+    headers: { cookie: jar.header },
+  });
+  expect(onDemand.status).toBe(403);
   const onboarding = await fetch(new URL("/api/onboarding", worker.url), {
     headers: { cookie: jar.header },
   });

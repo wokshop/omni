@@ -307,6 +307,33 @@ test("an Editor uploads and changes inside the granted folder and nowhere else; 
   });
 });
 
+test("someone signed in before a folder was shared with them uploads into it without signing in again", async () => {
+  const { ana: owner } = await ana();
+  const project = await folder(owner, { space: "personal" }, "Project");
+  const email = address("early");
+  const guest = await signedIn(email);
+  const spaces = () =>
+    stack.db
+      .select({ orgId: schema.personalSpaces.orgId })
+      .from(schema.personalSpaces)
+      .innerJoin(schema.users, eq(schema.users.id, schema.personalSpaces.userId))
+      .where(eq(schema.users.email, email));
+  expect(await spaces()).toEqual([]);
+
+  const shareId = await share(owner, project.id, email, "editor");
+  const bytes = randomBytes(2000);
+  const uploaded = await stack.upload(
+    guest,
+    { parentId: project.id },
+    "early.bin",
+    bytes,
+    undefined,
+    `/shared/${shareId}`,
+  );
+  expect(uploaded.name).toBe("early.bin");
+  expect(await spaces()).toHaveLength(1);
+});
+
 test("an Editor made Viewer mid-upload can no longer add parts to it, complete it or abort it", async () => {
   const { ana: owner } = await ana();
   const project = await folder(owner, { space: "personal" }, "Project");

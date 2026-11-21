@@ -10,6 +10,7 @@ import { routePath } from "hono/route";
 import { requireWritableWorkspace } from "./billing.ts";
 import {
   findMember,
+  personalSpaceForOldClients,
   requestScope,
   requireMailboxMember,
   requireMember,
@@ -98,6 +99,7 @@ const trace = createMiddleware<AppEnv>(async (c, next) => {
 
 const api = new Hono<AppEnv>()
   .use("/threads/:id/*", requireThreadMember)
+  .use("/me", personalSpaceForOldClients)
   .use(requireMember)
   .use(requireMailboxMember)
   .use(requireWritableWorkspace)

@@ -100,7 +100,7 @@ test("an invited Gmail user who signs in without the link sees the invitation an
 
   const jar = await signedIn("friend@gmail.test");
   expect(await personalSpaceOf("friend@gmail.test")).toEqual([]);
-  expect((await json(jar, "/api/me")).status).toBe(403);
+  expect((await json(jar, "/api/me?personal=on-demand")).status).toBe(403);
 
   const listed = await json(jar, "/api/invitations");
   expect(listed).toEqual({
@@ -248,7 +248,7 @@ test("a brand-new user with no invitation gets no Personal space until they choo
   await signedIn(email);
 
   expect(await personalSpaceOf(email)).toEqual([]);
-  expect((await json(jar, "/api/me")).status).toBe(403);
+  expect((await json(jar, "/api/me?personal=on-demand")).status).toBe(403);
   expect(
     (await json(jar, "/api/workspaces?include=personal&personal=on-demand")).body,
   ).toMatchObject({ activeOrganizationId: null, workspaces: [] });
@@ -274,6 +274,21 @@ test("a brand-new user with no invitation gets no Personal space until they choo
   expect((await json(jar, "/api/onboarding")).body).toMatchObject({
     canCreatePersonalSpace: false,
   });
+});
+
+test("a web app from before on-demand Personal spaces reads /me and finds the person in their Personal space", async () => {
+  const email = `oldweb-${randomUUID().slice(0, 8)}@gmail.test`;
+  const jar = await signedIn(email);
+  const [me, listed] = await Promise.all([
+    json(jar, "/api/me"),
+    json(jar, "/api/workspaces?include=personal"),
+  ]);
+  const spaces = await personalSpaceOf(email);
+  expect(spaces).toHaveLength(1);
+  expect(me).toMatchObject({ status: 200, body: { orgId: spaces[0]!.orgId, role: "owner" } });
+  expect(listed.body.workspaces).toEqual([
+    expect.objectContaining({ id: spaces[0]!.orgId, kind: "personal" }),
+  ]);
 });
 
 test("a client from before on-demand Personal spaces still gets one when it is in no workspace", async () => {
