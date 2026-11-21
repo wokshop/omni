@@ -5,8 +5,10 @@ import { useCallback, useState } from "react";
  * One search param that changes on screen at once. `set` shows the new value in the same render
  * as the press, then navigates: the router runs every route's guards and loaders before it
  * commits a new URL, which a click shouldn't wait on. Once the router's value lands it takes over;
- * if the navigation ends somewhere else, the router's value shows again. `clear` names params
- * the change removes.
+ * if the navigation ends somewhere else, the router's value shows again. While anything blocks
+ * leaving (an editor with unsaved changes), the change waits for the router, so the blocker's
+ * save-or-discard step runs before what it guards is replaced. `clear` names params the change
+ * removes.
  */
 export function useOptimisticSearch(name: string, clear: readonly string[] = []) {
   const routed = (useSearch({ strict: false }) as Record<string, unknown>)[name] as
@@ -20,7 +22,7 @@ export function useOptimisticSearch(name: string, clear: readonly string[] = [])
   const set = useCallback(
     (value: string | null, replace = false) => {
       const want = { value: value ?? undefined };
-      setPending(want);
+      if (router.history._getBlockers().length === 0) setPending(want);
       const dropped = Object.fromEntries(
         (cleared ? cleared.split(",") : []).map((key) => [key, undefined]),
       );

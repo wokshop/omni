@@ -131,6 +131,7 @@ export function useEditSession(node: StorageNode, url: string, shareId: string |
     },
     enableBeforeUnload: false,
     withResolver: true,
+    disabled: !dirty,
   });
 
   useReportEditing(editing && !shareId ? node : undefined);
