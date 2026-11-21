@@ -13,14 +13,7 @@ import type { SettingsRowMenuItem } from "@/components/settings/kit/settings-row
 import { Button } from "@/components/ui/button";
 import { DropZone } from "@/components/ui/drop-zone";
 import { FileTrigger } from "@/components/ui/file-trigger";
-import {
-  Menu,
-  MenuItem,
-  MenuLabel,
-  MenuSection,
-  MenuSeparator,
-  MenuTrigger,
-} from "@/components/ui/menu";
+import { Menu, MenuItem, MenuLabel, MenuTrigger } from "@/components/ui/menu";
 import type { InlineRename } from "@/hooks/use-inline-rename.ts";
 import type { NodeSelection } from "@/hooks/use-node-selection.ts";
 import type { StorageNode } from "@/lib/storage.ts";
@@ -156,7 +149,7 @@ function Centered({ children }: { children: ReactNode }) {
 }
 
 /**
- * New (New folder, then Omni's own files: doc, and sheet and canvas to come) and Upload, for whoever may write: in the
+ * New (folder, doc, and sheet and canvas to come) and Upload, for whoever may write: in the
  * header, or centered in the empty state while the folder holds nothing.
  */
 export function HeaderActions(props: Actions & { canWrite: boolean }) {
@@ -178,26 +171,23 @@ export function HeaderActions(props: Actions & { canWrite: boolean }) {
             <IconFolderPlus data-slot="icon" />
             <MenuLabel>New folder</MenuLabel>
           </MenuItem>
-          <MenuSeparator />
-          <MenuSection label="Omni">
-            <MenuItem
-              id="doc"
-              textValue="New doc"
-              isDisabled={!props.onNewDoc}
-              onAction={props.onNewDoc}
-            >
-              <IconNewDoc data-slot="icon" />
-              <MenuLabel>New doc</MenuLabel>
-            </MenuItem>
-            <MenuItem id="sheet" textValue="New sheet" isDisabled>
-              <IconTable data-slot="icon" />
-              <MenuLabel>New sheet</MenuLabel>
-            </MenuItem>
-            <MenuItem id="canvas" textValue="New canvas" isDisabled>
-              <IconCanvas data-slot="icon" />
-              <MenuLabel>New canvas</MenuLabel>
-            </MenuItem>
-          </MenuSection>
+          <MenuItem
+            id="doc"
+            textValue="New doc"
+            isDisabled={!props.onNewDoc}
+            onAction={props.onNewDoc}
+          >
+            <IconNewDoc data-slot="icon" />
+            <MenuLabel>New doc</MenuLabel>
+          </MenuItem>
+          <MenuItem id="sheet" textValue="New sheet" isDisabled>
+            <IconTable data-slot="icon" />
+            <MenuLabel>New sheet</MenuLabel>
+          </MenuItem>
+          <MenuItem id="canvas" textValue="New canvas" isDisabled>
+            <IconCanvas data-slot="icon" />
+            <MenuLabel>New canvas</MenuLabel>
+          </MenuItem>
         </Menu>
       </MenuTrigger>
       <FileTrigger allowsMultiple onSelect={(files) => props.onFiles([...(files ?? [])])}>
