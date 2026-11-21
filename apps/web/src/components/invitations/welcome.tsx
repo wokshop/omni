@@ -12,6 +12,7 @@ import {
 } from "@/hooks/use-session";
 import { chooseJustMe, markInvitationsSeen, pendingInvitationsQuery } from "@/lib/invitations";
 import { keys } from "@/lib/query-keys";
+import { workspaceHome } from "@/lib/workspaces";
 import type { PendingInvitation } from "@/lib/types";
 import { EntryCard, inviterName, roleLabel } from "./entry-card";
 
@@ -28,15 +29,20 @@ export function Welcome() {
   const pending = useQuery(pendingInvitationsQuery());
   const status = useOnboarding();
   const signOut = useSignOut();
+  const userId = session.data?.user.id;
   const justMe = useMutation({
     meta: { handlesError: true },
     mutationFn: () => chooseJustMe(client, router),
+    onSuccess: (slug) => {
+      markInvitationsSeen(userId);
+      void navigate({ href: workspaceHome(slug) });
+    },
     onError: (error) => appToast.error(error.message || "That didn't work. Try again."),
   });
   const invitations = pending.data?.invitations ?? [];
   const inWorkspace = !!session.data?.member;
   const leave = (to: "/" | "/onboarding") => {
-    markInvitationsSeen();
+    markInvitationsSeen(userId);
     void navigate({ to });
   };
 

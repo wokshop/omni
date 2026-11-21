@@ -1,7 +1,7 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { Welcome } from "../../components/invitations/welcome.tsx";
 import { leaveWorkspace } from "../../lib/current-workspace.ts";
-import { pendingInvitationsQuery } from "../../lib/invitations.ts";
+import { pendingInvitations } from "../../lib/invitations.ts";
 import { onboardingQuery } from "../../lib/onboarding.ts";
 import { sessionQuery } from "../../lib/session.ts";
 
@@ -15,9 +15,9 @@ export const Route = createFileRoute("/_authed/welcome")({
     const client = context.queryClient;
     const [session, pending] = await Promise.all([
       client.ensureQueryData(sessionQuery()),
-      client.fetchQuery({ ...pendingInvitationsQuery(), staleTime: 0 }).catch(() => null),
+      pendingInvitations(client, true),
     ]);
-    if (session?.member && !pending?.invitations.length) throw redirect({ to: "/", replace: true });
+    if (session?.member && pending.length === 0) throw redirect({ to: "/", replace: true });
   },
   loader: ({ context }) => context.queryClient.ensureQueryData(onboardingQuery()),
   component: Welcome,

@@ -121,6 +121,18 @@ test("an invited Gmail user who signs in without the link sees the invitation fi
   ).toEqual([]);
 });
 
+test("Just me with invitations still waiting opens the new Personal space", async () => {
+  const email = `mine-${stamp()}@gmail.test`;
+  await invitedTo("Delta", email);
+  const page = await signedIn(email, "/");
+  await page.getByRole("heading", { name: "Your invitations" }).waitFor({ timeout: 15_000 });
+  await page.getByRole("button", { name: "Just me" }).click();
+  await page.getByRole("button", { name: /^Switch mailbox/ }).waitFor({ timeout: 15_000 });
+  expect(new URL(page.url()).pathname).toMatch(/^\/personal-[^/]+\/mail\/inbox$/);
+  await page.goto(new URL("/", origin()).toString());
+  await page.waitForURL((url) => url.pathname.endsWith("/mail/inbox"), { timeout: 15_000 });
+});
+
 test("the invite page says who invited whom to what, and declining says so", async () => {
   const email = `link-${stamp()}@gmail.test`;
   const { invitationId } = await invitedTo("Beta", email, "member");

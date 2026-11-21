@@ -22,28 +22,43 @@ export const invitationStatusQuery = (id: string) =>
 const SEEN = "omni.invitations-seen";
 
 /**
- * The invitations screen comes first once per tab: someone in a workspace who leaves it with
- * "Not now" is not sent back to it on every load. Storage failing only shows it again.
+ * The invitations screen comes first once per tab and account: someone in a workspace who leaves
+ * it with "Not now" is not sent back to it on every load, and another account signed in to the
+ * same tab still sees its own. Storage failing only shows it again.
  */
-export const invitationsSeen = () => {
+export const invitationsSeen = (userId: string) => {
   try {
-    return sessionStorage.getItem(SEEN) === "1";
+    return sessionStorage.getItem(`${SEEN}:${userId}`) === "1";
   } catch {
     return false;
   }
 };
 
-export const markInvitationsSeen = () => {
+export const markInvitationsSeen = (userId: string | undefined) => {
+  if (!userId) return;
   try {
-    sessionStorage.setItem(SEEN, "1");
+    sessionStorage.setItem(`${SEEN}:${userId}`, "1");
   } catch {}
 };
 
-/** Whether `/` should show the invitations first. An error reads as none: never block the app. */
-export async function hasPendingInvitations(client: QueryClient) {
-  if (invitationsSeen()) return false;
-  const data = await client.ensureQueryData(pendingInvitationsQuery()).catch(() => null);
-  return (data?.invitations.length ?? 0) > 0;
+/**
+ * The pending invitations as the guards decide on them: a fresh read when `fresh`, else the
+ * cached one. A failed read falls back to what is cached, so `/` and `/welcome` always agree,
+ * and reads as none when nothing is: never block the app.
+ */
+export async function pendingInvitations(client: QueryClient, fresh = false) {
+  const query = pendingInvitationsQuery();
+  const read = fresh
+    ? client.fetchQuery({ ...query, staleTime: 0 })
+    : client.ensureQueryData(query);
+  const data = await read.catch(() => client.getQueryData(query.queryKey) ?? null);
+  return data?.invitations ?? [];
+}
+
+/** Whether `/` shows `userId`'s invitations first. */
+export async function hasPendingInvitations(client: QueryClient, userId: string) {
+  if (invitationsSeen(userId)) return false;
+  return (await pendingInvitations(client)).length > 0;
 }
 
 /** Something that can rerun route loaders: the router. */

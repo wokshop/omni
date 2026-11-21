@@ -11,8 +11,9 @@ export const Route = createFileRoute("/")({
     const resume = takeSignInRedirect();
     if (resume)
       throw redirect({ href: resume, replace: true, reloadDocument: isServerPath(resume) });
-    await requireUser(client, location);
-    if (await hasPendingInvitations(client)) throw redirect({ to: "/welcome", replace: true });
+    const { user } = await requireUser(client, location);
+    if (await hasPendingInvitations(client, user.id))
+      throw redirect({ to: "/welcome", replace: true });
     await requireMember(client, location);
     const home = homeWorkspace(await workspacesWith(client, (d) => !!homeWorkspace(d)));
     if (home) throw redirect({ href: workspaceHome(home.slug), replace: true });
