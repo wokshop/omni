@@ -143,7 +143,7 @@ test("a view-only link shows the item and refuses /content and /zip; the owner s
   await own.body?.cancel();
 });
 
-test("a view-only link still shows a doc and its images on its page, and nothing else", async () => {
+test("/view serves what a link downloads, and on a view-only link only a doc and its images", async () => {
   const { owner } = await company();
   const markdown = "# Contrato\n\nCláusulas.";
   const doc = await stack.upload(
@@ -177,6 +177,8 @@ test("a view-only link still shows a doc and its images on its page, and nothing
   expect(await status(await content(anonymous(), shareId, pasted.id))).toBe(403);
 
   const { file, shareId: pdfShare } = await linked(owner);
+  const allowed = await stack.get(anonymous(), `/shared/${pdfShare}/files/${file.id}/view`);
+  expect(await status(allowed)).toBe(200);
   await settings(owner, file.id, { downloads: false });
   const refused = await stack.get(anonymous(), `/shared/${pdfShare}/files/${file.id}/view`);
   expect(await status(refused)).toBe(403);

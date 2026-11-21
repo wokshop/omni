@@ -377,7 +377,7 @@ export const storageShared = new Hono<AppEnv>()
   .get("/:shareId/files/:id/view", async (c) => {
     const shared = c.var.shared!;
     const found = await shared.file(c.req.param("id"));
-    if (found.status === "ok" && !(await readsOnPage(shared, found.file))) {
+    if (found.status === "ok" && !shared.downloads && !(await readsOnPage(shared, found.file))) {
       return apiError(c, "forbidden", "only a doc and its images read here");
     }
     return download(c, found);
