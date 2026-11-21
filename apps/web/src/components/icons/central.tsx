@@ -136,3 +136,8 @@ export { IconBold } from "central-icons-outlined/IconBold";
 export { IconItalic } from "central-icons-outlined/IconItalic";
 export { IconStrikeThrough as IconStrike } from "central-icons-outlined/IconStrikeThrough";
 export { IconPageTextAdd as IconNewDoc } from "central-icons-outlined/IconPageTextAdd";
+export { IconMarkdown } from "central-icons-outlined/IconMarkdown";
+export { IconTextSize } from "central-icons-outlined/IconTextSize";
+export { IconArrowOutOfBox as IconExport } from "central-icons-outlined/IconArrowOutOfBox";
+export { IconArrowRight } from "central-icons-outlined/IconArrowRight";
+export { IconSquareArrowDown as IconDropdown } from "central-icons-outlined/IconSquareArrowDown";

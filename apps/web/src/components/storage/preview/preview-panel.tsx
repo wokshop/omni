@@ -46,6 +46,7 @@ import {
   useEditSession,
   type EditSession,
 } from "../editor/document-editor.tsx";
+import { ExportMenu } from "../editor/export-menu.tsx";
 import { PreviewBody } from "./preview-body.tsx";
 import { PreviewRail } from "./preview-rail.tsx";
 import { usePreviewTools } from "./preview-tools.tsx";
@@ -88,11 +89,11 @@ export function PreviewPanel(props: {
           {props.shell && <FileEditors nodeId={node.id} />}
           <EditActions session={session} canEdit={canEdit} doc={doc} />
           <CommentsAction comments={comments} />
-          {download && (
-            <Action label="Download" onPress={download}>
-              <IconDownload />
-            </Action>
-          )}
+          <DownloadAction
+            node={node}
+            exports={doc && !shown ? session.text : undefined}
+            onDownload={download}
+          />
           {!session.dirty && (
             <SettingsRowMenu label={`Actions for ${node.name}`} items={props.menu} />
           )}
@@ -269,6 +270,20 @@ function useAlwaysEditing(session: EditSession, doc: boolean) {
   useEffect(() => {
     if (doc && !editing) start();
   }, [doc, editing, start, editor.node.id]);
+}
+
+function DownloadAction(props: {
+  node: StorageNode;
+  exports: (() => string | undefined) | undefined;
+  onDownload: (() => void) | undefined;
+}) {
+  if (props.exports) return <ExportMenu node={props.node} text={props.exports} />;
+  if (!props.onDownload) return null;
+  return (
+    <Action label="Download" onPress={props.onDownload}>
+      <IconDownload />
+    </Action>
+  );
 }
 
 function Action(props: {

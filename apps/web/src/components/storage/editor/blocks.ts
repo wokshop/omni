@@ -13,6 +13,7 @@ import {
   IconTable,
   IconChecklist,
   IconImage,
+  IconDropdown,
 } from "@/components/icons/central";
 import { pickImages } from "./drive-files.tsx";
 
@@ -94,6 +95,13 @@ export const BLOCKS: BlockKind[] = [
     run: (editor) => pickImages(editor),
   },
   {
+    id: "dropdown",
+    label: "Dropdown",
+    icon: IconDropdown,
+    words: ["toggle", "collapse", "details", "fold", "accordion"],
+    run: (editor) => chain(editor).setDetails().run(),
+  },
+  {
     id: "quote",
     label: "Quote",
     icon: IconBlockquote,
@@ -115,6 +123,9 @@ export const BLOCKS: BlockKind[] = [
     run: (editor) => chain(editor).setHorizontalRule().run(),
   },
 ];
+
+/** A kind by its id, for the toolbar's buttons. */
+export const block = (id: string) => BLOCKS.find((each) => each.id === id)!;
 
 /** The kinds a `/` query finds: by the start of a word in the label, or of another word. */
 export function findBlocks(query: string) {

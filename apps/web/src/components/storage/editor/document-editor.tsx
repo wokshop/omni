@@ -228,6 +228,7 @@ export function useEditSession(node: StorageNode, url: string, shareId: string |
       setEditing(true);
     },
     save,
+    text: () => read.current?.(),
     done: async () => {
       clearTimeout(foldTimer.current);
       await live.current?.settle();
