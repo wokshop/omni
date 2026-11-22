@@ -28,6 +28,7 @@ export function pendingId() {
 export function pendingMade(pending: string, id: string) {
   const entry = made.get(pending);
   if (entry) entry.id = id;
+  madeFrom.set(id, pending);
   settle.get(pending)?.resolve(id);
   settle.delete(pending);
 }
@@ -38,6 +39,14 @@ export function pendingFailed(pending: string, error: unknown) {
   settle.delete(pending);
   made.delete(pending);
 }
+
+const madeFrom = new Map<string, string>();
+
+/**
+ * The pending id that `id` was shown under before its create answered, else `id` itself: a key
+ * for a row, panel or field that keeps it mounted, drafts and all, when the saved id arrives.
+ */
+export const stableId = (id: string) => madeFrom.get(id) ?? id;
 
 /** The Worker's id for `id` if its create has answered, else `id` itself. */
 export const currentId = (id: string) => made.get(id)?.id ?? id;

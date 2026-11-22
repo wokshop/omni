@@ -125,7 +125,8 @@ export const createTaskMutation = (client: QueryClient, self: string | null = nu
     onSuccess: ({ task }, { pendingId }) => {
       pendingMade(pendingId, task.id);
       patchCrmEntity(client, pendingId, (shown) => ({ ...shown, ...madeFields(task) }));
-      client.setQueryData(taskKeys.one(task.id), { task });
+      const shown = findCrmEntity(client, task.id) ?? task;
+      client.setQueryData(taskKeys.one(task.id), { task: shown });
     },
     onError: (error, { pendingId }) => {
       pendingFailed(pendingId, error);

@@ -12,6 +12,7 @@ import { useHasCrm } from "@/hooks/use-crm.ts";
 import { useCreateTask, useCrmTasks, useUpdateTask } from "@/hooks/use-crm-tasks.ts";
 import { useMember } from "@/hooks/use-session.ts";
 import { useWorkspacePaths } from "@/hooks/use-workspaces.ts";
+import { stableId } from "@/lib/crm-pending.ts";
 import {
   dayOf,
   dueAtOf,
@@ -115,7 +116,7 @@ function Todos() {
               )}
             </div>
             {inSection.map((task) => (
-              <TodoRow key={task.id} task={task} overdue={section.id === "overdue"} />
+              <TodoRow key={stableId(task.id)} task={task} overdue={section.id === "overdue"} />
             ))}
             {adding === section.id && (
               <NewTodo section={section.id} onDone={() => setAdding(null)} />

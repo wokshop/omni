@@ -498,7 +498,7 @@ test("in a window too narrow for both, the task takes the whole screen, and sits
   await context.close();
 });
 
-test("New › Task shows the task beside the list at once, then on its saved id", async () => {
+test("New › Task shows the task beside the list at once, then on its saved id, keeping what was typed meanwhile", async () => {
   const { page, org, headers, context } = await signedIn("dialog-at-once");
   const madeDeal = await fetch(new URL("/api/crm/deals", origin()), {
     method: "POST",
@@ -526,10 +526,14 @@ test("New › Task shows the task beside the list at once, then on its saved id"
     1,
   );
   expect(await taskTitled("Hang the prints")).toBeUndefined();
+  await panel.getByRole("textbox", { name: "Description" }).fill("Level them first.");
   release();
   await expect.poll(async () => (await taskTitled("Hang the prints"))?.id ?? null).not.toBeNull();
   const { id } = (await taskTitled("Hang the prints"))!;
   await expect.poll(() => new URL(page.url()).searchParams.get("task")).toBe(id);
+  expect(await panel.getByRole("textbox", { name: "Description" }).inputValue()).toBe(
+    "Level them first.",
+  );
   await context.close();
 });
 

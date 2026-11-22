@@ -9,6 +9,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useDeleteTask } from "@/hooks/use-crm-tasks.ts";
 import { useMember } from "@/hooks/use-session.ts";
 import { CRM_WRITE } from "@/lib/crm-cache.ts";
+import { stableId } from "@/lib/crm-pending.ts";
 import {
   dayOf,
   dueAtOf,
@@ -81,7 +82,7 @@ export function TaskHeading(props: { task: CrmTask; onSave: (change: TaskChange)
           <Checkbox />
         </CheckboxField>
       </div>
-      <TitleField key={task.id} task={task} onSave={(title) => onSave({ title })} />
+      <TitleField key={stableId(task.id)} task={task} onSave={(title) => onSave({ title })} />
     </div>
   );
 }
@@ -94,7 +95,7 @@ export function TaskContent(props: {
   const { task, onSave } = props;
   return (
     <div className="flex flex-col gap-5">
-      <BodyField key={task.id} task={task} onSave={(body) => onSave({ body })} />
+      <BodyField key={stableId(task.id)} task={task} onSave={(body) => onSave({ body })} />
       <Subtasks task={task} onSave={onSave} />
     </div>
   );
