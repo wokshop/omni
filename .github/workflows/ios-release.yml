@@ -6,7 +6,10 @@ name: iOS release
 # workflow) for another build of a tag. The build number is one above the highest App Store
 # Connect holds. About 20 minutes of macOS, so only for a release.
 #
-# macos-26: App Store Connect takes only builds made with the current iOS SDK (Xcode 26).
+# xcode-27: App Store Connect takes only builds made with a recent iOS SDK; from April 2027 that is
+# the iOS 27 SDK (Xcode 27). macos-26 carries only Xcode 26, so the job runs on GitHub's Xcode 27
+# image (macOS 27, in preview) and fails before building if its Xcode is older. When GitHub ships a
+# `macos-27` label, move to it.
 # Settings come from Doppler `prd_github`, which syncs to the GitHub environment `production`
 # (docs/operations/releases.md lists them).
 on:
@@ -31,7 +34,7 @@ permissions:
 jobs:
   testflight:
     name: TestFlight
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 60
     environment: production
     steps:
@@ -40,6 +43,12 @@ jobs:
           TAG: ${{ inputs.tag }}
         run: |
           [[ "$TAG" =~ ^ios-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::not an iOS tag: $TAG"; exit 1; }
+
+      - name: Xcode
+        run: |
+          xcodebuild -version
+          major="$(xcodebuild -version | awk 'NR==1 {split($2, v, "."); print v[1]}')"
+          [ "$major" -ge 27 ] || { echo "::error::Xcode $major; App Store Connect needs Xcode 27 or later"; exit 1; }
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
