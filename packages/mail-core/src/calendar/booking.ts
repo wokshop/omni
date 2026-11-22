@@ -57,7 +57,8 @@ const weekdayOf = (day: string) => new Date(`${day}T00:00:00Z`).getUTCDay();
  * `noticeMinutes` from now, and overlapping no busy block. Each slot is `durationMinutes` long and
  * they follow one another from the day's opening, so a day of 9:00–12:00 with 50 minutes offers
  * 9:00, 9:50 and 10:40. Wall clocks are the link's zone, so a slot keeps its hour across a change
- * of clocks.
+ * of clocks; a slot lasts exactly `durationMinutes`, as the booked event will, and never runs
+ * past closing.
  */
 export function bookingSlots(rules: BookingRules, busy: readonly BusyBlock[], now: Date) {
   const length = rules.durationMinutes;
@@ -71,10 +72,11 @@ export function bookingSlots(rules: BookingRules, busy: readonly BusyBlock[], no
   const slots: Date[] = [];
   for (const day of bookingWindow(rules, now).days) {
     if (!weekdays.has(weekdayOf(day))) continue;
+    const closing = at(day, rules.endMinute, rules.timeZone).getTime();
     for (let m = rules.startMinute; m + length <= rules.endMinute; m += length) {
       const start = at(day, m, rules.timeZone).getTime();
-      const end = at(day, m + length, rules.timeZone).getTime();
-      if (start < earliest || end <= start) continue;
+      const end = start + length * MINUTE;
+      if (start < earliest || end > closing) continue;
       if (blocks.some((b) => b.start < end && b.end > start)) continue;
       slots.push(new Date(start));
     }

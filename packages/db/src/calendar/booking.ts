@@ -269,12 +269,19 @@ const isAddress = (email: string) => {
   return labels.length > 1 && labels.every(Boolean);
 };
 
+async function lockCalendars(tx: Ex, mailboxes: readonly VisibleMailbox[]) {
+  const ids = (await calendarsOf(tx, mailboxes)).map((c) => c.id).toSorted();
+  for (const id of ids) {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`booking:${id}`}))`);
+  }
+}
+
 export type SlotTaken = { status: "slot_taken" };
 
 /**
  * Books a slot: the event lands on the link's calendar, made by its owner, and the visitor is
- * invited by mail from that inbox. The owner's bookings run one at a time and each checks its
- * slot is still free, so two visitors never get the same time and a retry is refused once the
+ * invited by mail from that inbox. Bookings that share a calendar run one at a time and each checks
+ * its slot is still free, so two visitors never get the same time and a retry is refused once the
  * first one landed.
  */
 export async function bookSlot(
@@ -290,14 +297,9 @@ export async function bookSlot(
   if (!isAddress(input.email.trim())) return invalidAt("email");
   const zone = input.timeZone && isIanaZone(input.timeZone) ? input.timeZone : null;
   return db.transaction(async (tx) => {
-    const [locked] = await tx
-      .select({ memberId: calendarBookingLinks.memberId })
-      .from(calendarBookingLinks)
-      .where(eq(calendarBookingLinks.slug, slug));
-    if (!locked) return NOT_FOUND;
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`booking:${locked.memberId}`}))`);
     const found = await linkBySlug(tx, db, slug);
     if (!found) return NOT_FOUND;
+    await lockCalendars(tx, found.mailboxes);
     const rules = rulesOf(found.link);
     const window = bookingWindow(rules, now);
     const busy = await busyOf(tx, found.mailboxes, window.from, window.to);

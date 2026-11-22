@@ -159,6 +159,47 @@ describe("booking links", () => {
     expect(await sends(inbox.id)).toHaveLength(1);
   });
 
+  test("two members' links on one shared inbox never book the same time twice", async () => {
+    const org = await stack.company(`shared-${crypto.randomUUID().slice(0, 8)}`);
+    const ana = await stack.member(org.id);
+    const luis = await stack.member(org.id);
+    const inbox = await createMailbox(
+      stack.db,
+      org.id,
+      `hello-${crypto.randomUUID().slice(0, 6)}@studio.example`,
+    );
+    await grant(stack.db, org.id, inbox.id, ana.id);
+    await grant(stack.db, org.id, inbox.id, luis.id);
+    const slugs = await Promise.all(
+      [ana, luis].map(async (person) => {
+        const listed = await call("/api/calendar/calendars", { jar: person.jar });
+        const calendars = (listed.body?.calendars ?? []) as { id: string; mailboxId: string }[];
+        const made = await call("/api/calendar/booking-links", {
+          method: "POST",
+          jar: person.jar,
+          body: {
+            calendarId: calendars.find((c) => c.mailboxId === inbox.id)!.id,
+            title: "Studio call",
+            durationMinutes: 60,
+            timeZone: "UTC",
+            weekdays: [0, 1, 2, 3, 4, 5, 6],
+            noticeMinutes: 0,
+            horizonDays: 3,
+          },
+        });
+        expect(made.status).toBe(201);
+        return (made.body as { link: { slug: string } }).link.slug;
+      }),
+    );
+    const start = tomorrowAt(16);
+    const answers = await Promise.all([
+      book(slugs[0]!, start, "ana@acme.example"),
+      book(slugs[1]!, start, "luis@acme.example"),
+    ]);
+    expect(answers.map((a) => a.status).toSorted()).toEqual([201, 409]);
+    expect(await sends(inbox.id)).toHaveLength(1);
+  });
+
   test("a time the link does not offer is refused: outside its hours, or off its grid", async () => {
     const { inbox, link } = await owner();
     expect((await book(link.slug, tomorrowAt(3))).status).toBe(409);

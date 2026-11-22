@@ -14,6 +14,7 @@ const MADRID: BookingRules = {
 const iso = (dates: readonly Date[]) => dates.map((d) => d.toISOString());
 
 const MONDAY_0600_MADRID = new Date("2026-11-23T05:00:00Z");
+const SUNDAY_SPRING_FORWARD = new Date("2027-03-14T05:00:00Z");
 const FRIDAY_BEFORE_WINTER_TIME = new Date("2026-10-23T04:00:00Z");
 
 describe("bookingSlots", () => {
@@ -70,6 +71,23 @@ describe("bookingSlots", () => {
     const rules = { ...MADRID, weekdays: [5, 1], durationMinutes: 180, horizonDays: 4 };
     const slots = bookingSlots(rules, [], FRIDAY_BEFORE_WINTER_TIME);
     expect(iso(slots)).toEqual(["2026-10-23T07:00:00.000Z", "2026-10-26T08:00:00.000Z"]);
+  });
+
+  test("a slot across the change to summer time is checked for as long as the meeting lasts", () => {
+    const rules: BookingRules = {
+      timeZone: "America/New_York",
+      weekdays: [0],
+      startMinute: 90,
+      endMinute: 300,
+      durationMinutes: 90,
+      noticeMinutes: 0,
+      horizonDays: 1,
+    };
+    const busy = [
+      { start: new Date("2027-03-14T07:15:00Z"), end: new Date("2027-03-14T07:30:00Z") },
+    ];
+    const slots = bookingSlots(rules, busy, SUNDAY_SPRING_FORWARD);
+    expect(iso(slots)).not.toContain("2027-03-14T06:30:00.000Z");
   });
 
   test("the window starts at today's midnight in the link's zone", () => {

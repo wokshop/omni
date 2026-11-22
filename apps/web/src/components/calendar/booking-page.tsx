@@ -1,4 +1,3 @@
-import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { EmptyState } from "@/components/empty/empty-state";
 import { Button } from "@/components/ui/button";
@@ -9,7 +8,7 @@ import { TextField } from "@/components/ui/text-field";
 import { Textarea } from "@/components/ui/textarea";
 import { appToast } from "@/components/ui/toast";
 import { ApiError } from "@/lib/api.ts";
-import { bookingPageQuery, bookMutation } from "@/lib/booking.ts";
+import { useBook, useBookingPage } from "@/hooks/use-booking.ts";
 
 const zone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 const dayFormat = new Intl.DateTimeFormat(undefined, {
@@ -51,8 +50,7 @@ function Booked(props: { start: Date; title: string }) {
 }
 
 function BookForm(props: { slug: string; start: Date; onBack: () => void; onBooked: () => void }) {
-  const client = useQueryClient();
-  const book = useMutation(bookMutation(client, props.slug));
+  const book = useBook(props.slug);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [note, setNote] = useState("");
@@ -117,7 +115,7 @@ function BookForm(props: { slug: string; start: Date; onBack: () => void; onBook
 
 /** A booking link's public page: the owner's free slots, in the visitor's own time zone. */
 export function BookingPage(props: { slug: string }) {
-  const { data: page } = useSuspenseQuery(bookingPageQuery(props.slug));
+  const { data: page } = useBookingPage(props.slug);
   const days = useDays(page.slots);
   const [dayKey, setDayKey] = useState<string | null>(null);
   const [picked, setPicked] = useState<Date | null>(null);

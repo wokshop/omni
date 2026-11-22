@@ -1,4 +1,3 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { IconTrash } from "@/components/icons/central";
 import { Avatar } from "@/components/ui/avatar";
@@ -6,13 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverTrigger } from "@/components/ui/popover";
 import { appToast } from "@/components/ui/toast";
 import { useClipboard } from "@/hooks/use-clipboard.ts";
-import {
-  bookingLinksQuery,
-  bookingUrl,
-  createBookingLinkMutation,
-  deleteBookingLinkMutation,
-  type BookingLink,
-} from "@/lib/booking.ts";
+import { useBookingLinks, useBookingLinkWrites } from "@/hooks/use-booking.ts";
+import { bookingUrl, type BookingLink } from "@/lib/booking.ts";
 import type { CalendarItem } from "@/lib/calendar.ts";
 import { BookingDialog, bookingFailed } from "./booking-dialog.tsx";
 
@@ -57,10 +51,8 @@ function LinkRow(props: { link: BookingLink; onCopy: () => void; onDelete: () =>
  * books a free slot without seeing what fills the rest. A row copies its link.
  */
 export function BookingShare(props: { calendars: readonly CalendarItem[] }) {
-  const client = useQueryClient();
-  const links = useQuery(bookingLinksQuery());
-  const create = useMutation(createBookingLinkMutation(client));
-  const remove = useMutation(deleteBookingLinkMutation(client));
+  const links = useBookingLinks();
+  const { create, remove } = useBookingLinkWrites();
   const { copy } = useClipboard();
   const [open, setOpen] = useState(false);
   const [creating, setCreating] = useState(false);
