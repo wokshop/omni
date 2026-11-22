@@ -7,6 +7,7 @@ import {
   storageDocChanges,
   storageDocJournals,
   storageNodes,
+  storageVersions,
 } from "../schema/storage.ts";
 
 /** One run of a live document's change log, as the journal job writes it. */
@@ -288,16 +289,39 @@ export async function docSessions(db: Db, nodeId: string, limit = 200) {
     });
 }
 
-/** Who wrote the file's content now, as a live record would name them, and when. */
-export async function contentWriterOf(db: Db, nodeId: string) {
-  const [row] = await db
-    .select({
-      memberId: storageContents.writtenByMemberId,
-      agent: storageContents.writtenByAgent,
-      at: storageContents.writtenAt,
-    })
-    .from(storageContents)
-    .where(eq(storageContents.nodeId, nodeId));
+/**
+ * Who wrote the file's content at `contentVersion`, as a live record would name them, and when:
+ * from its current content, or the version (superseded or not) that held it. Null once gone.
+ */
+export async function contentWriterOf(db: Db, nodeId: string, contentVersion: number) {
+  const [node] = await db
+    .select({ contentVersion: storageNodes.contentVersion })
+    .from(storageNodes)
+    .where(eq(storageNodes.id, nodeId));
+  const [row] =
+    node?.contentVersion === contentVersion
+      ? await db
+          .select({
+            memberId: storageContents.writtenByMemberId,
+            agent: storageContents.writtenByAgent,
+            at: storageContents.writtenAt,
+          })
+          .from(storageContents)
+          .where(eq(storageContents.nodeId, nodeId))
+      : await db
+          .select({
+            memberId: storageVersions.writtenByMemberId,
+            agent: storageVersions.writtenByAgent,
+            at: storageVersions.writtenAt,
+          })
+          .from(storageVersions)
+          .where(
+            and(
+              eq(storageVersions.nodeId, nodeId),
+              eq(storageVersions.contentVersion, contentVersion),
+            ),
+          )
+          .limit(1);
   if (!row) return null;
   const by = !row.memberId
     ? "unknown"

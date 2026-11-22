@@ -18,7 +18,7 @@ import { openDb } from "../db.ts";
 import { loadConfig, type Config } from "../env.ts";
 import { runJob, scopedDb } from "../job-effects.ts";
 import { createLogger, type Logger } from "../log.ts";
-import { s2Basin } from "../s2.ts";
+import { s2Basin, type S2Basin } from "../s2.ts";
 import { latestLiveStart, readLiveTimed } from "./live-read.ts";
 
 const RUN_MS = 60_000;
@@ -83,22 +83,25 @@ async function namedRuns(db: Db, updates: Timed[]) {
   });
 }
 
-async function writeRun(db: Db, doc: Doc, journaled: number) {
-  if (doc.contentVersion <= journaled) return [];
-  const writer = await contentWriterOf(db, doc.id);
-  if (!writer) return [];
-  const names = await memberNames(db, writer.memberId ? [writer.memberId] : []);
-  const run: DocRun = {
-    firstSeq: -doc.contentVersion,
-    lastSeq: -doc.contentVersion,
-    by: writer.by,
-    authorName: writer.memberId ? (names.get(writer.memberId) ?? null) : null,
-    agent: writer.agent,
-    startedAt: writer.at,
-    endedAt: writer.at,
-    update: "",
-  };
-  return [run];
+async function writeRun(db: Db, doc: Doc, journaled: number, folded = new Set<number>()) {
+  const runs: DocRun[] = [];
+  for (let cv = Math.max(journaled + 1, doc.contentVersion - 50); cv <= doc.contentVersion; cv++) {
+    if (folded.has(cv)) continue;
+    const writer = await contentWriterOf(db, doc.id, cv);
+    if (!writer) continue;
+    const names = await memberNames(db, writer.memberId ? [writer.memberId] : []);
+    runs.push({
+      firstSeq: -cv,
+      lastSeq: -cv,
+      by: writer.by,
+      authorName: writer.memberId ? (names.get(writer.memberId) ?? null) : null,
+      agent: writer.agent,
+      startedAt: writer.at,
+      endedAt: writer.at,
+      update: "",
+    });
+  }
+  return runs;
 }
 
 async function checkpoint(db: Db, doc: Doc, epoch: number, through: number, runs: DocRun[]) {
@@ -130,6 +133,54 @@ export async function journalDoc(deps: Deps, doc: Doc) {
   deps.log.warn("storage.journal_busy", { nodeId: doc.id });
 }
 
+async function runsAfter(
+  db: Db,
+  doc: Doc,
+  entries: Timed[],
+  at: { epoch: number; after: number },
+  cursor: Cursor | null,
+) {
+  const updates = entries.filter(
+    (e) => e.seqNum > at.after && e.record.t === "update" && e.record.e === at.epoch,
+  );
+  const runs = await namedRuns(db, updates);
+  if (runs.length > 0) return runs;
+  const folded = new Set(entries.flatMap((e) => (e.record.t === "fold" ? [e.record.cv] : [])));
+  return writeRun(db, doc, cursor?.contentVersion ?? 0, folded);
+}
+
+async function nextBaseline(
+  db: Db,
+  doc: Doc,
+  at: { epoch: number; after: number },
+  runs: DocRun[],
+  since: number,
+) {
+  const baseline =
+    since >= BASELINE_EVERY ? await checkpoint(db, doc, at.epoch, at.after, runs) : null;
+  return { baseline, sinceBaseline: baseline ? 0 : since };
+}
+
+type Cursor = NonNullable<Awaited<ReturnType<typeof docJournalOf>>>;
+
+async function drain(db: Db, basin: S2Basin, nodeId: string, cursor: Cursor) {
+  const left = (await readLiveTimed(basin, nodeId, cursor.lastSeq + 1)).filter(
+    (e) => e.record.t === "update" && e.record.e === cursor.epoch,
+  );
+  if (left.length === 0) return null;
+  const runs = await namedRuns(db, left);
+  return {
+    lastSeq: Math.max(...left.map((e) => e.seqNum)),
+    runs,
+    sinceBaseline: cursor.sinceBaseline + runs.length,
+  };
+}
+
+const baselineOf = (first: NonNullable<ReturnType<typeof latestEpochStart>>) => ({
+  seq: first.record.t === "snap" ? first.record.s : first.seqNum,
+  state: first.record.u,
+});
+
 async function journalOnce(deps: Deps, doc: Doc) {
   const basin = s2Basin(deps.config);
   if (!basin) return true;
@@ -153,16 +204,9 @@ async function journalOnce(deps: Deps, doc: Doc) {
   if (!first) return mark({ runs: await writeRun(deps.db, doc, cursor?.contentVersion ?? 0) });
   const epoch = first.record.t === "snap" ? first.record.e : first.seqNum;
   if (cursor && cursor.epoch >= 0 && cursor.epoch !== epoch) {
-    const left = (await readLiveTimed(basin, doc.id, cursor.lastSeq + 1)).filter(
-      (e) => e.record.t === "update" && e.record.e === cursor.epoch,
-    );
-    if (left.length) {
-      const runs = await namedRuns(deps.db, left);
-      await mark({
-        lastSeq: Math.max(...left.map((e) => e.seqNum)),
-        runs,
-        sinceBaseline: cursor.sinceBaseline + runs.length,
-      });
+    const drained = await drain(deps.db, basin, doc.id, cursor);
+    if (drained) {
+      await mark(drained);
       return false;
     }
   }
@@ -170,26 +214,15 @@ async function journalOnce(deps: Deps, doc: Doc) {
   if (continuing && cursor.lastSeq + 1 < start) {
     entries = await readLiveTimed(basin, doc.id, cursor.lastSeq + 1);
   }
-  const base = continuing
-    ? null
-    : {
-        seq: first.record.t === "snap" ? first.record.s : first.seqNum,
-        state: first.record.u,
-      };
+  const base = continuing ? null : baselineOf(first);
   const after = base ? base.seq : cursor!.lastSeq;
-  const updates = entries.filter(
-    (e) => e.seqNum > after && e.record.t === "update" && e.record.e === epoch,
-  );
-  const runs = await namedRuns(deps.db, updates);
-  if (runs.length === 0) runs.push(...(await writeRun(deps.db, doc, cursor?.contentVersion ?? 0)));
-  let since = (continuing ? cursor.sinceBaseline : 0) + runs.length;
-  let baseline = base;
-  if (!baseline && since >= BASELINE_EVERY) {
-    baseline = await checkpoint(deps.db, doc, epoch, after, runs);
-    if (baseline) since = 0;
-  }
+  const runs = await runsAfter(deps.db, doc, entries, { epoch, after }, cursor);
+  const since = (continuing ? cursor.sinceBaseline : 0) + runs.length;
+  const next = base
+    ? { baseline: base, sinceBaseline: since }
+    : await nextBaseline(deps.db, doc, { epoch, after }, runs, since);
   const lastSeq = Math.max(after, ...entries.map((e) => e.seqNum));
-  return mark({ epoch, lastSeq, runs, baseline, sinceBaseline: since });
+  return mark({ epoch, lastSeq, runs, ...next });
 }
 
 /** The minute job's part: journals docs saved since their journal, a few at a time. */
