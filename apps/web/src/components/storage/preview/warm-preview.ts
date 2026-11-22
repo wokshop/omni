@@ -27,13 +27,14 @@ export function useWarmPreview() {
 
 /**
  * Hover and press handlers for an item that opens a file: resting the pointer on it a moment, or
- * pressing it, readies its preview before the press lands.
+ * pressing it, readies its preview before the press lands. Off (`read` false) where reading its
+ * bytes would count as a download: a file through a shared link's door.
  */
-export function useWarmOnHover(node: StorageNode, url: string) {
+export function useWarmOnHover(node: StorageNode, url: string, read = true) {
   const warm = useWarmPreview();
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
-  if (node.kind !== "file") return {};
+  if (node.kind !== "file" || !read) return {};
   return {
     onHoverStart: () => {
       clearTimeout(timer.current);

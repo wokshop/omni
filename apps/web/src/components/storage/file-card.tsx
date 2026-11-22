@@ -51,7 +51,7 @@ export function FileCard(props: {
   const { node } = props;
   const type = node.kind === "file" ? fileType(node.name, node.mimeType) : null;
   const lift = useSurfaceDrag(node, "card", props.drag);
-  const warm = useWarmOnHover(node, props.url);
+  const warm = useWarmOnHover(node, props.url, props.peek !== false);
   return (
     <GridListItem
       ref={lift.ref}
@@ -85,8 +85,8 @@ export function FileCard(props: {
 function FileArt(props: { node: StorageNode; type: FileType; url: string; read: boolean }) {
   const { node, type, url } = props;
   if (hasThumbnail(node)) return <Thumbnail node={node} url={url} />;
-  if (type.preview === "pdf") return <PdfStack node={node} url={url} />;
   if (!props.read) return <FileGlyph kind={type.kind} className="size-8 text-muted-foreground" />;
+  if (type.preview === "pdf") return <PdfStack node={node} url={url} />;
   if (node.size > 0 && type.preview === "video") {
     return <VideoArt key={versionOf(node)} node={node} url={versioned(url, node)} />;
   }

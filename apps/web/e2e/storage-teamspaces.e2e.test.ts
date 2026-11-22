@@ -1,7 +1,9 @@
+import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
+import { join } from "node:path";
 import type { AddressInfo } from "node:net";
 import { schema } from "@omni/db";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright-core";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import {
@@ -152,6 +154,63 @@ test("a folder shared out of a private space shows in the recipient's Recents", 
   await page.waitForURL(/\/s\/[^/?]+/);
 });
 
+test("a PDF shared with a colleague is not counted as downloaded when it shows in their Recents", async () => {
+  const org = await createOrg(db, "shared-pdfs");
+  await createMailbox(db, org.id, `hello-${Date.now()}@shared-pdfs.test`);
+  const ana = await createMember(db, org.id, `ana-${Date.now()}@shared-pdfs.test`);
+  const ben = await createMember(db, org.id, `ben-${Date.now()}@shared-pdfs.test`);
+  const owner = await signedIn(ana.id, org.id, org.slug);
+  const legal = await owner.api("POST", "/api/storage/teamspaces", {
+    name: "Legal",
+    private: true,
+  });
+  const bytes = readFileSync(join(import.meta.dirname, "../../../fixtures/drive/minutes-scan.pdf"));
+  const opened = await owner.api("POST", "/api/storage/uploads", {
+    name: "minutes.pdf",
+    size: bytes.length,
+    mimeType: "application/pdf",
+    teamspaceId: legal.teamspace.id,
+  });
+  const { id, partSize, partCount } = opened.upload;
+  for (let n = 1; n <= partCount; n++) {
+    await owner.put(
+      `/api/storage/uploads/${id}/parts/${n}`,
+      bytes.subarray((n - 1) * partSize, n * partSize),
+    );
+  }
+  const { node } = await owner.api("POST", `/api/storage/uploads/${id}/complete`);
+  const [benUser] = await db
+    .select({ email: schema.users.email })
+    .from(schema.users)
+    .innerJoin(schema.members, eq(schema.members.userId, schema.users.id))
+    .where(eq(schema.members.id, ben.id));
+  await db
+    .update(schema.users)
+    .set({ emailVerified: true })
+    .where(eq(schema.users.email, benUser?.email ?? ""));
+  const email = encodeURIComponent(benUser?.email ?? "");
+  await owner.api("PUT", `/api/storage/nodes/${node.id}/sharing/people/${email}`, {
+    role: "viewer",
+  });
+
+  const { page } = await signedIn(ben.id, org.id, org.slug);
+  await page.getByRole("link", { name: "Recents" }).click();
+  const card = page.getByRole("row", { name: /minutes\.pdf/ });
+  await card.waitFor({ timeout: 30_000 });
+  await card.hover();
+  await page.waitForTimeout(2_000);
+  const downloads = await db
+    .select({ id: schema.storageShareEvents.id })
+    .from(schema.storageShareEvents)
+    .where(
+      and(
+        eq(schema.storageShareEvents.nodeId, node.id),
+        eq(schema.storageShareEvents.kind, "downloaded"),
+      ),
+    );
+  expect(downloads).toEqual([]);
+});
+
 test("a deal made elsewhere shows its space in the open Drive sidebar", async () => {
   const org = await createOrg(db, "deal-spaces");
   await createMailbox(db, org.id, `hello-${Date.now()}@deal-spaces.test`);
@@ -255,7 +314,16 @@ async function signedIn(memberId: string, orgId: string, slug: string) {
     // oxlint-disable-next-line typescript/no-explicit-any -- test reads of JSON answers
     return (text ? JSON.parse(text) : null) as any;
   };
-  return { page, api };
+  const put = async (path: string, bytes: Uint8Array) => {
+    const response = await fetch(new URL(path, origin), {
+      method: "PUT",
+      headers: { cookie, "omni-workspace": orgId, "content-type": "application/octet-stream" },
+      body: new Blob([new Uint8Array(bytes)]),
+    });
+    if (!response.ok) throw new Error(`PUT ${path}: ${response.status}`);
+    await response.body?.cancel();
+  };
+  return { page, api, put };
 }
 
 function freePort() {

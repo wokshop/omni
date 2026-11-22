@@ -299,7 +299,7 @@ function FileRow(props: {
   const { node } = props;
   const type = node.kind === "file" ? fileType(node.name, node.mimeType) : null;
   const prefetch = usePrefetchFolder();
-  const warm = useWarmOnHover(node, props.url);
+  const warm = useWarmOnHover(node, props.url, props.prefetch);
   const lift = useSurfaceDrag(node, "row", props.drag);
   return (
     <GridListItem
