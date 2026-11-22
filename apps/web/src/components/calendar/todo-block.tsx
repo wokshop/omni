@@ -47,6 +47,7 @@ export function TodoBlock(props: {
   return (
     <div
       data-todo={item.task.id}
+      data-calendar-keys="off"
       draggable
       onDragStart={(event) => {
         const box = event.currentTarget.getBoundingClientRect();

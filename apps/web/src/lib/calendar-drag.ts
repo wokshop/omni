@@ -8,7 +8,9 @@ export const DRAG_TYPE = "application/x-omni-calendar";
 export const TODO_MINUTES = 30;
 
 /** What is being dragged: one of the member's events, or a to-do. */
-export type Dragged = { kind: "event"; event: CalendarEvent } | { kind: "todo"; task: CrmTask };
+export type Dragged =
+  | { kind: "event"; event: CalendarEvent; /** The day the dragged piece showed on. */ day?: Date }
+  | { kind: "todo"; task: CrmTask };
 
 /** Where it was let go: a day, and on the hours, the minute its start lands on (below 0: the day before). */
 export interface Drop {

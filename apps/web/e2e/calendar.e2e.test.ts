@@ -640,6 +640,7 @@ async function madeEvent(
   origin: string,
   title: string,
   at: [string, string],
+  allDay = false,
 ) {
   const [calendar] = await db
     .select({ id: schema.calendarCalendars.id })
@@ -652,7 +653,7 @@ async function madeEvent(
       title,
       start: at[0],
       end: at[1],
-      allDay: false,
+      allDay,
       timeZone: "Europe/Madrid",
       guests: [],
     },
@@ -709,6 +710,53 @@ test("the morning piece of a to-do due just before midnight dragged an hour down
       targetPosition: { x: 20, y: 48 + 4 },
     });
   await expect.poll(() => dueOf(org.id, "Lock the doors")).toBe("2026-11-24T23:45:00.000Z");
+});
+
+test("a multi-day event dragged by a later day's chip moves by the days it was dragged", async () => {
+  const { org, page, origin } = await invited();
+  await madeEvent(
+    org.id,
+    page,
+    origin,
+    "Conference",
+    ["2026-11-23T00:00:00.000Z", "2026-11-27T00:00:00.000Z"],
+    true,
+  );
+  await openWeek(page, origin, org.slug);
+  await page
+    .locator('[data-all-day="2026-11-24"]')
+    .getByRole("button", { name: "Conference" })
+    .dragTo(page.locator('[data-all-day="2026-11-25"]'), { sourcePosition: { x: 10, y: 4 } });
+  await expect
+    .poll(() => spanOf(org.id, "Conference"))
+    .toEqual([["2026-11-24T00:00:00.000Z", "2026-11-28T00:00:00.000Z"]]);
+});
+
+test("keys on a to-do in the grid act on the to-do, not the selected event", async () => {
+  const { org, member, page, origin } = await invited();
+  await madeEvent(org.id, page, origin, "Deep work", [
+    "2026-11-24T09:00:00.000Z",
+    "2026-11-24T10:00:00.000Z",
+  ]);
+  await db.insert(schema.crmTasks).values({
+    orgId: org.id,
+    title: "File expenses",
+    assigneeMemberId: member.id,
+    dueAt: new Date("2026-11-24T22:59:59.999Z"),
+  });
+  await openWeek(page, origin, org.slug);
+  await page.getByRole("button", { name: /Deep work/ }).click();
+  await page
+    .locator('[data-all-day="2026-11-24"]')
+    .getByRole("button", { name: "File expenses" })
+    .focus();
+  await page.keyboard.press("Delete");
+  await page.keyboard.press("Enter");
+  await page.getByRole("region", { name: "Task" }).waitFor();
+  expect(await spanOf(org.id, "Deep work")).toEqual([
+    ["2026-11-24T09:00:00.000Z", "2026-11-24T10:00:00.000Z"],
+  ]);
+  expect(await page.getByRole("button", { name: "Edit" }).count()).toBe(0);
 });
 
 test("Delete pressed in an open to-do leaves the selected event alone", async () => {

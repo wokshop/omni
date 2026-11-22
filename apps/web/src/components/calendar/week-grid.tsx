@@ -382,7 +382,9 @@ function EventBlock(props: WeekGridProps & { day: Date; placed: Placed<CalendarE
 }
 
 /** An event as one line: all-day ones on the week's top row, every one in a month's day. */
-export function EventChip(props: WeekGridProps & { event: CalendarEvent; timed?: boolean }) {
+export function EventChip(
+  props: WeekGridProps & { event: CalendarEvent; day?: Date; timed?: boolean },
+) {
   const { event } = props;
   const selected = props.selection?.kind === "event" && props.selection.key === eventKey(event);
   return (
@@ -396,7 +398,7 @@ export function EventChip(props: WeekGridProps & { event: CalendarEvent; timed?:
       )}
       style={toneStyle(props, event)}
       draggable={ownEvent(event)}
-      onDragStart={(e) => startDrag(e, { kind: "event", event })}
+      onDragStart={(e) => startDrag(e, { kind: "event", event, day: props.day })}
       onDragEnd={endDrag}
       onClick={() => props.onSelect({ kind: "event", key: eventKey(event) })}
       onFocus={() => !selected && props.onSelect({ kind: "event", key: eventKey(event) })}
@@ -424,6 +426,7 @@ export function TodoChip(props: {
   return (
     <div
       data-todo={task.id}
+      data-calendar-keys="off"
       draggable
       onDragStart={(e) => startDrag(e, { kind: "todo", task })}
       onDragEnd={endDrag}

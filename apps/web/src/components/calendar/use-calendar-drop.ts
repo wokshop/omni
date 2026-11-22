@@ -11,15 +11,17 @@ const DAY_MINUTES = 24 * 60;
 const daysBetween = (from: string, to: string) =>
   Math.round((parseDayKey(to).getTime() - parseDayKey(from).getTime()) / 86_400_000);
 
-function shiftOf(event: CalendarEvent, drop: Drop) {
-  if (event.allDay) {
-    const from = event.startDay ?? dayKey(new Date(event.start));
-    return daysBetween(from, dayKey(drop.day)) * DAY_MINUTES;
-  }
+function shiftOf(event: CalendarEvent, drop: Drop, shownOn?: Date) {
   const start = new Date(event.start);
+  const from = shownOn ? dayKey(shownOn) : (event.startDay ?? dayKey(start));
+  const days = daysBetween(from, dayKey(drop.day));
+  if (event.allDay) return days * DAY_MINUTES;
   const target =
     drop.minutes === undefined
-      ? atMinutes(drop.day, start.getHours() * 60 + start.getMinutes())
+      ? atMinutes(
+          new Date(start.getFullYear(), start.getMonth(), start.getDate() + days),
+          start.getHours() * 60 + start.getMinutes(),
+        )
       : atMinutes(drop.day, drop.minutes);
   return Math.round((target.getTime() - start.getTime()) / 60_000);
 }
@@ -45,7 +47,7 @@ export function useCalendarDrop(move: (event: CalendarEvent, minutes: number) =>
       return;
     }
     if (!ownEvent(item.event)) return;
-    const minutes = shiftOf(item.event, drop);
+    const minutes = shiftOf(item.event, drop, item.day);
     if (minutes !== 0) move(item.event, minutes);
   };
 }

@@ -182,6 +182,7 @@ function TodoRow({ task, overdue }: { task: CrmTask; overdue: boolean }) {
   return (
     <div
       data-todo={task.id}
+      data-calendar-keys="off"
       draggable
       onDragStart={(event) => startDrag(event, { kind: "todo", task })}
       onDragEnd={endDrag}
