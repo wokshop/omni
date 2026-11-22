@@ -100,7 +100,7 @@
     color-mix(in oklab, color-mix(in oklab, var(--foreground) 2%, white) 86%, transparent),
     color-mix(in oklab, color-mix(in oklab, var(--foreground) 5%, white) 94%, transparent)
   );
-  --folder-edge: color-mix(in oklab, var(--foreground) 17%, white);
+  --folder-edge: color-mix(in oklab, var(--foreground) 11%, white);
   --folder-shine: color-mix(in oklab, white 75%, transparent);
   --chart-1: var(--primary);
   --chart-2: color-mix(in oklab, var(--primary) 80%, white);
