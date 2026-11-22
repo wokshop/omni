@@ -1,8 +1,10 @@
+import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { crmErrorToast } from "@/components/crm/crm-errors.ts";
-import { IconPlus } from "@/components/icons/central";
+import { IconCheck, IconEye, IconPlus, IconRestore } from "@/components/icons/central";
 import { Button } from "@/components/ui/button";
 import { Checkbox, CheckboxField } from "@/components/ui/checkbox";
+import { contextMenuProps } from "@/components/ui/context-menu";
 import { Input } from "@/components/ui/input";
 import { Link } from "@/components/ui/link";
 import { TextField } from "@/components/ui/text-field";
@@ -181,6 +183,19 @@ function TodoRow({ task, overdue }: { task: CrmTask; overdue: boolean }) {
   const toggle = useToggleTodo();
   const open = useOpenTask();
   const done = !!task.completedAt;
+  const navigate = useNavigate();
+  const menu = contextMenuProps(() => [
+    {
+      icon: IconEye,
+      label: "Open",
+      onAction: () => void navigate({ href: open.href(task.id) }),
+    },
+    {
+      icon: done ? IconRestore : IconCheck,
+      label: done ? "Reopen" : "Complete",
+      onAction: () => toggle(task, !done),
+    },
+  ]);
   return (
     <div
       data-todo={task.id}
@@ -189,6 +204,7 @@ function TodoRow({ task, overdue }: { task: CrmTask; overdue: boolean }) {
       onDragStart={(event) => startDrag(event, { kind: "todo", task })}
       onDragEnd={endDrag}
       className={`${ROW} hover:bg-hover ${open.id === task.id ? "bg-accent" : ""}`}
+      {...menu}
     >
       <CheckboxField
         aria-label={done ? `Reopen ${task.title}` : `Complete ${task.title}`}
