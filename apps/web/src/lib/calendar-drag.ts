@@ -35,6 +35,13 @@ export function startDrag(
   event.dataTransfer.effectAllowed = "move";
 }
 
+/**
+ * How long an item starting at `start` ran before the piece of `day` that shows from `from`:
+ * the night before, for the morning piece of something that crosses midnight.
+ */
+export const leadOf = (day: Date, start: string, from: number) =>
+  from === 0 ? Math.max(0, (day.getTime() - Date.parse(start)) / 60_000) : 0;
+
 export const endDrag = () => {
   current = null;
 };

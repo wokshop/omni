@@ -7,6 +7,7 @@ import type { CalendarEvent, CalendarItem } from "@/lib/calendar.ts";
 import { calendarTone } from "@/lib/calendar.ts";
 import {
   endDrag,
+  leadOf,
   startDrag,
   timedTodo,
   TODO_MINUTES,
@@ -274,6 +275,7 @@ function DayColumn(props: WeekGridProps & { day: Date }) {
         ) : (
           <TodoBlock
             key={placed.event.task.id}
+            day={props.day}
             placed={{ ...placed, event: placed.event }}
             onTodo={props.onTodo}
             onOpenTodo={props.onOpenTodo}
@@ -356,12 +358,11 @@ function EventBlock(props: WeekGridProps & { day: Date; placed: Placed<CalendarE
       draggable={movable}
       onDragStart={(e) => {
         const box = e.currentTarget.getBoundingClientRect();
-        const before = (props.day.getTime() - Date.parse(event.start)) / 60_000;
         startDrag(
           e,
           { kind: "event", event },
           ((e.clientY - box.top) / HOUR_PX) * 60,
-          from === 0 ? Math.max(0, before) : 0,
+          leadOf(props.day, event.start, from),
         );
       }}
       onDragEnd={endDrag}

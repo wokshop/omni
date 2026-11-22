@@ -693,6 +693,24 @@ test("the morning piece of an overnight event dragged an hour down moves the who
     .toEqual([["2026-11-24T23:00:00.000Z", "2026-11-25T01:00:00.000Z"]]);
 });
 
+test("the morning piece of a to-do due just before midnight dragged an hour down moves it an hour", async () => {
+  const { org, member, page, origin } = await invited();
+  await db.insert(schema.crmTasks).values({
+    orgId: org.id,
+    title: "Lock the doors",
+    assigneeMemberId: member.id,
+    dueAt: new Date("2026-11-24T22:45:00.000Z"),
+  });
+  await openWeek(page, origin, org.slug);
+  await page
+    .locator('[data-day="2026-11-25"] [data-todo]')
+    .dragTo(page.locator('[data-day="2026-11-25"]'), {
+      sourcePosition: { x: 60, y: 4 },
+      targetPosition: { x: 20, y: 48 + 4 },
+    });
+  await expect.poll(() => dueOf(org.id, "Lock the doors")).toBe("2026-11-24T23:45:00.000Z");
+});
+
 test("Delete pressed in an open to-do leaves the selected event alone", async () => {
   const { org, member, page, origin } = await invited();
   await madeEvent(org.id, page, origin, "Focus time", [

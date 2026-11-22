@@ -1,7 +1,7 @@
 import { cn } from "cn";
 import { Checkbox, CheckboxField } from "@/components/ui/checkbox";
 import { CanvasButton } from "@/components/ui/canvas-button";
-import { endDrag, startDrag } from "@/lib/calendar-drag.ts";
+import { endDrag, leadOf, startDrag } from "@/lib/calendar-drag.ts";
 import { HOUR_PX, type Placed, type Timed } from "@/lib/calendar-grid.ts";
 import type { CrmTask } from "@/lib/crm-tasks.ts";
 
@@ -37,6 +37,7 @@ export function TodoCheck(props: {
  * do rather than a meeting. Dragging it moves its due time; pressing it opens the to-do.
  */
 export function TodoBlock(props: {
+  day: Date;
   placed: Placed<TodoItem>;
   onTodo?: (task: CrmTask, done: boolean) => void;
   onOpenTodo?: (task: CrmTask) => void;
@@ -53,6 +54,7 @@ export function TodoBlock(props: {
           event,
           { kind: "todo", task: item.task },
           ((event.clientY - box.top) / HOUR_PX) * 60,
+          leadOf(props.day, item.start, from),
         );
       }}
       onDragEnd={endDrag}
