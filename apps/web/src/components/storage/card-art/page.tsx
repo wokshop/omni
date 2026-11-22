@@ -96,7 +96,7 @@ function SheetPage(props: { node: StorageNode; type: FileType; url: string; near
 
 function Page(props: { children: ReactNode; bare?: boolean; dark?: boolean }) {
   return (
-    <div aria-hidden className={`${PAGE} ${props.dark ? "bg-foreground" : "bg-background"}`}>
+    <div aria-hidden className={`${PAGE} ${props.dark ? "bg-tooltip" : "bg-background"}`}>
       <div style={props.bare ? undefined : MARGIN}>{props.children}</div>
     </div>
   );
