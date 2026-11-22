@@ -47,6 +47,20 @@ export function teamSocketClosed(ctx: DurableObjectState, socket: WebSocket) {
   tell(ctx, { type: "talk.online", memberId, online: false });
 }
 
+/**
+ * Closes the sockets under `tags` of a member leaving the workspace, so they hear nothing more of
+ * it (reconnecting is refused once they are gone); if Talk showed them, everyone sees them go.
+ */
+export function closeMember(ctx: DurableObjectState, memberId: string, tags: string[]) {
+  const wasOnline = hasTeamSocket(ctx, memberId);
+  for (const socket of tags.flatMap((tag) => ctx.getWebSockets(tag))) {
+    try {
+      socket.close(4403, "left the workspace");
+    } catch {}
+  }
+  if (wasOnline) tell(ctx, { type: "talk.online", memberId, online: false });
+}
+
 /** Sends a Talk event to these members' Talk apps; returns the members with none open. */
 export function sendTalk(ctx: DurableObjectState, memberIds: string[], event: TalkEvent) {
   const message = JSON.stringify(event);

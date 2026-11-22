@@ -2,6 +2,8 @@ import { schema } from "@omni/db";
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import {
+  authPost,
+  CookieJar,
   createMember,
   createOrg,
   createTestDatabase,
@@ -374,4 +376,36 @@ test("a file reaches a recipient whose session is held to the workspace by their
   });
   expect(got.status).toBe(200);
   expect(await got.text()).toBe("go");
+});
+
+test("a member removed from the workspace stops hearing it, and the others see them go", async () => {
+  const { db } = database;
+  const { org, ana, cy } = await workspace("talk-removed");
+  await db.update(schema.members).set({ role: "owner" }).where(eq(schema.members.id, ana.id));
+  const owner = new CookieJar();
+  await signIn(worker, db, ana.email, owner);
+  const anaSocket = await connect(ana.cookie);
+  const cySocket = await connect(cy.cookie);
+  await anaSocket.until(
+    (e) => e.type === "talk.online" && e.memberId === cy.id && e.online === true,
+  );
+  const closed = new Promise<number>((resolve) =>
+    cySocket.socket.addEventListener("close", (e) => resolve(e.code)),
+  );
+
+  const removed = await authPost(worker, owner, "/organization/remove-member", {
+    memberIdOrEmail: cy.email,
+    organizationId: org.id,
+  });
+  expect(removed.status).toBe(200);
+  expect(await closed).toBe(4403);
+  await anaSocket.until(
+    (e) => e.type === "talk.online" && e.memberId === cy.id && e.online === false,
+  );
+  expect(
+    (await api(ana.cookie, "GET", "/people")).body.people.map(
+      (p: { memberId: string }) => p.memberId,
+    ),
+  ).not.toContain(cy.id);
+  anaSocket.socket.close();
 });
