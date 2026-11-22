@@ -284,6 +284,7 @@ function EventBlock(props: WeekGridProps & { placed: ReturnType<typeof placeDay>
         width: `calc(${100 / columns}% - 4px)`,
       }}
       onClick={() => props.onSelect({ kind: "event", key: eventKey(event) })}
+      onFocus={() => !selected && props.onSelect({ kind: "event", key: eventKey(event) })}
       onDoubleClick={() => props.onOpen(event)}
       onPointerDown={(e) => {
         if (!movable || e.button !== 0) return;
@@ -326,6 +327,7 @@ function EventChip(props: WeekGridProps & { event: CalendarEvent }) {
       )}
       style={toneStyle(props, event)}
       onClick={() => props.onSelect({ kind: "event", key: eventKey(event) })}
+      onFocus={() => !selected && props.onSelect({ kind: "event", key: eventKey(event) })}
       onDoubleClick={() => props.onOpen(event)}
     >
       <AccentBar />

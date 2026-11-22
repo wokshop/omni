@@ -416,6 +416,62 @@ test("a move after an edit in another view builds on the edit", async () => {
   await expect.poll(startOf).toBe("2026-11-24T11:15:00.000Z");
 });
 
+test("Enter opens the event that has focus, not the one selected before", async () => {
+  const { org, page, origin } = await invited();
+  const [calendar] = await db
+    .select({ id: schema.calendarCalendars.id })
+    .from(schema.calendarCalendars)
+    .where(eq(schema.calendarCalendars.orgId, org.id));
+  await page.goto(origin);
+  const made = await page.request.post(new URL("/api/calendar/events", origin).toString(), {
+    data: {
+      calendarId: calendar?.id,
+      title: "Planning",
+      start: "2026-11-23T09:00:00.000Z",
+      end: "2026-11-23T10:00:00.000Z",
+      allDay: false,
+      timeZone: "Europe/Madrid",
+      guests: [],
+    },
+  });
+  expect(made.status()).toBe(201);
+  await openWeek(page, origin, org.slug);
+  await page.getByRole("button", { name: /Acme × Studio: kickoff/ }).click();
+  await page.getByRole("button", { name: /Planning/ }).focus();
+  await page.keyboard.press("Enter");
+  await page.getByRole("complementary", { name: "Planning" }).waitFor();
+});
+
+test("a new event goes on the calendar the switcher shows alone", async () => {
+  const { org, member, page, origin } = await invited();
+  const shared = await createMailbox(db, org.id, `team-${Date.now()}@studio.example`, "shared");
+  await grant(db, org.id, shared.id, member.id);
+  const [team] = await db
+    .insert(schema.calendarCalendars)
+    .values({ orgId: org.id, mailboxId: shared.id })
+    .returning({ id: schema.calendarCalendars.id });
+  await page.goto(
+    new URL(
+      `/${org.slug}/calendar?date=2026-11-24&view=week&calendar=${team?.id}`,
+      origin,
+    ).toString(),
+  );
+  await page.locator('[data-day="2026-11-24"]').click({ position: { x: 20, y: 10 * 48 + 6 } });
+  await page.keyboard.press("c");
+  await page.getByRole("textbox", { name: "Title" }).fill("Team sync");
+  await page.keyboard.press("Enter");
+  await expect
+    .poll(async () =>
+      (
+        await db
+          .select({ calendarId: schema.calendarEvents.calendarId })
+          .from(schema.calendarEvents)
+          .where(eq(schema.calendarEvents.title, "Team sync"))
+      ).map((e) => e.calendarId),
+    )
+    .toEqual([team?.id]);
+});
+
 async function freePort() {
   const server = createServer();
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));

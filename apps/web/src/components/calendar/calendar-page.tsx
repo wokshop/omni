@@ -162,6 +162,7 @@ export function CalendarPage(props: { date?: string; view?: CalendarView; calend
               calendars={calendars}
               event={editing.event}
               slot={editing.slot}
+              calendarId={props.calendar}
               onClose={() => setEditing(null)}
             />
           )}
