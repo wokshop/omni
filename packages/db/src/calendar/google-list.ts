@@ -9,8 +9,8 @@ import { CALENDAR_KEY, makeOwnCalendars } from "./core.ts";
  * primary calendar is the inbox's own, which takes Google's colour; every other one is a
  * calendar of the inbox, added the first time it is listed and renamed or recoloured as Google
  * says; one the list no longer has is retired with its events and each member's prefs. Safe to
- * run twice, and in any order with the sync of the calendars it keeps. Says which calendars it
- * added and retired.
+ * run twice, and in any order with the sync of the calendars it keeps. Says how many calendars
+ * it added, which it retired, and whether it renamed or recoloured any.
  */
 export async function saveGoogleCalendarList(
   db: Db,
@@ -23,7 +23,18 @@ export async function saveGoogleCalendarList(
       eq(calendarCalendars.mailboxId, mailbox.id),
       eq(calendarCalendars.orgId, mailbox.orgId),
     );
+    const before = await tx
+      .select({
+        googleId: calendarCalendars.googleId,
+        name: calendarCalendars.name,
+        color: calendarCalendars.color,
+      })
+      .from(calendarCalendars)
+      .where(ofMailbox);
+    const known = new Map(before.map((row) => [row.googleId, row]));
     const primary = calendars.find((c) => c.primary);
+    const own = known.get(null);
+    let updated = primary !== undefined && own !== undefined && own.color !== primary.color;
     if (primary) {
       await tx
         .update(calendarCalendars)
@@ -31,11 +42,10 @@ export async function saveGoogleCalendarList(
         .where(and(ofMailbox, isNull(calendarCalendars.googleId)));
     }
     const others = calendars.filter((c) => !c.primary);
-    const before = await tx
-      .select({ googleId: calendarCalendars.googleId })
-      .from(calendarCalendars)
-      .where(and(ofMailbox, isNotNull(calendarCalendars.googleId)));
-    const known = new Set(before.map((row) => row.googleId));
+    for (const c of others) {
+      const was = known.get(c.googleId);
+      if (was && (was.name !== c.name || was.color !== c.color)) updated = true;
+    }
     if (others.length > 0) {
       await tx
         .insert(calendarCalendars)
@@ -74,6 +84,7 @@ export async function saveGoogleCalendarList(
     return {
       added: others.filter((c) => !known.has(c.googleId)).length,
       retired: retired.map((row) => row.id),
+      updated,
     };
   });
 }

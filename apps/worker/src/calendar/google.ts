@@ -53,49 +53,65 @@ export async function syncGoogleCalendars(db: Db, config: Config, log: Logger, n
   if (!config.auth.google) return [];
   const mailboxes = await liveGmailMailboxes(db);
   const claims = await claimGoogleCalendars(db, mailboxes, { now, limit: CALENDARS_PER_PASS });
-  const pass: Pass = { db, config, log, deadline: Date.now() + PASS_BUDGET_MS };
-  const changed: { calendarId: string; mailboxId: string }[] = [];
-  const grew = new Set<string>();
-  const retired = new Set<string>();
-  for (const claim of claims.filter((c) => c.googleId === null)) {
-    const listed = await refreshList(pass, claim);
-    if (listed.added > 0) grew.add(claim.mailboxId);
-    for (const calendarId of listed.retired) retired.add(calendarId);
-    if (listed.added > 0 || listed.retired.length > 0) {
-      changed.push(
-        { calendarId: claim.calendarId, mailboxId: claim.mailboxId },
-        ...listed.retired.map((calendarId) => ({ calendarId, mailboxId: claim.mailboxId })),
-      );
-    }
+  const run: Run = {
+    pass: { db, config, log, deadline: Date.now() + PASS_BUDGET_MS },
+    changed: [],
+    grew: new Set(),
+    retired: new Set(),
+  };
+  for (const claim of claims) await visit(run, claim);
+  if (run.grew.size > 0 && Date.now() <= run.pass.deadline) {
+    const added = await claimGoogleCalendars(
+      db,
+      mailboxes.filter((m) => run.grew.has(m.id)),
+      { now, limit: Math.max(0, CALENDARS_PER_PASS - claims.length) },
+    );
+    for (const claim of added) await visit(run, claim);
   }
-  const added = grew.size
-    ? await claimGoogleCalendars(
-        db,
-        mailboxes.filter((m) => grew.has(m.id)),
-        { now, limit: Math.max(0, CALENDARS_PER_PASS - claims.length) },
-      )
-    : [];
-  for (const claim of [...claims, ...added].filter((c) => !retired.has(c.calendarId))) {
-    if (Date.now() > pass.deadline) {
-      await saveGoogleSync(db, claim.calendarId, { ...stateOf(claim), nextSyncAt: new Date() });
-      continue;
-    }
-    try {
-      if (await syncOne(pass, claim)) {
-        changed.push({ calendarId: claim.calendarId, mailboxId: claim.mailboxId });
-      }
-    } catch (error) {
-      log.warn("calendar.google_failed", { calendarId: claim.calendarId, error });
-      await saveGoogleSync(db, claim.calendarId, {
-        ...stateOf(claim),
-        nextSyncAt: new Date(Date.now() + FAILED_RETRY_MS),
-      });
-    }
-  }
-  return changed;
+  return run.changed;
 }
 
-const UNLISTED = { added: 0, retired: [] as string[] };
+interface Run {
+  pass: Pass;
+  changed: { calendarId: string; mailboxId: string }[];
+  grew: Set<string>;
+  retired: Set<string>;
+}
+
+async function visit(run: Run, claim: GoogleSyncClaim) {
+  const { pass } = run;
+  if (run.retired.has(claim.calendarId)) return;
+  if (Date.now() > pass.deadline) {
+    await saveGoogleSync(pass.db, claim.calendarId, { ...stateOf(claim), nextSyncAt: new Date() });
+    return;
+  }
+  if (claim.googleId === null) await list(run, claim);
+  try {
+    if (await syncOne(pass, claim)) {
+      run.changed.push({ calendarId: claim.calendarId, mailboxId: claim.mailboxId });
+    }
+  } catch (error) {
+    pass.log.warn("calendar.google_failed", { calendarId: claim.calendarId, error });
+    await saveGoogleSync(pass.db, claim.calendarId, {
+      ...stateOf(claim),
+      nextSyncAt: new Date(Date.now() + FAILED_RETRY_MS),
+    });
+  }
+}
+
+async function list(run: Run, claim: GoogleSyncClaim) {
+  const listed = await refreshList(run.pass, claim);
+  if (listed.added > 0) run.grew.add(claim.mailboxId);
+  for (const calendarId of listed.retired) run.retired.add(calendarId);
+  if (listed.added > 0 || listed.retired.length > 0 || listed.updated) {
+    run.changed.push(
+      { calendarId: claim.calendarId, mailboxId: claim.mailboxId },
+      ...listed.retired.map((calendarId) => ({ calendarId, mailboxId: claim.mailboxId })),
+    );
+  }
+}
+
+const UNLISTED = { added: 0, retired: [] as string[], updated: false };
 
 async function refreshList(pass: Pass, claim: GoogleSyncClaim) {
   try {
