@@ -253,15 +253,20 @@ It returns, against a schema:
 - `topics`: up to 5 short tags.
 
 The notes go into the meeting's doc once, above what the person typed, under a line saying it was
-written from the recording; after that the doc is the people's and is never rewritten. The
+written from the recording; after that the doc is the people's and is never rewritten. They go in
+only when nobody can open the doc who cannot open the meeting (Storage's door says who reaches
+the doc, a teamspace's members included); otherwise the doc gets a link to the meeting instead,
+so the doc never shows a summary to someone the meeting's sharing leaves out. The
 structured parts are also kept on the meeting for its page, its group and the CRM.
 
-**Groups** keep a summary of their own. When a meeting in a group is ready, a job rewrites the
-group's summary from its last 12 meetings' summaries and highlights (not their transcripts, so it
-stays small). The timeline is the highlights themselves, read at once, newest first.
+**Groups** keep summaries of their own, one per set of meetings a reader can open: a summary is
+made only from the meetings its reader can open, and kept under the group and the ids of those
+meetings, so readers who see the same meetings share it and nobody gets one built from a meeting
+they cannot open. A summary is made from the last 12 such meetings' summaries and highlights
+(not their transcripts, so it stays small), on the first read after a meeting in it is ready. The timeline is the highlights themselves, read at once, newest first.
 
-**Ask** answers one question about one meeting or one group: the meeting's transcript, or the
-group's summaries and highlights plus the transcripts of the meetings that match the question
+**Ask** answers one question about one meeting or one group: the meeting's transcript, or, for
+a group, only the meetings the asker can open: their summaries and highlights plus the transcripts of the meetings that match the question
 best. Answers cite `[mm:ss]` moments, which the page links to the transcript. It is a turn, not a
 chat history, and it counts toward the AI cap.
 
@@ -314,8 +319,13 @@ treats every meeting as the strictest case:
 
 ## Audio
 
-The recording is a Drive file in the meeting's place (the deal's teamspace, else the recorder's
-My files), in a `Recordings` folder, counted against the workspace's quota. It plays on the
+The recording is a Drive file in the recorder's My files, in a `Recordings` folder, counted
+against the workspace's quota, and never in a teamspace, whose members and admins Drive lets in
+by itself. It is shared with nobody in Drive: everyone else plays it through
+`GET /api/meetings/:id/audio`, which checks the meeting's grants and then reads the file through
+Storage's door as the recorder's. The raw response sits beside it the same way. When the recorder
+leaves the workspace, the files go with the rest of their My files (`handOverMemberStorage`), and
+the meeting keeps pointing at them. It plays on the
 meeting page and is kept as long as the meeting is, so a quote can always be heard again; a
 workspace can choose to delete recordings after a number of days instead, or as soon as the
 transcript is saved, and the sweep does it. The engine's raw response is kept as a file beside
@@ -338,7 +348,7 @@ All tables carry `org_id`, cascade with the workspace, and are named `meetings_*
 | `meetings_segments`  | meeting_id, seq, org_id, speaker_label, start_ms, end_ms, text, search (tsvector, `simple`)                                                                                                                                                                                                                                                | Key (meeting_id, seq). One per turn; words and their times stay in the raw file.                                                                                                                                           |
 | `meetings_notes`     | meeting_id, org_id, summary, highlights, actions, topics, model, prompt_version, written_to_doc_at                                                                                                                                                                                                                                         | `jsonb` parts, written in one go.                                                                                                                                                                                          |
 | `meetings_actions`   | id, meeting_id, org_id, kind (`task` · `email`), payload, state (`open` · `done` · `dismissed`), task_id, decided_by_member_id                                                                                                                                                                                                             | An accepted task keeps the calendar task's id.                                                                                                                                                                             |
-| `meetings_groups`    | org_id, group_key, title, summary, summarized_through, updated_at                                                                                                                                                                                                                                                                          | Key (org_id, group_key). The running summary.                                                                                                                                                                              |
+| `meetings_groups`    | org_id, group_key, meetings_hash, title, summary, summarized_through, updated_at                                                                                                                                                                                                                                                           | Key (org_id, group_key, meetings_hash): one per set of meetings read.                                                                                                                                                      |
 | `meetings_jobs`      | meeting_id, org_id, provider, provider_job_id, mic_intervals, submitted_at, polls                                                                                                                                                                                                                                                          | One per meeting; what makes each job safe to run twice.                                                                                                                                                                    |
 
 `group_key` is `series:<UID>` for a recurring event, `domain:<domain>` for meetings with one
@@ -367,7 +377,7 @@ the status before it.
    1 and 2), and replaces the meeting's segments and speakers in one transaction. `naming`.
 5. **Name.** The names pass (step 3) when a speaker is still unnamed. `writing`.
 6. **Write.** The notes call; writes `meetings_notes`, the actions, and the doc once. `ready`,
-   and a push to the recorder. Then the group's summary job.
+   and a push to the recorder. The group's summaries are made again on their next read.
 
 A step that fails three times sets `failed` with what failed; the page offers **Try again**,
 which starts from that step. Any failure in transcription leaves the audio, so nothing said is
@@ -475,7 +485,8 @@ What each layer must prove:
   M2. `resolveSpeakers` names the recorder in every two-channel recording and the other person in
   every two-person one.
 - M2: nobody sees a meeting without a grant or `workspace` access, a freelancer never through
-  `workspace`, and a removed grant closes it at once.
+  `workspace`, and a removed grant closes it at once; a group summary or group Ask never uses a
+  meeting its reader cannot open; a teamspace member reaches no recording through Drive.
 - M3: a recording stopped mid-transcription and retried ends with one transcript, one set of
   actions and one block in the doc.
 - M4: killing the app mid-meeting and opening it again finishes the upload with nothing missing.
