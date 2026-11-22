@@ -262,6 +262,13 @@ export interface BookingInput {
   timeZone?: string | null;
 }
 
+const isAddress = (email: string) => {
+  const [local, domain, ...rest] = email.split("@");
+  if (rest.length > 0 || !local || !domain || email.length > 320 || /\s/.test(email)) return false;
+  const labels = domain.split(".");
+  return labels.length > 1 && labels.every(Boolean);
+};
+
 export type SlotTaken = { status: "slot_taken" };
 
 /**
@@ -280,7 +287,7 @@ export async function bookSlot(
   const name = input.name.trim();
   if (!name || name.length > BOOKING_NAME_MAX) return invalidAt("name");
   if ((input.note?.length ?? 0) > BOOKING_NOTE_MAX) return invalidAt("note");
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email.trim())) return invalidAt("email");
+  if (!isAddress(input.email.trim())) return invalidAt("email");
   const zone = input.timeZone && isIanaZone(input.timeZone) ? input.timeZone : null;
   return db.transaction(async (tx) => {
     const [locked] = await tx
