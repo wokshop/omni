@@ -105,7 +105,8 @@ export function meetingsPipeline(db: Db) {
     setEngineJob: (meetingId: string, provider: string, jobId: string) =>
       pipeline.setEngineJob(db, meetingId, provider, jobId),
     countPoll: (meetingId: string) => pipeline.countPoll(db, meetingId),
-    fail: (meetingId: string, failure: string) => pipeline.fail(db, meetingId, failure),
+    fail: (meetingId: string, failure: string, from: pipeline.MeetingStatus[]) =>
+      pipeline.fail(db, meetingId, failure, from),
     meeting: (meetingId: string) => pipeline.meetingForJob(db, meetingId),
     saveTranscript: (meetingId: string, orgId: string, saved: pipeline.SavedTranscript) =>
       db.transaction((tx) => pipeline.saveTranscript(tx, meetingId, orgId, saved)),

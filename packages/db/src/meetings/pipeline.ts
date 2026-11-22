@@ -80,11 +80,17 @@ export async function countPoll(ex: Ex, meetingId: string) {
   return row?.polls ?? 0;
 }
 
-export async function fail(ex: Ex, meetingId: string, failure: string) {
-  await ex
+/**
+ * Marks the meeting failed, only while it is still at the status the failing step started from:
+ * a stale delivery's failure never undoes another delivery's progress.
+ */
+export async function fail(ex: Ex, meetingId: string, failure: string, from: MeetingStatus[]) {
+  const rows = await ex
     .update(meetingsMeetings)
     .set({ status: "failed", failure: failure.slice(0, 500) })
-    .where(eq(meetingsMeetings.id, meetingId));
+    .where(and(eq(meetingsMeetings.id, meetingId), inArray(meetingsMeetings.status, from)))
+    .returning({ id: meetingsMeetings.id });
+  return rows.length > 0;
 }
 
 /** Everything a job needs about one meeting: the row, its job, its people and its recorder. */

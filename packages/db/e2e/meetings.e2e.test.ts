@@ -328,3 +328,41 @@ test("two deliveries racing to send a recording to the engine: exactly one may",
   await pipeline.setEngineJob(meetingId, "assemblyai", "job-1");
   expect(await pipeline.claimSubmission(meetingId)).toBe(false);
 });
+
+test("a stale step's failure never undoes progress another delivery made", async () => {
+  const s = await studio();
+  const pipeline = meetingsPipeline(db);
+  const { meetingId } = ok(await record(s.dana.id, { attendees: [s.dana.address] }));
+  await pipeline.saveTranscript(meetingId, s.org.id, {
+    language: "en",
+    durationMs: 1000,
+    rawNodeId: null,
+    turns: [{ speaker: "A", startMs: 0, endMs: 900, text: "hi" }],
+    speakers: [{ label: "A", name: null, address: null, source: null, confidence: 0 }],
+  });
+  expect(await pipeline.fail(meetingId, "engine said no", ["transcribing"])).toBe(false);
+  expect(ok(await forMember(db, s.dana.id).meetings.get(meetingId)).meeting.status).toBe("naming");
+  expect(await pipeline.fail(meetingId, "model refused", ["naming"])).toBe(true);
+});
+
+test("two people accepting one action at once: one wins, the other is told it was decided", async () => {
+  const s = await studio();
+  const pipeline = meetingsPipeline(db);
+  const { meetingId } = ok(await record(s.dana.id, { attendees: [s.dana.address, s.ben.address] }));
+  ok(await forMember(db, s.dana.id).meetings.grant(meetingId, s.ben.address, "editor"));
+  await pipeline.saveNotes(meetingId, s.org.id, {
+    title: null,
+    summary: "s",
+    highlights: [],
+    topics: [],
+    actions: [{ kind: "task", payload: { title: "send deck" } }],
+    model: "test",
+    promptVersion: 1,
+  });
+  const [action] = ok(await forMember(db, s.dana.id).meetings.get(meetingId)).actions;
+  const results = await Promise.all([
+    forMember(db, s.dana.id).meetings.decideAction(action!.id, { accept: true, taskId: "t-dana" }),
+    forMember(db, s.ben.id).meetings.decideAction(action!.id, { accept: true, taskId: "t-ben" }),
+  ]);
+  expect(results.map((r) => r.status).toSorted()).toEqual(["decided", "ok"]);
+});
