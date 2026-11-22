@@ -1,5 +1,5 @@
 import * as Y from "yjs";
-import { keyBetween } from "./order.ts";
+import { isKey, keysBetween } from "./order.ts";
 import { copy, elementSchema, FIELDS, type CanvasElement, type Scene } from "./scene.ts";
 import { paintOrder, type Keyed } from "./tree.ts";
 
@@ -121,7 +121,7 @@ function keysFor(scene: Scene, current: Map<string, Keyed>) {
   for (const [parent, list] of siblings) {
     const owned = list.map((element) => {
       const now = current.get(element.id);
-      return now && now.element.parent === parent && now.z ? now.z : null;
+      return now && now.element.parent === parent && isKey(now.z) ? now.z : null;
     });
     const keep = longestRising(owned);
     const kept = owned.map((key, i) => (keep.has(i) ? key : null));
@@ -131,10 +131,21 @@ function keysFor(scene: Scene, current: Map<string, Keyed>) {
       after = kept[i] ?? after;
     }
     let previous: string | null = null;
-    list.forEach((element, i) => {
-      previous = kept[i] ?? keyBetween(previous, next[i]!);
-      keys.set(element.id, previous);
-    });
+    for (let i = 0; i < list.length;) {
+      const own = kept[i];
+      if (own) {
+        keys.set(list[i]!.id, own);
+        previous = own;
+        i++;
+        continue;
+      }
+      let end = i;
+      while (end < list.length && !kept[end]) end++;
+      const fresh = keysBetween(previous, next[i]!, end - i);
+      for (let j = i; j < end; j++) keys.set(list[j]!.id, fresh[j - i]!);
+      previous = fresh.at(-1)!;
+      i = end;
+    }
   }
   return keys;
 }

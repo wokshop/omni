@@ -1,5 +1,6 @@
 export { CANVAS_TYPE, isOmniCanvas } from "./file.ts";
 export {
+  CANVAS_MAX_BYTES,
   CANVAS_MAX_ELEMENTS,
   CANVAS_MAX_FILES,
   CANVAS_MAX_TEXT,

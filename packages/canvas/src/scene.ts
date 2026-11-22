@@ -1,7 +1,12 @@
 import { z } from "zod";
 
-/** The most elements a canvas holds. */
-export const CANVAS_MAX_ELEMENTS = 5_000;
+/**
+ * The most elements a canvas holds, and the largest body. The live layer starts a document with
+ * one record holding its whole state (a seed or snap), and a record must stay under 1 MiB: a
+ * 400 KB body's state is about 740 KB, with room for its history.
+ */
+export const CANVAS_MAX_ELEMENTS = 2_000;
+export const CANVAS_MAX_BYTES = 400_000;
 /** The longest text one element holds. */
 export const CANVAS_MAX_TEXT = 5_000;
 /** The most Drive files one canvas shows as tiles. */

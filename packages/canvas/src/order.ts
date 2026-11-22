@@ -1,28 +1,20 @@
-const DIGITS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-const BASE = DIGITS.length;
-const digit = (key: string, at: number) => DIGITS.indexOf(key[at]!);
+import { generateKeyBetween, generateNKeysBetween } from "fractional-indexing";
 
 /**
- * A fractional key for z-order after `before` and before `after` (`null` for no bound): a string
- * that sorts between the two, so moving one element in front of another never rewrites anyone
- * else's key. `before` must sort below `after`, and both must be keys this made. A key never ends
- * in the lowest digit, so there is always room below it.
+ * `count` fractional keys for z-order, in order, after `before` and before `after` (`null` for no
+ * bound): strings that sort between the two, so moving one element never rewrites anyone else's
+ * key, and that stay short however many are added at the end.
  */
-export function keyBetween(before: string | null, after: string | null) {
-  const low = before ?? "";
-  let high = after;
-  let key = "";
-  for (let at = 0; ; at++) {
-    const a = at < low.length ? digit(low, at) : 0;
-    const b = high === null ? BASE : at < high.length ? digit(high, at) : 0;
-    if (a === b) {
-      key += DIGITS[a];
-      continue;
-    }
-    const middle = Math.floor((a + b) / 2);
-    if (middle > a) return key + DIGITS[middle];
-    key += DIGITS[a];
-    high = null;
+export const keysBetween = (before: string | null, after: string | null, count: number) =>
+  generateNKeysBetween(before, after, count);
+
+/** Whether `key` is a z-order key this package makes (a newer or broken client's may not be). */
+export function isKey(key: string) {
+  try {
+    generateKeyBetween(key, null);
+    return true;
+  } catch {
+    return false;
   }
 }
 

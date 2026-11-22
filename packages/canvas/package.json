@@ -9,6 +9,7 @@
     "./file": "./src/file.ts"
   },
   "dependencies": {
+    "fractional-indexing": "3.2.0",
     "yjs": "^13.6.33",
     "zod": "4.6.7"
   }
