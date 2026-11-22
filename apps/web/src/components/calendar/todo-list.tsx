@@ -19,6 +19,7 @@ import {
   type CrmTask,
   type DueGroup,
   MY_TODOS,
+  type TaskFilter,
 } from "@/lib/crm-tasks.ts";
 
 const SECTIONS: { id: DueGroup; label: string; fixed: boolean }[] = [
