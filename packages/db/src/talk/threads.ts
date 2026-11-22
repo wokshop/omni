@@ -116,11 +116,16 @@ export async function openThread(ex: Ex, me: TalkMember, memberId: string) {
   } satisfies OpenThreadResult;
 }
 
-/** The thread, when `me` is in it, with who the other one is. */
+/** The thread, when `me` is in it and the other one is still a teammate, with who they are. */
 export async function getThread(ex: Ex, me: TalkMember, threadId: string) {
   const thread = await threadOf(ex, me, threadId);
-  if (!thread) return NOT_FOUND;
-  return { status: "ok", thread: { id: thread.id, otherMemberId: thread.otherMemberId } } as const;
+  const other = thread ? await teammateOf(ex, me, thread.otherMemberId) : null;
+  if (!thread || !other) return NOT_FOUND;
+  return {
+    status: "ok",
+    thread: { id: thread.id, otherMemberId: thread.otherMemberId },
+    other: { name: other.name, email: other.email },
+  } as const;
 }
 
 /** Reads the thread up to now. */
