@@ -27,6 +27,7 @@ and rules (`docs/spec/modules.md`), because it owns tables and reads Storage thr
   a face a beat peeks at that thread; moving to another face slides the same window to it and
   swaps the thread in place; leaving both closes it. A press on a face, or a touch inside the
   window, pins it open until it is closed. Only a pinned window takes the keyboard.
+  - One fixed height, empty or full, so moving between faces never resizes it.
   - A one-line header: their name and a green dot while they are online; close shows on hover.
   - The notes as bubbles: yours on the right in primary, theirs on the left in secondary. A time
     line wherever an hour passes. An image is a rounded picture; any other file a chip with its

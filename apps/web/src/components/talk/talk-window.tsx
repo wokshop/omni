@@ -176,28 +176,26 @@ function Conversation(props: { person: TalkPerson; pinned: boolean }) {
       onDrop={onDrop}
     >
       <Header person={props.person} />
-      {(messages.isPending || list.length > 0) && (
-        <div className="flex max-h-80 min-h-0 flex-col-reverse overflow-y-auto [mask-image:linear-gradient(to_bottom,transparent,black_12px)]">
-          {messages.isPending ? (
-            <Skeleton loading label="Loading notes" skeleton={<NoteBones />}>
-              {null}
-            </Skeleton>
-          ) : (
-            <TalkMessages messages={list} meId={member.id} />
-          )}
-          {messages.hasNextPage && (
-            <Button
-              intent="plain"
-              size="text"
-              className="mx-auto mt-1 text-muted-foreground"
-              isPending={messages.isFetchingNextPage}
-              onPress={() => void messages.fetchNextPage()}
-            >
-              Earlier
-            </Button>
-          )}
-        </div>
-      )}
+      <div className="flex h-80 max-h-[calc(100svh-12rem)] shrink-0 flex-col-reverse overflow-y-auto [mask-image:linear-gradient(to_bottom,transparent,black_12px)]">
+        {messages.isPending ? (
+          <Skeleton loading label="Loading notes" skeleton={<NoteBones />}>
+            {null}
+          </Skeleton>
+        ) : (
+          <TalkMessages messages={list} meId={member.id} />
+        )}
+        {messages.hasNextPage && (
+          <Button
+            intent="plain"
+            size="text"
+            className="mx-auto mt-1 text-muted-foreground"
+            isPending={messages.isFetchingNextPage}
+            onPress={() => void messages.fetchNextPage()}
+          >
+            Earlier
+          </Button>
+        )}
+      </div>
       <Composer person={props.person} threadId={threadId} pinned={props.pinned} />
     </div>
   );
