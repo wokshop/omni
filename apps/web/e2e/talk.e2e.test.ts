@@ -205,16 +205,21 @@ test("the stack shows who is online, and a note and a file reach the teammate's 
   expect(await peek.getAttribute("data-same")).toBe("");
   await expect.poll(leftOf).toBeGreaterThan(before);
   await shoot(ana, "1a-peek");
+  const chooser = ana.getByRole("region", { name: "Everyone" });
+  await stack.getByRole("button", { name: "Everyone, 1 more" }).hover();
+  await chooser.getByRole("button", { name: "Kofi Mensah" }).waitFor();
+  expect(await chooser.getAttribute("data-same")).toBe("");
+  expect(await peek.count()).toBe(0);
   await ana.mouse.move(4, 400);
-  await expect.poll(() => peek.count()).toBe(0);
+  await expect.poll(() => chooser.count()).toBe(0);
   ana.off("request", onRequest);
   expect(made).toEqual([]);
 
   await stack.getByRole("button", { name: "Everyone, 1 more" }).click();
-  await ana.getByRole("menuitem", { name: "Kofi Mensah" }).waitFor();
+  await chooser.getByRole("button", { name: "Kofi Mensah" }).waitFor();
   await ana.waitForTimeout(300);
   await shoot(ana, "1b-everyone");
-  await ana.getByRole("menuitem", { name: "Kofi Mensah" }).click();
+  await chooser.getByRole("button", { name: "Kofi Mensah" }).click();
   const window = ana.getByRole("region", { name: "Conversation with Kofi Mensah" });
   await window.getByLabel("Active now").waitFor();
   const composer = window.getByRole("textbox", { name: "Note to Kofi Mensah" });

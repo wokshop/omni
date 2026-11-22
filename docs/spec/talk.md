@@ -21,11 +21,13 @@ and rules (`docs/spec/modules.md`), because it owns tables and reads Storage thr
   then those online, then by name. An offline teammate's picture is dimmed and greyed; you can
   still open their thread and write, and they read it when they are back (or get a push). When
   the workspace has no other teammate, there is no stack.
-- **Everyone.** `+n` opens the full list: online teammates first, then the others, each with
-  their unread count. Any of them opens a conversation; an offline teammate reads it next time.
+- **Everyone.** `+n` turns the same window into the people chooser, like a face does its
+  thread: resting on it peeks, moving there from a face slides the window under it, a press pins
+  it. It lists online teammates first, then the others, each with their unread count. Any of them
+  opens their conversation in place; an offline teammate reads it next time.
 - **The window.** A small white island just under the face it belongs to (or `+n`), its top
   right corner under the face, kept on screen, 288px wide. It behaves like a tooltip: resting on
-  a face a beat peeks at that thread; moving to another face slides the same window to it and
+  a face a beat (200ms) peeks at that thread; moving to another face slides the same window to it and
   swaps the thread in place; leaving both closes it. A press on a face, or a touch inside the
   window, pins it open until it is closed. Only a pinned window takes the keyboard.
   - One fixed height, empty or full, so moving between faces never resizes it.
