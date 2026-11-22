@@ -508,3 +508,4 @@ export function userCrm(db: Db, userId: string, scopeOrgId?: string | null) {
 
 export type MemberCrm = ReturnType<typeof memberCrm>;
 export type UserCrm = ReturnType<typeof userCrm>;
+export * from "./crm/for-platform.ts";

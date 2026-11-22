@@ -157,7 +157,7 @@ test("the daily cron deletes only accounts with no workspace, no way into one, a
   expect(await remaining(everyone)).toEqual(left);
 });
 
-test("an abandoned account's empty Personal space goes with it; one holding mail, a file or another member keeps its owner", async () => {
+test("an abandoned account's empty Personal space goes with it; one holding mail, a file, a CRM record or another member keeps its owner", async () => {
   const { db } = database;
   const gone = await signUp("personal-gone", 45);
   const goneSpace = await ensurePersonalSpace(db, gone.id);
@@ -175,17 +175,30 @@ test("an abandoned account's empty Personal space goes with it; one holding mail
   const shared = await signUp("personal-shared", 45);
   const sharedSpace = await ensurePersonalSpace(db, shared.id);
   await createMember(db, sharedSpace, `hire-${shared.id}@omni.test`);
+  const crm = await signUp("personal-crm", 45);
+  const crmSpace = await ensurePersonalSpace(db, crm.id);
+  const [crmMember] = await db
+    .select({ id: schema.members.id })
+    .from(schema.members)
+    .where(eq(schema.members.organizationId, crmSpace));
+  const added = await forMember(db, crmMember!.id).crm.addPerson({
+    name: "Ana",
+    address: "ana@client.test",
+  });
+  expect(added.status).toBe("ok");
 
   await runDaily();
 
-  expect(await remaining([gone.id, kept.id, files.id, shared.id])).toEqual(
-    new Set([kept.id, files.id, shared.id]),
+  expect(await remaining([gone.id, kept.id, files.id, shared.id, crm.id])).toEqual(
+    new Set([kept.id, files.id, shared.id, crm.id]),
   );
   const spaces = await db
     .select({ id: schema.organizations.id })
     .from(schema.organizations)
-    .where(inArray(schema.organizations.id, [goneSpace, keptSpace, filesSpace, sharedSpace]));
+    .where(
+      inArray(schema.organizations.id, [goneSpace, keptSpace, filesSpace, sharedSpace, crmSpace]),
+    );
   expect(spaces.map((space) => space.id).toSorted()).toEqual(
-    [keptSpace, filesSpace, sharedSpace].toSorted(),
+    [keptSpace, filesSpace, sharedSpace, crmSpace].toSorted(),
   );
 });
