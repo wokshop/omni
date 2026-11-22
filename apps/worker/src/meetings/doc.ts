@@ -12,6 +12,8 @@ export type MeetingDocJob = { kind: "meeting-doc"; meetingId: string; orgId: str
 /** How long after the write step's hand-off the doc job looks for the notes. */
 export const DOC_DELAY_SECONDS = 10;
 const NAME_TRIES = 5;
+/** How long one run holds the right to write a meeting's doc. */
+export const DOC_LEASE_MS = 2 * 60_000;
 
 /** A failure worth trying again: Storage was busy or refused for now. */
 export class DocRetry extends Error {}
@@ -87,16 +89,18 @@ export const linkBlock = (target: Target, url: string) =>
   `_Omni's notes from the recording of ${byline(target, url)} are on the meeting's page._\n\n---`;
 
 async function audienceFits(files: MemberStorage, nodeId: string, granted: Set<string>) {
-  const found = await files.file(nodeId);
-  if (found.status !== "ok" || found.file.space !== "personal") return false;
+  const found = await files.node(nodeId);
+  if (!found || found.inTrash || found.node.space !== "personal") return false;
   const shared = await files.sharing(nodeId);
-  if (shared.status !== "ok" || shared.sharing.linkAccess !== "restricted") return false;
+  if (shared.status !== "ok") return false;
   const people = [...shared.sharing.people, ...shared.sharing.inherited];
   if (!people.every((p) => granted.has(p.email.toLowerCase()))) return false;
-  const parentId = found.file.parentId;
-  if (!parentId) return true;
-  const folder = await files.sharing(parentId);
-  return folder.status === "ok" && folder.sharing.linkAccess === "restricted";
+  const chain = new Set([nodeId, ...found.path.map((entry) => entry.id)]);
+  for (const id of chain) {
+    const link = id === nodeId ? shared : await files.sharing(id);
+    if (link.status !== "ok" || link.sharing.linkAccess !== "restricted") return false;
+  }
+  return true;
 }
 
 const docName = (target: Target, n: number) => {
@@ -135,18 +139,25 @@ export async function writeNotesDoc(deps: WriteDeps, meetingId: string) {
   if (!target) return "gone" as const;
   const { meeting, notes } = target;
   if (!notes) return meeting.status === "writing" ? ("wait" as const) : ("gone" as const);
-  if (notes.writtenToDocAt) return "done" as const;
-  const { actions } = target;
-  const empty = !notes.summary && !notes.highlights.length && !actions.length;
-  if (empty || !meeting.recordedByMemberId) {
-    await pipeline.claimDocWrite(meetingId);
-    return "done" as const;
+  if (!(await pipeline.claimDocLease(meetingId, DOC_LEASE_MS))) return "held" as const;
+  try {
+    return await writeHeld(deps, target);
+  } catch (error) {
+    await pipeline.releaseDocLease(meetingId);
+    throw error;
   }
+}
+
+async function writeHeld(deps: WriteDeps, target: Target) {
+  const { meeting, notes, actions } = target;
+  if (!notes) return "gone" as const;
+  const meetingId = meeting.id;
+  const empty = !notes.summary && !notes.highlights.length && !actions.length;
+  if (empty || !meeting.recordedByMemberId) return "done" as const;
   const files = forMember(deps.db, meeting.recordedByMemberId).storage;
   const docId = await docOf(deps, files, target);
   if (!docId) {
     deps.log.warn("meetings.doc_unavailable", { meetingId });
-    await pipeline.claimDocWrite(meetingId);
     return "done" as const;
   }
   const url = meetingUrl(deps.config, target.workspaceSlug, meetingId);
@@ -162,7 +173,6 @@ export async function writeNotesDoc(deps: WriteDeps, meetingId: string) {
   if (edited.status !== "ok" && edited.status !== "invalid") {
     deps.log.warn("meetings.doc_refused", { meetingId, reason: edited.status });
   }
-  await pipeline.claimDocWrite(meetingId);
   return "done" as const;
 }
 
@@ -194,6 +204,9 @@ export async function consumeMeetingDocMessage(
     await Promise.allSettled(pending);
     if (outcome === "wait" && message.attempts <= maxRetries) {
       return message.retry({ delaySeconds: DOC_DELAY_SECONDS * message.attempts });
+    }
+    if (outcome === "held" && message.attempts <= maxRetries) {
+      return message.retry({ delaySeconds: DOC_LEASE_MS / 1000 + DOC_DELAY_SECONDS });
     }
     log.info("meetings.doc", { outcome });
     return message.ack();

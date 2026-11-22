@@ -56,3 +56,31 @@ export async function claimNotesDoc(ex: Ex, meetingId: string, nodeId: string) {
     .returning({ id: meetingsMeetings.id });
   return rows.length > 0;
 }
+
+/**
+ * Takes the right to write the meeting's notes doc for `leaseMs`: true when nobody wrote it yet,
+ * or the last run's lease ran out. Overlapping runs never write at once; a run that finds the
+ * lease held tries again once it has run out, and finds the block already there.
+ */
+export async function claimDocLease(ex: Ex, meetingId: string, leaseMs: number) {
+  const expired = new Date(Date.now() - leaseMs).toISOString();
+  const rows = await ex
+    .update(meetingsNotes)
+    .set({ writtenToDocAt: new Date() })
+    .where(
+      and(
+        eq(meetingsNotes.meetingId, meetingId),
+        sql`(${meetingsNotes.writtenToDocAt} is null or ${meetingsNotes.writtenToDocAt} < ${expired}::timestamptz)`,
+      ),
+    )
+    .returning({ id: meetingsNotes.meetingId });
+  return rows.length > 0;
+}
+
+/** Lets go of a lease whose write failed, so a retry may write at once. */
+export async function releaseDocLease(ex: Ex, meetingId: string) {
+  await ex
+    .update(meetingsNotes)
+    .set({ writtenToDocAt: null })
+    .where(eq(meetingsNotes.meetingId, meetingId));
+}
