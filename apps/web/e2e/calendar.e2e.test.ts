@@ -1042,6 +1042,23 @@ test("resizing the window keeps the month's weeks where they were", async () => 
   expect(shownDate(page)).toBe("2026-11-24");
 });
 
+test("an event clicked in a visible week outside the month's six takes Enter", async () => {
+  const { org, page, origin } = await invited();
+  await page.goto(new URL(`/${org.slug}/calendar?date=2026-12-01&view=month`, origin).toString());
+  const first = page.locator('[data-month-day="2026-12-01"]');
+  await first.waitFor();
+  const box = await first.boundingBox();
+  await page.mouse.move((box?.x ?? 0) + 20, (box?.y ?? 0) + 20);
+  await page.mouse.wheel(0, -(box?.height ?? 100));
+  const chip = page
+    .locator('[data-month-day="2026-11-24"]')
+    .getByRole("button", { name: /Acme × Studio: kickoff/ });
+  await chip.click();
+  expect(shownDate(page)).toBe("2026-12-01");
+  await page.keyboard.press("Enter");
+  await page.getByRole("complementary", { name: "Acme × Studio: kickoff" }).waitFor();
+});
+
 test("one sideways swipe steps the week, and each gesture steps once", async () => {
   const { org, page, origin } = await invited();
   await page.goto(new URL(`/${org.slug}/calendar?date=2026-11-24&view=week`, origin).toString());

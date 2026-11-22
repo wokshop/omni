@@ -139,7 +139,8 @@ export function CalendarPage(props: {
   const opened = panel ? byKey.get(panel) : undefined;
 
   const { move } = useCalendarKeys({
-    events: inView,
+    events,
+    stepping: inView,
     selection,
     setSelection,
     open: (event) => {
