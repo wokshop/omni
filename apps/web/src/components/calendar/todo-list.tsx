@@ -10,14 +10,14 @@ import { TextField } from "@/components/ui/text-field";
 import { useHasCrm } from "@/hooks/use-crm.ts";
 import { useCreateTask, useCrmTasks, useUpdateTask } from "@/hooks/use-crm-tasks.ts";
 import { useMember } from "@/hooks/use-session.ts";
-import { useWorkspacePaths } from "@/hooks/use-workspaces.ts";
+import { useOpenTask } from "@/components/crm/task-panel.tsx";
+import { endDrag, startDrag, timedTodo } from "@/lib/calendar-drag.ts";
 import { keys } from "@/lib/query-keys.ts";
 import {
   dayOf,
   dueAtOf,
   dueGroup,
   dueLabel,
-  taskPath,
   type CrmTask,
   type DueGroup,
   type TaskFilter,
@@ -178,12 +178,27 @@ function NewTodo({ section, onDone }: { section: DueGroup; onDone: () => void })
   );
 }
 
+const clock = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
+
+function dueText(task: CrmTask) {
+  const day = dueLabel(task.dueAt);
+  if (!task.dueAt || !timedTodo(task)) return day;
+  const at = clock.format(new Date(task.dueAt));
+  return day === "Today" ? at : `${day} ${at}`;
+}
+
 function TodoRow({ task, overdue }: { task: CrmTask; overdue: boolean }) {
   const toggle = useToggleTodo();
-  const { href } = useWorkspacePaths();
+  const open = useOpenTask();
   const done = !!task.completedAt;
   return (
-    <div className={`${ROW} hover:bg-hover`}>
+    <div
+      data-todo={task.id}
+      draggable
+      onDragStart={(event) => startDrag(event, { kind: "todo", task })}
+      onDragEnd={endDrag}
+      className={`${ROW} hover:bg-hover ${open.id === task.id ? "bg-accent" : ""}`}
+    >
       <CheckboxField
         aria-label={done ? `Reopen ${task.title}` : `Complete ${task.title}`}
         isSelected={done}
@@ -193,7 +208,7 @@ function TodoRow({ task, overdue }: { task: CrmTask; overdue: boolean }) {
         <Checkbox />
       </CheckboxField>
       <Link
-        href={href(taskPath(task.id))}
+        href={open.href(task.id)}
         className={`min-w-0 flex-1 truncate text-sm ${done ? "text-muted-foreground line-through" : "text-foreground"}`}
       >
         {task.title}
@@ -202,7 +217,7 @@ function TodoRow({ task, overdue }: { task: CrmTask; overdue: boolean }) {
         <span
           className={`shrink-0 rounded-md bg-secondary px-1.5 py-0.5 text-xs tabular-nums ${overdue ? "text-danger" : "text-muted-foreground"}`}
         >
-          {dueLabel(task.dueAt)}
+          {dueText(task)}
         </span>
       )}
     </div>

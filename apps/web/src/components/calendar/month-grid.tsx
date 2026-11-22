@@ -3,6 +3,7 @@ import { CanvasButton } from "@/components/ui/canvas-button";
 import type { CalendarEvent } from "@/lib/calendar.ts";
 import { addDays, allDayOn, dayKey, eventKey, sameDay } from "@/lib/calendar-grid.ts";
 import { dayOf } from "@/lib/crm-tasks.ts";
+import { useDropZone } from "./drop-zone.ts";
 import { EventChip, TodoChip, type WeekGridProps } from "./week-grid.tsx";
 
 const SHOWN = 3;
@@ -56,12 +57,15 @@ function MonthDay(props: WeekGridProps & { day: Date; month: number; onDay: (day
   const more = Math.max(0, items - SHOWN);
   const today = sameDay(day, props.now);
   const weekend = day.getDay() === 0 || day.getDay() === 6;
+  const zone = useDropZone(day, false, props.onDrop);
   return (
     <div
       data-month-day={dayKey(day)}
+      {...zone.handlers}
       className={cn(
         "flex min-h-0 min-w-0 flex-col gap-0.5 overflow-hidden border-t border-l border-calendar-line p-1",
         weekend && "bg-hover",
+        zone.over && "bg-primary-subtle",
       )}
     >
       <CanvasButton
@@ -79,7 +83,7 @@ function MonthDay(props: WeekGridProps & { day: Date; month: number; onDay: (day
         <EventChip key={eventKey(event)} event={event} timed {...props} />
       ))}
       {todos.slice(0, Math.max(0, SHOWN - events.length)).map((task) => (
-        <TodoChip key={task.id} task={task} onTodo={props.onTodo} />
+        <TodoChip key={task.id} task={task} onTodo={props.onTodo} onOpenTodo={props.onOpenTodo} />
       ))}
       {more > 0 && (
         <CanvasButton
