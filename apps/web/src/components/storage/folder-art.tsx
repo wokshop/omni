@@ -43,7 +43,11 @@ export function FolderArt(props: {
   const cards = enabled ? pick(contents.nodes) : [];
   const spots = PEEK[cards.length - 1] ?? [];
   return (
-    <div aria-hidden data-slot="folder-art" className="relative aspect-square overflow-hidden">
+    <div
+      aria-hidden
+      data-slot="folder-art"
+      className="relative aspect-square overflow-hidden rounded-lg"
+    >
       <span ref={anchor} className="absolute inset-0" />
       <span className="absolute inset-0 rounded-lg border border-folder-edge/40 bg-(image:--folder-back) inset-shadow-[0_1px_0] inset-shadow-folder-shine" />
       {fileUrl &&
