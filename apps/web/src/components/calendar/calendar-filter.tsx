@@ -84,7 +84,6 @@ export function CalendarFilter() {
       <Popover
         aria-label="Calendars"
         placement="bottom end"
-        offset={4}
         className="w-72 max-w-[calc(100vw-16px)] overflow-hidden"
       >
         <SearchField
@@ -106,11 +105,11 @@ export function CalendarFilter() {
           selectionBehavior="toggle"
           selectedKeys={shown.map((calendar) => calendar.id)}
           onSelectionChange={toggle}
-          className="min-h-0 flex-1 overflow-y-auto bg-transparent px-1 pb-1.5"
+          className="min-h-0 flex-1 overflow-y-auto bg-transparent px-1 pb-2"
         >
           {byAccount(matching).map(([address, group]) => (
             <GridListSection key={address} className="divide-y-0">
-              <GridListHeader className="truncate px-3 pt-3.5 pb-1.5 text-xs/4 text-muted-foreground">
+              <GridListHeader className="truncate px-3 pt-4 pb-2.5 text-xs/4 text-muted-foreground">
                 {address}
               </GridListHeader>
               {group.map((calendar) => (

@@ -161,16 +161,25 @@ export const deleteEventMutation = (client: QueryClient) =>
     onSettled: () => calendarChanged(client),
   });
 
+const prefWrites = new Map<string, Promise<unknown>>();
+
 export const calendarPrefsMutation = (client: QueryClient) =>
   mutationOptions({
     mutationKey: calendarKeys.writes(),
-    mutationFn: (input: { id: string; hidden?: boolean; color?: string | null }) =>
-      call(
-        api.calendar.calendars[":id"].$patch({
-          param: { id: input.id },
-          json: { hidden: input.hidden, color: input.color },
-        }),
-      ),
+    mutationFn: (input: { id: string; hidden?: boolean; color?: string | null }) => {
+      const write = (prefWrites.get(input.id) ?? Promise.resolve())
+        .catch(() => undefined)
+        .then(() =>
+          call(
+            api.calendar.calendars[":id"].$patch({
+              param: { id: input.id },
+              json: { hidden: input.hidden, color: input.color },
+            }),
+          ),
+        );
+      prefWrites.set(input.id, write);
+      return write;
+    },
     onMutate: async (input) => {
       await client.cancelQueries({ queryKey: calendarKeys.calendars() });
       client.setQueryData<{ calendars: CalendarList }>(

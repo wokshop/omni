@@ -494,6 +494,43 @@ test("Enter opens the event that has focus, not the one selected before", async 
   await page.getByRole("complementary", { name: "Planning" }).waitFor();
 });
 
+test("unticking and re-ticking a calendar fast keeps it shown, whichever save lands last", async () => {
+  const { org, member, address, inbox, page, origin } = await invited();
+  const shared = await createMailbox(db, org.id, `team-${Date.now()}@studio.example`, "shared");
+  await grant(db, org.id, shared.id, member.id);
+  await db.insert(schema.calendarCalendars).values({ orgId: org.id, mailboxId: shared.id });
+  let first = true;
+  await page.route("**/api/calendar/calendars/*", async (route) => {
+    if (route.request().method() === "PATCH" && first) {
+      first = false;
+      await new Promise((done) => setTimeout(done, 1500));
+    }
+    await route.continue();
+  });
+  await openWeek(page, origin, org.slug);
+  await page.getByRole("button", { name: "Calendars, 2 calendars shown" }).click();
+  await page.getByRole("searchbox", { name: "Filter calendars" }).fill(address);
+  const row = page.getByRole("grid", { name: "Calendars" }).getByRole("row").last();
+  await row.click();
+  await row.click();
+  await page.waitForLoadState("networkidle");
+  await page.waitForTimeout(2000);
+  const [prefs] = await db
+    .select({ hidden: schema.calendarMemberPrefs.hidden })
+    .from(schema.calendarMemberPrefs)
+    .innerJoin(
+      schema.calendarCalendars,
+      eq(schema.calendarCalendars.id, schema.calendarMemberPrefs.calendarId),
+    )
+    .where(
+      and(
+        eq(schema.calendarMemberPrefs.memberId, member.id),
+        eq(schema.calendarCalendars.mailboxId, inbox.id),
+      ),
+    );
+  expect(prefs?.hidden).toBe(false);
+});
+
 test("a new event goes on the first calendar still shown", async () => {
   const { org, member, address, page, origin } = await invited();
   const shared = await createMailbox(db, org.id, `team-${Date.now()}@studio.example`, "shared");
