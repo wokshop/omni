@@ -1,5 +1,15 @@
-import type { ReactNode } from "react";
-import { IconFolderShared, IconUpload, IconUserRound, IconUsers } from "@/components/icons/central";
+import { useState, type ReactNode } from "react";
+import {
+  IconFolderShared,
+  IconLock,
+  IconPlus,
+  IconUpload,
+  IconUserRound,
+  IconUsers,
+} from "@/components/icons/central";
+import { EmptyState } from "@/components/empty/empty-state";
+import { Button } from "@/components/ui/button";
+import { useMember } from "@/hooks/use-session.ts";
 import { IconSearch, IconTrash } from "@/components/icons/sidebar";
 import { openSearch } from "@/components/search/command-menu.tsx";
 import { FileTrigger } from "@/components/ui/file-trigger";
@@ -9,8 +19,15 @@ import {
   SidebarLabel,
   SidebarSection,
 } from "@/components/ui/sidebar";
-import { useHasSharedFiles, useUploads } from "@/hooks/use-storage.ts";
-import type { DriveRoot, StoragePlace } from "@/lib/storage.ts";
+import {
+  useHasSharedFiles,
+  useStorageList,
+  useTeamspaces,
+  useUploads,
+} from "@/hooks/use-storage.ts";
+import type { DriveRoot, StoragePlace, StorageSpace } from "@/lib/storage.ts";
+import { StorageFrame } from "./storage-frame.tsx";
+import { BrowseTeamspacesDialog, NewTeamspaceDialog } from "./teamspace-dialogs.tsx";
 import { SidebarGroup } from "./sidebar-tree.tsx";
 import { storageErrorToast } from "./storage-errors.ts";
 import { useWorkspacePaths } from "@/hooks/use-workspaces.ts";
@@ -29,6 +46,70 @@ export const SPACE_ICON = {
   personal: <IconUserRound className="size-icon" />,
   shared: <IconUsers className="size-icon" />,
 } as const;
+
+const TEAMSPACE_ICON = {
+  open: <IconUsers className="size-icon" />,
+  private: <IconLock className="size-icon" />,
+} as const;
+
+function HeldGroup(props: { space: StorageSpace; search: string }) {
+  const root = useStorageList({ space: props.space });
+  if (root.isPending || root.nodes.length === 0) return null;
+  return (
+    <SidebarGroup
+      drive={{ space: props.space }}
+      label={SPACE_LABEL[props.space]}
+      icon={SPACE_ICON[props.space]}
+      search={props.search}
+    />
+  );
+}
+
+function BrowseTeamspacesRow() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <SidebarItem onPress={() => setOpen(true)} tooltip="Browse teamspaces">
+        <IconUsers className="size-icon" />
+        <SidebarLabel>Browse teamspaces</SidebarLabel>
+      </SidebarItem>
+      {open && <BrowseTeamspacesDialog onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
+function NewTeamspaceRow() {
+  const [open, setOpen] = useState(false);
+  const self = useMember().member.id;
+  return (
+    <>
+      <SidebarItem onPress={() => setOpen(true)} tooltip="New teamspace">
+        <IconPlus className="size-icon" />
+        <SidebarLabel>New teamspace</SidebarLabel>
+      </SidebarItem>
+      {open && <NewTeamspaceDialog selfId={self} onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
+/** `/files` with no teamspace and nothing in My files or Shared: the way to make one. */
+export function NoTeamspaces() {
+  const [open, setOpen] = useState(false);
+  const self = useMember().member.id;
+  return (
+    <StorageFrame title={<span className="text-md">Drive</span>}>
+      <div className="flex flex-1 flex-col">
+        <EmptyState figure="drawer" title="No teamspaces yet">
+          <Button onPress={() => setOpen(true)}>
+            <IconPlus data-slot="icon" />
+            New teamspace
+          </Button>
+        </EmptyState>
+      </div>
+      {open && <NewTeamspaceDialog selfId={self} onClose={() => setOpen(false)} />}
+    </StorageFrame>
+  );
+}
 
 type Row = { label: string; path: string; icon: ReactNode; company?: boolean; action?: () => void };
 
@@ -54,6 +135,7 @@ const PLACES: Row[] = [
 /** A nav link that keeps showing `mailbox`, the switcher's choice, for the way back to mail. */
 export function StorageNav({ mailbox }: { mailbox: string | undefined }) {
   const hasShared = useHasSharedFiles();
+  const { teamspaces } = useTeamspaces();
   const search = mailbox ? `?mailbox=${encodeURIComponent(mailbox)}` : "";
   return (
     <>
@@ -61,21 +143,22 @@ export function StorageNav({ mailbox }: { mailbox: string | undefined }) {
         <UploadRow />
         <Rows rows={PLACES} mailbox={mailbox} />
       </SidebarSection>
-      <SidebarSection label="Folders">
-        {hasShared && (
-          <SidebarGroup
-            drive={{ space: "shared" }}
-            label={SPACE_LABEL.shared}
-            icon={SPACE_ICON.shared}
-            search={search}
-          />
-        )}
-        <SidebarGroup
-          drive={{ space: "personal" }}
-          label={SPACE_LABEL.personal}
-          icon={SPACE_ICON.personal}
-          search={search}
-        />
+      <SidebarSection label="Teamspaces">
+        {teamspaces
+          .filter((teamspace) => teamspace.role !== null)
+          .map((teamspace) => (
+            <SidebarGroup
+              key={teamspace.id}
+              drive={{ teamspaceId: teamspace.id }}
+              label={teamspace.name}
+              icon={teamspace.private ? TEAMSPACE_ICON.private : TEAMSPACE_ICON.open}
+              search={search}
+            />
+          ))}
+        {hasShared && <HeldGroup space="shared" search={search} />}
+        <HeldGroup space="personal" search={search} />
+        <NewTeamspaceRow />
+        {teamspaces.some((teamspace) => teamspace.role === null) && <BrowseTeamspacesRow />}
       </SidebarSection>
     </>
   );
