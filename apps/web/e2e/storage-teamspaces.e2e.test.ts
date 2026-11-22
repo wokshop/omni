@@ -110,6 +110,43 @@ test("a member makes a private teamspace from the sidebar, files land in it, and
   await expect.poll(() => other.page.getByText("Browse spaces", { exact: true }).count()).toBe(0);
 });
 
+test("a folder shared out of a private space shows in the recipient's Recents", async () => {
+  const org = await createOrg(db, "shared-folders");
+  await createMailbox(db, org.id, `hello-${Date.now()}@shared-folders.test`);
+  const ana = await createMember(db, org.id, `ana-${Date.now()}@shared-folders.test`);
+  const ben = await createMember(db, org.id, `ben-${Date.now()}@shared-folders.test`);
+  const owner = await signedIn(ana.id, org.id, org.slug);
+  const legal = await owner.api("POST", "/api/storage/teamspaces", {
+    name: "Legal",
+    private: true,
+  });
+  const folder = await owner.api("POST", "/api/storage/folders", {
+    name: "Board pack",
+    teamspaceId: legal.teamspace.id,
+  });
+  const [benUser] = await db
+    .select({ email: schema.users.email })
+    .from(schema.users)
+    .innerJoin(schema.members, eq(schema.members.userId, schema.users.id))
+    .where(eq(schema.members.id, ben.id));
+  await db
+    .update(schema.users)
+    .set({ emailVerified: true })
+    .where(eq(schema.users.email, benUser?.email ?? ""));
+  const email = encodeURIComponent(benUser?.email ?? "");
+  await owner.api("PUT", `/api/storage/nodes/${folder.node.id}/sharing/people/${email}`, {
+    role: "viewer",
+  });
+
+  const { page } = await signedIn(ben.id, org.id, org.slug);
+  await page.getByRole("link", { name: "Recents" }).click();
+  await page
+    .getByRole("row", { name: /Board pack/ })
+    .getByText("Shared with you")
+    .waitFor({ timeout: 30_000 });
+  expect(await page.getByRole("row", { name: /Board pack/ }).count()).toBe(1);
+});
+
 async function signedIn(memberId: string, orgId: string, slug: string) {
   const origin = String(worker.url);
   const [user] = await db

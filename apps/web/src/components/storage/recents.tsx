@@ -51,7 +51,7 @@ function useRows() {
     };
   });
   const theirs: Row[] = shared.items.flatMap((item) =>
-    item.node.kind === "file" && item.shareId
+    item.shareId
       ? [{ node: item.node, where: SHARED_LABEL, href: `/s/${encodeURIComponent(item.shareId)}` }]
       : [],
   );
@@ -70,7 +70,7 @@ function useRows() {
   };
 }
 
-/** The files changed most recently in the member's spaces, and those shared with them. */
+/** The files changed most recently in the member's spaces, and what is shared with them. */
 export function Recents() {
   const recents = useRows();
   return (
