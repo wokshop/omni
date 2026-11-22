@@ -99,33 +99,41 @@ export async function listMessages(
   return {
     status: "ok",
     thread: { id: thread.id, otherMemberId: thread.otherMemberId },
-    messages: shown.map((row) => toMessage(row, reactions.get(row.id))),
+    messages: shown.map((row) => ({
+      ...toMessage(row, reactions.byMessage.get(row.id)),
+      reactionsVersion: reactions.versions.get(row.id) ?? row.reactionsVersion,
+    })),
     more: rows.length > limit,
   } as const;
 }
 
 async function reactionsOf(ex: Ex, messageIds: string[]) {
   const byMessage = new Map<string, TalkReaction[]>();
-  if (messageIds.length === 0) return byMessage;
+  const versions = new Map<string, number>();
+  if (messageIds.length === 0) return { byMessage, versions };
+  // WARNING: one statement, so each note's reactions and version come from the same snapshot.
   const rows = await ex
     .select({
-      messageId: talkReactions.messageId,
+      messageId: talkMessages.id,
+      version: talkMessages.reactionsVersion,
       emoji: talkReactions.emoji,
       memberIds: sql<
         string[]
       >`array_agg(${talkReactions.memberId} order by ${talkReactions.createdAt})`,
-      first: sql<Date>`min(${talkReactions.createdAt})`,
     })
-    .from(talkReactions)
-    .where(inArray(talkReactions.messageId, messageIds))
-    .groupBy(talkReactions.messageId, talkReactions.emoji)
+    .from(talkMessages)
+    .leftJoin(talkReactions, eq(talkReactions.messageId, talkMessages.id))
+    .where(inArray(talkMessages.id, messageIds))
+    .groupBy(talkMessages.id, talkMessages.reactionsVersion, talkReactions.emoji)
     .orderBy(sql`min(${talkReactions.createdAt})`);
   for (const row of rows) {
+    versions.set(row.messageId, row.version);
+    if (row.emoji === null) continue;
     const list = byMessage.get(row.messageId) ?? [];
     list.push({ emoji: row.emoji, memberIds: row.memberIds });
     byMessage.set(row.messageId, list);
   }
-  return byMessage;
+  return { byMessage, versions };
 }
 
 export type SendResult =
@@ -256,7 +264,7 @@ export async function react(ex: Ex, me: TalkMember, messageId: string, emoji: st
   return {
     status: "ok",
     thread: { id: thread.id, otherMemberId: thread.otherMemberId },
-    reactions: now.get(messageId) ?? [],
+    reactions: now.byMessage.get(messageId) ?? [],
     reactionsVersion: bumped!.version,
   } satisfies ReactResult;
 }
