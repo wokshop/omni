@@ -170,8 +170,8 @@ const editPeople = (client: QueryClient, edit: (person: TalkPerson) => TalkPerso
   client.setQueryData<TalkPerson[]>(keys.talkPeople(), (people) => people?.map(edit));
 
 /**
- * A note went by in a thread: its sender's unread count goes up, unless you are looking at it.
- * A thread the list does not know yet is refetched.
+ * A note went by in a thread: the list keeps when, and a note from them you are not looking at
+ * fetches the unread counts again. A thread the list does not know yet is fetched too.
  */
 export function noteWentBy(
   client: QueryClient,
@@ -179,18 +179,13 @@ export function noteWentBy(
   looking: boolean,
 ) {
   const people = client.getQueryData<TalkPerson[]>(keys.talkPeople());
-  if (!people?.some((p) => p.threadId === event.threadId)) {
-    return void client.invalidateQueries({ queryKey: keys.talkPeople() }, { cancelRefetch: false });
+  const person = people?.find((p) => p.threadId === event.threadId);
+  if (person && event.createdAt) {
+    editPeople(client, (p) => (p === person ? { ...p, lastMessageAt: event.createdAt! } : p));
   }
-  editPeople(client, (p) =>
-    p.threadId !== event.threadId
-      ? p
-      : {
-          ...p,
-          unread: p.memberId === event.fromMemberId && !looking ? p.unread + 1 : p.unread,
-          lastMessageAt: event.createdAt ?? p.lastMessageAt,
-        },
-  );
+  if (person && (person.memberId !== event.fromMemberId || looking)) return;
+  // WARNING: count from the server, never +1: a fetch may already hold this note, or predate it.
+  void client.invalidateQueries({ queryKey: keys.talkPeople() });
 }
 
 /**

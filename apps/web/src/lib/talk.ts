@@ -225,10 +225,14 @@ export interface Reacting {
   meId: string;
 }
 
-/** `mutate({ messageId, emoji, on, meId })`: your reaction shows at once, then goes. */
+/**
+ * `mutate({ messageId, emoji, on, meId })`: your reaction shows at once, then goes, after the
+ * ones before it in the thread, so a quick on-then-off ends off.
+ */
 export const reactMutation = (client: QueryClient, threadId: string) =>
   mutationOptions({
     mutationFn: ({ messageId, emoji, on }: Reacting) => react(messageId, emoji, on),
+    scope: { id: `talk-react:${threadId}` },
     onMutate: ({ messageId, emoji, on, meId }) => {
       const message = messageOf(client, threadId, messageId);
       if (!message) return;

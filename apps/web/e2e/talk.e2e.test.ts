@@ -434,6 +434,8 @@ test("realtime that comes late or out of order never misorders notes or hides a 
   let holdReads = false;
   const heldReads: string[] = [];
   const readHeld = Promise.withResolvers<void>();
+  const heldNote: string[] = [];
+  const noteHeld = Promise.withResolvers<void>();
   const deliver: Array<(frame: string) => void> = [];
   await context.routeWebSocket(/\/api\/realtime/, (ws) => {
     const server = ws.connectToServer();
@@ -443,6 +445,10 @@ test("realtime that comes late or out of order never misorders notes or hides a 
       const text = String(frame);
       const event = JSON.parse(text) as { type?: string; preview?: string; read?: boolean };
       if (event.type === "talk.message" && event.preview === "First") return void (swap = text);
+      if (event.type === "talk.message" && event.preview === "Fourth" && !heldNote.length) {
+        heldNote.push(text);
+        return noteHeld.resolve();
+      }
       if (holdReads && event.type === "talk.changed" && event.read) {
         heldReads.push(text);
         return readHeld.resolve();
@@ -479,4 +485,42 @@ test("realtime that comes late or out of order never misorders notes or hides a 
   for (const frame of heldReads) for (const send of deliver) send(frame);
   await kofi.waitForTimeout(1_000);
   await stack.getByRole("button", { name: "Ana Lima, 1 unread" }).waitFor();
+
+  await post(`/threads/${thread.id}/messages`, { body: "Fourth" });
+  await noteHeld.promise;
+  const wide = kofi.viewportSize()!;
+  await kofi.setViewportSize({ width: 600, height: wide.height });
+  await stack.waitFor({ state: "detached" });
+  await kofi.setViewportSize(wide);
+  await stack.getByRole("button", { name: "Ana Lima, 2 unread" }).waitFor();
+  deliver.at(-1)!(heldNote[0]!);
+  await kofi.waitForTimeout(1_000);
+  await stack.getByRole("button", { name: "Ana Lima, 2 unread" }).waitFor();
+
+  await stack.getByRole("button", { name: /^Ana Lima/ }).click();
+  await window.getByText("Hello", { exact: true }).waitFor();
+  const removed = Promise.withResolvers<void>();
+  const answered: Promise<unknown>[] = [];
+  const bothSent = Promise.withResolvers<void>();
+  await kofi.route("**/api/talk/messages/*/reactions/*", async (route) => {
+    const method = route.request().method();
+    if (method === "DELETE") removed.resolve();
+    if (method === "PUT") await Promise.race([removed.promise, kofi.waitForTimeout(1_500)]);
+    await route.fallback();
+  });
+  kofi.on("request", (request) => {
+    if (!request.url().includes("/reactions/")) return;
+    answered.push(request.response());
+    if (answered.length === 2) bothSent.resolve();
+  });
+  const hello = window.getByText("Hello", { exact: true });
+  await hello.hover();
+  await hello.locator("..").getByRole("button", { name: "React 👍" }).click();
+  await window.getByRole("button", { name: "👍 1" }).click();
+  await bothSent.promise;
+  await Promise.all(answered);
+  const page = (await fetch(new URL(`/api/talk/threads/${thread.id}/messages`, origin()), {
+    headers: { cookie },
+  }).then((r) => r.json())) as { messages: { body: string; reactions: unknown[] }[] };
+  expect(page.messages.find((m) => m.body === "Hello")!.reactions).toEqual([]);
 });
