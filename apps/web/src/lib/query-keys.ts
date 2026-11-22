@@ -13,6 +13,7 @@ const org = () => scoped("org");
 const storage = () => scoped("storage");
 const crm = () => scoped("crm");
 const calendar = () => scoped("calendar");
+const talk = () => scoped("talk");
 const local = [...root, "local"] as const;
 const preview = [...root, "preview"] as const;
 
@@ -45,6 +46,12 @@ export const keys = {
   senderLogo: (who: string) => [...root, "sender-logo", who] as const,
   /** An agent asking to connect over OAuth. */
   oauthClients: () => [...root, "oauth-clients"] as const,
+
+  /** Talk: the teammates with their threads, and one thread's notes. */
+  talk: () => talk(),
+  talkPeople: () => [...talk(), "people"] as const,
+  talkMessages: (threadId: string) => [...talk(), "messages", threadId] as const,
+  talkThread: (memberId: string) => [...talk(), "thread", memberId] as const,
 
   org: () => org(),
   organizations: () => [...org(), "organizations"] as const,

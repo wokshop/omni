@@ -7,6 +7,7 @@ import type {
   StorageDocEvent,
   StorageFilePresenceEvent,
   StorageLiveRecord,
+  TalkEvent,
 } from "@omni/contracts";
 import type { schema } from "@omni/db";
 import type { Realtime as RealtimeObject } from "@omni/worker";
@@ -35,7 +36,8 @@ export type RealtimeEvent =
   | NotificationEvent
   | StorageFilePresenceEvent
   | StorageDocEvent
-  | StorageChangedEvent;
+  | StorageChangedEvent
+  | TalkEvent;
 export type RealtimeStatus = "connecting" | "open" | "closed";
 
 /**
@@ -78,6 +80,11 @@ export interface RealtimeOptions {
    * (`4429`), it reconnects with backoff like any dropped socket.
    */
   shared?: { shareId: string; nodeId: string; onEnded?: (code: number) => void };
+  /**
+   * An app that shows Talk: the member counts as online to their teammates, and the socket hears
+   * `talk.*` events. Ignored on a watch socket.
+   */
+  talk?: boolean;
   onEvent: (event: RealtimeEvent) => void;
   /**
    * Socket state. An `"open"` with `reconnected: true` follows a socket that dropped or never
@@ -132,6 +139,7 @@ export function connectRealtime(options: RealtimeOptions) {
   if (shared) url.searchParams.set("node", shared.nodeId);
   if (options.orgId && !shared) url.searchParams.set("org", options.orgId);
   if (options.watch) url.searchParams.set("watch", "1");
+  else if (options.talk) url.searchParams.set("talk", "1");
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
 
   let socket: WebSocket | undefined;
@@ -237,6 +245,8 @@ export function connectRealtime(options: RealtimeOptions) {
 /** `STORAGE_DOC_PRESENCE_MAX` in `@omni/contracts`, without pulling its schemas in. */
 export const DOC_PRESENCE_MAX = 4096;
 
+export { LiveParts, splitLiveRecord, type LiveWhole } from "@omni/contracts/storage-live-parts";
+
 /** `STORAGE_LIVE_SNAP_EVERY` in `@omni/contracts`, without pulling its schemas in. */
 export const LIVE_SNAP_EVERY = 200;
 
@@ -298,7 +308,12 @@ const parseEvent: (data: string) => RealtimeEvent | undefined = (data) => {
       : undefined;
   }
   const record = value as Record<string, unknown>;
-  return parseCrmEvent(record) ?? parseHelpdeskEvent(record) ?? parseStorageEvent(record);
+  return (
+    parseCrmEvent(record) ??
+    parseTalkEvent(record) ??
+    parseHelpdeskEvent(record) ??
+    parseStorageEvent(record)
+  );
 };
 
 const PRESENCE_STATES = new Set(["viewing", "replying", "left"]);
@@ -339,6 +354,24 @@ const CRM_CHANGED_KINDS: Record<CrmChangedKind, true> = {
   task: true,
 };
 
+const parseTalkEvent: (event: Record<string, unknown>) => TalkEvent | undefined = (event) => {
+  const { type, memberId, online, threadId, messageId, fromMemberId, preview } = event;
+  if (type === "talk.online" && isId(memberId) && typeof online === "boolean") {
+    return { type, memberId, online };
+  }
+  if (type === "talk.changed" && isId(threadId)) return { type, threadId };
+  if (
+    type === "talk.message" &&
+    isId(threadId) &&
+    isId(messageId) &&
+    isId(fromMemberId) &&
+    typeof preview === "string"
+  ) {
+    return { type, threadId, messageId, fromMemberId, preview };
+  }
+  return undefined;
+};
+
 const parseCrmEvent: (event: Record<string, unknown>) => CrmChangedEvent | undefined = (event) => {
   if (event.type !== "crm.changed") return undefined;
   const { kind, ids } = event;
@@ -359,12 +392,23 @@ const DOC_REFUSALS = new Set([
   "rate",
 ]);
 
+const partsOf = (n: unknown) =>
+  typeof n === "number" && Number.isInteger(n) && n >= 2 ? { n } : n === undefined ? {} : null;
+
 const parseLiveRecord: (value: unknown) => StorageLiveRecord | undefined = (value) => {
   if (typeof value !== "object" || value === null) return undefined;
-  const { t, cv, e, u } = value as Record<string, unknown>;
-  if (t === "seed" && isSeqNum(cv) && typeof u === "string") return { t, cv, u };
-  if (t === "update" && isSeqNum(e) && typeof u === "string") return { t, e, u };
-  const { s } = value as Record<string, unknown>;
+  const { t, cv, e, u, s, f, h, i, n } = value as Record<string, unknown>;
+  const parts = partsOf(n);
+  if (typeof u === "string" && parts) {
+    if (t === "seed" && isSeqNum(cv)) return { t, cv, u, ...parts };
+    if (t === "update" && isSeqNum(e)) return { t, e, u, ...parts };
+    if (t === "snap" && isSeqNum(e) && isSeqNum(s) && isSeqNum(cv) && isSeqNum(f)) {
+      return { t, e, s, cv, f, u, ...parts };
+    }
+  }
+  if (t === "more" && isSeqNum(h) && isSeqNum(i) && i >= 1 && typeof u === "string") {
+    return { t, h, i, u };
+  }
   if (t === "fold" && isSeqNum(e) && isSeqNum(cv) && isSeqNum(s)) return { t, e, cv, s };
   return undefined;
 };

@@ -99,41 +99,39 @@ export async function editDoc(
   );
   if (refused) return refused;
   await files.endSession(nodeId);
-  const { entry, through } = await live.rewrite(changed.markdown, by);
-  passOn(deps, node.orgId, nodeId, [entry]);
+  const { entries, through, mine } = await live.rewrite(changed.markdown, by);
+  passOn(deps, node.orgId, nodeId, entries);
   return saveLive(
     deps,
     files,
     { nodeId, orgId: node.orgId, base: node.contentVersion, mimeType: node.mimeType },
     live,
-    through,
+    { through, mine },
     () => live.markdown,
   );
 }
 
 /**
- * Saves the live document through record `through` as the file's next version (`body` is its
- * text now) and records the save in the stream, trying again on a newer version only when that
- * version did not already hold the change.
+ * Saves the live document through record `through` as the file's next version (`text` gives its
+ * text now, or null when it may not be saved) and records the save in the stream, trying again
+ * on a newer version only when that version did not already hold the change: its save reached
+ * `mine`, the caller's last record.
  */
 export async function saveLive(
   deps: WriteDeps,
   files: MemberStorage,
   at: { nodeId: string; orgId: string; base: number; mimeType: string | null },
   live: LiveFile,
-  through: number,
-  body: () => string,
+  saved: { through: number; mine: number },
+  text: () => string | null,
 ) {
+  const { through, mine } = saved;
   let base = at.base;
   for (let tries = 0; ; tries++) {
-    const written = await writeText(
-      deps,
-      files,
-      at.orgId,
-      { nodeId: at.nodeId, ifContentVersion: base },
-      body(),
-      at.mimeType,
-    );
+    const merged = text();
+    if (merged === null) return { status: "refused", reason: "too_large_merged" } as const;
+    const target = { nodeId: at.nodeId, ifContentVersion: base };
+    const written = await writeText(deps, files, at.orgId, target, merged, at.mimeType);
     if (written.status === "ok") {
       passOn(deps, at.orgId, at.nodeId, [await live.folded(written.node.contentVersion, through)]);
       journalLater(deps, written.node);
@@ -143,7 +141,7 @@ export async function saveLive(
     const [fold, now] = await Promise.all([live.lastFold(), files.file(at.nodeId)]);
     if (now.status !== "ok") return { status: "refused", reason: now.status } satisfies WriteResult;
     if (fold.cv !== now.file.contentVersion) return written;
-    if (fold.s >= through) return { status: "ok", node: now.file } satisfies WriteResult;
+    if (fold.s >= mine) return { status: "ok", node: now.file } satisfies WriteResult;
     base = now.file.contentVersion;
   }
 }
