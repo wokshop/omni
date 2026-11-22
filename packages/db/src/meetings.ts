@@ -38,7 +38,6 @@ export {
   WEBMAIL,
   type MeetingRole,
 } from "./meetings/core.ts";
-export { handOverMemberMeetings } from "./meetings/leave.ts";
 export { MEETINGS_PAGE_MAX, type MeetingView } from "./meetings/read.ts";
 export type { MeetingRecord, MeetingRecordKind, MeetingsOnQuery } from "./meetings/crm.ts";
 export type { MeetingsFilter } from "./meetings/find.ts";
@@ -153,3 +152,5 @@ export function meetingsPipeline(db: Db) {
 }
 
 export type MemberMeetings = ReturnType<typeof memberMeetings>;
+
+export { handOverMemberMeetings } from "./meetings/leave.ts";
