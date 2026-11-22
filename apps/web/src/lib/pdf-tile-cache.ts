@@ -55,7 +55,7 @@ export async function writeFirst(url: string, version: string, first: StoredFirs
     "x-ratio": String(first.ratio),
     "x-count": String(first.count),
   });
-  if (++writes % 25 === 0) await prune();
+  if (writes++ % 25 === 0) await prune();
 }
 
 /** Keeps the drawn pages behind a first page. */
