@@ -371,7 +371,7 @@ for the agent). A canvas is an Omni board (`docs/spec/canvas.md`), type `text/vn
   and the outline names a tile's file only for a reader who can open it.
 - **Read.** `drive_fetch` returns a canvas in the person's workspaces as its outline (live when
   people are editing it, `unsaved_edits: true`); through a share, its words.
-- **Limits.** Canvases up to 2 MB and 5,000 elements; up to 200 operations a call; the `actions`
+- **Limits.** Canvases up to 400 KB and 2,000 elements (what one live-document record holds); up to 200 operations a call; the `actions`
   rate limit; refused in a workspace whose plan is unpaid. Every write is audited as
   `mcp.drive_canvas`.
 

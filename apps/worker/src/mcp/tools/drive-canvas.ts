@@ -1,8 +1,10 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import {
   applyCanvasOps,
+  CANVAS_MAX_BYTES,
   canvasOpSchema,
   canvasOutline,
+  limitProblem,
   sceneFromJson,
   tileFiles,
   type CanvasOp,
@@ -27,7 +29,6 @@ import { result, toolError } from "../format.ts";
 import { guarded, type ToolContext } from "../server.ts";
 
 const MAX_OPS = 200;
-const MAX_SCENE = 2_000_000;
 const SHOWN_ON_MISS = 20_000;
 
 const ops = z
@@ -49,7 +50,7 @@ const editInput = z.object({
   ops: ops.optional(),
   scene: z
     .string()
-    .max(MAX_SCENE)
+    .max(CANVAS_MAX_BYTES)
     .optional()
     .describe(
       "The whole canvas, new: its JSON body as `drive_versions` shows it. Prefer `ops` for a change.",
@@ -73,7 +74,7 @@ const REFUSED: Record<string, string> = {
   not_found: "No canvas with that id you can change. Ids come from `drive_search` or `drive_list`.",
   not_a_canvas: "That file is not a canvas. Use `drive_edit_doc` for docs.",
   too_large: "That canvas is too large to change here.",
-  too_large_after: "That change would make the canvas larger than 2 MB. Nothing was changed.",
+  too_large_after: "That change would make the canvas larger than 400 KB. Nothing was changed.",
   full: "The workspace's storage is full.",
   invalid_name: "That name cannot be a file's name.",
   too_many_uploads: "Too many files are being written right now. Try again in a minute.",
@@ -167,9 +168,12 @@ function replacedBy(current: Scene, whole: Scene, unreachable: Set<string>) {
   const changed = whole.elements
     .filter((element) => JSON.stringify(before.get(element.id)) !== JSON.stringify(element))
     .map((element) => element.id);
+  const tooBig = limitProblem(current, whole);
   const replaced: OpsResult = added
     ? { ok: false, error: `No Drive file you can open with the id "${added.file}".` }
-    : { ok: true, scene: whole, created: {}, changed, overlaps: [] };
+    : tooBig
+      ? { ok: false, error: tooBig }
+      : { ok: true, scene: whole, created: {}, changed, overlaps: [] };
   return replaced;
 }
 
