@@ -18,7 +18,7 @@ export type DealFolderResult =
   | { status: "ok"; nodeId: string; created: boolean; companyId: string | null }
   | Exclude<FolderResult, { status: "ok" }>;
 
-function folderName(name: string) {
+export function folderName(name: string) {
   const clean = name
     .replaceAll(/[/\\]/g, "-")
     // oxlint-disable-next-line no-control-regex

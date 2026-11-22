@@ -80,3 +80,21 @@ test("a freelancer on the project reaches its folder by grant, never the rest of
   const asUser = forUser(db, user.id).storage;
   expect((await asUser.list({ parentId: folder })).status).toBe("ok");
 });
+
+test("a deal named with a slash still gets its space, and a freelancer owning it is not let in", async () => {
+  const org = await createOrg(db, "deal-teamspace-names");
+  const ana = await createMember(db, org.id, "ana");
+  await setRole(db, ana.id, "owner");
+  const fay = await createMember(db, org.id, "fay");
+  await setRole(db, fay.id, "freelancer");
+  const team = forMember(db, ana.id);
+
+  const deal = ok(
+    await team.crm.createDeal({ name: "Design / Build", ownerMemberId: fay.id }),
+  ).deal;
+  expect(deal.teamspaceId).not.toBeNull();
+  expect((await team.storage.teamspaces()).map((t) => t.name)).toEqual(["Design - Build"]);
+  const people = ok(await team.storage.teamspaceMembers(deal.teamspaceId!)).members;
+  expect(people.map((m) => m.memberId)).toEqual([ana.id]);
+  expect(await forMember(db, fay.id).storage.teamspaces()).toEqual([]);
+});
