@@ -1520,3 +1520,54 @@ test("a linked to-do checked off in the calendar leaves a teammate's open CRM li
   await expect.poll(() => list.getByText("Book the barge").count(), { timeout: 10_000 }).toBe(0);
   await context.close();
 });
+
+test("the month lays a stay over its days as one bar and shows every event that fits", async () => {
+  const { org, page, origin } = await invited();
+  const [calendar] = await db
+    .select({ id: schema.calendarCalendars.id })
+    .from(schema.calendarCalendars)
+    .where(eq(schema.calendarCalendars.orgId, org.id));
+  await page.goto(origin);
+  const make = async (title: string, start: string, end: string, allDay: boolean) => {
+    const made = await page.request.post(new URL("/api/calendar/events", origin).toString(), {
+      data: {
+        calendarId: calendar?.id,
+        title,
+        start,
+        end,
+        allDay,
+        timeZone: "Europe/Madrid",
+        guests: [],
+      },
+    });
+    expect(made.status()).toBe(201);
+  };
+  await make("Stay in Ghent", "2026-12-08T00:00:00.000Z", "2026-12-11T00:00:00.000Z", true);
+  for (const [title, hour] of [
+    ["Museum", 9],
+    ["Lunch", 13],
+    ["Train", 17],
+  ] as const) {
+    const start = `2026-12-09T${String(hour).padStart(2, "0")}:00:00.000Z`;
+    await make(
+      title,
+      start,
+      start.replace(`T${String(hour).padStart(2, "0")}`, `T${hour + 1}`),
+      false,
+    );
+  }
+  await page.goto(new URL(`/${org.slug}/calendar?date=2026-12-09&view=month`, origin).toString());
+  const stay = page.getByRole("button", { name: "Stay in Ghent" });
+  await stay.waitFor();
+  expect(await stay.count()).toBe(1);
+  const cell = await page.locator('[data-month-day="2026-12-08"]').boundingBox();
+  const bar = await stay.boundingBox();
+  expect(bar?.width ?? 0).toBeGreaterThan(2.5 * (cell?.width ?? 0));
+  const busy = page.locator('[data-month-day="2026-12-09"]');
+  for (const title of ["Museum", "Lunch", "Train"]) {
+    await expect
+      .poll(() => page.getByRole("button", { name: new RegExp(title) }).isVisible())
+      .toBe(true);
+  }
+  expect(await busy.getByText(/more$/).count()).toBe(0);
+});
