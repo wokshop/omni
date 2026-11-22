@@ -4,7 +4,8 @@ import { useCurrentModule, useModules, type ModuleId } from "./module-switcher";
 /**
  * The sidebar's nav, one page per module side by side on a track that slides to the shown
  * module's page. The frame clips rather than scrolls, so no swipe, focus or scroll can leave it
- * between pages; opening a module (the rail, the phone's switcher, `g f`) slides the track there.
+ * between pages; opening a module (the rail, the phone's switcher, `g f`) slides the track there,
+ * and the page shown always follows the URL, never the other way round.
  * `--module-at` on the sidebar is the shown page's index, which the phone switcher's pill follows.
  * Pages other than the shown one are inert and hidden from assistive tech.
  */
