@@ -128,13 +128,15 @@ pub async fn recording_start<R: Runtime>(
             Source::Device,
             Box::new(move |now| {
                 let ended = now.state == DesktopRecordingState::Stopped;
+                let now_id = now.id.clone();
                 changed(&notify, now);
                 // Capture that ended by itself (a device went away) retires its slot, pill and
-                // tray item as Stop would; after a Stop, this finds nothing live and does nothing.
+                // tray item as Stop would. Only this recording: after a Stop, a newer recording
+                // may already be live, and it must not be stopped.
                 if ended {
-                    let app = notify.clone();
+                    let (app, id) = (notify.clone(), now_id);
                     tauri::async_runtime::spawn(async move {
-                        let _ = stop(&app).await;
+                        let _ = stop_only(&app, Some(id)).await;
                     });
                 }
             }),
@@ -197,11 +199,25 @@ pub fn recording_resume(state: State<'_, Recording>) {
 pub async fn stop<R: Runtime>(
     app: &AppHandle<R>,
 ) -> Result<Option<DesktopRecording>, DesktopRecorderError> {
+    stop_only(app, None).await
+}
+
+/// Whether a stop meant for `only` (any recording when `None`) applies to the live one.
+fn applies_to(only: Option<&str>, live: &str) -> bool {
+    only.is_none_or(|id| id == live)
+}
+
+/// Stops the live recording if it is `only` (or any, for `None`), checked and taken in one
+/// hold of the slot.
+async fn stop_only<R: Runtime>(
+    app: &AppHandle<R>,
+    only: Option<String>,
+) -> Result<Option<DesktopRecording>, DesktopRecorderError> {
     let state = app.state::<Recording>();
     let recorder = {
         let mut slot = state.slot();
         match std::mem::take(&mut *slot) {
-            Slot::Live(recorder) => {
+            Slot::Live(recorder) if applies_to(only.as_deref(), &recorder.snapshot().id) => {
                 *slot = Slot::Stopping(recorder.snapshot().id);
                 recorder
             }
@@ -361,5 +377,14 @@ mod tests {
         assert!(!may_recover(&Slot::Starting));
         assert!(!may_recover(&Slot::Stopping("spool".into())));
         assert!(may_recover(&Slot::Idle));
+    }
+
+    // Bug: a Stop's own stopped event scheduled a second stop; when a new recording had started
+    // meanwhile, that second stop ended the new one and hid its pill.
+    #[test]
+    fn a_capture_ending_retires_only_itself() {
+        assert!(applies_to(Some("old"), "old"));
+        assert!(!applies_to(Some("old"), "new"));
+        assert!(applies_to(None, "new"));
     }
 }
