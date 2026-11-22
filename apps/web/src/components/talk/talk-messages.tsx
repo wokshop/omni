@@ -1,7 +1,10 @@
 import { cn } from "cn";
-import { Fragment } from "react";
+import { Fragment, type ComponentType } from "react";
+import { IconArrowUpRight, IconCopy } from "@/components/icons/central";
 import { FileGlyph } from "@/components/storage/file-glyph";
 import { Button } from "@/components/ui/button";
+import { contextMenuProps, type ContextMenuEntry } from "@/components/ui/context-menu";
+import { appToast } from "@/components/ui/toast";
 import { Link } from "@/components/ui/link";
 import { useReact } from "@/hooks/use-talk.ts";
 import { fileType } from "@/lib/file-kind.ts";
@@ -9,6 +12,50 @@ import { fileUrl, isImage, type TalkMessage } from "@/lib/talk.ts";
 
 const GAP_MS = 60 * 60_000;
 const QUICK = ["👍", "❤️", "😂", "🎉"];
+const QUICK_LABEL: Record<string, string> = {
+  "👍": "Like",
+  "❤️": "Love",
+  "😂": "Haha",
+  "🎉": "Celebrate",
+};
+
+const emojiIcons = new Map<string, ComponentType<{ className?: string }>>();
+function emojiIcon(emoji: string) {
+  let icon = emojiIcons.get(emoji);
+  if (!icon) {
+    icon = ({ className }) => (
+      <span className={cn(className, "font-emoji text-sm/none")}>{emoji}</span>
+    );
+    emojiIcons.set(emoji, icon);
+  }
+  return icon;
+}
+
+const copy = (text: string) =>
+  void navigator.clipboard.writeText(text).catch(() => appToast.error("Text was not copied"));
+
+function useNoteMenu(message: TalkMessage, meId: string) {
+  const { has, set } = useToggle(message, meId);
+  const file = message.file?.nodeId ? fileUrl(message.id) : undefined;
+  return contextMenuProps(() => {
+    const selected = window.getSelection()?.toString().trim();
+    const text = selected || message.body;
+    return [
+      text && { icon: IconCopy, label: "Copy", onAction: () => copy(text) },
+      file && {
+        icon: IconArrowUpRight,
+        label: "Open file",
+        onAction: () => window.open(file, "_blank", "noopener,noreferrer"),
+      },
+      "separator",
+      ...QUICK.map((emoji) => ({
+        icon: emojiIcon(emoji),
+        label: has(emoji) ? `Remove ${QUICK_LABEL[emoji]}` : (QUICK_LABEL[emoji] ?? emoji),
+        onAction: () => set(emoji, !has(emoji)),
+      })),
+    ] satisfies ContextMenuEntry[];
+  }, "Note actions");
+}
 
 const timeLine = (at: Date, now = new Date()) => {
   const time = at.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
@@ -140,6 +187,7 @@ function Attachment(props: { message: TalkMessage; mine: boolean }) {
 function Note(props: { message: TalkMessage; meId: string; tail: boolean }) {
   const { message } = props;
   const mine = message.authorMemberId === props.meId;
+  const menu = useNoteMenu(message, props.meId);
   return (
     <div
       className={cn(
@@ -149,6 +197,7 @@ function Note(props: { message: TalkMessage; meId: string; tail: boolean }) {
       )}
     >
       <div
+        {...menu}
         className={cn("relative flex min-w-0 flex-col gap-0.5", mine ? "items-end" : "items-start")}
       >
         <QuickReactions message={message} meId={props.meId} mine={mine} />
