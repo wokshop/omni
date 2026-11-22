@@ -409,7 +409,10 @@ Worker's e2e tests on the real stack, which run it end to end. It gets no unit t
 | Zoom                 | 5% to 800%                                                                                                                                  |
 | Agents               | 200 operations a call, 500 new elements a call, a `scene` up to 2 MB; the `actions` rate limit; refused in a workspace whose plan is unpaid |
 
-A change that would pass a limit is refused whole, in the editor and for agents alike.
+A change that would take a canvas past a limit is refused whole, in the editor and for agents
+alike. Two people editing at once can still take a board just past the element or tile limit
+together; it stays readable and editable, and only changes that would grow it further are
+refused.
 
 ## Not in this change
 

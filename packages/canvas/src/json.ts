@@ -1,4 +1,5 @@
 import {
+  CANVAS_MAX_ELEMENTS,
   CANVAS_MAX_FILES,
   FIELDS,
   sceneFileSchema,
@@ -38,16 +39,32 @@ export function sceneToJson(scene: Scene) {
 
 export type SceneResult = { ok: true; scene: Scene } | { ok: false; error: string };
 
-/** What is wrong with a scene beyond its schema (an id used twice, too many tiles), or null. */
+/** What is wrong with a scene beyond its schema (an id used twice), or null. */
 export function sceneProblem(scene: Scene) {
   const ids = new Set<string>();
-  let files = 0;
   for (const element of scene.elements) {
     if (ids.has(element.id)) return `Two elements share the id "${element.id}".`;
     ids.add(element.id);
-    if (element.kind === "file") files++;
   }
-  if (files > CANVAS_MAX_FILES) return `A canvas shows at most ${CANVAS_MAX_FILES} Drive files.`;
+  return null;
+}
+
+/**
+ * Why changing `before` into `after` is refused for the canvas's size (more than
+ * `CANVAS_MAX_ELEMENTS` elements or `CANVAS_MAX_FILES` tiles), or null. Only growth past a limit
+ * is refused: a board people took past one by editing at once stays readable and editable, and
+ * can shrink.
+ */
+export function limitProblem(before: Scene, after: Scene) {
+  const tiles = (scene: Scene) =>
+    scene.elements.filter((element) => element.kind === "file").length;
+  const count = after.elements.length;
+  if (count > CANVAS_MAX_ELEMENTS && count > before.elements.length) {
+    return `A canvas holds at most ${CANVAS_MAX_ELEMENTS} elements; this would make ${count}.`;
+  }
+  if (tiles(after) > CANVAS_MAX_FILES && tiles(after) > tiles(before)) {
+    return `A canvas shows at most ${CANVAS_MAX_FILES} Drive files.`;
+  }
   return null;
 }
 

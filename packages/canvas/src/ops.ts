@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { anchor, Board, GAP, OpError, overlap } from "./board.ts";
-import { sceneProblem } from "./json.ts";
+import { limitProblem, sceneProblem } from "./json.ts";
 import {
   COLORS,
   CANVAS_MAX_GROUP_DEPTH,
@@ -482,7 +482,7 @@ export function applyCanvasOps(scene: Scene, ops: CanvasOp[]) {
     const issue = checked.error.issues[0];
     return failed(`The canvas would not be valid: ${issue?.message} at ${issue?.path.join(".")}.`);
   }
-  const problem = sceneProblem({ elements });
+  const problem = sceneProblem({ elements }) ?? limitProblem(scene, { elements });
   if (problem) return failed(problem);
   const done: OpsResult = {
     ok: true,

@@ -105,7 +105,7 @@ export interface Scene {
 export const sceneFileSchema = z.object({
   omni: z.literal("canvas"),
   v: z.literal(1),
-  elements: z.array(elementSchema).max(CANVAS_MAX_ELEMENTS),
+  elements: z.array(elementSchema),
 });
 
 /** The fields of an element, in the order the JSON body writes them. */
