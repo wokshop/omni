@@ -1,7 +1,8 @@
 import { eq } from "drizzle-orm";
 import { afterAll, expect, test } from "vitest";
 import { forMember } from "../src/for-member.ts";
-import { storageNodes } from "../src/schema/index.ts";
+import { members, storageNodes } from "../src/schema/index.ts";
+import { handOverMemberStorage } from "../src/storage.ts";
 import { addFile, addFolder, setRole } from "./storage-support.ts";
 import { createMember, createOrg, createTestDatabase } from "./support.ts";
 
@@ -47,6 +48,8 @@ test("a private teamspace is reached by its members alone, and nobody else sees 
   );
   expect(await cyStorage.search("nda")).toEqual([]);
   expect((await benStorage.search("nda")).map((node) => node.id)).toEqual([contract.id]);
+  expect(await cyStorage.recent()).toEqual([]);
+  expect((await benStorage.recent()).map((node) => node.id)).toEqual([contract.id]);
 });
 
 test("an open teamspace is every member's, a freelancer's only once they are added", async () => {
@@ -190,4 +193,28 @@ test("a teamspace is deleted once it holds nothing outside Trash, and its Trash 
   expect(await anaStorage.teamspaces()).toEqual([]);
   expect(await db.select().from(storageNodes).where(eq(storageNodes.id, file.id))).toEqual([]);
   expect((await anaStorage.usage())?.bytes).toBe((usageBefore ?? 0) - 25);
+});
+
+test("a private teamspace's only owner leaving hands it to whoever takes their files, and admins always reach it", async () => {
+  const org = await createOrg(db, "ts-leave");
+  const ana = await createMember(db, org.id, "ana");
+  const boss = await createMember(db, org.id, "boss");
+  const cy = await createMember(db, org.id, "cy");
+  await setRole(db, boss.id, "admin");
+  const anaStorage = forMember(db, ana.id).storage;
+
+  const secret = await teamspace(anaStorage, "Secret", { private: true });
+  const note = await addFile(anaStorage, { teamspaceId: secret.id }, "note.txt");
+  expect((await forMember(db, boss.id).storage.file(note.id)).status).toBe("ok");
+  expect((await forMember(db, cy.id).storage.file(note.id)).status).toBe("not_found");
+
+  expect((await handOverMemberStorage(db, { memberId: ana.id, toMemberId: cy.id })).status).toBe(
+    "ok",
+  );
+  await db.delete(members).where(eq(members.id, ana.id));
+  const cyStorage = forMember(db, cy.id).storage;
+  expect((await cyStorage.teamspaces()).map((t) => [t.name, t.role])).toEqual([
+    ["Secret", "owner"],
+  ]);
+  expect((await cyStorage.file(note.id)).status).toBe("ok");
 });

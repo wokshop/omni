@@ -202,6 +202,7 @@ export {
 } from "./storage/texts.ts";
 export { handOverMemberStorage, type StorageHandOverResult } from "./storage/handover.ts";
 export {
+  teamspaceAudience,
   type DeleteTeamspaceResult,
   type NewTeamspace,
   type StorageTeamspace,

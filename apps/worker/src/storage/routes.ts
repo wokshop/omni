@@ -131,6 +131,11 @@ export const storage = new Hono<AppEnv>()
     return c.json({ nodes: nodes.map(wireNode) } satisfies StorageFindResponse);
   })
 
+  .get("/recent", async (c) => {
+    const nodes = await memberStorage(c).recent();
+    return c.json({ nodes: nodes.map(wireNode) } satisfies StorageFindResponse);
+  })
+
   .get("/icons", zValidator("query", storageFolderIconsQuerySchema), async (c) => {
     const { space, teamspace } = c.req.valid("query");
     const icons = await memberStorage(c).folderIcons(
