@@ -1,8 +1,12 @@
-import { connectRealtime, type RealtimeClientMessage, type RealtimeEvent } from "@omni/client";
+import {
+  connectRealtime,
+  type Api,
+  type RealtimeClientMessage,
+  type RealtimeEvent,
+} from "@omni/client";
+import type { InferResponseType } from "hono/client";
 import { api, call } from "./api.ts";
 import { onDocEvent, onRealtimeOpen, sendRealtime } from "./realtime.ts";
-
-type StorageLiveRecord = Extract<RealtimeClientMessage, { type: "doc.append" }>["record"];
 
 type ChannelEvent = Extract<
   RealtimeEvent,
@@ -16,9 +20,7 @@ type ChannelEvent = Extract<
       | "doc.comments";
   }
 >;
-type LivePage =
-  | { enabled: false }
-  | { enabled: true; entries: { seqNum: number; record: StorageLiveRecord }[]; more: boolean };
+type LivePage = InferResponseType<Api["storage"]["files"][":id"]["live"]["$get"], 200>;
 
 export interface LiveChannel {
   send(message: RealtimeClientMessage): void;

@@ -155,9 +155,9 @@ export function useEditSession(
   };
 
   const settleOutside = async (doc: LiveDoc) => {
-    await doc.settle();
-    setDirty(false);
-    return true;
+    const taken = await doc.settle();
+    if (taken) setDirty(false);
+    return taken;
   };
 
   const saveNow = async () => {
@@ -295,10 +295,11 @@ export function useEditSession(
               shared: shareId
                 ? {
                     shareId,
-                    onAccess: () =>
-                      void client.invalidateQueries({
-                        queryKey: keys.storageLink(shareId, undefined).slice(0, -1),
-                      }),
+                    onAccess: (role) => {
+                      const queryKey = keys.storageLink(shareId, undefined).slice(0, -1);
+                      if (role === null) void client.resetQueries({ queryKey });
+                      else void client.invalidateQueries({ queryKey });
+                    },
                   }
                 : undefined,
               contentVersion: base.current,

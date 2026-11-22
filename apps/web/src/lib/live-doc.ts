@@ -98,7 +98,10 @@ export interface LiveDocOptions {
 export async function openLiveDoc(options: LiveDocOptions) {
   for (let tries = 0; tries < 5; tries++) {
     const live = new LiveDoc(options);
-    const entries = await live.readAll();
+    const entries = await live.readAll().catch((error: unknown) => {
+      live.close();
+      throw error;
+    });
     if (!entries) {
       live.close();
       return null satisfies LiveDoc | null;
@@ -317,7 +320,7 @@ export class LiveDoc {
     return this.folds.has(contentVersion);
   }
 
-  /** Sends this tab's changes now and waits (a while) for the stream to take them all. */
+  /** Sends this tab's changes now and waits (a while) for the stream to take them all: whether it did. */
   async settle() {
     clearTimeout(this.timer);
     this.flush();
@@ -325,6 +328,7 @@ export class LiveDoc {
     while (this.pendingUpdates() && Date.now() < until && !this.closed) {
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
+    return !this.closed && this.batch.length === 0 && !this.pendingUpdates();
   }
 
   private pendingUpdates() {
