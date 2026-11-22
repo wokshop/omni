@@ -47,6 +47,10 @@ The file's body is **JSON Lines**: one header line, then one line per row, in or
 - **Ids.** Every tab, row and column has a short random id, unique in the sheet. The file's order
   is the sheet's order; ids are what stay put when rows move, so versions, history and agents can
   say "this cell" across inserts and sorts.
+- **Empty rows.** Every row the sheet has is a line, an empty one too (`{"t","r"}` with no `c`),
+  so line order alone places every row and a formula pointing at an empty row still finds it.
+  Only the blank grid the editor shows past the last row is not stored: those placeholders
+  become rows when someone writes in or below them.
 - **Cells.** A value is a JSON string, number, boolean or absent. A formula is `{ f, v }`: the
   formula in A1 notation as the file's order reads it, and its value when the file was saved, so
   nothing that reads the file has to evaluate it. A string that starts with `=` but is text is
@@ -108,11 +112,15 @@ Y.Doc
 - **Undo** is each person's own (`Y.UndoManager` with their origin), as in docs.
 - **Presence** is the selected cell or range and the name, through `doc.presence`.
 
-**Big seeds and snaps.** A doc's whole state fits one S2 record (`MAX_DOC_MESSAGE`, 900 KB); a
-sheet at its limits does not. Expand the live contract with one record:
-`{ t: "more", h, i, u }`, part `i` of the `seed` or `snap` at sequence number `h`, which gains
-`n`, its number of parts. A reader applies a split start only once it holds all its parts, and
-otherwise starts from the one before. Docs never write parts, and a reader that predates them
+**Big records.** A doc's whole state fits one S2 record (`MAX_DOC_MESSAGE`, 900 KB); a sheet's
+may not, and neither may one change within the limits (a paste of 40 cells of 32,767 characters,
+or an agent's edit of 10,000 cells). Expand the live contract with one record:
+`{ t: "more", h, i, u }`, part `i` of the `seed`, `snap` or `update` at sequence number `h`, which
+gains `n`, its number of parts; every part fits one socket message. A reader joins the parts and
+applies them as one Yjs update only once it holds them all, so a change is never half applied. A
+split start missing a part is passed over for the start before it; a split update missing a part
+is not applied, and its writer sends the whole change again under a new head (the browser from
+its pending queue, the Worker before it folds, failing the agent's edit if it cannot). Docs never write parts, and a reader that predates them
 skips the record it cannot parse. A sheet snaps when 200 records have passed since its start
 and they weigh more than a quarter of that start, so a large sheet does not rewrite megabytes
 every 200 keystrokes.
@@ -196,8 +204,8 @@ sheet" from a CRM list is later work, and it writes a copy, not a live link.
 All in the browser, as docs' exports are: SheetJS (`xlsx`, already in `apps/web`) and
 `papaparse`. Nothing new runs on the Worker.
 
-- **New sheet** in Drive makes `Untitled`, one tab, 100 empty rows and 26 columns shown (empty
-  rows are not stored).
+- **New sheet** in Drive makes `Untitled`, one tab, 100 placeholder rows and 26 columns shown, none
+  stored until written (Empty rows, above).
 - **Convert to Omni sheet** from an `.xlsx`: every tab, values, formulas (translated to ours),
   column widths, frozen panes, number formats. Styling, charts, pivots, comments, macros and
   data validation are dropped; a formula using a function we do not have keeps its cached value
@@ -326,7 +334,8 @@ Each line is one PR, stacked with `gh stack` on top of #705–#707. No migration
 
 ## Verify
 
-- `packages/sheets` (unit): JSON Lines → Yjs → JSON Lines is lossless; two peers inserting a row
+- `packages/sheets` (unit): JSON Lines → Yjs → JSON Lines is lossless, empty interior rows and
+  formulas pointing at them included; two peers inserting a row
   at the same place keep both, in the same order, and a row can then be inserted between them
   even when their keys are equal; two concurrent sorts and a sort with an insert
   leave every row exactly once; a change to a deleted row is dropped; a formula keeps pointing at
@@ -342,7 +351,8 @@ Each line is one PR, stacked with `gh stack` on top of #705–#707. No migration
 - `apps/worker/e2e/drive-live.e2e.test.ts`, sheet cases: a tab types into B2 without saving and
   an agent sets C2; the tab hears the agent's change, the saved version holds both, and the
   version is named for the agent. A snap split into parts opens from its parts; a split snap with
-  a part missing opens from the start before it.
+  a part missing opens from the start before it; a paste and an agent edit too big for one record
+  reach the other tab whole, and a split update missing a part is never applied.
 - On the stack: New sheet, type, formulas recalculate; two tabs insert rows at the same place and
   sort at once without losing a row; a view filters for one tab and not the other; Convert an
   `.xlsx` fixture and Export it back, formulas intact; a sheet at the limits opens and
