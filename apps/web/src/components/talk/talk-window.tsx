@@ -24,12 +24,13 @@ import {
 } from "@/hooks/use-talk.ts";
 import { inBackground } from "@/lib/desktop-notifications.ts";
 import { firstName, type TalkPerson } from "@/lib/talk.ts";
-import { talkWindow, useTalkWindow } from "@/lib/talk-window.ts";
+import { talkWindow, useTalkPinned, useTalkWindow } from "@/lib/talk-window.ts";
 import { TalkMessages } from "./talk-messages";
 
 const WIDTH = 288;
 const GUTTER = 12;
 const BELOW = 6;
+const CORNER = 28;
 
 function Header(props: { person: TalkPerson }) {
   return (
@@ -51,22 +52,22 @@ function Header(props: { person: TalkPerson }) {
   );
 }
 
-function Composer(props: { person: TalkPerson; threadId: string | undefined }) {
+function Composer(props: { person: TalkPerson; threadId: string | undefined; pinned: boolean }) {
   const [text, setText] = useState("");
   const field = useRef<HTMLTextAreaElement>(null);
   const note = useSendNote(props.threadId);
   const files = useSendFiles(props.threadId);
-  useEffect(() => field.current?.focus(), [props.person.memberId]);
+  useEffect(() => {
+    if (props.pinned) field.current?.focus();
+  }, [props.pinned]);
 
   const send = () => {
     const body = text.trim();
     if (!body || !props.threadId) return;
     setText("");
-    note.mutate(body, {
-      onError: () => {
-        setText((now) => (now.trim() ? now : body));
-        appToast.error("The note was not sent. Try again.");
-      },
+    note.mutateAsync(body).catch(() => {
+      setText((now) => (now.trim() ? now : body));
+      appToast.error("The note was not sent. Try again.");
     });
   };
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -77,7 +78,7 @@ function Composer(props: { person: TalkPerson; threadId: string | undefined }) {
   const attach = (list: File[]) =>
     props.threadId &&
     list.length > 0 &&
-    files.mutate(list, { onError: () => appToast.error("The file was not sent. Try again.") });
+    files.mutateAsync(list).catch(() => appToast.error("The file was not sent. Try again."));
   return (
     <div className="flex shrink-0 items-end gap-1 p-1.5 ps-4">
       <Textarea
@@ -141,7 +142,7 @@ function NoteBones() {
   );
 }
 
-function Conversation(props: { person: TalkPerson }) {
+function Conversation(props: { person: TalkPerson; pinned: boolean }) {
   const { member } = useMember();
   const thread = useTalkThread(props.person.memberId);
   const threadId = thread.data?.id;
@@ -154,14 +155,15 @@ function Conversation(props: { person: TalkPerson }) {
     event.preventDefault();
     setDragging(false);
     const dropped = [...event.dataTransfer.files];
-    if (threadId && dropped.length) files.mutate(dropped);
+    if (!threadId || !dropped.length) return;
+    files.mutateAsync(dropped).catch(() => appToast.error("The file was not sent. Try again."));
   };
 
   return (
     <div
       className={cn(
-        "group/talk flex min-h-0 flex-col overflow-hidden rounded-2xl border border-border/70 bg-overlay/90 shadow-overlay backdrop-blur-xl",
-        dragging && "ring-2 ring-ring",
+        "flex min-h-0 flex-1 flex-col rounded-[inherit]",
+        dragging && "ring-2 ring-ring ring-inset",
       )}
       onDragOver={(event) => {
         if (!event.dataTransfer.types.includes("Files")) return;
@@ -196,7 +198,7 @@ function Conversation(props: { person: TalkPerson }) {
           )}
         </div>
       )}
-      <Composer person={props.person} threadId={threadId} />
+      <Composer person={props.person} threadId={threadId} pinned={props.pinned} />
     </div>
   );
 }
@@ -213,7 +215,7 @@ function useAnchor(memberId: string | null, width: number) {
       const box = face?.getBoundingClientRect();
       const centre = box ? box.left + box.width / 2 : window.innerWidth;
       const left = Math.min(
-        Math.max(centre - width / 2, GUTTER),
+        Math.max(centre - width + CORNER, GUTTER),
         window.innerWidth - width - GUTTER,
       );
       setAt({ top: (box?.bottom ?? 42) + BELOW, left });
@@ -226,11 +228,13 @@ function useAnchor(memberId: string | null, width: number) {
 }
 
 /**
- * The one conversation: a small translucent island just under the face it was opened from,
- * the notes as bubbles and the composer inside it. Mount once in the shell.
+ * The one conversation: a small white island just under the face it belongs to, the notes as
+ * bubbles and the composer inside it. One window: moving to another face slides it there and
+ * swaps the thread in place. Mount once in the shell.
  */
 export function TalkWindow() {
   const memberId = useTalkWindow();
+  const pinned = useTalkPinned();
   const { data: people } = useTalkPeople();
   const person = memberId ? people?.find((p) => p.memberId === memberId) : undefined;
   const width = Math.min(WIDTH, window.innerWidth - GUTTER * 2);
@@ -248,9 +252,17 @@ export function TalkWindow() {
     <section
       aria-label={`Conversation with ${person.name}`}
       style={{ top: at.top, left: at.left, width }}
-      className="fixed z-40 flex max-h-[calc(100svh-4rem)] flex-col origin-top animate-in fade-in zoom-in-95 duration-150 ease-out motion-reduce:animate-none"
+      onPointerEnter={talkWindow.stay}
+      onPointerLeave={talkWindow.leave}
+      onPointerDownCapture={talkWindow.pin}
+      onFocusCapture={talkWindow.pin}
+      className={cn(
+        "group/talk fixed z-40 flex max-h-[calc(100svh-4rem)] flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-overlay",
+        "origin-top animate-in fade-in zoom-in-95 duration-150 ease-out",
+        "transition-[left] duration-200 ease-out motion-reduce:animate-none motion-reduce:transition-none",
+      )}
     >
-      <Conversation key={person.memberId} person={person} />
+      <Conversation key={person.memberId} person={person} pinned={pinned} />
     </section>
   );
 }

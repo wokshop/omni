@@ -24,6 +24,7 @@ import { conversationFilterOf, filterOf, keys } from "./query-keys.ts";
 import { storageDrivesChanged, type StorageDriveChange } from "./storage-cache.ts";
 import { setOnline } from "./talk.ts";
 
+const TITLE_BAR_MIN = 768;
 const FLUSH_MS = 150;
 const MAX_HOLD_MS = 3_000;
 
@@ -216,7 +217,7 @@ export function startRealtime(client: QueryClient, activeOrgId: string) {
     connectRealtime({
       baseUrl: window.location.origin,
       orgId,
-      talk: orgId === activeOrgId,
+      talk: orgId === activeOrgId && wide.matches,
       onEvent: (event) => onEvent(orgId, event),
       onStatus: (next, { reconnected }) => onStatus(orgId, next, reconnected),
     });
@@ -240,8 +241,14 @@ export function startRealtime(client: QueryClient, activeOrgId: string) {
       void recheckPendingSends(client);
     }
   };
+  const wide = window.matchMedia(`(min-width: ${TITLE_BAR_MIN}px)`);
   const connections = new Map([[activeOrgId, connect(activeOrgId)]]);
   sockets = connections;
+  const reconnectActive = () => {
+    connections.get(activeOrgId)?.close();
+    connections.set(activeOrgId, connect(activeOrgId));
+  };
+  wide.addEventListener("change", reconnectActive);
   const stopWaking = onWake(() => {
     for (const connection of connections.values()) connection.wake();
   });
@@ -262,6 +269,7 @@ export function startRealtime(client: QueryClient, activeOrgId: string) {
       clearTimeout(timer);
       clearTimeout(driveTimer);
       stopWaking();
+      wide.removeEventListener("change", reconnectActive);
       if (sockets === connections) sockets = new Map();
       for (const connection of connections.values()) connection.close();
       clearPresence();

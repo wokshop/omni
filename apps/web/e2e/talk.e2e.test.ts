@@ -174,6 +174,22 @@ test("the stack shows who is online, and a note and a file reach the teammate's 
   expect(await stack.getByRole("button").allInnerTexts()).toContain("+1");
   await shoot(ana, "1-stack");
 
+  const peek = ana.getByRole("region", { name: /^Conversation with / });
+  const faces = stack.locator("[data-talk-face]");
+  await faces.nth(0).hover();
+  await peek.waitFor();
+  const first = await peek.getAttribute("aria-label");
+  await peek.evaluate((el) => el.setAttribute("data-same", ""));
+  const leftOf = () => peek.evaluate((el) => el.getBoundingClientRect().left);
+  const before = await leftOf();
+  await faces.nth(1).hover();
+  await expect.poll(() => peek.getAttribute("aria-label")).not.toBe(first);
+  expect(await peek.getAttribute("data-same")).toBe("");
+  await expect.poll(leftOf).toBeGreaterThan(before);
+  await shoot(ana, "1a-peek");
+  await ana.mouse.move(4, 400);
+  await expect.poll(() => peek.count()).toBe(0);
+
   await stack.getByRole("button", { name: "Everyone, 1 more online" }).click();
   await ana.getByRole("menuitem", { name: "Kofi Mensah" }).waitFor();
   await ana.waitForTimeout(300);
@@ -205,6 +221,25 @@ test("the stack shows who is online, and a note and a file reach the teammate's 
   const shown = await window.locator("p").allInnerTexts();
   expect(shown.indexOf("Second one")).toBeLessThan(shown.indexOf("Third, right away"));
   await ana.unroute("**/api/talk/threads/*/messages");
+  const failing = Promise.withResolvers<void>();
+  let refused = false;
+  await ana.route("**/api/talk/threads/*/messages", async (route) => {
+    if (route.request().method() === "POST" && !refused) {
+      refused = true;
+      await failing.promise;
+      return route.fulfill({ status: 500, json: { error: { code: "internal" } } });
+    }
+    await route.fallback();
+  });
+  await composer.fill("Lost on the way");
+  await composer.press("Enter");
+  await composer.fill("Kept one");
+  await composer.press("Enter");
+  failing.resolve();
+  await bubble("Kept one").waitFor();
+  await expect.poll(() => composer.inputValue()).toBe("Lost on the way");
+  expect(await bubble("Lost on the way").count()).toBe(0);
+  await ana.unroute("**/api/talk/threads/*/messages");
   await composer.fill("");
   await window.locator('input[type="file"]').setInputFiles({
     name: "board.png",
@@ -220,7 +255,7 @@ test("the stack shows who is online, and a note and a file reach the teammate's 
   await shoot(ana, "2-window");
 
   const kofiStack = kofi.getByRole("group", { name: "Online now" });
-  const fromAna = kofiStack.getByRole("button", { name: "Ana Lima, 4 unread" });
+  const fromAna = kofiStack.getByRole("button", { name: "Ana Lima, 5 unread" });
   await fromAna.waitFor();
   await shoot(kofi, "3-unread");
   await fromAna.click();

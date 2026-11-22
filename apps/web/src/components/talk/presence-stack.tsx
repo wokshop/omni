@@ -48,30 +48,31 @@ const label = (person: TalkPerson) =>
 function StackFace(props: { person: TalkPerson; open: boolean }) {
   const { person, open } = props;
   return (
-    <TooltipTrigger delay={400}>
-      <Button
-        intent="plain"
-        size="sq-sm"
-        isCircle
-        aria-label={label(person)}
-        aria-pressed={open}
-        data-talk-face={person.memberId}
-        onPress={() => (open ? talkWindow.close() : talkWindow.open(person.memberId))}
-        className={cn(
-          "relative transition-transform duration-150 ease-out motion-reduce:transition-none",
-          OVERLAP,
-          open && "z-10 -translate-y-0.5",
-        )}
-      >
-        <TalkFace
-          person={person}
-          size={FACE}
-          className={cn("bg-background", RING, open && "ring-primary")}
-        />
-        {person.unread > 0 && <Dot tone="unread" />}
-      </Button>
-      <Tooltip>{person.name}</Tooltip>
-    </TooltipTrigger>
+    <Button
+      intent="plain"
+      size="sq-sm"
+      isCircle
+      aria-label={label(person)}
+      aria-pressed={open}
+      data-talk-face={person.memberId}
+      onPointerEnter={(event) => event.pointerType === "mouse" && talkWindow.hover(person.memberId)}
+      onPointerLeave={(event) => event.pointerType === "mouse" && talkWindow.leave()}
+      onPress={() =>
+        open && talkWindow.state().pinned ? talkWindow.close() : talkWindow.open(person.memberId)
+      }
+      className={cn(
+        "relative transition-transform duration-150 ease-out motion-reduce:transition-none",
+        OVERLAP,
+        open && "z-10 -translate-y-0.5",
+      )}
+    >
+      <TalkFace
+        person={person}
+        size={FACE}
+        className={cn("bg-background", RING, open && "ring-primary")}
+      />
+      {person.unread > 0 && <Dot tone="unread" />}
+    </Button>
   );
 }
 

@@ -22,12 +22,15 @@ and rules (`docs/spec/modules.md`), because it owns tables and reads Storage thr
   else is online, there is no stack.
 - **Everyone.** `+n` opens the full list: online teammates first, then the others, each with
   their unread count. Any of them opens a conversation; an offline teammate reads it next time.
-- **The window.** A small island just under the face it was opened from (or `+n`), kept on
-  screen: the overlay surface, a touch translucent over a blur of the page, 288px wide.
+- **The window.** A small white island just under the face it belongs to (or `+n`), its top
+  right corner under the face, kept on screen, 288px wide. It behaves like a tooltip: resting on
+  a face a beat peeks at that thread; moving to another face slides the same window to it and
+  swaps the thread in place; leaving both closes it. A press on a face, or a touch inside the
+  window, pins it open until it is closed. Only a pinned window takes the keyboard.
   - A one-line header: their name and a green dot while they are online; close shows on hover.
   - The notes as bubbles: yours on the right in primary, theirs on the left in secondary. A time
     line wherever an hour passes. An image is a rounded picture; any other file a chip with its
-    glyph, name and `PNG • 5 KB`. Reactions are white chips over the bubble's lower corner, in
+    glyph, name and `PNG • 5 KB`. Reactions are white chips overlapping the bubble's lower edge, wrapping when there are many, in
     the platform's emoji (Apple's first); four quick ones float above a bubble on hover.
   - The composer inside the island at its foot: `Note to <first name>…`, attach (+) and a round
     send button with an up arrow. Dropping files on the island sends them.
@@ -128,7 +131,8 @@ not leak.
 ## Realtime
 
 Online is the existing per-workspace realtime Durable Object, not a new service. An app that
-shows Talk opens its socket with `?talk=1`; the Worker then tags it `team` when the member is a
+shows Talk opens its socket with `?talk=1` (the web app only while its title bar, and so the
+stack, is on screen: a narrow window that hides it is not a way to reach you, so push still does); the Worker then tags it `team` when the member is a
 teammate (never on a sync or watch socket, never for a freelancer). Only those sockets count and
 hear Talk, so a client that has no Talk (iOS today, an older web build, the desktop's watch
 sockets) never shows its member as online, never swallows a push, and gets no event it does not

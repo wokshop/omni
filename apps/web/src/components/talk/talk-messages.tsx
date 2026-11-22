@@ -40,8 +40,8 @@ function Reactions(props: { message: TalkMessage; meId: string; mine: boolean })
   return (
     <div
       className={cn(
-        "absolute -bottom-3 z-10 flex items-center gap-0.5",
-        props.mine ? "start-0 -translate-x-1/3" : "end-0 translate-x-1/3",
+        "relative z-10 -mt-2.5 flex max-w-full flex-wrap gap-0.5",
+        props.mine ? "justify-end pe-2" : "justify-start ps-2",
       )}
     >
       {props.message.reactions.map((r) => (
@@ -140,24 +140,22 @@ function Attachment(props: { message: TalkMessage; mine: boolean }) {
 function Note(props: { message: TalkMessage; meId: string; tail: boolean }) {
   const { message } = props;
   const mine = message.authorMemberId === props.meId;
-  const reacted = message.reactions.length > 0;
   return (
     <div
       className={cn(
         "group/note flex",
         mine ? "justify-end ps-14" : "justify-start pe-14",
         props.tail && "mb-2.5",
-        reacted && "mb-3.5",
       )}
     >
       <div
-        className={cn("relative flex min-w-0 flex-col gap-1", mine ? "items-end" : "items-start")}
+        className={cn("relative flex min-w-0 flex-col gap-0.5", mine ? "items-end" : "items-start")}
       >
         <QuickReactions message={message} meId={props.meId} mine={mine} />
         {message.body && (
           <p
             className={cn(
-              "max-w-full rounded-xl px-3 py-1.5 text-sm/5 break-words whitespace-pre-wrap",
+              "max-w-full rounded-xl px-2.5 py-1 text-sm/5 break-words whitespace-pre-wrap",
               mine ? "bg-primary text-primary-foreground" : "bg-secondary text-foreground",
             )}
           >
