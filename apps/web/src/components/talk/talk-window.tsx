@@ -174,8 +174,10 @@ function Conversation(props: { person: TalkPerson; pinned: boolean }) {
   const list = messages.data?.pages.flatMap((page) => page.messages) ?? [];
   useReadWhileOpen(threadId, list.find((m) => m.authorMemberId !== member.id)?.id);
   const earlier = useRef<HTMLButtonElement>(null);
-  useEarlierAhead(earlier, messages.hasNextPage, messages.data?.pages.length ?? 0, () => {
-    if (!messages.isFetchingNextPage) void messages.fetchNextPage();
+  // WARNING: never page while any fetch runs: it would cancel a reconnect's refetch. It re-arms after.
+  const pageable = messages.hasNextPage && !messages.isFetching;
+  useEarlierAhead(earlier, pageable, messages.data?.pages.length ?? 0, () => {
+    if (!messages.isFetching) void messages.fetchNextPage();
   });
   const files = useSendFiles(props.person.memberId, threadId);
   const [dragging, setDragging] = useState(false);
