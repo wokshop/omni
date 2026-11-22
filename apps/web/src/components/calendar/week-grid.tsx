@@ -144,7 +144,7 @@ export function WeekGrid(props: WeekGridProps) {
             )}
           >
             {allDay.map((event) => (
-              <EventChip
+              <Chip
                 key={eventKey(event)}
                 event={event}
                 tone={tones.get(event.calendarId) ?? ""}
@@ -382,6 +382,7 @@ const EventBlock = memo(function EventBlock(props: PieceProps & { placed: Placed
         width: `calc(${100 / columns}% - 4px)`,
       }}
       onClick={() => props.handlers.onSelect({ kind: "event", key: eventKey(event) })}
+      onFocus={() => !selected && props.handlers.onSelect({ kind: "event", key: eventKey(event) })}
       onDoubleClick={() => props.handlers.onOpen(event)}
       onPointerDown={(e) => {
         if (!movable || e.button !== 0) return;
@@ -410,7 +411,7 @@ const EventBlock = memo(function EventBlock(props: PieceProps & { placed: Placed
   );
 });
 
-const EventChip = memo(function EventChip(props: PieceProps & { event: CalendarEvent }) {
+const Chip = memo(function Chip(props: PieceProps & { event: CalendarEvent; timed?: boolean }) {
   const { event } = props;
   const { selected } = props;
   return (
@@ -424,22 +425,42 @@ const EventChip = memo(function EventChip(props: PieceProps & { event: CalendarE
       )}
       style={toneStyle(props.tone, event)}
       onClick={() => props.handlers.onSelect({ kind: "event", key: eventKey(event) })}
+      onFocus={() => !selected && props.handlers.onSelect({ kind: "event", key: eventKey(event) })}
       onDoubleClick={() => props.handlers.onOpen(event)}
     >
       <AccentBar />
+      {props.timed && !event.allDay && (
+        <span className="me-1 font-normal opacity-70 tabular-nums">
+          {time.format(new Date(event.start))}
+        </span>
+      )}
       {event.title || "(No title)"}
     </CanvasButton>
   );
 });
 
-function TodoChip({ task, onTodo }: { task: CrmTask; onTodo?: WeekGridProps["onTodo"] }) {
+/** An event as one line: all-day ones on the week's top row, every one in a month's day. */
+export function EventChip(props: WeekGridProps & { event: CalendarEvent; timed?: boolean }) {
+  return (
+    <Chip
+      event={props.event}
+      timed={props.timed}
+      tone={calendarTone(props.calendars, props.event.calendarId)}
+      selected={selectedKey(props.selection) === eventKey(props.event)}
+      handlers={props}
+    />
+  );
+}
+
+/** A dated to-do on its day: its check, then its title. */
+export function TodoChip({ task, onTodo }: { task: CrmTask; onTodo?: WeekGridProps["onTodo"] }) {
   const done = !!task.completedAt;
   return (
     <CheckboxField
       aria-label={done ? `Reopen ${task.title}` : `Complete ${task.title}`}
       isSelected={done}
       onChange={(next: boolean) => onTodo?.(task, next)}
-      className="min-w-0 overflow-hidden rounded-md px-1.5 py-0.5 hover:bg-hover **:data-[slot=indicator]:rounded-full"
+      className="min-w-0 overflow-hidden rounded-md px-1.5 py-0.5 hover:bg-hover **:data-[slot=indicator]:rounded-full **:data-[slot=control-label]:min-w-0"
     >
       <Checkbox>
         <span
