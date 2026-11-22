@@ -107,8 +107,8 @@ export class LiveFile {
 
   /**
    * Appends `update`, a change already made to this document, for everyone editing to merge with
-   * their own, then catches up with what others appended meanwhile. Answers the record to pass on
-   * and the last one the document now holds.
+   * their own, then catches up with what others appended meanwhile; `by` names who it is for (an
+   * agent's edit). Answers the record to pass on and the last one the document now holds.
    */
   async append(update: Uint8Array, by?: string) {
     const record: StorageLiveRecord = {

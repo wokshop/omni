@@ -3,10 +3,10 @@ import { z } from "zod";
 const id = z.string().min(1);
 
 /**
- * Who sent a live record, stamped by the realtime object whatever the sender wrote: `m:<memberId>`
- * from a member's tab, `u:<userId>` for a person with a grant, `g:<guestId>` for a guest through a
- * link, `a:<memberId>:<agent>` for an agent's edit made for a member. Absent from records written
- * before this, from the Worker's own saves, and from what an outsider is sent.
+ * Who sent a live update, set by the realtime object whatever the sender wrote: `m:<memberId>`,
+ * `u:<userId>` for a person with a grant, `g:<guestId>` for a guest through a link; the Worker
+ * writes `a:<memberId>:<agent>` for an agent's edit made for a member. Absent from records written
+ * before this, from the Worker's other appends, and in what an outsider is sent.
  */
 export const storageLiveAuthorSchema = z.string().max(200).optional();
 const by = storageLiveAuthorSchema;
@@ -27,7 +27,7 @@ const by = storageLiveAuthorSchema;
  * update of the epoch, which it is.
  */
 export const storageLiveRecordSchema = z.discriminatedUnion("t", [
-  z.object({ t: z.literal("seed"), cv: z.number().int().nonnegative(), u: z.base64(), by }),
+  z.object({ t: z.literal("seed"), cv: z.number().int().nonnegative(), u: z.base64() }),
   z.object({ t: z.literal("update"), e: z.number().int().nonnegative(), u: z.base64(), by }),
   z.object({
     t: z.literal("fold"),

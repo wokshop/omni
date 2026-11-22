@@ -137,6 +137,8 @@ test("a guest on an Editor link types with a member live, and the server says wh
   const seqNum = await tab.append({ t: "update", e: guest.epoch, u: base64(fromAna) });
   const reached = await guest.waitFor((e) => e.type === "doc.record" && e.seqNum === seqNum);
   expect(reached.record).not.toHaveProperty("by");
+  const folded = await tab.append({ t: "fold", e: guest.epoch, cv: 1, s: seqNum });
+  await guest.waitFor((e) => e.type === "doc.record" && e.seqNum === folded);
   expect(JSON.stringify(guest.received)).not.toContain(ana.id);
 
   for (const record of [
