@@ -87,11 +87,23 @@ function FileArt(props: { node: StorageNode; type: FileType; url: string; read: 
   if (hasThumbnail(node)) return <Thumbnail node={node} url={url} />;
   if (type.preview === "pdf") return <PdfStack node={node} url={url} />;
   if (!props.read) return <FileGlyph kind={type.kind} className="size-8 text-muted-foreground" />;
-  if (node.size > 0 && type.preview === "video") return <VideoArt node={node} url={url} />;
-  if (node.size > 0 && type.preview === "audio") return <AudioArt node={node} url={url} />;
+  if (node.size > 0 && type.preview === "video") {
+    return <VideoArt key={versionOf(node)} node={node} url={versioned(url, node)} />;
+  }
+  if (node.size > 0 && type.preview === "audio") {
+    return <AudioArt key={versionOf(node)} node={node} url={versioned(url, node)} />;
+  }
   if (hasPage(node, type)) return <FilePage node={node} type={type} url={url} />;
   return <FileGlyph kind={type.kind} className="size-8 text-muted-foreground" />;
 }
+
+const versionOf = (node: StorageNode) => String(node.contentVersion ?? node.updatedAt);
+
+const versioned = (url: string, node: StorageNode) => {
+  const named = new URL(url, window.location.origin);
+  named.searchParams.set("v", versionOf(node));
+  return named.toString();
+};
 
 function Thumbnail(props: { node: StorageNode; url: string }) {
   return (
