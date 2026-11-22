@@ -56,15 +56,15 @@ function Header(props: { person: TalkPerson }) {
 function Composer(props: { person: TalkPerson; threadId: string | undefined; pinned: boolean }) {
   const [text, setText] = useState("");
   const field = useRef<HTMLTextAreaElement>(null);
-  const note = useSendNote(props.threadId);
-  const files = useSendFiles(props.threadId);
+  const note = useSendNote(props.person.memberId, props.threadId);
+  const files = useSendFiles(props.person.memberId, props.threadId);
   useEffect(() => {
     if (props.pinned) field.current?.focus();
   }, [props.pinned]);
 
   const send = () => {
     const body = text.trim();
-    if (!body || !props.threadId) return;
+    if (!body) return;
     setText("");
     note.mutateAsync(noteToSend(body)).catch(() => {
       setText((now) => (now.trim() ? now : body));
@@ -77,7 +77,6 @@ function Composer(props: { person: TalkPerson; threadId: string | undefined; pin
     send();
   };
   const attach = (list: File[]) =>
-    props.threadId &&
     list.length > 0 &&
     files.mutateAsync(list).catch(() => appToast.error("The file was not sent. Try again."));
   return (
@@ -107,7 +106,7 @@ function Composer(props: { person: TalkPerson; threadId: string | undefined; pin
         intent="primary"
         size="sq-sm"
         aria-label="Drop"
-        isDisabled={!text.trim() || !props.threadId}
+        isDisabled={!text.trim()}
         onPress={send}
         className="rounded-[10px]"
       >
@@ -149,13 +148,13 @@ function Conversation(props: { person: TalkPerson; pinned: boolean }) {
   const messages = useTalkMessages(threadId);
   const list = messages.data?.pages.flatMap((page) => page.messages) ?? [];
   useReadWhileOpen(threadId, list[0]?.id);
-  const files = useSendFiles(threadId);
+  const files = useSendFiles(props.person.memberId, threadId);
   const [dragging, setDragging] = useState(false);
   const onDrop = (event: DragEvent) => {
     event.preventDefault();
     setDragging(false);
     const dropped = [...event.dataTransfer.files];
-    if (!threadId || !dropped.length) return;
+    if (!dropped.length) return;
     files.mutateAsync(dropped).catch(() => appToast.error("The file was not sent. Try again."));
   };
 

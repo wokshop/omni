@@ -105,7 +105,7 @@ function Attachment(props: { message: TalkMessage; mine: boolean }) {
           src={href}
           alt={file.name}
           loading="lazy"
-          className="aspect-[4/3] w-44 rounded-xl border border-border bg-secondary object-cover"
+          className="block h-auto max-h-64 min-h-12 w-auto max-w-44 min-w-12 rounded-xl border border-border bg-secondary object-contain"
         />
       </Link>
     );
