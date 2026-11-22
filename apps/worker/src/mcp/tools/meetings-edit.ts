@@ -134,6 +134,16 @@ const shareOutput = z.object({
   ),
 });
 
+const POLICY =
+  "Your workspace's sharing policy does not allow sharing this meeting outside the company.";
+
+function shareRefusal(status: string, address: string | null) {
+  if (status === "policy") return POLICY;
+  if (status === "invalid_address" && address) return `${address} is not an email address.`;
+  if (status === "forbidden") return EDITORS_ONLY;
+  return NO_MEETING;
+}
+
 async function share(context: ToolContext, input: z.infer<typeof shareInput>) {
   if (!input.people.length && !input.access) {
     return toolError("Give `people` to share with, or `access`.");
@@ -147,11 +157,11 @@ async function share(context: ToolContext, input: z.infer<typeof shareInput>) {
     if (granted.status === "forbidden") {
       return toolError(`${person.address} owns this meeting; their access does not change.`);
     }
-    if (granted.status !== "ok") return toolError(`${person.address} is not an email address.`);
+    if (granted.status !== "ok") return toolError(shareRefusal(granted.status, person.address));
   }
   if (input.access) {
     const changed = await meetings.change(input.meeting_id, { access: input.access });
-    if (changed.status !== "ok") return toolError(EDITORS_ONLY);
+    if (changed.status !== "ok") return toolError(shareRefusal(changed.status, null));
   }
   const now = await meetings.get(input.meeting_id);
   if (now.status !== "ok" || !now.sharing) return toolError(NO_MEETING);
