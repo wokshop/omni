@@ -442,3 +442,58 @@ test("arranging a group together with something inside it is refused and changes
   expect(arranged.error).toContain(`"${made.created.b}" is inside another element being arranged`);
   expect((await body(ana, made.canvas.id)).text).toBe(before);
 });
+
+test("moving one element across another and deleting that other in one call frees the line where it is drawn now", async () => {
+  const { ana, agent } = await person();
+  const made = (await call(agent, "drive_create_canvas", {
+    name: "Move then delete",
+    ops: [
+      { op: "add", kind: "sticky", text: "A", at: { x: 0, y: 0 }, ref: "a" },
+      { op: "add", kind: "sticky", text: "B", at: { x: 400, y: 0 }, ref: "b" },
+      { op: "connect", from: "a", to: "b" },
+    ],
+  })) as Answer & { canvas: { id: string }; created: Record<string, string> };
+  const edited = await call(agent, "drive_edit_canvas", {
+    id: made.canvas.id,
+    ops: [
+      { op: "move", ids: [made.created.b], to: { x: -400, y: 0 } },
+      { op: "delete", ids: [made.created.a] },
+    ],
+  });
+  expect(edited).not.toHaveProperty("error");
+  const line = (await body(ana, made.canvas.id)).scene.elements.find((e) => e.kind === "connector");
+  expect(line).toMatchObject({
+    from: { at: [0, 100] },
+    to: { id: made.created.b, at: [-200, 100] },
+  });
+  expect(line!.from).not.toHaveProperty("id");
+});
+
+test("moving or arranging a group of lines that still join elements outside it is refused and changes nothing", async () => {
+  const { ana, agent } = await person();
+  const made = (await call(agent, "drive_create_canvas", {
+    name: "Joined lines",
+    ops: [
+      { op: "add", kind: "sticky", text: "A", at: { x: 0, y: 0 }, ref: "a" },
+      { op: "add", kind: "sticky", text: "B", at: { x: 400, y: 0 }, ref: "b" },
+      { op: "add", kind: "sticky", text: "C", at: { x: 0, y: 400 }, ref: "c" },
+      { op: "add", kind: "sticky", text: "D", at: { x: 1000, y: 0 }, ref: "d" },
+      { op: "connect", from: "a", to: "b", ref: "top" },
+      { op: "connect", from: "a", to: "c", ref: "side" },
+      { op: "group", ids: ["top", "side"], ref: "lines" },
+    ],
+  })) as Answer & { canvas: { id: string }; created: Record<string, string> };
+  expect(made).not.toHaveProperty("error");
+  const before = (await body(ana, made.canvas.id)).text;
+  const moved = await call(agent, "drive_edit_canvas", {
+    id: made.canvas.id,
+    ops: [{ op: "move", ids: [made.created.lines], by: { dx: 500, dy: 0 } }],
+  });
+  expect(moved.error).toContain(`joins "${made.created.a}"`);
+  const arranged = await call(agent, "drive_edit_canvas", {
+    id: made.canvas.id,
+    ops: [{ op: "arrange", ids: [made.created.d, made.created.lines], as: "row" }],
+  });
+  expect(arranged.error).toContain(`joins "${made.created.a}"`);
+  expect((await body(ana, made.canvas.id)).text).toBe(before);
+});
