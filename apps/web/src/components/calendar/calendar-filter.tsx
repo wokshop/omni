@@ -84,6 +84,7 @@ export function CalendarFilter() {
       <Popover
         aria-label="Calendars"
         placement="bottom end"
+        offset={9}
         className="w-72 max-w-[calc(100vw-16px)] overflow-hidden"
       >
         <SearchField
