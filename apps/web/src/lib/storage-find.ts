@@ -1,6 +1,7 @@
 import { queryOptions } from "@tanstack/react-query";
 import { api, call } from "./api.ts";
 import { keys } from "./query-keys.ts";
+import { driveKey, type DriveRoot } from "./storage.ts";
 
 /** Files and folders whose name holds `q`, folders first. */
 export const storageSearchQuery = (q: string) =>
@@ -11,9 +12,17 @@ export const storageSearchQuery = (q: string) =>
   });
 
 /** A drive's cluster glyphs, by top-level folder id. */
-export const storageFolderIconsQuery = (space: "personal" | "shared") =>
+export const storageFolderIconsQuery = (drive: DriveRoot) =>
   queryOptions({
-    queryKey: keys.storageIcons(space),
+    queryKey: keys.storageIcons(driveKey(drive)),
     queryFn: ({ signal }) =>
-      call(api.storage.icons.$get({ query: { space } }, { init: { signal } })),
+      call(
+        api.storage.icons.$get(
+          {
+            query:
+              "teamspaceId" in drive ? { teamspace: drive.teamspaceId } : { space: drive.space },
+          },
+          { init: { signal } },
+        ),
+      ),
   });

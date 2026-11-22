@@ -1,4 +1,4 @@
-import type { StorageFilePresenceEvent, StorageSpace } from "@omni/contracts";
+import type { StorageFilePresenceEvent, StorageNodeSpace } from "@omni/contracts";
 import { forMember } from "@omni/db";
 import { z } from "zod";
 import { openDb } from "./db.ts";
@@ -14,7 +14,7 @@ export type FilePresenceMessage = z.infer<typeof filePresenceMessage>;
 /** The file a socket is editing, and the drive that says who may hear it. */
 export interface Editing {
   nodeId: string;
-  space: StorageSpace;
+  space: StorageNodeSpace;
   ownerMemberId: string | null;
   /** Locked when last checked (a signed contract): its live document takes no records. */
   locked?: boolean;

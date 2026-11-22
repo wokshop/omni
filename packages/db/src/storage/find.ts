@@ -12,7 +12,7 @@ export function inDrives(drives: Drive[], alias: string) {
   return sql.join(
     drives.map(
       (drive) =>
-        sql`(${t}.org_id = ${drive.orgId} and ${t}.space = ${drive.space} and coalesce(${t}.owner_member_id, '') = ${drive.ownerMemberId ?? ""})`,
+        sql`(${t}.org_id = ${drive.orgId} and ${t}.space = ${drive.space} and coalesce(${t}.owner_member_id, '') = ${drive.ownerMemberId ?? ""} and coalesce(${t}.teamspace_id, '') = ${drive.teamspaceId ?? ""})`,
     ),
     sql` or `,
   );
@@ -41,10 +41,7 @@ function firstLiveMatches(drives: Drive[], pattern: string) {
 export const likeEscaped = (text: string) => text.replace(/[\\%_]/g, (char) => `\\${char}`);
 
 export function findOperations(db: Db, door: Door) {
-  const drives = async () => {
-    const found = await Promise.all([door.root(db, "personal"), door.root(db, "shared")]);
-    return found.filter((drive): drive is Drive => drive !== null);
-  };
+  const drives = () => door.drives(db);
   return {
     async search(query: string) {
       const text = query.trim();
