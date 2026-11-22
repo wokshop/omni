@@ -292,3 +292,47 @@ test("reactions reach both and come back on the note", async () => {
   ).toBe(400);
   anaSocket.socket.close();
 });
+
+test("a drop never lands in a Talk folder the sender shared with someone else", async () => {
+  const { ana, ben, cy } = await workspace("talk-shared-folder");
+  const threadId = (await api(ana.cookie, "POST", "/threads", { memberId: ben.id })).body.thread.id;
+  const drop = async (name: string) => {
+    const response = await fetch(
+      new URL(`/api/talk/threads/${threadId}/files?name=${name}`, worker.url),
+      {
+        method: "POST",
+        headers: { cookie: ana.cookie, "content-type": "text/plain" },
+        body: name,
+      },
+    );
+    expect(response.status).toBe(201);
+    return ((await response.json()) as { message: { file: { nodeId: string } } }).message.file
+      .nodeId;
+  };
+  const { db } = database;
+  const parentOf = async (nodeId: string) =>
+    (await db.select().from(schema.storageNodes).where(eq(schema.storageNodes.id, nodeId)))[0]!
+      .parentId!;
+
+  const firstFolder = await parentOf(await drop("first.txt"));
+  const [folder] = await db
+    .select()
+    .from(schema.storageNodes)
+    .where(eq(schema.storageNodes.id, firstFolder));
+  await db.insert(schema.storageGrants).values({
+    orgId: folder!.orgId,
+    nodeId: firstFolder,
+    email: cy.email,
+    role: "viewer",
+    createdAt: new Date(),
+  });
+
+  const secondFolder = await parentOf(await drop("second.txt"));
+  expect(secondFolder).not.toBe(firstFolder);
+  const inherited = await db
+    .select()
+    .from(schema.storageGrants)
+    .where(eq(schema.storageGrants.nodeId, secondFolder));
+  expect(inherited).toEqual([]);
+  expect(await parentOf(await drop("third.txt"))).toBe(secondFolder);
+});
