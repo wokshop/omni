@@ -33,6 +33,8 @@ const timedOn = (day: Date, events: readonly CalendarEvent[]) => {
 type MonthGridProps = WeekGridProps & {
   /** The shown day: its month leads the title and is scrolled to when it changes from outside. */
   anchor: Date;
+  /** Counts the arrows' and Today's presses: each scrolls to the anchor's month, even unchanged. */
+  aimed: { at: string; count: number };
   onDay: (day: Date) => void;
   /** The month most of the page shows changed, by scrolling. */
   onMonth: (first: Date) => void;
@@ -91,6 +93,7 @@ function useMonthScroll(props: MonthGridProps, weeks: readonly (readonly Date[])
   const latest = useRef({ props, weeks, first, last });
   latest.current = { props, weeks, first, last };
   const anchorKey = dayKey(props.anchor);
+  const aimedAt = useRef(props.aimed.count);
 
   useLayoutEffect(() => {
     const element = scroller.current;
@@ -101,7 +104,9 @@ function useMonthScroll(props: MonthGridProps, weeks: readonly (readonly Date[])
 
   useLayoutEffect(() => {
     const element = scroller.current;
-    if (!element || shown.current === anchorKey) return;
+    const aimedHere = props.aimed.at === anchorKey && aimedAt.current !== props.aimed.count;
+    if (!element || (shown.current === anchorKey && !aimedHere)) return;
+    if (props.aimed.at === anchorKey) aimedAt.current = props.aimed.count;
     const month = monthOf(props.anchor);
     const from = shown.current === null ? null : monthOf(parseDayKey(shown.current));
     shown.current = anchorKey;
@@ -120,7 +125,7 @@ function useMonthScroll(props: MonthGridProps, weeks: readonly (readonly Date[])
       guided.current = false;
       element.dispatchEvent(new Event("scroll"));
     });
-  }, [anchorKey, props.anchor, first]);
+  }, [anchorKey, props.anchor, props.aimed, first]);
 
   useEffect(() => {
     const element = scroller.current;

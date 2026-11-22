@@ -980,6 +980,30 @@ test("in the month, ] selects only an event of the month in view", async () => {
   await expect.poll(() => kickoff.count()).toBe(1);
 });
 
+test("Today scrolls back to today's month even when the date has not changed", async () => {
+  const { org, page, origin } = await invited();
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  const first = `${today.slice(0, 7)}-01`;
+  await page.goto(new URL(`/${org.slug}/calendar?date=${today}&view=month`, origin).toString());
+  const day = page.locator(`[data-month-day="${first}"]`);
+  await day.waitFor();
+  const topOf = () =>
+    day.evaluate(
+      (cell) =>
+        cell.getBoundingClientRect().top -
+        (cell.closest("[data-week]")?.parentElement?.getBoundingClientRect().top ?? 0),
+    );
+  const box = await day.boundingBox();
+  await page.mouse.move((box?.x ?? 0) + 20, (box?.y ?? 0) + 20);
+  await page.mouse.wheel(0, box?.height ?? 100);
+  await expect.poll(topOf).toBeLessThan(-10);
+  expect(shownDate(page)).toBe(today);
+  await page.keyboard.press("t");
+  await expect.poll(topOf).toBeCloseTo(0, 0);
+});
+
 test("one sideways swipe steps the week, and each gesture steps once", async () => {
   const { org, page, origin } = await invited();
   await page.goto(new URL(`/${org.slug}/calendar?date=2026-11-24&view=week`, origin).toString());

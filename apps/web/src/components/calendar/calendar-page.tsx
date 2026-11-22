@@ -119,6 +119,11 @@ export function CalendarPage(props: {
       replace: true,
     });
   };
+  const [aimed, setAimed] = useState({ at: "", count: 0 });
+  const step = (date: Date) => {
+    setAimed((now) => ({ at: dayKey(date), count: now.count + 1 }));
+    go({ date });
+  };
   const openTask = useOpenTask();
   const router = useRouter();
   const openTodo = (task: CrmTask) => void router.history.push(openTask.href(task.id));
@@ -143,8 +148,8 @@ export function CalendarPage(props: {
     },
     close: () => (panel ? setPanel(null) : setSelection(null)),
     create: (slot) => setEditing({ slot: slot ?? nextHalfHour(now) }),
-    go: (delta) => go({ date: shiftView(view, anchor, delta) }),
-    today: () => go({ date: new Date() }),
+    go: (delta) => step(shiftView(view, anchor, delta)),
+    today: () => step(new Date()),
     view: (next) => go({ view: next }),
     paused: editing !== null,
   });
@@ -181,13 +186,13 @@ export function CalendarPage(props: {
                     size="sq-sm"
                     intent="outline"
                     aria-label={`Previous ${UNITS[view]}`}
-                    onPress={() => go({ date: shiftView(view, anchor, -1) })}
+                    onPress={() => step(shiftView(view, anchor, -1))}
                   >
                     <IconChevronLeft />
                   </Button>
                 </Hinted>
                 <Hinted label="Go to today" keyName="T">
-                  <Button size="sm" intent="outline" onPress={() => go({ date: new Date() })}>
+                  <Button size="sm" intent="outline" onPress={() => step(new Date())}>
                     Today
                   </Button>
                 </Hinted>
@@ -196,7 +201,7 @@ export function CalendarPage(props: {
                     size="sq-sm"
                     intent="outline"
                     aria-label={`Next ${UNITS[view]}`}
-                    onPress={() => go({ date: shiftView(view, anchor, 1) })}
+                    onPress={() => step(shiftView(view, anchor, 1))}
                   >
                     <IconChevronRight />
                   </Button>
@@ -210,6 +215,7 @@ export function CalendarPage(props: {
               <MonthGrid
                 days={days}
                 anchor={anchor}
+                aimed={aimed}
                 onMonth={(first) => go({ date: first })}
                 onExtend={span.extend}
                 events={events}
