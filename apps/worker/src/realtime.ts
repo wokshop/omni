@@ -5,7 +5,7 @@ import type {
   SlaTarget,
   StorageChangedEvent,
   StorageDocEvent,
-  StorageSpace,
+  StorageNodeSpace,
 } from "@omni/contracts";
 import {
   forMember,
@@ -142,20 +142,27 @@ export class Realtime extends DurableObject<Env> {
   }
 
   async storageChanged(
-    space: StorageSpace,
+    space: StorageNodeSpace,
     ownerMemberId: string | null,
     parentIds: (string | null)[] = [],
+    teamspaceId?: string | null,
   ) {
     const sockets =
-      ownerMemberId === null
-        ? this.ctx.getWebSockets()
-        : [
-            ...this.ctx.getWebSockets(ownerMemberId),
-            ...this.ctx.getWebSockets(syncTag(ownerMemberId)),
-          ];
+      space === "teamspace"
+        ? this.ctx.getWebSockets().filter((socket) => {
+            const tag = this.ctx.getTags(socket)[0];
+            return !tag?.startsWith("sync:") && !tag?.startsWith("watch:");
+          })
+        : ownerMemberId === null
+          ? this.ctx.getWebSockets()
+          : [
+              ...this.ctx.getWebSockets(ownerMemberId),
+              ...this.ctx.getWebSockets(syncTag(ownerMemberId)),
+            ];
     const message = JSON.stringify({
       type: "storage.changed",
       space,
+      ...(teamspaceId ? { teamspaceId } : {}),
       parentIds,
     } satisfies OutboundEvent);
     for (const socket of sockets) {

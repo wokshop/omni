@@ -2,7 +2,13 @@ import { and, asc, eq, ne, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
 import { members, users } from "../schema/auth.ts";
 import { storageNodes } from "../schema/storage.ts";
-import { insertNode, lockTree, STORAGE_NAME_MAX_LENGTH, type Drive } from "./core.ts";
+import {
+  insertNode,
+  lockTree,
+  personalDrive,
+  STORAGE_NAME_MAX_LENGTH,
+  type Drive,
+} from "./core.ts";
 import { leaveTombstones, nextRevision } from "./revision.ts";
 
 export type StorageHandOverResult =
@@ -86,7 +92,7 @@ export async function handOverMemberStorage(
       return result;
     }
 
-    const drive: Drive = { orgId: leaving.orgId, space: "personal", ownerMemberId: owner.id };
+    const drive: Drive = personalDrive(leaving.orgId, owner.id);
     const folder = await insertNode(tx, {
       drive,
       parentId: null,

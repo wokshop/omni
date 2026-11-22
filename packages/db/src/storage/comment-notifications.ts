@@ -10,7 +10,9 @@ import type { NodeRow } from "./core.ts";
 export interface CommentNotificationData {
   nodeId: string;
   nodeName: string;
-  space: "personal" | "shared";
+  space: "personal" | "shared" | "teamspace";
+  /** The teamspace holding the file, when `space` is `teamspace`. */
+  teamspaceId?: string | null;
   /** The folder holding the file; null at the drive's root. */
   folderId: string | null;
   commentId: string;
@@ -39,7 +41,7 @@ export const notifyComment: (
         .from(storageComments)
         .where(or(eq(storageComments.id, input.rootId), eq(storageComments.parentId, input.rootId)))
     : [];
-  const candidates = [owner, ...(node.space === "shared" ? writers.map((w) => w.id) : [])];
+  const candidates = [owner, ...(node.space === "personal" ? [] : writers.map((w) => w.id))];
   const wanted = [
     ...new Set(candidates.filter((id): id is string => !!id && id !== input.authorMemberId)),
   ];
@@ -54,6 +56,7 @@ export const notifyComment: (
     nodeId: node.id,
     nodeName: node.name,
     space: node.space,
+    ...(node.teamspaceId ? { teamspaceId: node.teamspaceId } : {}),
     folderId: node.parentId,
     commentId: input.commentId,
     excerpt: flat.length > EXCERPT ? `${flat.slice(0, EXCERPT).trimEnd()}…` : flat,
