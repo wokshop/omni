@@ -1,9 +1,8 @@
 import { useState, type ReactNode } from "react";
 import {
-  IconFolderShared,
+  IconClock3,
   IconLock,
   IconPlus,
-  IconUpload,
   IconUserRound,
   IconUsers,
 } from "@/components/icons/central";
@@ -12,24 +11,12 @@ import { Button } from "@/components/ui/button";
 import { useMember } from "@/hooks/use-session.ts";
 import { IconSearch, IconTrash } from "@/components/icons/sidebar";
 import { openSearch } from "@/components/search/command-menu.tsx";
-import { FileTrigger } from "@/components/ui/file-trigger";
-import {
-  SidebarItem,
-  SidebarItemTrigger,
-  SidebarLabel,
-  SidebarSection,
-} from "@/components/ui/sidebar";
-import {
-  useHasSharedFiles,
-  useStorageList,
-  useTeamspaces,
-  useUploads,
-} from "@/hooks/use-storage.ts";
-import type { DriveRoot, StoragePlace, StorageSpace } from "@/lib/storage.ts";
+import { SidebarItem, SidebarLabel, SidebarSection } from "@/components/ui/sidebar";
+import { useHasSharedFiles, useStorageList, useTeamspaces } from "@/hooks/use-storage.ts";
+import type { DriveRoot, StorageSpace } from "@/lib/storage.ts";
 import { StorageFrame } from "./storage-frame.tsx";
 import { BrowseTeamspacesDialog, NewTeamspaceDialog } from "./teamspace-dialogs.tsx";
 import { SidebarGroup } from "./sidebar-tree.tsx";
-import { storageErrorToast } from "./storage-errors.ts";
 import { useWorkspacePaths } from "@/hooks/use-workspaces.ts";
 
 export const SPACE_LABEL = { personal: "Personal", shared: "Team" } as const;
@@ -69,9 +56,9 @@ function BrowseTeamspacesRow() {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <SidebarItem onPress={() => setOpen(true)} tooltip="Browse teamspaces">
+      <SidebarItem onPress={() => setOpen(true)} tooltip="Browse spaces">
         <IconUsers className="size-icon" />
-        <SidebarLabel>Browse teamspaces</SidebarLabel>
+        <SidebarLabel>Browse spaces</SidebarLabel>
       </SidebarItem>
       {open && <BrowseTeamspacesDialog onClose={() => setOpen(false)} />}
     </>
@@ -83,9 +70,9 @@ function NewTeamspaceRow() {
   const self = useMember().member.id;
   return (
     <>
-      <SidebarItem onPress={() => setOpen(true)} tooltip="New teamspace">
+      <SidebarItem onPress={() => setOpen(true)} tooltip="New space">
         <IconPlus className="size-icon" />
-        <SidebarLabel>New teamspace</SidebarLabel>
+        <SidebarLabel>New space</SidebarLabel>
       </SidebarItem>
       {open && <NewTeamspaceDialog selfId={self} onClose={() => setOpen(false)} />}
     </>
@@ -99,10 +86,10 @@ export function NoTeamspaces() {
   return (
     <StorageFrame title={<span className="text-md">Drive</span>}>
       <div className="flex flex-1 flex-col">
-        <EmptyState figure="drawer" title="No teamspaces yet">
+        <EmptyState figure="drawer" title="No spaces yet">
           <Button onPress={() => setOpen(true)}>
             <IconPlus data-slot="icon" />
-            New teamspace
+            New space
           </Button>
         </EmptyState>
       </div>
@@ -121,9 +108,9 @@ const PLACES: Row[] = [
     action: () => openSearch({ q: "", scope: "files" }),
   },
   {
-    label: "Shared with me",
-    path: "/files/shared-with-me",
-    icon: <IconFolderShared className="size-icon" />,
+    label: "Recents",
+    path: "/files/recents",
+    icon: <IconClock3 className="size-icon" />,
   },
   {
     label: "Trash",
@@ -140,10 +127,9 @@ export function StorageNav({ mailbox }: { mailbox: string | undefined }) {
   return (
     <>
       <SidebarSection>
-        <UploadRow />
         <Rows rows={PLACES} mailbox={mailbox} />
       </SidebarSection>
-      <SidebarSection label="Teamspaces">
+      <SidebarSection label="Spaces">
         {teamspaces
           .filter((teamspace) => teamspace.role !== null)
           .map((teamspace) => (
@@ -186,42 +172,3 @@ function Rows(props: { rows: Row[]; mailbox: string | undefined }) {
       </SidebarItem>
     ));
 }
-
-function UploadRow() {
-  const { upload } = useUploads();
-  const place = useUploadPlace();
-  return (
-    <FileTrigger
-      allowsMultiple
-      onSelect={(files) => {
-        const picked = [...(files ?? [])];
-        if (!picked.length) return;
-        upload(picked, { place }, (name, error) =>
-          storageErrorToast(error, `“${name}” was not uploaded`),
-        );
-      }}
-    >
-      <SidebarItemTrigger>
-        <IconUpload />
-        <SidebarLabel>Upload</SidebarLabel>
-      </SidebarItemTrigger>
-    </FileTrigger>
-  );
-}
-
-const useUploadPlace: () => StoragePlace = () => {
-  const { place: pathname } = useWorkspacePaths();
-  if (pathname.startsWith(`${TEAMSPACE_PATH}/`)) {
-    const [teamspaceId, folderId] = pathname.slice(TEAMSPACE_PATH.length + 1).split("/");
-    if (folderId) return { parentId: decodeURIComponent(folderId) };
-    if (teamspaceId) return { teamspaceId: decodeURIComponent(teamspaceId) };
-  }
-  for (const space of ["personal", "shared"] as const) {
-    const root = SPACE_PATH[space];
-    if (pathname === root) return { space };
-    if (pathname.startsWith(`${root}/`)) {
-      return { parentId: decodeURIComponent(pathname.slice(root.length + 1)) };
-    }
-  }
-  return { space: "personal" };
-};

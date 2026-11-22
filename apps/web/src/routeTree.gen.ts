@@ -26,6 +26,7 @@ import { Route as AuthedPortalIndexRouteImport } from "./routes/_authed/portal.i
 import { Route as AuthedPortalIdRouteImport } from "./routes/_authed/portal.$id";
 import { Route as AuthedWorkspaceCrmIndexRouteImport } from "./routes/_authed/$workspace/crm/index";
 import { Route as AuthedWorkspaceFilesIndexRouteImport } from "./routes/_authed/$workspace/files/index";
+import { Route as AuthedWorkspaceFilesRecentsRouteImport } from "./routes/_authed/$workspace/files/recents";
 import { Route as AuthedWorkspaceFilesSharedWithMeRouteImport } from "./routes/_authed/$workspace/files/shared-with-me";
 import { Route as AuthedWorkspaceFilesTrashRouteImport } from "./routes/_authed/$workspace/files/trash";
 import { Route as AuthedWorkspaceMailAllRouteImport } from "./routes/_authed/$workspace/mail/all";
@@ -152,6 +153,12 @@ const AuthedWorkspaceFilesIndexRoute =
   AuthedWorkspaceFilesIndexRouteImport.update({
     id: "/files/",
     path: "/files/",
+    getParentRoute: () => AuthedWorkspaceRoute,
+  } as any);
+const AuthedWorkspaceFilesRecentsRoute =
+  AuthedWorkspaceFilesRecentsRouteImport.update({
+    id: "/files/recents",
+    path: "/files/recents",
     getParentRoute: () => AuthedWorkspaceRoute,
   } as any);
 const AuthedWorkspaceFilesSharedWithMeRoute =
@@ -412,6 +419,7 @@ export interface FileRoutesByFullPath {
   "/oauth/consent": typeof AuthedOauthConsentRoute;
   "/portal/$id": typeof AuthedPortalIdRoute;
   "/portal/": typeof AuthedPortalIndexRoute;
+  "/$workspace/files/recents": typeof AuthedWorkspaceFilesRecentsRoute;
   "/$workspace/files/shared-with-me": typeof AuthedWorkspaceFilesSharedWithMeRoute;
   "/$workspace/files/trash": typeof AuthedWorkspaceFilesTrashRoute;
   "/$workspace/mail/all": typeof AuthedWorkspaceMailAllRouteWithChildren;
@@ -470,6 +478,7 @@ export interface FileRoutesByTo {
   "/oauth/consent": typeof AuthedOauthConsentRoute;
   "/portal/$id": typeof AuthedPortalIdRoute;
   "/portal": typeof AuthedPortalIndexRoute;
+  "/$workspace/files/recents": typeof AuthedWorkspaceFilesRecentsRoute;
   "/$workspace/files/shared-with-me": typeof AuthedWorkspaceFilesSharedWithMeRoute;
   "/$workspace/files/trash": typeof AuthedWorkspaceFilesTrashRoute;
   "/$workspace/mail/all": typeof AuthedWorkspaceMailAllRouteWithChildren;
@@ -531,6 +540,7 @@ export interface FileRoutesById {
   "/_authed/oauth/consent": typeof AuthedOauthConsentRoute;
   "/_authed/portal/$id": typeof AuthedPortalIdRoute;
   "/_authed/portal/": typeof AuthedPortalIndexRoute;
+  "/_authed/$workspace/files/recents": typeof AuthedWorkspaceFilesRecentsRoute;
   "/_authed/$workspace/files/shared-with-me": typeof AuthedWorkspaceFilesSharedWithMeRoute;
   "/_authed/$workspace/files/trash": typeof AuthedWorkspaceFilesTrashRoute;
   "/_authed/$workspace/mail/all": typeof AuthedWorkspaceMailAllRouteWithChildren;
@@ -592,6 +602,7 @@ export interface FileRouteTypes {
     | "/oauth/consent"
     | "/portal/$id"
     | "/portal/"
+    | "/$workspace/files/recents"
     | "/$workspace/files/shared-with-me"
     | "/$workspace/files/trash"
     | "/$workspace/mail/all"
@@ -650,6 +661,7 @@ export interface FileRouteTypes {
     | "/oauth/consent"
     | "/portal/$id"
     | "/portal"
+    | "/$workspace/files/recents"
     | "/$workspace/files/shared-with-me"
     | "/$workspace/files/trash"
     | "/$workspace/mail/all"
@@ -710,6 +722,7 @@ export interface FileRouteTypes {
     | "/_authed/oauth/consent"
     | "/_authed/portal/$id"
     | "/_authed/portal/"
+    | "/_authed/$workspace/files/recents"
     | "/_authed/$workspace/files/shared-with-me"
     | "/_authed/$workspace/files/trash"
     | "/_authed/$workspace/mail/all"
@@ -882,6 +895,13 @@ declare module "@tanstack/react-router" {
       path: "/files";
       fullPath: "/$workspace/files/";
       preLoaderRoute: typeof AuthedWorkspaceFilesIndexRouteImport;
+      parentRoute: typeof AuthedWorkspaceRoute;
+    };
+    "/_authed/$workspace/files/recents": {
+      id: "/_authed/$workspace/files/recents";
+      path: "/files/recents";
+      fullPath: "/$workspace/files/recents";
+      preLoaderRoute: typeof AuthedWorkspaceFilesRecentsRouteImport;
       parentRoute: typeof AuthedWorkspaceRoute;
     };
     "/_authed/$workspace/files/shared-with-me": {
@@ -1352,6 +1372,7 @@ const AuthedWorkspaceMailTrashRouteWithChildren =
 interface AuthedWorkspaceRouteChildren {
   AuthedWorkspaceSplatRoute: typeof AuthedWorkspaceSplatRoute;
   AuthedWorkspaceCrmRoute: typeof AuthedWorkspaceCrmRouteWithChildren;
+  AuthedWorkspaceFilesRecentsRoute: typeof AuthedWorkspaceFilesRecentsRoute;
   AuthedWorkspaceFilesSharedWithMeRoute: typeof AuthedWorkspaceFilesSharedWithMeRoute;
   AuthedWorkspaceFilesTrashRoute: typeof AuthedWorkspaceFilesTrashRoute;
   AuthedWorkspaceMailAllRoute: typeof AuthedWorkspaceMailAllRouteWithChildren;
@@ -1379,6 +1400,7 @@ interface AuthedWorkspaceRouteChildren {
 const AuthedWorkspaceRouteChildren: AuthedWorkspaceRouteChildren = {
   AuthedWorkspaceSplatRoute: AuthedWorkspaceSplatRoute,
   AuthedWorkspaceCrmRoute: AuthedWorkspaceCrmRouteWithChildren,
+  AuthedWorkspaceFilesRecentsRoute: AuthedWorkspaceFilesRecentsRoute,
   AuthedWorkspaceFilesSharedWithMeRoute: AuthedWorkspaceFilesSharedWithMeRoute,
   AuthedWorkspaceFilesTrashRoute: AuthedWorkspaceFilesTrashRoute,
   AuthedWorkspaceMailAllRoute: AuthedWorkspaceMailAllRouteWithChildren,

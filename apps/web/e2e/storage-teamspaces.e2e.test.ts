@@ -55,9 +55,9 @@ test("a member makes a private teamspace from the sidebar, files land in it, and
   const ben = await createMember(db, org.id, `ben-${Date.now()}@teamspaces.test`);
   const { page, api } = await signedIn(ana.id, org.id, org.slug);
 
-  await page.getByText("No teamspaces yet", { exact: true }).waitFor({ timeout: 30_000 });
+  await page.getByText("No spaces yet", { exact: true }).waitFor({ timeout: 30_000 });
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/empty.png` });
-  await page.getByRole("button", { name: "New teamspace" }).first().click();
+  await page.getByRole("button", { name: "New space" }).first().click();
   const dialog = page.getByRole("dialog");
   await dialog.getByRole("textbox", { name: "Name" }).fill("Legal");
   await dialog.getByRole("switch", { name: "Private" }).check({ force: true });
@@ -66,6 +66,7 @@ test("a member makes a private teamspace from the sidebar, files land in it, and
   await page.waitForURL(/\/files\/t\/[^/?]+/);
   const teamspaceId = decodeURIComponent(new URL(page.url()).pathname.split("/").at(-1)!);
 
+  await page.getByText("No files yet", { exact: true }).waitFor();
   await page
     .locator("input[type=file]:not([webkitdirectory])")
     .first()
@@ -79,29 +80,34 @@ test("a member makes a private teamspace from the sidebar, files land in it, and
   await expect.poll(() => page.getByRole("link", { name: "Legal" }).count()).toBeGreaterThan(0);
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/teamspace.png` });
 
-  await page.getByRole("button", { name: "Teamspace settings" }).click();
+  await page.getByRole("link", { name: "Recents" }).click();
+  await page
+    .getByRole("row", { name: /nda\.txt/ })
+    .getByText("Legal")
+    .waitFor();
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/recents.png` });
+  await page.goBack();
+  await page.getByRole("button", { name: "Space settings" }).click();
   await page.getByRole("dialog").getByText("Owner").waitFor();
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/settings.png` });
   await page.keyboard.press("Escape");
 
   const other = await signedIn(ben.id, org.id, org.slug);
-  await other.page.getByText("No teamspaces yet", { exact: true }).waitFor({ timeout: 30_000 });
+  await other.page.getByText("No spaces yet", { exact: true }).waitFor({ timeout: 30_000 });
   expect(await other.page.getByText("Legal").count()).toBe(0);
   const inside = await other.api("GET", `/api/storage/teamspaces`);
   expect(inside.teamspaces).toEqual([]);
 
   const design = await api("POST", "/api/storage/teamspaces", { name: "Design" });
   await other.page.reload();
-  await other.page.getByText("Browse teamspaces", { exact: true }).click();
+  await other.page.getByText("Browse spaces", { exact: true }).click();
   if (SHOTS) await other.page.screenshot({ path: `${SHOTS}/browse.png` });
   await other.page.getByRole("dialog").getByRole("button", { name: "Join" }).click();
   await other.page.waitForURL(new RegExp(`/files/t/${design.teamspace.id}`));
   await expect
     .poll(() => other.page.getByRole("link", { name: "Design" }).count())
     .toBeGreaterThan(0);
-  await expect
-    .poll(() => other.page.getByText("Browse teamspaces", { exact: true }).count())
-    .toBe(0);
+  await expect.poll(() => other.page.getByText("Browse spaces", { exact: true }).count()).toBe(0);
 });
 
 async function signedIn(memberId: string, orgId: string, slug: string) {
