@@ -163,6 +163,7 @@ export {
 } from "./calendar/write.ts";
 export {
   dropTasksOn,
+  isSoleOwner,
   putTask,
   removeTask,
   taskVersions,

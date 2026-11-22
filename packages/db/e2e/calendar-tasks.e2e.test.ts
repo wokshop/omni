@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { afterAll, expect, test } from "vitest";
-import { copyTasksToCalendar } from "../src/crm.ts";
+import { copyTasksToCalendar, releaseCrmTasks } from "../src/crm.ts";
 import { forMember } from "../src/for-member.ts";
 import { releaseCalendarTasks } from "../src/calendar.ts";
 import { ensurePersonalSpace } from "../src/personal-space.ts";
@@ -175,10 +175,10 @@ test("the copy job copies what the calendar lacks, twice to the same rows, and a
     .returning();
   const [onEd, handed, anas, nobodys] = rows;
 
-  const first = await copyTasksToCalendar(db, 2);
+  const first = await copyTasksToCalendar(db, { batch: 2 });
   expect(first.copied).toBeGreaterThanOrEqual(4);
   const snapshot = await db.select().from(calendarTasks).where(eq(calendarTasks.orgId, org.id));
-  expect((await copyTasksToCalendar(db, 2)).copied).toBe(0);
+  expect((await copyTasksToCalendar(db, { batch: 2 })).copied).toBe(0);
   expect(await db.select().from(calendarTasks).where(eq(calendarTasks.orgId, org.id))).toEqual(
     snapshot,
   );
@@ -209,4 +209,59 @@ test("the copy job copies what the calendar lacks, twice to the same rows, and a
     .where(eq(crmTasks.id, onEd!.id));
   expect((await copyTasksToCalendar(db)).copied).toBe(1);
   expect((await calendarRow(onEd!.id))!.title).toBe("On Ed, renamed");
+});
+
+async function leave(orgId: string, memberId: string) {
+  await releaseCrmTasks(db, { orgId, memberId });
+  await releaseCalendarTasks(db, { orgId, memberId });
+  await db.delete(members).where(eq(members.id, memberId));
+}
+
+test("a removed member's private task copied from crm_tasks does not come back for someone else", async () => {
+  const { org, owner, ana } = await workspace("tasks-gone-for-good");
+  const [old] = await db
+    .insert(crmTasks)
+    .values({
+      orgId: org.id,
+      title: "Ana's errand",
+      assigneeMemberId: ana.id,
+      createdByMemberId: owner.id,
+    })
+    .returning();
+  await copyTasksToCalendar(db);
+  expect(await calendarRow(old!.id)).toMatchObject({ ownerMemberId: ana.id });
+
+  await leave(org.id, ana.id);
+  await copyTasksToCalendar(db);
+  expect(await calendarRow(old!.id)).toBeUndefined();
+  expect(titles(ok(await forMember(db, owner.id).calendar.tasks()))).toEqual([]);
+});
+
+test("a workspace's only owner keeps their tasks when a leave Better Auth will refuse runs the hooks", async () => {
+  const { org, owner } = await workspace("tasks-sole-owner");
+  const own = ok(await forMember(db, owner.id).calendar.createTask({ title: "Payroll" })).task;
+  await releaseCrmTasks(db, { orgId: org.id, memberId: owner.id });
+  await releaseCalendarTasks(db, { orgId: org.id, memberId: owner.id });
+  expect(await calendarRow(own.id)).toMatchObject({ ownerMemberId: owner.id });
+});
+
+test("the copy job reaches every row in turns when the table is longer than one run reads", async () => {
+  const { org, ana } = await workspace("tasks-copy-turns");
+  const made = await db
+    .insert(crmTasks)
+    .values(
+      Array.from({ length: 4 }, (_, i) => ({
+        orgId: org.id,
+        title: `Turn ${i}`,
+        assigneeMemberId: ana.id,
+      })),
+    )
+    .returning();
+  const [{ total } = { total: 0 }] = await db
+    .select({ total: sql<number>`count(*)::int` })
+    .from(crmTasks);
+  for (let minute = 0; minute < total; minute++) {
+    await copyTasksToCalendar(db, { batch: 1, pages: 1, now: new Date(minute * 60_000) });
+  }
+  for (const row of made) expect(await calendarRow(row.id)).toMatchObject({ title: row.title });
 });
