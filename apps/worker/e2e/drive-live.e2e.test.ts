@@ -248,6 +248,8 @@ test("a version restored while people edit is an edit of their live document: th
     ifContentVersion: 3,
   });
   expect(saved.status).toBe(201);
+  tab.socket.close();
+});
 
 const paragraphs = (words: string) =>
   Array.from({ length: 560 }, (_, i) => `${i} ${words.repeat(130)}`).join("\n\n");
