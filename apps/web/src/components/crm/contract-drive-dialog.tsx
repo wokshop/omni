@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { queryOptions, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Collection } from "react-aria-components/Collection";
 import { GridListLoadMoreItem } from "react-aria-components/GridList";
@@ -18,25 +18,42 @@ import { GridList, GridListItem } from "@/components/ui/grid-list";
 import { SearchField, SearchInput } from "@/components/ui/search-field";
 import { useDebouncedValue } from "@/hooks/use-debounced-value.ts";
 import { useStorageList } from "@/hooks/use-storage.ts";
+import { IconCheck } from "@/components/icons/central";
 import { fileType } from "@/lib/file-kind.ts";
 import type { StorageNode } from "@/lib/storage.ts";
-import { storageSearchQuery } from "@/lib/storage-find.ts";
+import { api, call } from "@/lib/api.ts";
+import { keys } from "@/lib/query-keys.ts";
 
 type Crumb = { id: string; name: string };
 
 const teamDrive = (node: StorageNode) => node.space !== "personal";
+
+const PDF = "application/pdf";
+
+const teamSearchQuery = (q: string, pdfOnly: boolean) =>
+  queryOptions({
+    queryKey: [...keys.storageSearch(q), "team", pdfOnly] as const,
+    queryFn: ({ signal }) =>
+      call(
+        api.storage.search.$get(
+          { query: { q, drive: "team", ...(pdfOnly ? { type: PDF } : {}) } },
+          { init: { signal } },
+        ),
+      ),
+    enabled: q.length > 0,
+  });
 
 function useTeamFiles(q: string, path: Crumb[], pdfOnly: boolean) {
   const folder = path.at(-1);
   const list = useStorageList(folder ? { parentId: folder.id } : { space: "shared" }, {
     enabled: !q,
   });
-  const found = useQuery(storageSearchQuery(q));
+  const found = useQuery(teamSearchQuery(q, pdfOnly));
   const nodes = (q ? (found.data?.nodes ?? []) : list.nodes).filter(
     (node) =>
       !node.trashedAt &&
       teamDrive(node) &&
-      (node.kind === "folder" || !pdfOnly || node.mimeType === "application/pdf"),
+      (node.kind === "folder" || !pdfOnly || node.mimeType === PDF),
   );
   return {
     nodes,
@@ -115,11 +132,18 @@ export function ContractDriveDialog(props: {
                 textValue={node.name}
                 className="h-10 shrink-0 cursor-pointer gap-2.5 rounded-lg px-2 hover:bg-accent"
               >
-                <FileTile
-                  kind={node.kind === "folder" ? "folder" : fileType(node.name, node.mimeType).kind}
-                  size="xs"
-                />
-                <span className="min-w-0 flex-1 truncate">{node.name}</span>
+                {({ isSelected }) => (
+                  <>
+                    <FileTile
+                      kind={
+                        node.kind === "folder" ? "folder" : fileType(node.name, node.mimeType).kind
+                      }
+                      size="xs"
+                    />
+                    <span className="min-w-0 flex-1 truncate">{node.name}</span>
+                    {isSelected && <IconCheck aria-hidden className="size-icon" />}
+                  </>
+                )}
               </GridListItem>
             )}
           </Collection>

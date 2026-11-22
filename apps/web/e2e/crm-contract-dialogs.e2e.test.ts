@@ -128,6 +128,8 @@ test("a new contract references a PDF the team keeps elsewhere in Drive, which s
   await expect.poll(() => rows.allInnerTexts(), { timeout: 15_000 }).toEqual(["MSA Acme.pdf"]);
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/contract-from-drive-picker.png` });
   await rows.first().click();
+  await expect.poll(() => rows.first().getAttribute("aria-selected")).toBe("true");
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/contract-from-drive-picked.png` });
   await picker.getByRole("button", { name: "Choose" }).click();
   await picker.waitFor({ state: "hidden" });
 
