@@ -1,4 +1,4 @@
-/** What a Drive card draws of a file's text: a few lines, read from its start. */
+import Papa from "papaparse";
 
 export interface DocLine {
   kind: "heading" | "bullet" | "text";
@@ -53,30 +53,14 @@ export function textLines(text: string, count = LINES + 4) {
     .map((line) => line.replace(/\t/g, "  "));
 }
 
-function fields(line: string, delimiter: string) {
-  const out: string[] = [];
-  let field = "";
-  let quoted = false;
-  for (let i = 0; i < line.length; i += 1) {
-    const char = line[i];
-    if (quoted && char === '"' && line[i + 1] === '"') {
-      field += '"';
-      i += 1;
-    } else if (char === '"') quoted = !quoted;
-    else if (char === delimiter && !quoted) {
-      out.push(field);
-      field = "";
-    } else field += char;
-  }
-  out.push(field);
-  return out;
-}
-
-/** A CSV's top-left corner as rows of cells, for a card's grid. */
+/**
+ * A CSV's top-left corner as rows of cells, for a card's grid. Parsed as records first, so a
+ * quoted field that spans lines stays one cell.
+ */
 export function csvGrid(text: string, name: string) {
   const delimiter = /\.tsv$/i.test(name) ? "\t" : ",";
-  const lines = text.replace(/\r\n?/g, "\n").split("\n", ROWS + 1);
-  return grid(lines.filter((line) => line.length > 0).map((line) => fields(line, delimiter)));
+  const parsed = Papa.parse<string[]>(text, { delimiter, preview: ROWS, skipEmptyLines: true });
+  return grid(parsed.data);
 }
 
 /** Rows cut to the card's grid: `ROWS` by `COLUMNS`, every row as wide. */

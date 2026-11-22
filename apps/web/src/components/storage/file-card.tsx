@@ -38,7 +38,10 @@ export function FileCard(props: {
   menu: SettingsRowMenuItem[];
   /** Where a folder's contents' bytes are read, for the sheets in its pocket. */
   fileUrl?: (node: StorageNode) => string;
-  /** False through a shared link's door: its folders draw the bare pocket. */
+  /**
+   * False through a shared link's door: its folders draw the bare pocket, and its files' cards read
+   * no bytes (a link's content route counts each read from the start as a download).
+   */
   peek?: boolean | undefined;
   /** Its name as a field, while it is renamed. */
   name?: ItemName | undefined;
@@ -63,7 +66,7 @@ export function FileCard(props: {
         <FolderArt node={node} peek={props.peek} fileUrl={props.fileUrl} />
       ) : (
         <div className="relative flex aspect-square items-center justify-center overflow-hidden rounded-lg border bg-surface">
-          {type && <FileArt node={node} type={type} url={props.url} />}
+          {type && <FileArt node={node} type={type} url={props.url} read={props.peek !== false} />}
         </div>
       )}
       <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-1 gap-y-1 ps-0.5">
@@ -79,10 +82,11 @@ export function FileCard(props: {
   );
 }
 
-function FileArt(props: { node: StorageNode; type: FileType; url: string }) {
+function FileArt(props: { node: StorageNode; type: FileType; url: string; read: boolean }) {
   const { node, type, url } = props;
   if (hasThumbnail(node)) return <Thumbnail node={node} url={url} />;
   if (type.preview === "pdf") return <PdfStack node={node} url={url} />;
+  if (!props.read) return <FileGlyph kind={type.kind} className="size-8 text-muted-foreground" />;
   if (node.size > 0 && type.preview === "video") return <VideoArt node={node} url={url} />;
   if (node.size > 0 && type.preview === "audio") return <AudioArt node={node} url={url} />;
   if (hasPage(node, type)) return <FilePage node={node} type={type} url={url} />;
