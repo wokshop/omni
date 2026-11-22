@@ -28,6 +28,7 @@ export interface Module extends ModuleLifecycle {
       nodeId: string;
       authors: FoldAuthor[];
       member: { memberId: string; lastSeq: number } | null;
+      unrecorded?: { cv: number; through: number } | undefined;
     },
   ) => Promise<FoldOutcome>;
 }

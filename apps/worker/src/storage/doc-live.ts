@@ -51,6 +51,12 @@ export class LiveFile {
 
   /** The live document of `nodeId` at `contentVersion`; null when nobody is editing it live. */
   static async open(basin: S2Basin, nodeId: string, contentVersion: number) {
+    const live = await LiveFile.latest(basin, nodeId);
+    return live?.fold.cv === contentVersion ? live : null;
+  }
+
+  /** The latest epoch of `nodeId`, whatever version of the file it last saved. */
+  static async latest(basin: S2Basin, nodeId: string) {
     const entries = await readLive(basin, nodeId, await latestLiveStart(basin, nodeId));
     const first = latestEpochStart(entries);
     if (!first) return null;
@@ -67,7 +73,12 @@ export class LiveFile {
       live.changedAt = record.s;
     }
     live.take(entries);
-    return live.fold.cv === contentVersion ? live : null;
+    return live;
+  }
+
+  /** The version of the file its latest recorded save made. */
+  get savedAs() {
+    return this.fold.cv;
   }
 
   /** The Markdown it holds now. */

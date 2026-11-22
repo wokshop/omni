@@ -94,12 +94,12 @@ async function currentEpoch(basin: S2Basin, nodeId: string, fresh: boolean) {
   for (const { seqNum, body } of await basin.readTail(docStream(nodeId), 1000)) {
     epoch = Math.max(epoch, epochOf(body, seqNum));
   }
-  for (let at = 0; epoch < 0;) {
+  for (let at = 0, scan = epoch < 0; scan;) {
     const page = await basin.read(docStream(nodeId), at);
     for (const { seqNum, body } of page.records) epoch = Math.max(epoch, epochOf(body, seqNum));
     const last = page.records.at(-1);
-    if (!page.more || !last) break;
-    at = last.seqNum + 1;
+    scan = page.more && !!last;
+    at = (last?.seqNum ?? at) + 1;
   }
   epochs.set(nodeId, epoch);
   return epoch;

@@ -19,9 +19,23 @@ export type { FoldAuthor };
 
 const SAVE_TRIES = 3;
 
-/** What a fold did: saved the doc (the records to pass on, the file now), or nothing to do. */
+/** A save Postgres holds whose fold record the stream does not have yet. */
+export interface UnrecordedFold {
+  cv: number;
+  through: number;
+}
+
+/**
+ * What a fold did: saved the doc (the records to pass on, the file now, and the save to record
+ * next time when its fold record failed to append), or nothing to do.
+ */
 export type FoldOutcome =
-  | { status: "saved"; node: StorageNode; events: StorageDocEvent[] }
+  | {
+      status: "saved";
+      node: StorageNode;
+      events: StorageDocEvent[];
+      unrecorded?: UnrecordedFold;
+    }
   | { status: "nothing" }
   | { status: "refused"; reason: string };
 
@@ -39,6 +53,19 @@ async function writerOf(env: Env, orgId: string, author: FoldAuthor) {
   }
 }
 
+async function recorded(live: LiveFile, nodeId: string, node: StorageNode, through: number) {
+  const cv = node.contentVersion;
+  let entry: StorageLiveEntry;
+  try {
+    entry = await live.folded(cv, through);
+  } catch {
+    return { status: "saved", node, events: [], unrecorded: { cv, through } } satisfies FoldOutcome;
+  }
+  const snap = await live.snapIfDue(cv, through);
+  const events = docRecordEvents(nodeId, snap ? [entry, snap] : [entry]);
+  return { status: "saved", node, events } satisfies FoldOutcome;
+}
+
 /**
  * Saves a doc's live document that outsiders typed in and nobody saved yet
  * (`docs/spec/live-sharing.md`): the Worker's own save, as its tabs never write over HTTP. Its
@@ -52,6 +79,7 @@ export const foldLive: (
     nodeId: string;
     authors: FoldAuthor[];
     member: { memberId: string; lastSeq: number } | null;
+    unrecorded?: UnrecordedFold | undefined;
   },
 ) => Promise<FoldOutcome> = async (env, input) => {
   const config = loadConfig(env);
@@ -61,8 +89,11 @@ export const foldLive: (
   try {
     const node = await foldTargetOf(db, input.nodeId);
     if (!node || node.orgId !== input.orgId) return { status: "refused", reason: "not_found" };
-    const live = await LiveFile.open(basin, input.nodeId, node.contentVersion);
-    if (!live || !live.unsaved) return { status: "nothing" };
+    const live = await LiveFile.latest(basin, input.nodeId);
+    const owed = input.unrecorded;
+    if (live && owed && live.savedAs < owed.cv) await live.folded(owed.cv, owed.through);
+    if (!live || live.savedAs !== node.contentVersion || !live.unsaved)
+      return { status: "nothing" };
     const last = input.authors.reduce((a, b) => (b.lastSeq > a.lastSeq ? b : a));
     const writer =
       input.member && input.member.lastSeq > last.lastSeq
@@ -89,22 +120,14 @@ export const foldLive: (
         coauthors,
         limitBytes,
       });
-      if (saved.status === "ok") {
-        const entry: StorageLiveEntry = await live.folded(saved.node.contentVersion, through);
-        const snap = await live.snapIfDue(saved.node.contentVersion, through);
-        return {
-          status: "saved",
-          node: saved.node,
-          events: docRecordEvents(input.nodeId, snap ? [entry, snap] : [entry]),
-        };
-      }
+      if (saved.status === "ok") return recorded(live, input.nodeId, saved.node, through);
       await env.STORAGE_BUCKET.delete(r2Key);
       if (saved.status !== "version_conflict" || tries >= SAVE_TRIES) {
         return { status: "refused", reason: saved.status };
       }
       const fold = await live.lastFold();
       if (fold.cv !== saved.contentVersion) return { status: "refused", reason: "moved_on" };
-      if (fold.s >= live.through) return { status: "nothing" };
+      if (!live.unsaved) return { status: "nothing" };
       base = saved.contentVersion;
     }
   } finally {

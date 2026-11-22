@@ -22,6 +22,7 @@ interface Owed {
   rev: number;
   authors: Record<string, FoldAuthor>;
   member?: { memberId: string; lastSeq: number };
+  unrecorded?: { cv: number; through: number };
 }
 
 /** An outsider whose records a save holds, and the last of them it holds. */
@@ -131,6 +132,33 @@ export async function scheduleAlarm(ctx: DurableObjectState) {
   }
 }
 
+async function settled(ctx: DurableObjectState, key: string, one: Owed) {
+  const now = await ctx.storage.get<Owed>(key);
+  if (!now) return;
+  if (now.rev === one.rev) return ctx.storage.delete(key);
+  const { unrecorded: _, ...rest } = now;
+  await ctx.storage.put(key, {
+    ...rest,
+    tries: 0,
+    firstAt: Date.now(),
+    dueAt: Date.now() + FOLD_MS,
+  });
+}
+
+async function failed(ctx: DurableObjectState, key: string, one: Owed, error: unknown) {
+  const now = (await ctx.storage.get<Owed>(key)) ?? one;
+  const cause = error instanceof Error ? error.cause : undefined;
+  const unrecorded = (cause as Owed["unrecorded"]) ?? now.unrecorded;
+  const tries = one.tries + 1;
+  if (tries >= MAX_TRIES && now.rev === one.rev && !unrecorded) return ctx.storage.delete(key);
+  await ctx.storage.put(key, {
+    ...now,
+    ...(unrecorded ? { unrecorded } : {}),
+    tries: Math.min(tries, MAX_TRIES),
+    dueAt: Date.now() + RETRY_MS,
+  });
+}
+
 /**
  * The object's alarm: checks every outsider again, then saves each doc whose save is due. A
  * failed save is tried again `RETRY_MS` later, `MAX_TRIES` times, then dropped with a log line:
@@ -155,20 +183,21 @@ export async function runAlarm(
         nodeId,
         authors: Object.values(one.authors),
         member: one.member ?? null,
+        unrecorded: one.unrecorded,
       });
       if (outcome.status === "saved") await saved(nodeId, outcome.node, outcome.events);
       if (outcome.status === "refused") {
         log.warn("doc.fold_refused", { nodeId, reason: outcome.reason });
       }
-      const now = await ctx.storage.get<Owed>(key);
-      if (now?.rev === one.rev) await ctx.storage.delete(key);
-      else if (now)
-        await ctx.storage.put(key, { ...now, firstAt: Date.now(), dueAt: Date.now() + FOLD_MS });
+      if (outcome.status === "saved" && outcome.unrecorded) {
+        throw new Error("realtime: a save's fold record did not append", {
+          cause: outcome.unrecorded,
+        });
+      }
+      await settled(ctx, key, one);
     } catch (error) {
       log.error("doc.fold_failed", { error, nodeId, tries: one.tries + 1 });
-      if (one.tries + 1 >= MAX_TRIES) await ctx.storage.delete(key);
-      else
-        await ctx.storage.put(key, { ...one, tries: one.tries + 1, dueAt: Date.now() + RETRY_MS });
+      await failed(ctx, key, one, error);
     }
   }
   await scheduleAlarm(ctx);
