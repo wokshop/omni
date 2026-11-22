@@ -265,20 +265,40 @@ group's summaries and highlights plus the transcripts of the meetings that match
 best. Answers cite `[mm:ss]` moments, which the page links to the transcript. It is a turn, not a
 chat history, and it counts toward the AI cap.
 
-## Who sees a meeting
+## Sharing
 
-A recording holds what people said, often about the client in it or about each other. So:
+A meeting is shared the way a Drive file is, made lighter: people, by address, and a link. The
+access covers the meeting page, its transcript, its notes, its actions, and its audio.
 
-- **By default a meeting is the attendees'.** The recorder, and every teammate whose inbox was
-  invited to the event, sees the meeting, its notes and its transcript. Nobody else does.
-- **Share with the workspace** makes it every teammate's. Freelancers never see a meeting this
-  way.
-- **Share with the project**, only for a meeting on a deal, lets that project's freelancers see
-  it too. The CRM checks the project, as it does for files.
-- **The notes doc is Drive's**, as the calendar specifies; the AI's notes are written there, and
-  Drive's sharing decides who opens it.
+- **Attendees get access by themselves.** When the recording starts, every attendee address on
+  the event gets a `viewer` grant: teammates, freelancers and people outside the workspace alike.
+  They were in the meeting, so they can read it. The recorder is its `owner`.
+- **Anyone can be invited.** Share takes addresses, like Drive: `viewer` reads, `editor` also
+  renames speakers, edits the title, moves it to a deal, accepts actions and shares it on. An
+  address outside the workspace opens it by signing in with that address (`forUser`), as with a
+  file shared with them; they get an email with the link, from the person sharing it.
+- **The workspace.** General access is `restricted` (only grants) by default, or `workspace`
+  (every teammate can view). Freelancers never get a meeting through `workspace`, only through a
+  grant, as in Drive.
+- **A link.** Off by default; when on, anyone with it views the meeting after signing in, or with
+  no sign-in when the workspace's Drive settings allow public links (`public_links`). The same
+  workspace settings that close Drive's public links and outside sharing close these.
+- **Removing a grant**, an attendee's included, takes the access away. Owners and editors can.
+- **Groups** show only the meetings the viewer can open; a group's summary and timeline are made
+  from those meetings only, per viewer: a group page with a meeting you cannot open shows its
+  date and title at most.
+- **The notes doc is Drive's**, as the calendar specifies. Sharing a meeting adds the same people
+  to its notes doc with the same role, through Storage's door, so the two do not drift on the
+  day it is shared; after that each is managed where it lives.
+- **On a deal**, the meeting shows on the deal's Meetings tab only to those who can open both
+  the deal and the meeting. Putting it on a deal grants nobody anything.
 - A workspace setting turns recording off for everyone. Owners and admins see that a meeting was
-  recorded and by whom, never its content, unless they could already.
+  recorded and by whom, never its content, unless it was shared with them.
+
+Why not make the meeting a Drive node and reuse Storage's grants: a meeting has a transcript,
+speakers, actions and a group, which a file does not, and the CRM and the calendar would have to
+reach a meeting through Storage. The grant rows are small and copy Drive's shape (address, role,
+who granted, when) so the sharing panel can be the same component.
 
 ## Consent
 
@@ -296,10 +316,11 @@ treats every meeting as the strictest case:
 
 The recording is a Drive file in the meeting's place (the deal's teamspace, else the recorder's
 My files), in a `Recordings` folder, counted against the workspace's quota. It plays on the
-meeting page for 30 days, then the sweep deletes it; a workspace can choose to keep recordings
-or delete them as soon as the transcript is saved. The engine's raw response is kept as a file
-beside it for the same time, so speakers can be worked out again without paying twice. The
-transcript lives on as long as the meeting.
+meeting page and is kept as long as the meeting is, so a quote can always be heard again; a
+workspace can choose to delete recordings after a number of days instead, or as soon as the
+transcript is saved, and the sweep does it. The engine's raw response is kept as a file beside
+it for as long as the audio, so speakers can be worked out again without paying twice. Deleting
+the meeting deletes both.
 
 AssemblyAI deletes the audio it was sent once the transcript is fetched: the adapter calls its
 delete endpoint after saving.
@@ -308,23 +329,25 @@ delete endpoint after saving.
 
 All tables carry `org_id`, cascade with the workspace, and are named `meetings_*`.
 
-| Table                | Key fields                                                                                                                                                                                                                                                                                      | Notes                                                                                                                                                                                                                      |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `meetings_meetings`  | id, org_id, title, started_at, ended_at, duration_ms, event_uid, event_recurrence_id, group_key, record_kind, record_id, visibility (`attendees` · `workspace` · `project`), recorded_by_member_id, consent_at, status, language, audio_node_id, notes_node_id, failure, created_at, updated_at | `status`: `recording` · `uploaded` · `transcribing` · `naming` · `writing` · `ready` · `failed`. The event is referenced by its iCalendar identity, the CRM record by kind and id, with no foreign key into either module. |
-| `meetings_attendees` | meeting_id, org_id, address, name                                                                                                                                                                                                                                                               | Copied from the event at start, or added on the page; who may see it by default.                                                                                                                                           |
-| `meetings_speakers`  | meeting_id, label, org_id, name, address, source (`mic` · `engine` · `ai` · `person`), confidence                                                                                                                                                                                               | Key (meeting_id, label). The label is the engine's.                                                                                                                                                                        |
-| `meetings_segments`  | meeting_id, seq, org_id, speaker_label, start_ms, end_ms, text, search (tsvector, `simple`)                                                                                                                                                                                                     | Key (meeting_id, seq). One per turn; words and their times stay in the raw file.                                                                                                                                           |
-| `meetings_notes`     | meeting_id, org_id, summary, highlights, actions, topics, model, prompt_version, written_to_doc_at                                                                                                                                                                                              | `jsonb` parts, written in one go.                                                                                                                                                                                          |
-| `meetings_actions`   | id, meeting_id, org_id, kind (`task` · `email`), payload, state (`open` · `done` · `dismissed`), task_id, decided_by_member_id                                                                                                                                                                  | An accepted task keeps the calendar task's id.                                                                                                                                                                             |
-| `meetings_groups`    | org_id, group_key, title, summary, summarized_through, updated_at                                                                                                                                                                                                                               | Key (org_id, group_key). The running summary.                                                                                                                                                                              |
-| `meetings_jobs`      | meeting_id, org_id, provider, provider_job_id, mic_intervals, submitted_at, polls                                                                                                                                                                                                               | One per meeting; what makes each job safe to run twice.                                                                                                                                                                    |
+| Table                | Key fields                                                                                                                                                                                                                                                                                                                                 | Notes                                                                                                                                                                                                                      |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `meetings_meetings`  | id, org_id, title, started_at, ended_at, duration_ms, event_uid, event_recurrence_id, group_key, record_kind, record_id, access (`restricted` · `workspace`), link_access (`off` · `signed_in` · `anyone`), link_token, recorded_by_member_id, consent_at, status, language, audio_node_id, notes_node_id, failure, created_at, updated_at | `status`: `recording` · `uploaded` · `transcribing` · `naming` · `writing` · `ready` · `failed`. The event is referenced by its iCalendar identity, the CRM record by kind and id, with no foreign key into either module. |
+| `meetings_attendees` | meeting_id, org_id, address, name                                                                                                                                                                                                                                                                                                          | Copied from the event at start, or added on the page; each gets a `viewer` grant.                                                                                                                                          |
+| `meetings_grants`    | meeting_id, org_id, address, role (`owner` · `editor` · `viewer`), granted_by_member_id, created_at                                                                                                                                                                                                                                        | Key (meeting_id, address). Drive's grant shape, by address.                                                                                                                                                                |
+| `meetings_speakers`  | meeting_id, label, org_id, name, address, source (`mic` · `engine` · `ai` · `person`), confidence                                                                                                                                                                                                                                          | Key (meeting_id, label). The label is the engine's.                                                                                                                                                                        |
+| `meetings_segments`  | meeting_id, seq, org_id, speaker_label, start_ms, end_ms, text, search (tsvector, `simple`)                                                                                                                                                                                                                                                | Key (meeting_id, seq). One per turn; words and their times stay in the raw file.                                                                                                                                           |
+| `meetings_notes`     | meeting_id, org_id, summary, highlights, actions, topics, model, prompt_version, written_to_doc_at                                                                                                                                                                                                                                         | `jsonb` parts, written in one go.                                                                                                                                                                                          |
+| `meetings_actions`   | id, meeting_id, org_id, kind (`task` · `email`), payload, state (`open` · `done` · `dismissed`), task_id, decided_by_member_id                                                                                                                                                                                                             | An accepted task keeps the calendar task's id.                                                                                                                                                                             |
+| `meetings_groups`    | org_id, group_key, title, summary, summarized_through, updated_at                                                                                                                                                                                                                                                                          | Key (org_id, group_key). The running summary.                                                                                                                                                                              |
+| `meetings_jobs`      | meeting_id, org_id, provider, provider_job_id, mic_intervals, submitted_at, polls                                                                                                                                                                                                                                                          | One per meeting; what makes each job safe to run twice.                                                                                                                                                                    |
 
 `group_key` is `series:<UID>` for a recurring event, `domain:<domain>` for meetings with one
 outside company (the most common outside domain among the attendees, skipping webmail), else
 `meeting:<id>`.
 
-Reads and writes go through `forMember(db, memberId).meetings`, which applies "Who sees a
-meeting". The surface offers the CRM `meetingsOn(record)` and `setRecord`, and offers search to
+Reads and writes go through `forMember(db, memberId).meetings` and, for people outside the
+workspace, `forUser(db, userId).meetings`; both apply "Sharing" by the user's verified
+addresses. The surface offers the CRM `meetingsOn(record)` and `setRecord`, and offers search to
 the Worker's merged search.
 
 ## Pipeline
@@ -352,26 +375,28 @@ lost.
 
 ## API
 
-Under `/api/meetings`, member sessions only, behind the plan's read-only gate. A meeting the
-member cannot see answers `404`.
+Under `/api/meetings`, behind the plan's read-only gate. Member sessions reach everything below;
+a signed-in user outside the workspace reaches `GET /:id`, its transcript, audio and Ask on
+meetings shared with them. A meeting the caller cannot see answers `404`.
 
-| Route                                             | What                                                                      |
-| ------------------------------------------------- | ------------------------------------------------------------------------- |
-| `GET /groups?before=`                             | The sidebar: groups, newest first, with count and last meeting            |
-| `GET /groups/:key`                                | A group's summary, timeline, open actions and meetings                    |
-| `GET /?event=<uid>&recurrence=`                   | The meeting for an event, so the calendar panel shows it                  |
-| `POST /` `{ event?, title?, consent: true }`      | Starts one; returns its id and the upload                                 |
-| `PUT /:id/parts/:n`                               | A part of the audio                                                       |
-| `POST /:id/stop` `{ micIntervals }`               | Stops and starts the pipeline                                             |
-| `GET /:id`                                        | The meeting: status, attendees, notes, actions, speakers                  |
-| `GET /:id/transcript`                             | Segments with speakers                                                    |
-| `GET /:id/audio`                                  | The audio while kept, through Storage's door                              |
-| `PATCH /:id` `{ title?, visibility?, record? }`   | Change, share, or move to a deal                                          |
-| `PUT /:id/speakers/:label` `{ name, address? }`   | Rename a speaker                                                          |
-| `POST /actions/:id/accept` · `/dismiss`           | A task is made through the calendar's surface; an email returns its draft |
-| `POST /ask` `{ meetingId \| groupKey, question }` | One answer, streamed, with cited moments                                  |
-| `POST /:id/retry`                                 | Runs the failed step again                                                |
-| `DELETE /:id`                                     | Deletes the meeting, its transcript and its audio; the notes doc stays    |
+| Route                                                                | What                                                                      |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `GET /groups?before=`                                                | The sidebar: groups, newest first, with count and last meeting            |
+| `GET /groups/:key`                                                   | A group's summary, timeline, open actions and meetings                    |
+| `GET /?event=<uid>&recurrence=`                                      | The meeting for an event, so the calendar panel shows it                  |
+| `POST /` `{ event?, title?, consent: true }`                         | Starts one; returns its id and the upload                                 |
+| `PUT /:id/parts/:n`                                                  | A part of the audio                                                       |
+| `POST /:id/stop` `{ micIntervals }`                                  | Stops and starts the pipeline                                             |
+| `GET /:id`                                                           | The meeting: status, attendees, notes, actions, speakers                  |
+| `GET /:id/transcript`                                                | Segments with speakers                                                    |
+| `GET /:id/audio`                                                     | The audio, through Storage's door                                         |
+| `PATCH /:id` `{ title?, access?, link?, record? }`                   | Change, general access and the link, or move to a deal                    |
+| `GET /:id/grants` · `PUT /:id/grants/:address` `{ role }` · `DELETE` | Who it is shared with; invite, change, remove                             |
+| `PUT /:id/speakers/:label` `{ name, address? }`                      | Rename a speaker                                                          |
+| `POST /actions/:id/accept` · `/dismiss`                              | A task is made through the calendar's surface; an email returns its draft |
+| `POST /ask` `{ meetingId \| groupKey, question }`                    | One answer, streamed, with cited moments                                  |
+| `POST /:id/retry`                                                    | Runs the failed step again                                                |
+| `DELETE /:id`                                                        | Deletes the meeting, its transcript and its audio; the notes doc stays    |
 
 Realtime: `meetings.changed { meetingId, status }` on the workspace's socket to the members who
 can see it, so the page fills in without polling.
@@ -409,7 +434,7 @@ For the team of ten above, 430 hours a month:
 | ----------------------------------- | ------------------------------------------------------ |
 | AssemblyAI, with speakers and names | about $110                                             |
 | Claude Haiku: names, notes, groups  | about 430 × 20k tokens in; small next to transcription |
-| R2: 14 MB an hour for 30 days       | under $0.10                                            |
+| R2: 14 MB an hour, kept             | 6 GB more each month, about $0.09 more each month      |
 
 About 25 cents an hour of meeting all in. The engine is the bill; Workers AI would make it about
 3 cents with only "me" and "them" as speakers.
@@ -423,8 +448,8 @@ New variables in `apps/worker/.dev.vars.example` and `docs/self-hosting.md`, non
 ## Defaults chosen here
 
 - AssemblyAI Universal-3.5 Pro, batch, with speaker labels and names.
-- A meeting is its attendees' until shared.
-- Audio kept 30 days.
+- Attendees get `viewer` by themselves; anyone can be invited by address; no link.
+- Audio kept as long as the meeting.
 - The AI writes into the notes doc once, above the person's notes.
 - No bot, no live transcript, no voiceprints in v1.
 
@@ -441,7 +466,7 @@ the rest. The migration in M2 numbers on top of whatever is on `main` then.
 | M3  | Worker: `/api/meetings`, the upload, the jobs and adapters, realtime, the variables; e2e on the local stack with recorded engine responses                                                                                                                                                   | M2         |
 | M4  | Desktop: the recorder (Core Audio tap, ScreenCaptureKit, WASAPI), the spool and upload, the pill, the tray and the start notification                                                                                                                                                        | M3         |
 | M5  | Web (Rodrigo, from Figma): the Meetings module, Record in the event panel, the browser recorder                                                                                                                                                                                              | M3         |
-| M6  | CRM: the Meetings tab on a deal, meetings in timelines, Share with the project                                                                                                                                                                                                               | M5         |
+| M6  | CRM: the Meetings tab on a deal, meetings in timelines                                                                                                                                                                                                                                       | M5         |
 | M7  | MCP: `meetings_search`, `meetings_fetch`                                                                                                                                                                                                                                                     | M3         |
 
 What each layer must prove:
@@ -449,8 +474,8 @@ What each layer must prove:
 - M1: on the eval set, the chosen engine's cpWER beats the others', or this spec changes before
   M2. `resolveSpeakers` names the recorder in every two-channel recording and the other person in
   every two-person one.
-- M2: a member sees no meeting they were not invited to, and a freelancer none outside their
-  projects.
+- M2: nobody sees a meeting without a grant or `workspace` access, a freelancer never through
+  `workspace`, and a removed grant closes it at once.
 - M3: a recording stopped mid-transcription and retried ends with one transcript, one set of
   actions and one block in the doc.
 - M4: killing the app mid-meeting and opening it again finishes the upload with nothing missing.
@@ -460,8 +485,10 @@ every meeting; voiceprints with per-person consent; templates per kind of meetin
 
 ## Open questions
 
-- [ ] Who sees a meeting by default: its attendees (chosen here) or the whole workspace.
-- [ ] Is a bot (Recall.ai) needed in v1 for meetings recorded without the desktop app open?
-- [ ] A live transcript during the meeting in v1, at about $0.30 an hour instead of $0.25?
-- [ ] Keep audio 30 days (chosen here), or delete it as soon as the transcript is saved?
-- [ ] Figma frames for the Meetings module, the pill and the deal's tab.
+- [x] Who sees a meeting: shared like Drive, attendees by themselves (founder, Nov 22, 2026).
+- [x] A bot in v1: no (founder, Nov 22, 2026).
+- [x] A live transcript in v1: no, after the meeting (founder, Nov 22, 2026).
+- [x] Audio: kept as long as the meeting (founder, Nov 22, 2026).
+- [ ] Do outside attendees get their grant at once, or when the recorder first opens the notes,
+      so they never get a summary nobody has read? v1: at once, as decided.
+- [ ] Figma frames for the Meetings module, the pill, the sharing panel and the deal's tab.
