@@ -65,6 +65,23 @@ function runsOf(updates: Timed[]) {
   return runs;
 }
 
+async function namedRuns(db: Db, updates: Timed[]) {
+  const grouped = runsOf(updates);
+  const names = await memberNames(db, [
+    ...new Set(grouped.map((run) => memberOf(run.by)).filter((id): id is string => !!id)),
+  ]);
+  return grouped.map(({ updates: parts, ...run }) => {
+    const memberId = memberOf(run.by);
+    const named: DocRun = {
+      ...run,
+      authorName: memberId ? (names.get(memberId) ?? null) : null,
+      agent: agentOf(run.by),
+      update: toBase64(Y.mergeUpdates(parts)),
+    };
+    return named;
+  });
+}
+
 async function checkpoint(db: Db, doc: Doc, epoch: number, through: number, runs: DocRun[]) {
   const replay = await docReplayFrom(db, doc.id, epoch, through);
   if (!replay) return null;
@@ -86,7 +103,7 @@ async function checkpoint(db: Db, doc: Doc, epoch: number, through: number, runs
  * runs it, and the minute job runs it for any doc a save's run missed.
  */
 export async function journalDoc(deps: Deps, doc: Doc) {
-  for (let tries = 0; tries < 3; tries++) {
+  for (let tries = 0; tries < 4; tries++) {
     if (await journalOnce(deps, doc)) return;
   }
   deps.log.warn("storage.journal_busy", { nodeId: doc.id });
@@ -114,6 +131,20 @@ async function journalOnce(deps: Deps, doc: Doc) {
     });
   if (!first) return mark({});
   const epoch = first.record.t === "snap" ? first.record.e : first.seqNum;
+  if (cursor && cursor.epoch >= 0 && cursor.epoch !== epoch) {
+    const left = (await readLiveTimed(basin, doc.id, cursor.lastSeq + 1)).filter(
+      (e) => e.record.t === "update" && e.record.e === cursor.epoch,
+    );
+    if (left.length) {
+      const runs = await namedRuns(deps.db, left);
+      await mark({
+        lastSeq: Math.max(...left.map((e) => e.seqNum)),
+        runs,
+        sinceBaseline: cursor.sinceBaseline + runs.length,
+      });
+      return false;
+    }
+  }
   const continuing = cursor?.epoch === epoch;
   if (continuing && cursor.lastSeq + 1 < start) {
     entries = await readLiveTimed(basin, doc.id, cursor.lastSeq + 1);
@@ -128,19 +159,7 @@ async function journalOnce(deps: Deps, doc: Doc) {
   const updates = entries.filter(
     (e) => e.seqNum > after && e.record.t === "update" && e.record.e === epoch,
   );
-  const grouped = runsOf(updates);
-  const names = await memberNames(deps.db, [
-    ...new Set(grouped.map((run) => memberOf(run.by)).filter((id): id is string => !!id)),
-  ]);
-  const runs: DocRun[] = grouped.map(({ updates: parts, ...run }) => {
-    const memberId = memberOf(run.by);
-    return {
-      ...run,
-      authorName: memberId ? (names.get(memberId) ?? null) : null,
-      agent: agentOf(run.by),
-      update: toBase64(Y.mergeUpdates(parts)),
-    };
-  });
+  const runs = await namedRuns(deps.db, updates);
   let since = (continuing ? cursor.sinceBaseline : 0) + runs.length;
   let baseline = base;
   if (!baseline && since >= BASELINE_EVERY) {

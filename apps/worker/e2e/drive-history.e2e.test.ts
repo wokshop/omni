@@ -87,3 +87,39 @@ test("a doc's change log outlives its stream: runs by author in the order typed,
   expect(await changesOf(doc.id)).toEqual(runs);
   for (const tab of [anaTab, boTab]) tab.socket.close();
 });
+
+test("typing left in an epoch when a new one starts is journaled before the journal moves on", async () => {
+  const org = await stack.company(`epochs-${randomUUID().slice(0, 8)}`);
+  const ana = await stack.member(org.id);
+  const first = "# Notes\n\nOne";
+  const doc = await stack.upload(ana.jar, { space: "shared" }, "notes.md", bytes(first));
+  const tab = await editor(stack, ana.jar, doc.id);
+  const page = new Y.Doc();
+  const epoch = await tab.append({ t: "seed", cv: 1, u: base64(rewriteLive(page, first)) }, 0);
+  const saved = `${first}\n\nTwo`;
+  await tab.append({ t: "update", e: epoch, u: base64(rewriteLive(page, saved)) });
+  await save(ana.jar, doc.id, saved, 1);
+  await expect.poll(async () => (await changesOf(doc.id)).length, { timeout: 10_000 }).toBe(1);
+
+  const left = await tab.append({
+    t: "update",
+    e: epoch,
+    u: base64(rewriteLive(page, `${saved}\n\nThree, never saved`)),
+  });
+  const next = new Y.Doc();
+  const newer = await tab.append({ t: "seed", cv: 2, u: base64(rewriteLive(next, saved)) });
+  expect(await stack.cron("* * * * *")).toBe("ok");
+  await save(ana.jar, doc.id, `${saved}\n\nFour`, 2);
+  await expect
+    .poll(async () => (await changesOf(doc.id)).map((run) => [run.epoch, run.firstSeq]))
+    .toContainEqual([epoch, left]);
+  const journalEpoch = async () =>
+    (
+      await stack.db
+        .select({ epoch: schema.storageDocJournals.epoch })
+        .from(schema.storageDocJournals)
+        .where(eq(schema.storageDocJournals.nodeId, doc.id))
+    )[0]?.epoch;
+  await expect.poll(journalEpoch, { timeout: 10_000 }).toBe(newer);
+  tab.socket.close();
+});
