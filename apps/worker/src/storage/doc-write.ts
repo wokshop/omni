@@ -53,6 +53,7 @@ export async function writeText(
           mimeType: mimeType ?? MARKDOWN,
           limitBytes,
           caps,
+          agent: deps.agent ?? null,
         })
       : await files.openVersionUpload(target.nodeId, {
           size: bytes.byteLength,

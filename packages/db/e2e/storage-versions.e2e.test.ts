@@ -381,3 +381,24 @@ test("an agent's edit is a version of its own, named for the agent, between its 
     [10, "ana", null],
   ]);
 });
+
+test("a file an agent creates is named for the agent, and its first content stays its own version", async () => {
+  const { storage } = await workspace("versions-agent-created");
+  const opened = await storage.openUpload(
+    { space: "personal" },
+    { name: "Brief", size: 10, limitBytes: null, agent: "Claude" },
+  );
+  if (opened.status !== "ok") throw new Error(opened.status);
+  await storage.recordUploadPart(opened.upload.id, { partNumber: 1, etag: "etag-1", size: 10 });
+  const done = await storage.completeUpload(opened.upload.id, { limitBytes: null });
+  if (done.status !== "ok") throw new Error(done.status);
+  expect((await listed(storage, done.node.id)).current).toMatchObject({
+    writtenByName: "ana",
+    writtenByAgent: "Claude",
+  });
+
+  await addVersion(storage, done.node.id, 11);
+  await addVersion(storage, done.node.id, 12);
+  const versions = await listed(storage, done.node.id);
+  expect(versions.versions.map((v) => [v.size, v.writtenByAgent])).toEqual([[10, "Claude"]]);
+});

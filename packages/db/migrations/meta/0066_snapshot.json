@@ -1,5 +1,5 @@
 {
-  "id": "d5060845-3d6f-4b34-b6c3-3fbded0b1f95",
+  "id": "44e07372-c43a-4df6-8fc8-3e789ff9832f",
   "prevId": "e99cd8e1-9931-48cd-a1c4-5980d0391a48",
   "version": "7",
   "dialect": "postgresql",
@@ -9862,12 +9862,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
-        },
-        "agent": {
-          "name": "agent",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -10021,6 +10015,12 @@
         "sha256_checked_at": {
           "name": "sha256_checked_at",
           "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "agent": {
+          "name": "agent",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },

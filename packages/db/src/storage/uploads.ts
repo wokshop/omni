@@ -3,6 +3,7 @@ import { uuidv7 } from "uuidv7";
 import type { Db } from "../client.ts";
 import {
   storageUploadParts,
+  storageContents,
   storageUploads,
   storageUploadTargets,
   type StorageUploadPart,
@@ -111,7 +112,6 @@ async function targetOf(ex: Db, uploadId: string) {
   const [row] = await ex
     .select({
       nodeId: storageUploadTargets.nodeId,
-      agent: storageUploadTargets.agent,
     })
     .from(storageUploadTargets)
     .where(eq(storageUploadTargets.uploadId, uploadId));
@@ -170,6 +170,7 @@ export function uploadOperations(db: Db, door: Door) {
         limitBytes: number | null;
         sha256?: string | null;
         caps?: UploadCaps;
+        agent?: string | null;
       },
     ) {
       const name = cleanName(file.name);
@@ -214,6 +215,7 @@ export function uploadOperations(db: Db, door: Door) {
             size: file.size,
             mimeType: file.mimeType ?? null,
             sha256: file.sha256 ?? null,
+            agent: file.agent ?? null,
             r2Key: storageObjectKey(orgId, id),
             expiresAt: new Date(Date.now() + STORAGE_UPLOAD_TTL_MS),
           })
@@ -261,13 +263,14 @@ export function uploadOperations(db: Db, door: Door) {
             size: file.size,
             mimeType: file.mimeType ?? null,
             sha256: file.sha256 ?? null,
+            agent: file.agent ?? null,
             r2Key: storageObjectKey(node.orgId, id),
             expiresAt: new Date(Date.now() + STORAGE_UPLOAD_TTL_MS),
           })
           .returning();
         await tx
           .insert(storageUploadTargets)
-          .values({ uploadId: id, orgId: node.orgId, nodeId: node.id, agent: file.agent ?? null });
+          .values({ uploadId: id, orgId: node.orgId, nodeId: node.id });
         return { status: "ok", upload: upload! } satisfies OpenVersionUploadResult;
       });
     },
@@ -414,13 +417,7 @@ export function uploadOperations(db: Db, door: Door) {
           if (!target.nodeId) return NOT_FOUND satisfies CompleteUploadResult;
           const replaced =
             (await full()) ??
-            (await replaceContent(
-              tx,
-              door,
-              target.nodeId,
-              { ...upload, agent: target.agent },
-              options.ifContentVersion,
-            ));
+            (await replaceContent(tx, door, target.nodeId, upload, options.ifContentVersion));
           if (replaced.status !== "ok") return replaced satisfies CompleteUploadResult;
           await addUsage(tx, upload.orgId, upload.size);
           await tx
@@ -462,6 +459,15 @@ export function uploadOperations(db: Db, door: Door) {
           attached: at.attached,
         });
         const node = await moveUploadLink(tx, upload.id, inserted);
+        if (upload.agent) {
+          await tx.insert(storageContents).values({
+            nodeId: node.id,
+            orgId: node.orgId,
+            writtenByMemberId: upload.memberId,
+            writtenAt: node.createdAt,
+            writtenByAgent: upload.agent,
+          });
+        }
         await addUsage(tx, upload.orgId, upload.size);
         await tx
           .update(storageUploads)

@@ -451,6 +451,8 @@ export const storageUploads = pgTable(
     sha256: text("sha256"),
     /** When the Worker hashed the stitched object and it matched `sha256`. */
     sha256CheckedAt: timestamptz("sha256_checked_at"),
+    /** The agent writing it for its member (an MCP client's name); null from the app. */
+    agent: text("agent"),
     /** Moves forward with every part recorded: only a day with no parts closes an upload. */
     expiresAt: timestamptz("expires_at").notNull(),
     createdAt: timestamptz("created_at").notNull().defaultNow(),
@@ -506,8 +508,6 @@ export const storageUploadTargets = pgTable(
       .references(() => storageUploads.id, { onDelete: "cascade" }),
     orgId: orgId(),
     nodeId: text("node_id").references(() => storageNodes.id, { onDelete: "set null" }),
-    /** The agent writing this version for its member (an MCP client's name); null from the app. */
-    agent: text("agent"),
   },
   (t) => [index("storage_upload_targets_node_id_idx").on(t.nodeId)],
 );
