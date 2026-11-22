@@ -634,6 +634,111 @@ test("a to-do opens beside the calendar, not in the CRM", async () => {
   expect(new URL(page.url()).searchParams.get("task")).not.toBeNull();
 });
 
+async function madeEvent(
+  orgId: string,
+  page: Page,
+  origin: string,
+  title: string,
+  at: [string, string],
+) {
+  const [calendar] = await db
+    .select({ id: schema.calendarCalendars.id })
+    .from(schema.calendarCalendars)
+    .where(eq(schema.calendarCalendars.orgId, orgId));
+  await page.goto(origin);
+  const made = await page.request.post(new URL("/api/calendar/events", origin).toString(), {
+    data: {
+      calendarId: calendar?.id,
+      title,
+      start: at[0],
+      end: at[1],
+      allDay: false,
+      timeZone: "Europe/Madrid",
+      guests: [],
+    },
+  });
+  expect(made.status()).toBe(201);
+}
+
+const spanOf = async (orgId: string, title: string) =>
+  (
+    await db
+      .select({
+        startsAt: schema.calendarEvents.startsAt,
+        endsAt: schema.calendarEvents.endsAt,
+        status: schema.calendarEvents.status,
+      })
+      .from(schema.calendarEvents)
+      .where(and(eq(schema.calendarEvents.orgId, orgId), eq(schema.calendarEvents.title, title)))
+  )
+    .filter((e) => e.status !== "cancelled")
+    .map((e) => [e.startsAt.toISOString(), e.endsAt.toISOString()]);
+
+test("the morning piece of an overnight event dragged an hour down moves the whole event an hour", async () => {
+  const { org, page, origin } = await invited();
+  await madeEvent(org.id, page, origin, "Night run", [
+    "2026-11-24T22:00:00.000Z",
+    "2026-11-25T00:00:00.000Z",
+  ]);
+  await openWeek(page, origin, org.slug);
+  await page
+    .locator('[data-day="2026-11-25"]')
+    .getByRole("button", { name: /Night run/ })
+    .dragTo(page.locator('[data-day="2026-11-25"]'), {
+      sourcePosition: { x: 10, y: 4 },
+      targetPosition: { x: 20, y: 48 + 4 },
+    });
+  await expect
+    .poll(() => spanOf(org.id, "Night run"))
+    .toEqual([["2026-11-24T23:00:00.000Z", "2026-11-25T01:00:00.000Z"]]);
+});
+
+test("Delete pressed in an open to-do leaves the selected event alone", async () => {
+  const { org, member, page, origin } = await invited();
+  await madeEvent(org.id, page, origin, "Focus time", [
+    "2026-11-24T09:00:00.000Z",
+    "2026-11-24T10:00:00.000Z",
+  ]);
+  await db
+    .insert(schema.crmTasks)
+    .values({ orgId: org.id, title: "Send the deck", assigneeMemberId: member.id });
+  await openWeek(page, origin, org.slug);
+  await page
+    .getByRole("region", { name: "No date" })
+    .getByRole("link", { name: "Send the deck" })
+    .click();
+  const task = page.getByRole("region", { name: "Task" });
+  await task.waitFor();
+  await page.getByRole("button", { name: /Focus time/ }).click();
+  await task.getByRole("button", { name: "Close task" }).focus();
+  await page.keyboard.press("Delete");
+  await page.keyboard.press("Backspace");
+  await page.waitForTimeout(300);
+  expect(await spanOf(org.id, "Focus time")).toEqual([
+    ["2026-11-24T09:00:00.000Z", "2026-11-24T10:00:00.000Z"],
+  ]);
+});
+
+test("a to-do picked in the sidebar takes the place of an open event", async () => {
+  const { org, member, page, origin } = await invited();
+  await madeEvent(org.id, page, origin, "Review", [
+    "2026-11-24T09:00:00.000Z",
+    "2026-11-24T10:00:00.000Z",
+  ]);
+  await db
+    .insert(schema.crmTasks)
+    .values({ orgId: org.id, title: "Book the venue", assigneeMemberId: member.id });
+  await openWeek(page, origin, org.slug);
+  await page.getByRole("button", { name: /Review/ }).dblclick();
+  await page.getByRole("button", { name: "Edit" }).waitFor();
+  await page
+    .getByRole("region", { name: "No date" })
+    .getByRole("link", { name: "Book the venue" })
+    .click();
+  await page.getByRole("region", { name: "Task" }).waitFor();
+  await expect.poll(() => page.getByRole("button", { name: "Edit" }).count()).toBe(0);
+});
+
 async function freePort() {
   const server = createServer();
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));

@@ -48,7 +48,9 @@ export function useDropZone(
       event.preventDefault();
       event.dataTransfer.dropEffect = "move";
       setOver(true);
-      if (timed) setHover({ from: minutesAt(event), length: draggedLength(current.item) });
+      if (timed) {
+        setHover({ from: minutesAt(event), length: draggedLength(current.item) - current.lead });
+      }
     },
     onDragLeave: (event: DragEvent<HTMLElement>) => {
       if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
@@ -61,7 +63,7 @@ export function useDropZone(
       setHover(null);
       if (!onDrop || !current) return;
       event.preventDefault();
-      onDrop(current.item, timed ? { day, minutes: minutesAt(event) } : { day });
+      onDrop(current.item, timed ? { day, minutes: minutesAt(event) - current.lead } : { day });
     },
   };
   return { handlers, hover, over };

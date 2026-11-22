@@ -328,7 +328,7 @@ const answerLook = (event: CalendarEvent) =>
     event.myResponse === "needs_action" && "bg-background! ring-1 ring-(--tone) ring-inset",
   );
 
-function EventBlock(props: WeekGridProps & { placed: Placed<CalendarEvent> }) {
+function EventBlock(props: WeekGridProps & { day: Date; placed: Placed<CalendarEvent> }) {
   const { event, from, to, column, columns } = props.placed;
   const selected = props.selection?.kind === "event" && props.selection.key === eventKey(event);
   const movable = ownEvent(event);
@@ -356,7 +356,13 @@ function EventBlock(props: WeekGridProps & { placed: Placed<CalendarEvent> }) {
       draggable={movable}
       onDragStart={(e) => {
         const box = e.currentTarget.getBoundingClientRect();
-        startDrag(e, { kind: "event", event }, ((e.clientY - box.top) / HOUR_PX) * 60);
+        const before = (props.day.getTime() - Date.parse(event.start)) / 60_000;
+        startDrag(
+          e,
+          { kind: "event", event },
+          ((e.clientY - box.top) / HOUR_PX) * 60,
+          from === 0 ? Math.max(0, before) : 0,
+        );
       }}
       onDragEnd={endDrag}
     >

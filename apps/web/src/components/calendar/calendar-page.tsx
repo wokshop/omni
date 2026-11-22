@@ -88,10 +88,15 @@ export function CalendarPage(props: {
     });
   const openTask = useOpenTask();
   const router = useRouter();
-  const openTodo = (task: CrmTask) => {
-    setPanel(null);
-    void router.history.push(openTask.href(task.id));
-  };
+  const openTodo = (task: CrmTask) => void router.history.push(openTask.href(task.id));
+  const [taskShown, setTaskShown] = useState(props.task);
+  if (taskShown !== props.task) {
+    setTaskShown(props.task);
+    if (props.task) {
+      setPanel(null);
+      setSelection(null);
+    }
+  }
   const byKey = useMemo(() => new Map(events.map((e) => [eventKey(e), e])), [events]);
   const opened = panel ? byKey.get(panel) : undefined;
 
@@ -205,7 +210,7 @@ export function CalendarPage(props: {
         </StorageFrame>
       </div>
       {props.task && !opened && (
-        <div className="flex w-[25rem] shrink-0">
+        <div data-calendar-keys="off" className="flex w-[25rem] shrink-0">
           <TaskPanel id={props.task} onClose={openTask.close} />
         </div>
       )}

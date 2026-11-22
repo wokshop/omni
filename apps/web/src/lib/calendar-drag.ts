@@ -10,21 +10,27 @@ export const TODO_MINUTES = 30;
 /** What is being dragged: one of the member's events, or a to-do. */
 export type Dragged = { kind: "event"; event: CalendarEvent } | { kind: "todo"; task: CrmTask };
 
-/** Where it was let go: a day, and on the hours, the minute its top landed on. */
+/** Where it was let go: a day, and on the hours, the minute its start lands on (below 0: the day before). */
 export interface Drop {
   day: Date;
   minutes?: number;
 }
 
-let current: { item: Dragged; grabMinutes: number } | null = null;
+let current: { item: Dragged; grabMinutes: number; lead: number } | null = null;
 
 /**
- * Starts a native drag of `item`. `grabMinutes` is how far below the item's top it was picked up,
- * so its top, not the pointer, lands on the slot. The browser's data can't be read until the
- * drop, so the item rides here too.
+ * Starts a native drag of `item`. `grabMinutes` is how far below the shown top it was picked up,
+ * so that top, not the pointer, lands on the slot; `lead` is how long the item ran before that
+ * top (the night before, for the morning piece of an overnight event). The browser's data can't
+ * be read until the drop, so the item rides here too.
  */
-export function startDrag(event: { dataTransfer: DataTransfer }, item: Dragged, grabMinutes = 0) {
-  current = { item, grabMinutes };
+export function startDrag(
+  event: { dataTransfer: DataTransfer },
+  item: Dragged,
+  grabMinutes = 0,
+  lead = 0,
+) {
+  current = { item, grabMinutes, lead };
   event.dataTransfer.setData(DRAG_TYPE, item.kind === "event" ? item.event.id : item.task.id);
   event.dataTransfer.effectAllowed = "move";
 }
