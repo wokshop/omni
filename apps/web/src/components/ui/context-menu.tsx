@@ -103,19 +103,22 @@ function pointOf(event: MouseEvent | ReactMouseEvent, target: Element) {
   return { x: rect.left + 8, y: rect.top + Math.min(rect.height, 32) };
 }
 
+/** An element from any frame: a same-origin frame's nodes fail `instanceof` the window's `Element`. */
+export function asElement(target: EventTarget | null) {
+  const node = target as Node | null;
+  return node?.nodeType === Node.ELEMENT_NODE ? (node as Element) : null;
+}
+
 /** Text fields keep the system's own menu: Cut, Copy, Paste and spelling. */
 export function isEditable(target: EventTarget | null) {
-  if (!(target instanceof Element)) return false;
-  const field = target.closest("input, textarea, select, [contenteditable]");
+  const field = asElement(target)?.closest("input, textarea, select, [contenteditable]");
   if (!field) return false;
-  if (field instanceof HTMLInputElement) {
+  if (field.localName === "input") {
     return !["button", "checkbox", "radio", "range", "color", "file", "submit", "reset"].includes(
-      field.type,
+      (field as HTMLInputElement).type,
     );
   }
-  if (field instanceof HTMLElement && field.hasAttribute("contenteditable")) {
-    return field.isContentEditable;
-  }
+  if (field.hasAttribute("contenteditable")) return (field as HTMLElement).isContentEditable;
   return true;
 }
 
@@ -199,7 +202,7 @@ function fallbackEntries(target: Element, view: Window) {
 function onFallback(event: MouseEvent, offset?: { x: number; y: number }) {
   if (event.defaultPrevented || isEditable(event.target)) return;
   event.preventDefault();
-  const target = event.target instanceof Element ? event.target : null;
+  const target = asElement(event.target);
   if (!target) return;
   const view = target.ownerDocument.defaultView ?? window;
   const at = pointOf(event, target);

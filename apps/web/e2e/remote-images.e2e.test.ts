@@ -118,3 +118,59 @@ test("a newsletter's remote images load on open, through the image proxy", async
   );
   await context.close();
 });
+
+test("a right-click on a link in an email's HTML offers the app's Open link and Copy link", async () => {
+  const email = "ana@links.test";
+  const system = await createOrg(db, "links-system");
+  await createMailbox(db, system.id, SYSTEM_MAIL_FROM);
+  const org = await createOrgWithOwner(db, { name: "Acme", slug: "links", ownerEmail: email });
+  const box = await createMailbox(db, org.orgId, email, "personal");
+  await grant(db, org.orgId, box.id, org.memberId);
+  const { threadId, messageId } = await seedMessage(db, box, {
+    subject: "Your invoice",
+    fromAddress: "billing@vendor.test",
+    uid: 1,
+    text: "Your invoice is ready.",
+  });
+  const sanitized = sanitizeHtml(
+    `<p>Your invoice is ready: <a href="https://vendor.test/invoice/42">View invoice</a></p>`,
+    { proxyUrl: (src) => src, cidUrl: () => null },
+  );
+  const htmlKey = `${org.orgId}/${box.id}/html/${messageId}.html`;
+  const env = await worker.server
+    .getWorker<{ MAIL_BUCKET: { put(key: string, body: string): Promise<unknown> } }>()
+    .getEnv();
+  await env.MAIL_BUCKET.put(htmlKey, sanitized.html);
+  await db
+    .update(schema.messages)
+    .set({ htmlR2Key: htmlKey })
+    .where(eq(schema.messages.id, messageId));
+
+  const origin = String(worker.url);
+  const cookie = await signIn({ url: new URL(origin) }, db, email);
+  const context = await browser.newContext();
+  await context.addCookies(
+    cookie.split("; ").map((pair) => {
+      const at = pair.indexOf("=");
+      return { name: pair.slice(0, at), value: pair.slice(at + 1), url: origin };
+    }),
+  );
+  const page = await context.newPage();
+  await page.goto(new URL(`/inbox/${threadId}`, origin).toString());
+  await page
+    .getByText("Your invoice is ready.")
+    .filter({ visible: true })
+    .last()
+    .click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Show full message" }).click();
+
+  const link = page
+    .frameLocator('iframe[title="Full message"]')
+    .getByRole("link", { name: "View invoice" });
+  await link.waitFor();
+  await link.click({ button: "right" });
+  const menu = page.getByRole("menu");
+  await menu.waitFor();
+  expect(await menu.getByRole("menuitem").allInnerTexts()).toEqual(["Open link", "Copy link"]);
+  await context.close();
+});
