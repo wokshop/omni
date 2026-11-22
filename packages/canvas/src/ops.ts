@@ -376,6 +376,17 @@ function order(board: Board, op: Op<"order">) {
   for (const item of items) board.touch(item);
 }
 
+function touchAncestors(board: Board, gone: Set<string>) {
+  for (const id of gone) {
+    let at = board.byId.get(id)?.parent;
+    for (let hops = 0; at !== undefined && hops < 64; hops++) {
+      const ancestor = board.byId.get(at);
+      if (ancestor && !gone.has(ancestor.id)) board.touch(ancestor);
+      at = ancestor?.parent;
+    }
+  }
+}
+
 function remove(board: Board, op: Op<"delete">) {
   const gone = new Set<string>();
   for (const id of op.ids) {
@@ -402,6 +413,7 @@ function remove(board: Board, op: Op<"delete">) {
       board.touch(element);
     }
   }
+  touchAncestors(board, gone);
   board.remove(gone);
 }
 
