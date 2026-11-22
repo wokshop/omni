@@ -3,7 +3,7 @@ import { forUser, type MemberStorage } from "@omni/db";
 import { Hono, type Context } from "hono";
 import type { AppEnv } from "../context.ts";
 import { apiError } from "../errors.ts";
-import { storageLimit } from "../storage/core.ts";
+import { deleteStorageObjects, storageLimit } from "../storage/core.ts";
 import { memberStorage, refused as storageRefused } from "../storage/http.ts";
 import { zValidator } from "../validator.ts";
 import { deliver, memberTalk, refused, wireMessage } from "./http.ts";
@@ -37,6 +37,12 @@ async function storeFile(
   const opened = await files.openUpload({ parentId }, { ...file, limitBytes });
   if (opened.status !== "ok") return opened;
   const { upload } = opened;
+  const drop = async () => {
+    const aborted = await files.abortUpload(upload.id);
+    if (aborted.status === "ok") {
+      await deleteStorageObjects(c.env.STORAGE_BUCKET, [aborted.r2Key], c.var.log);
+    }
+  };
   try {
     const { readable, writable } = new FixedLengthStream(file.size);
     const body = c.req.raw.body;
@@ -51,16 +57,20 @@ async function storeFile(
       if (recorded.status !== "ok") throw new Error(`talk: part ${recorded.status}`);
     }
   } catch (error) {
-    const aborted = await files.abortUpload(upload.id);
-    if (aborted.status === "ok") await c.env.STORAGE_BUCKET.delete(aborted.r2Key).catch(() => {});
+    await drop();
     throw error;
   }
-  return files.completeUpload(upload.id, { limitBytes });
+  const done = await files.completeUpload(upload.id, { limitBytes });
+  if (done.status !== "ok") await drop();
+  return done;
 }
 
 async function takeBack(c: Context<AppEnv>, files: MemberStorage, nodeId: string) {
   const trashed = await files.trash(nodeId);
-  if (trashed.status === "ok") await files.deleteForever(nodeId);
+  const deleted = trashed.status === "ok" ? await files.deleteForever(nodeId) : null;
+  if (deleted?.status === "ok") {
+    await deleteStorageObjects(c.env.STORAGE_BUCKET, deleted.r2Keys, c.var.log);
+  }
   c.var.log.warn("talk.file_taken_back", { nodeId });
 }
 
