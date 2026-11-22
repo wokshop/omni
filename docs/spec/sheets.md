@@ -82,7 +82,12 @@ Y.Doc
   move, so a sort is a delete and an insert of every row, and two people sorting at once leave
   each row twice.
 - **Concurrent inserts.** Two people inserting a row in the same place each make a new row with
-  a key between the same neighbours; both rows stay, in the same order on every peer.
+  a key between the same neighbours; both rows stay, in the same order on every peer. Every key
+  ends in random digits, so two peers almost never make the same one. When they do, the order is
+  still by id, but no key fits between two equal keys (`generateKeyBetween` needs `a < b`), so an
+  insert into a run of equal keys first gives that run fresh keys between its key and the next
+  one, in its current order, in the same transaction. Two peers doing that at once each write
+  every key of the run, and last writer wins per row, so each row still appears once.
 - **Sorts.** "Sort range" writes new positions for the rows in the range, one key per row. Two
   sorts at once leave each row once, in an order mixed from both; the next sort settles it. A row
   inserted during a sort keeps its key and lands among the sorted rows. Nothing is lost or
@@ -230,8 +235,10 @@ unpaid workspace, like the doc tools.
   each tab as rows of tab-separated values led by the row number and a header line of column
   letters, then its formulas, one line per run of the same relative formula
   (`D2:D120 =B2*1.16`), its column types and its views. It returns `layout`, a token that changes
-  whenever rows or columns are inserted, deleted or reordered (a random id written in the same
-  transaction as the change).
+  whenever rows or columns are inserted, deleted or reordered: a hash of every tab's ordered row
+  and column ids, computed from the merged document when it is read. A token stored in the
+  document would not work: two concurrent inserts would each write one, only one would win, and
+  the other insert could arrive without changing it.
 - **Create.** `drive_create_sheet { name, tabs? | csv?, folder_id? | workspace?, space? }`.
   `tabs` is `[{ name, rows: Value[][], frozen_rows?, columns?: [{ type, format?, options? }] }]`;
   a string that starts with `=` is a formula, and `'=` is text that starts with `=`.
@@ -320,7 +327,8 @@ Each line is one PR, stacked with `gh stack` on top of #705–#707. No migration
 ## Verify
 
 - `packages/sheets` (unit): JSON Lines → Yjs → JSON Lines is lossless; two peers inserting a row
-  at the same place keep both, in the same order; two concurrent sorts and a sort with an insert
+  at the same place keep both, in the same order, and a row can then be inserted between them
+  even when their keys are equal; two concurrent sorts and a sort with an insert
   leave every row exactly once; a change to a deleted row is dropped; a formula keeps pointing at
   its cell after inserts above it and is `#REF!` after its row is deleted; A1 ↔ id translation
   across tabs and `$`; the v1 functions against Excel's results; CSV round trip (quotes,
@@ -328,7 +336,8 @@ Each line is one PR, stacked with `gh stack` on top of #705–#707. No migration
 - `apps/worker/e2e/drive-sheets.e2e.test.ts`: an agent's sheet is named without an extension,
   has the sheet type and keeps it after an edit; a range edit with formulas saves computed `v`;
   `drive_fetch` shows values, formula runs and `layout`; `drive_search` finds a cell's value once
-  indexed; an edit with a stale `layout` is refused and answers the sheet; a viewer's agent
+  indexed; an edit with a stale `layout` is refused and answers the sheet, including when the change was
+  a concurrent insert merged after the agent read; a viewer's agent
   cannot edit; a sheet past the limits is refused.
 - `apps/worker/e2e/drive-live.e2e.test.ts`, sheet cases: a tab types into B2 without saving and
   an agent sets C2; the tab hears the agent's change, the saved version holds both, and the
