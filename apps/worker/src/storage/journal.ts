@@ -99,6 +99,7 @@ async function writeRun(db: Db, doc: Doc, journaled: number, folded = new Set<nu
       startedAt: writer.at,
       endedAt: writer.at,
       update: "",
+      contentVersion: cv,
     });
   }
   return runs;
@@ -144,9 +145,14 @@ async function runsAfter(
     (e) => e.seqNum > at.after && e.record.t === "update" && e.record.e === at.epoch,
   );
   const runs = await namedRuns(db, updates);
-  if (runs.length > 0) return runs;
-  const folded = new Set(entries.flatMap((e) => (e.record.t === "fold" ? [e.record.cv] : [])));
-  return writeRun(db, doc, cursor?.contentVersion ?? 0, folded);
+  const folded = new Set(
+    entries.flatMap((e) =>
+      e.record.t === "fold" || (e.record.t === "snap" && e.record.f > e.record.e)
+        ? [e.record.cv]
+        : [],
+    ),
+  );
+  return [...(await writeRun(db, doc, cursor?.contentVersion ?? 0, folded)), ...runs];
 }
 
 async function nextBaseline(
