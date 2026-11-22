@@ -169,6 +169,19 @@ test("a sidebar folder's right-click offers its actions; a place with none shows
   expect(await page.getByRole("menu").count()).toBe(0);
 });
 
+test("the sidebar's New folder on the space already open starts the folder there", async () => {
+  const person = await account(`ctx-here-${Date.now()}@gmail.test`);
+  await person.folder("Archive");
+  const page = await person.page("/files/my");
+  await page.getByRole("row", { name: /Archive/ }).waitFor({ timeout: 30_000 });
+
+  await page.getByRole("link", { name: "Personal" }).first().click({ button: "right" });
+  await page.getByRole("menuitem", { name: "New folder" }).click();
+  const field = page.getByRole("textbox", { name: "Folder name" });
+  await field.waitFor();
+  expect(await field.evaluate((input) => input === document.activeElement)).toBe(true);
+});
+
 async function account(email: string) {
   const origin = String(worker.url);
   const cookie = await signInWithPersonalSpace({ url: new URL(origin) }, db, email);

@@ -43,19 +43,28 @@ export function pickFiles(onPicked: (files: File[] | Picked) => void, folder = f
 }
 
 let wantsFolder: string | null = null;
+const folderPages = new Set<() => void>();
 
 /** Asks the folder page for `place`, once it shows, to start a new folder (the sidebar's New folder). */
 export function requestNewFolder(place: StoragePlace) {
   wantsFolder = placeKey(place);
+  for (const page of folderPages) page();
 }
 
-/** On a folder page: starts the new folder asked for from elsewhere. */
+/** On a folder page: starts the new folder asked for from elsewhere, on arrival or while open. */
 export function useNewFolderRequest(place: StoragePlace, start: () => void) {
   const key = placeKey(place);
   useEffect(() => {
-    if (wantsFolder !== key) return;
-    wantsFolder = null;
-    start();
+    const take = () => {
+      if (wantsFolder !== key) return;
+      wantsFolder = null;
+      start();
+    };
+    take();
+    folderPages.add(take);
+    return () => {
+      folderPages.delete(take);
+    };
   }, [key, start]);
 }
 
