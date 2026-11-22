@@ -314,7 +314,11 @@ test("the stack shows who is online, and a note and a file reach the teammate's 
   await kofi.setViewportSize({ width: 600, height: wide.height });
   await kofiStack.waitFor({ state: "detached" });
   await composer.fill("While you were narrow");
+  const stored = ana.waitForResponse(
+    (r) => r.request().method() === "POST" && r.url().endsWith("/messages"),
+  );
   await composer.press("Enter");
+  await stored;
   await bubble("While you were narrow").waitFor();
   await kofi.setViewportSize(wide);
   await kofiStack.getByRole("button", { name: "Ana Lima, 1 unread" }).waitFor();
@@ -337,8 +341,18 @@ test("a note reaches an open window with older notes loaded without refetching i
   await kofi.getByRole("button", { name: /^Ana Lima/ }).click();
   const kofiWindow = kofi.getByRole("region", { name: "Conversation with Ana Lima" });
   await kofiWindow.getByText("Old 69", { exact: true }).waitFor();
+  const loading = Promise.withResolvers<void>();
+  await kofi.route("**/api/talk/threads/*/messages?before=*", async (route) => {
+    await loading.promise;
+    await route.fallback();
+  });
   await kofiWindow.getByRole("button", { name: "Earlier" }).click();
+  await post(`/threads/${thread.id}/messages`, { body: "While older ones load" });
+  await kofiWindow.getByText("While older ones load", { exact: true }).waitFor();
+  loading.resolve();
   await kofiWindow.getByText("Old 0", { exact: true }).waitFor();
+  await kofi.unroute("**/api/talk/threads/*/messages?before=*");
+  expect(await kofiWindow.getByText("While older ones load", { exact: true }).count()).toBe(1);
   const fetched: string[] = [];
   kofi.on("request", (request) => {
     if (
@@ -366,4 +380,31 @@ test("a note reaches an open window with older notes loaded without refetching i
   await fresh.locator("..").getByRole("button", { name: "React 👍" }).click();
   await anaWindow.getByRole("button", { name: "👍 1" }).waitFor();
   expect(fetched).toEqual([]);
+
+  await anaWindow.getByRole("button", { name: "Close" }).click();
+  await anaWindow.waitFor({ state: "detached" });
+  const answered = Promise.withResolvers<void>();
+  const stored = ana.waitForResponse(
+    (r) => r.request().method() === "POST" && r.url().endsWith("/messages"),
+  );
+  await ana.route("**/api/talk/threads/*/messages", async (route) => {
+    if (route.request().method() === "POST") {
+      await answered.promise;
+      return route.fallback();
+    }
+    const empty = await route.fetch();
+    answered.resolve();
+    await stored;
+    await ana.waitForTimeout(300);
+    await route.fulfill({ response: empty });
+  });
+  await ana
+    .getByRole("group", { name: "Teammates" })
+    .getByRole("button", { name: /^Cyra Holt/ })
+    .click();
+  const toCyra = ana.getByRole("region", { name: "Conversation with Cyra Holt" });
+  await toCyra.getByRole("textbox").fill("First to Cyra");
+  await toCyra.getByRole("textbox").press("Enter");
+  await toCyra.getByText("First to Cyra", { exact: true }).waitFor();
+  await ana.unroute("**/api/talk/threads/*/messages");
 });

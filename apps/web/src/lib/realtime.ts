@@ -263,7 +263,8 @@ export function startRealtime(client: QueryClient, activeOrgId: string) {
       void recheckPendingSends(client);
     }
     if (orgId === activeOrgId) {
-      void client.invalidateQueries({ queryKey: keys.talk() }, { cancelRefetch: false });
+      // WARNING: a Talk fetch already in flight may predate the socket; start it again after.
+      void client.invalidateQueries({ queryKey: keys.talk() });
     }
   };
   const wide = window.matchMedia(`(min-width: ${TITLE_BAR_MIN}px)`);

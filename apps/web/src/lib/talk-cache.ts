@@ -11,10 +11,21 @@ export const pendingId = () => `${PENDING}${crypto.randomUUID()}`;
 
 function editPages(client: QueryClient, threadId: string, edit: (data: Pages) => Pages) {
   const queryKey = keys.talkMessages(threadId);
-  if (client.getQueryData(queryKey))
-    return void client.setQueryData<Pages>(queryKey, (data) => data && edit(data));
-  // WARNING: a first page still loading may predate this change; fetch it again instead.
-  void client.invalidateQueries({ queryKey });
+  const settle = () => {
+    if (client.getQueryData(queryKey))
+      client.setQueryData<Pages>(queryKey, (data) => data && edit(data));
+    else void client.invalidateQueries({ queryKey });
+  };
+  settle();
+  const cache = client.getQueryCache();
+  const query = cache.find({ queryKey, exact: true });
+  if (query?.state.fetchStatus !== "fetching") return;
+  // WARNING: a fetch in flight answers from what it started with; apply the change again after it.
+  const stop = cache.subscribe((event) => {
+    if (event.query !== query || query.state.fetchStatus === "fetching") return;
+    stop();
+    settle();
+  });
 }
 
 const has = (data: Pages, messageId: string) =>
