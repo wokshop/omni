@@ -4,7 +4,7 @@ import type { Db } from "../client.ts";
 import { members } from "../schema/auth.ts";
 import { notifications } from "../schema/notifications.ts";
 import { storageComments } from "../schema/storage.ts";
-import { memberDoor } from "./access.ts";
+import { memberDoor, readsComments } from "./access.ts";
 import type { NodeRow } from "./core.ts";
 import { reach } from "./tree.ts";
 
@@ -27,7 +27,8 @@ const EXCERPT = 140;
 async function stillReaching(tx: Db, nodeId: string, memberIds: string[]) {
   const reaching: string[] = [];
   for (const id of memberIds) {
-    if (await reach(tx, memberDoor(id), nodeId)) reaching.push(id);
+    const found = await reach(tx, memberDoor(id), nodeId);
+    if (found && readsComments(found.access)) reaching.push(id);
   }
   return reaching;
 }

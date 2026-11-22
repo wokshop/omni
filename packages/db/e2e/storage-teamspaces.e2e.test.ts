@@ -247,6 +247,23 @@ test("someone taken out of a private teamspace hears no more about its comments"
   expect(
     (await db.select().from(notifications).where(eq(notifications.memberId, ben.id))).length,
   ).toBe(1);
+
+  const [benUser] = await db
+    .select({ email: users.email })
+    .from(users)
+    .innerJoin(members, eq(members.userId, users.id))
+    .where(eq(members.id, ben.id));
+  await db.update(users).set({ emailVerified: true }).where(eq(users.email, benUser!.email));
+  expect((await anaStorage.putGrant(file.id, benUser!.email, "viewer")).status).toBe("ok");
+  expect((await benStorage.file(file.id)).status).toBe("ok");
+  const third = await anaStorage.addComment(file.id, {
+    body: "Final price",
+    anchor: { kind: "file" },
+  });
+  if (third.status !== "ok") throw new Error(third.status);
+  expect(
+    (await db.select().from(notifications).where(eq(notifications.memberId, ben.id))).length,
+  ).toBe(1);
 });
 
 test("whoever a teamspace file is shared with hears its live edits, and nobody else outside it", async () => {
