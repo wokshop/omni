@@ -20,7 +20,7 @@ import {
   useSendNote,
   useTalkMessages,
   useTalkPeople,
-  useTalkThread,
+  useTalkThreadId,
 } from "@/hooks/use-talk.ts";
 import { inBackground } from "@/lib/desktop-notifications.ts";
 import { firstName, type TalkPerson } from "@/lib/talk.ts";
@@ -144,8 +144,7 @@ function NoteBones() {
 
 function Conversation(props: { person: TalkPerson; pinned: boolean }) {
   const { member } = useMember();
-  const thread = useTalkThread(props.person.memberId);
-  const threadId = thread.data?.id;
+  const threadId = useTalkThreadId(props.person, props.pinned);
   const messages = useTalkMessages(threadId);
   const list = messages.data?.pages.flatMap((page) => page.messages) ?? [];
   useReadWhileOpen(threadId, list[0]?.id);
@@ -177,7 +176,7 @@ function Conversation(props: { person: TalkPerson; pinned: boolean }) {
     >
       <Header person={props.person} />
       <div className="flex h-80 max-h-[calc(100svh-12rem)] shrink-0 flex-col-reverse overflow-y-auto [mask-image:linear-gradient(to_bottom,transparent,black_12px)]">
-        {messages.isPending ? (
+        {threadId && messages.isPending ? (
           <Skeleton loading label="Loading notes" skeleton={<NoteBones />}>
             {null}
           </Skeleton>

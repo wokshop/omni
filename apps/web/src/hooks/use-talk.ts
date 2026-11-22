@@ -15,9 +15,16 @@ export function useTalkPeople() {
   return useQuery(talkPeopleQuery());
 }
 
-/** The thread with a teammate, made the first time you open it. */
-export function useTalkThread(memberId: string) {
-  return useQuery(talkThreadQuery(memberId));
+/**
+ * The thread with `person`: the one they already share, read as is; otherwise made on the server
+ * only once `make` is true (the window is pinned), so a hover peek never creates one.
+ */
+export function useTalkThreadId(
+  person: { memberId: string; threadId: string | null },
+  make: boolean,
+) {
+  const made = useQuery({ ...talkThreadQuery(person.memberId), enabled: make && !person.threadId });
+  return person.threadId ?? made.data?.id;
 }
 
 export function useTalkMessages(threadId: string | undefined) {

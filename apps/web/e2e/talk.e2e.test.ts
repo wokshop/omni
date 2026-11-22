@@ -174,6 +174,13 @@ test("the stack shows who is online, and a note and a file reach the teammate's 
   expect(await stack.getByRole("button").allInnerTexts()).toContain("+1");
   await shoot(ana, "1-stack");
 
+  const made: string[] = [];
+  const onRequest = (request: { method(): string; url(): string }) => {
+    if (request.method() === "POST" && request.url().endsWith("/api/talk/threads")) {
+      made.push(request.url());
+    }
+  };
+  ana.on("request", onRequest);
   const peek = ana.getByRole("region", { name: /^Conversation with / });
   const faces = stack.locator("[data-talk-face]");
   await faces.nth(0).hover();
@@ -189,6 +196,8 @@ test("the stack shows who is online, and a note and a file reach the teammate's 
   await shoot(ana, "1a-peek");
   await ana.mouse.move(4, 400);
   await expect.poll(() => peek.count()).toBe(0);
+  ana.off("request", onRequest);
+  expect(made).toEqual([]);
 
   await stack.getByRole("button", { name: "Everyone, 1 more online" }).click();
   await ana.getByRole("menuitem", { name: "Kofi Mensah" }).waitFor();
