@@ -759,6 +759,24 @@ test("keys on a to-do in the grid act on the to-do, not the selected event", asy
   expect(await page.getByRole("button", { name: "Edit" }).count()).toBe(0);
 });
 
+test("the morning piece of an overnight event dropped on the next day's row moves it one day", async () => {
+  const { org, page, origin } = await invited();
+  await madeEvent(org.id, page, origin, "Late deploy", [
+    "2026-11-24T22:00:00.000Z",
+    "2026-11-25T00:00:00.000Z",
+  ]);
+  await openWeek(page, origin, org.slug);
+  await page
+    .locator('[data-day="2026-11-25"]')
+    .getByRole("button", { name: /Late deploy/ })
+    .dragTo(page.locator('[data-all-day="2026-11-26"]'), {
+      sourcePosition: { x: 10, y: 4 },
+    });
+  await expect
+    .poll(() => spanOf(org.id, "Late deploy"))
+    .toEqual([["2026-11-25T22:00:00.000Z", "2026-11-26T00:00:00.000Z"]]);
+});
+
 test("Delete pressed in an open to-do leaves the selected event alone", async () => {
   const { org, member, page, origin } = await invited();
   await madeEvent(org.id, page, origin, "Focus time", [

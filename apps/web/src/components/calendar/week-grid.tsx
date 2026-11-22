@@ -360,7 +360,7 @@ function EventBlock(props: WeekGridProps & { day: Date; placed: Placed<CalendarE
         const box = e.currentTarget.getBoundingClientRect();
         startDrag(
           e,
-          { kind: "event", event },
+          { kind: "event", event, day: props.day },
           ((e.clientY - box.top) / HOUR_PX) * 60,
           leadOf(props.day, event.start, from),
         );
