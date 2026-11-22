@@ -436,6 +436,8 @@ test("realtime that comes late or out of order never misorders notes or hides a 
   const readHeld = Promise.withResolvers<void>();
   const heldNote: string[] = [];
   const noteHeld = Promise.withResolvers<void>();
+  const heldLate: string[] = [];
+  const lateHeld = Promise.withResolvers<void>();
   const deliver: Array<(frame: string) => void> = [];
   await context.routeWebSocket(/\/api\/realtime/, (ws) => {
     const server = ws.connectToServer();
@@ -446,6 +448,10 @@ test("realtime that comes late or out of order never misorders notes or hides a 
       const event = JSON.parse(text) as { type?: string; preview?: string; read?: boolean };
       if (event.type === "talk.message" && event.preview === "First") return void (swap = text);
       if (event.type === "talk.message" && event.preview === "Missed") return;
+      if (event.type === "talk.message" && event.preview === "Reacted first") {
+        heldLate.push(text);
+        return lateHeld.resolve();
+      }
       if (event.type === "talk.message" && event.preview === "Fourth" && !heldNote.length) {
         heldNote.push(text);
         return noteHeld.resolve();
@@ -538,4 +544,17 @@ test("realtime that comes late or out of order never misorders notes or hides a 
   await stack.getByRole("button", { name: /^Ana Lima/ }).click();
   await window.getByText("After", { exact: true }).waitFor();
   await window.getByText("Missed", { exact: true }).waitFor();
+
+  const { message } = await post(`/threads/${thread.id}/messages`, { body: "Reacted first" });
+  await lateHeld.promise;
+  const reacted = await fetch(
+    new URL(`/api/talk/messages/${message.id}/reactions/${encodeURIComponent("👍")}`, origin()),
+    { method: "PUT", headers: { cookie, origin: WEB_ORIGIN } },
+  );
+  expect(reacted.status).toBe(204);
+  const early = window.getByText("Reacted first", { exact: true }).locator("..");
+  await early.getByRole("button", { name: "👍 1" }).waitFor();
+  deliver.at(-1)!(heldLate[0]!);
+  await kofi.waitForTimeout(1_000);
+  await early.getByRole("button", { name: "👍 1" }).waitFor();
 });

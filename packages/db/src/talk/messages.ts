@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, lt, sql, type SQLWrapper } from "drizzle-orm";
+import { and, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import { talkMessages, talkReactions, talkThreads } from "../schema/talk.ts";
 import { NOT_FOUND, threadOf, type Ex, type TalkMember } from "./core.ts";
 
@@ -62,9 +62,9 @@ export const previewOf = (message: Pick<TalkMessage, "body" | "file">) => {
 };
 
 /**
- * The thread's notes, newest first, `before` a message id when paging back. The thread check, the
- * page and its reactions go out together (one round trip on a pipelining client); the page is
- * dropped unread when `me` is not one of the two.
+ * The thread's notes, newest first, `before` a message id when paging back. The thread check and
+ * the page go out together (one round trip on a pipelining client), then the reactions of exactly
+ * the notes shown; the page is dropped unread when `me` is not one of the two.
  */
 export async function listMessages(
   ex: Ex,
@@ -78,7 +78,7 @@ export async function listMessages(
     eq(talkMessages.orgId, me.orgId),
     page.before ? lt(talkMessages.id, page.before) : undefined,
   );
-  const [thread, rows, reactions] = await Promise.all([
+  const [thread, rows] = await Promise.all([
     threadOf(ex, me, threadId),
     ex
       .select()
@@ -86,18 +86,13 @@ export async function listMessages(
       .where(inPage)
       .orderBy(desc(talkMessages.id))
       .limit(limit + 1),
-    reactionsOf(
-      ex,
-      ex
-        .select({ id: talkMessages.id })
-        .from(talkMessages)
-        .where(inPage)
-        .orderBy(desc(talkMessages.id))
-        .limit(limit),
-    ),
   ]);
   if (!thread) return NOT_FOUND;
   const shown = rows.slice(0, limit);
+  const reactions = await reactionsOf(
+    ex,
+    shown.map((row) => row.id),
+  );
   return {
     status: "ok",
     thread: { id: thread.id, otherMemberId: thread.otherMemberId },
@@ -106,9 +101,9 @@ export async function listMessages(
   } as const;
 }
 
-async function reactionsOf(ex: Ex, messageIds: string[] | SQLWrapper) {
+async function reactionsOf(ex: Ex, messageIds: string[]) {
   const byMessage = new Map<string, TalkReaction[]>();
-  if (Array.isArray(messageIds) && messageIds.length === 0) return byMessage;
+  if (messageIds.length === 0) return byMessage;
   const rows = await ex
     .select({
       messageId: talkReactions.messageId,

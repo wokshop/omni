@@ -83,13 +83,18 @@ export function settlePending(
   });
 }
 
-/** A note's reactions as they now are, wherever it sits in the loaded pages. */
+/**
+ * A note's reactions as they now are, wherever it sits in the loaded pages; false when the thread
+ * is loaded without that note (its own event has not come yet), so the caller can fetch it.
+ */
 export function setReactions(
   client: QueryClient,
   threadId: string,
   messageId: string,
   reactions: TalkMessage["reactions"],
 ) {
+  const loaded = client.getQueryData<Pages>(keys.talkMessages(threadId));
+  if (loaded && !has(loaded, messageId)) return false;
   editPages(client, threadId, (data) => ({
     ...data,
     pages: data.pages.map((page) =>
@@ -101,6 +106,7 @@ export function setReactions(
         : page,
     ),
   }));
+  return true;
 }
 
 const reactionsSeen = new Map<string, string>();
@@ -213,9 +219,13 @@ export const lastNoteAt = (client: QueryClient, threadId: string) =>
  * Keeps only the thread's newest page once its window closes, so opening it again draws one page
  * of notes; older ones load again ahead of the scroll.
  */
-export const keepNewestPage = (client: QueryClient, threadId: string) =>
-  client.setQueryData<Pages>(keys.talkMessages(threadId), (data) =>
-    data && data.pages.length > 1
-      ? { pages: data.pages.slice(0, 1), pageParams: data.pageParams.slice(0, 1) }
-      : data,
+export function keepNewestPage(client: QueryClient, threadId: string) {
+  const queryKey = keys.talkMessages(threadId);
+  if ((client.getQueryData<Pages>(queryKey)?.pages.length ?? 0) < 2) return;
+  const stale = client.getQueryCache().find({ queryKey, exact: true })?.state.isInvalidated;
+  client.setQueryData<Pages>(
+    queryKey,
+    (data) => data && { pages: data.pages.slice(0, 1), pageParams: data.pageParams.slice(0, 1) },
   );
+  if (stale) void client.invalidateQueries({ queryKey, refetchType: "none" });
+}

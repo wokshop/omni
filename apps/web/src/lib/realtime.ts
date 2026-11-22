@@ -83,7 +83,8 @@ function talkChanged(client: QueryClient, event: Extract<TalkEvent, { type: "tal
   const { reactions } = event;
   if (reactions) {
     if (staleReactions(reactions.messageId, reactions.at)) return;
-    return setReactions(client, event.threadId, reactions.messageId, reactions.reactions);
+    if (setReactions(client, event.threadId, reactions.messageId, reactions.reactions)) return;
+    return void fetchNewest(client, event.threadId).catch(() => {});
   }
   void client.invalidateQueries({ queryKey: keys.talkPeople() });
   void client.invalidateQueries({ queryKey: keys.talkMessages(event.threadId) });

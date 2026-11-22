@@ -54,15 +54,13 @@ export const talkMessagesQuery = (threadId: string) =>
     staleTime: 5 * 60_000,
     // WARNING: sharing matches notes by index, so a note on top would copy every other one.
     structuralSharing: false,
-    queryFn: ({ pageParam, signal }) =>
+    // WARNING: no abort signal: a window remounting would cancel a refetch a reconnect asked for.
+    queryFn: ({ pageParam }) =>
       call(
-        api.talk.threads[":id"].messages.$get(
-          {
-            param: { id: threadId },
-            query: pageParam ? { before: pageParam, limit: OLDER_PAGE } : {},
-          },
-          { init: { signal } },
-        ),
+        api.talk.threads[":id"].messages.$get({
+          param: { id: threadId },
+          query: pageParam ? { before: pageParam, limit: OLDER_PAGE } : {},
+        }),
       ),
     getNextPageParam: (page: TalkMessagesResponse) =>
       page.more ? page.messages.at(-1)?.id : undefined,
