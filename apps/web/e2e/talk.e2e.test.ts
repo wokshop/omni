@@ -446,8 +446,31 @@ test("realtime that comes late or out of order never misorders notes or hides a 
   const mine = holding("Mine, earlier");
   const holds = [fourth, late, sixthNote, mine];
   const deliver: Array<(frame: string) => void> = [];
+  const watched = {
+    messageId: "",
+    frames: [] as string[],
+    added: Promise.withResolvers<void>(),
+    removed: Promise.withResolvers<void>(),
+  };
+  const watchedReaction = (
+    event: { reactions?: { messageId: string; reactions: unknown[] } },
+    text: string,
+  ) => {
+    if (!watched.messageId || event.reactions?.messageId !== watched.messageId) return null;
+    if (event.reactions.reactions.length === 0) return (watched.removed.resolve(), "dropped");
+    watched.frames.push(text);
+    watched.added.resolve();
+    return "held";
+  };
   const routed = (text: string) => {
-    const event = JSON.parse(text) as { type?: string; preview?: string; read?: boolean };
+    const event = JSON.parse(text) as {
+      type?: string;
+      preview?: string;
+      read?: boolean;
+      reactions?: { messageId: string; reactions: unknown[] };
+    };
+    const reaction = event.type === "talk.changed" ? watchedReaction(event, text) : null;
+    if (reaction) return reaction;
     if (event.type === "talk.changed" && event.read) {
       readSeen.at(-1)?.resolve();
       if (!holdReads) return "send";
@@ -658,4 +681,32 @@ test("realtime that comes late or out of order never misorders notes or hides a 
   deliver.at(-1)!(heldReads[0]!);
   await kofi.waitForTimeout(1_000);
   await stack.getByRole("button", { name: "Ana Lima, 1 unread" }).waitFor();
+
+  await stack.getByRole("button", { name: /^Ana Lima/ }).click();
+  const eighth = (await post(`/threads/${thread.id}/messages`, { body: "Eighth" })).message;
+  const fire = window.getByText("Eighth", { exact: true }).locator("..");
+  await fire.waitFor();
+  watched.messageId = eighth.id;
+  const fireOn = (method: string) =>
+    fetch(
+      new URL(`/api/talk/messages/${eighth.id}/reactions/${encodeURIComponent("🔥")}`, origin()),
+      { method, headers: { cookie, origin: WEB_ORIGIN } },
+    );
+  expect((await fireOn("PUT")).status).toBe(204);
+  await watched.added.promise;
+  expect((await fireOn("DELETE")).status).toBe(204);
+  await watched.removed.promise;
+  await kofi.setViewportSize({ width: 600, height: wide.height });
+  await stack.waitFor({ state: "detached" });
+  const refetched = kofi.waitForResponse(
+    (r) => r.request().method() === "GET" && r.url().includes(`/threads/${thread.id}/messages`),
+  );
+  await kofi.setViewportSize(wide);
+  await stack.waitFor();
+  if (!(await window.isVisible())) await stack.getByRole("button", { name: /^Ana Lima/ }).click();
+  await refetched;
+  await fire.waitFor();
+  deliver.at(-1)!(watched.frames[0]!);
+  await kofi.waitForTimeout(1_000);
+  expect(await fire.getByRole("button", { name: /^🔥/ }).count()).toBe(0);
 });

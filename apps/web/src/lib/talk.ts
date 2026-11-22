@@ -150,10 +150,11 @@ async function markRead(threadId: string) {
   await call(api.talk.threads[":id"].read.$put({ param: { id: threadId } }));
 }
 
-async function react(messageId: string, emoji: string, on: boolean) {
+async function react(reacting: Reacting) {
   const route = api.talk.messages[":id"].reactions[":emoji"];
-  const args = { param: { id: messageId, emoji } };
-  await call(on ? route.$put(args) : route.$delete(args));
+  const args = { param: { id: reacting.messageId, emoji: reacting.emoji } };
+  const where = inWorkspace(reacting.workspaceId);
+  await call(reacting.on ? route.$put(args, where) : route.$delete(args, where));
 }
 
 /** Where a note's file opens: Storage's own doors decide, after Talk checks the note is yours. */
@@ -195,6 +196,7 @@ export const sendNoteMutation = (
         body: note.body,
         file: null,
         reactions: [],
+        reactionsVersion: 0,
         createdAt: new Date().toISOString(),
       });
     },
@@ -216,32 +218,37 @@ export const sendFilesMutation = (
     },
   });
 
+/** A reaction and the workspace it was made in, fixed when it was clicked rather than when it goes. */
 export interface Reacting {
   messageId: string;
   emoji: string;
   on: boolean;
   meId: string;
+  workspaceId: string | undefined;
 }
 
+export const reacting = (change: Omit<Reacting, "workspaceId">) =>
+  ({ ...change, workspaceId: currentWorkspaceId() }) satisfies Reacting;
+
 /**
- * `mutate({ messageId, emoji, on, meId })`: your reaction shows at once, then goes, after the
- * ones before it in the thread, so a quick on-then-off ends off.
+ * `mutate(reacting({ messageId, emoji, on, meId }))`: your reaction shows at once, then goes, after
+ * the ones before it in the thread, so a quick on-then-off ends off, to the workspace it was made in.
  */
 export const reactMutation = (client: QueryClient, threadId: string) =>
   mutationOptions({
-    mutationFn: ({ messageId, emoji, on }: Reacting) => react(messageId, emoji, on),
+    mutationFn: react,
     scope: { id: `talk-react:${threadId}` },
     onMutate: ({ messageId, emoji, on, meId }) => {
+      const queryKey = keys.talkMessages(threadId);
       const message = messageOf(client, threadId, messageId);
-      if (!message) return;
-      setReactions(
-        client,
-        threadId,
-        messageId,
-        toggledReactions(message.reactions, meId, emoji, on),
-      );
+      if (message) {
+        const next = toggledReactions(message.reactions, meId, emoji, on);
+        setReactions(client, threadId, messageId, next);
+      }
+      return { queryKey };
     },
-    onError: () => client.invalidateQueries({ queryKey: keys.talkMessages(threadId) }),
+    onError: (_error, _reacting, context) =>
+      context && client.invalidateQueries({ queryKey: context.queryKey }),
   });
 
 /** Reads the thread up to now. */

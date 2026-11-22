@@ -28,6 +28,8 @@ export interface TalkMessage {
   body: string | null;
   file: TalkFile | null;
   reactions: TalkReaction[];
+  /** Goes up with every change to the reactions; a client keeps the highest it has seen. */
+  reactionsVersion: number;
   createdAt: Date;
 }
 
@@ -51,6 +53,7 @@ const toMessage = (row: MessageRow, reactions: TalkReaction[] = []) =>
     body: row.body,
     file: fileOf(row),
     reactions,
+    reactionsVersion: row.reactionsVersion,
     createdAt: row.createdAt,
   }) satisfies TalkMessage;
 
@@ -204,8 +207,8 @@ export type ReactResult =
       thread: { id: string; otherMemberId: string };
       /** The note's reactions as they now are. */
       reactions: TalkReaction[];
-      /** When they were read, ISO to the microsecond: a later snapshot sorts after. */
-      reactionsAt: string;
+      /** The note's reaction version after this change: a later change has a higher one. */
+      reactionsVersion: number;
     }
   | typeof NOT_FOUND
   | { status: "invalid_emoji" }
@@ -242,20 +245,19 @@ export async function react(ex: Ex, me: TalkMember, messageId: string, emoji: st
       .values({ orgId: me.orgId, messageId, memberId: me.id, emoji })
       .onConflictDoNothing();
   }
-  const [now, [read]] = await Promise.all([
-    reactionsOf(ex, [messageId]),
+  const [[bumped], now] = await Promise.all([
     ex
-      .select({
-        at: sql<string>`to_char(clock_timestamp() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
-      })
-      .from(talkMessages)
-      .where(eq(talkMessages.id, messageId)),
+      .update(talkMessages)
+      .set({ reactionsVersion: sql`${talkMessages.reactionsVersion} + 1` })
+      .where(eq(talkMessages.id, messageId))
+      .returning({ version: talkMessages.reactionsVersion }),
+    reactionsOf(ex, [messageId]),
   ]);
   return {
     status: "ok",
     thread: { id: thread.id, otherMemberId: thread.otherMemberId },
     reactions: now.get(messageId) ?? [],
-    reactionsAt: read!.at,
+    reactionsVersion: bumped!.version,
   } satisfies ReactResult;
 }
 

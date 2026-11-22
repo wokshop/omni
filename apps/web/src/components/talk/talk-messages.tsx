@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Link } from "@/components/ui/link";
 import { useReact } from "@/hooks/use-talk.ts";
 import { fileType } from "@/lib/file-kind.ts";
-import { fileUrl, isImage, type TalkMessage } from "@/lib/talk.ts";
+import { fileUrl, isImage, reacting, type TalkMessage } from "@/lib/talk.ts";
 import { isPending } from "@/lib/talk-cache.ts";
 
 const GAP_MS = 60 * 60_000;
@@ -193,7 +193,7 @@ export function TalkMessages(props: { messages: TalkMessage[]; meId: string; thr
   const { mutate } = useReact(props.threadId);
   const { meId } = props;
   const react = useCallback<SetReaction>(
-    (messageId, emoji, on) => mutate({ messageId, emoji, on, meId }),
+    (messageId, emoji, on) => mutate(reacting({ messageId, emoji, on, meId })),
     [mutate, meId],
   );
   const ordered = props.messages.toReversed();

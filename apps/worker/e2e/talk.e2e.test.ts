@@ -302,7 +302,7 @@ test("reactions reach both and come back on the note", async () => {
   expect(changed.reactions).toEqual({
     messageId: note.body.message.id,
     reactions: [{ emoji: "🎉", memberIds: [ben.id] }],
-    at: expect.stringMatching(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{6}Z$/),
+    version: 1,
   });
   const page = await api(ana.cookie, "GET", `/threads/${threadId}/messages`);
   expect(page.body.messages[0].reactions).toEqual([{ emoji: "🎉", memberIds: [ben.id] }]);

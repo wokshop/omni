@@ -390,8 +390,12 @@ const parseTalkChanged = (threadId: string, event: Record<string, unknown>) => {
   if (read === true) changed.read = true;
   if (read === true && isText(readAt)) changed.readAt = readAt;
   if (isObject(reactions) && isId(reactions.messageId) && isTalkReactions(reactions.reactions)) {
-    const at = isText(reactions.at) ? { at: reactions.at } : {};
-    changed.reactions = { messageId: reactions.messageId, reactions: reactions.reactions, ...at };
+    const version = typeof reactions.version === "number" ? { version: reactions.version } : {};
+    changed.reactions = {
+      messageId: reactions.messageId,
+      reactions: reactions.reactions,
+      ...version,
+    };
   }
   return changed;
 };

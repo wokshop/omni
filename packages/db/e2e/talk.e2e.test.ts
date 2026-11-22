@@ -204,7 +204,7 @@ test("one person's reactions on a note stop at eight, even sent all at once", as
   expect(shown!.reactions).toHaveLength(8);
 });
 
-test("when both react to a note at once, the later snapshot of its reactions has both", async () => {
+test("when both react to a note at once, the higher version of its reactions has both", async () => {
   const { ana, ben } = await team("talk-react-race");
   const thread = ok(await forMember(db, ana.id).talk.openThread(ben.id)).thread;
   for (let i = 0; i < 10; i++) {
@@ -213,7 +213,7 @@ test("when both react to a note at once, the later snapshot of its reactions has
       forMember(db, ana.id).talk.react(note.id, "👍", true),
       forMember(db, ben.id).talk.react(note.id, "🎉", true),
     ]);
-    const [latest] = done.map(ok).toSorted((a, b) => b.reactionsAt.localeCompare(a.reactionsAt));
+    const [latest] = done.map(ok).toSorted((a, b) => b.reactionsVersion - a.reactionsVersion);
     expect(latest!.reactions.map((r) => r.emoji).toSorted()).toEqual(["🎉", "👍"]);
   }
 });

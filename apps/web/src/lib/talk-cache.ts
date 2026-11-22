@@ -83,48 +83,35 @@ export function settlePending(
   });
 }
 
-let reactionsClock = 0;
-const reactionsVersion = new Map<string, number>();
+const versionOf = (message: TalkMessage) => message.reactionsVersion ?? 0;
 
 /**
- * A note's reactions as they now are, wherever it sits in the loaded pages; false when the thread
- * is loaded without that note (its own event has not come yet), so the caller can fetch it.
+ * A note's reactions as they now are, wherever it sits in the loaded pages; a `version` lower than
+ * the one the note already has is stale and left out. False when the thread is loaded without that
+ * note (its own event has not come yet), so the caller can fetch it.
  */
 export function setReactions(
   client: QueryClient,
   threadId: string,
   messageId: string,
   reactions: TalkMessage["reactions"],
+  version?: number,
 ) {
   const loaded = client.getQueryData<Pages>(keys.talkMessages(threadId));
   if (loaded && !has(loaded, messageId)) return false;
+  const apply = (m: TalkMessage) =>
+    m.id !== messageId || (version !== undefined && versionOf(m) >= version)
+      ? m
+      : { ...m, reactions, reactionsVersion: version ?? m.reactionsVersion };
   editPages(client, threadId, (data) => ({
     ...data,
     pages: data.pages.map((page) =>
       page.messages.some((m) => m.id === messageId)
-        ? {
-            ...page,
-            messages: page.messages.map((m) => (m.id === messageId ? { ...m, reactions } : m)),
-          }
+        ? { ...page, messages: page.messages.map(apply) }
         : page,
     ),
   }));
-  reactionsVersion.set(messageId, ++reactionsClock);
   return true;
-}
-
-const reactionsSeen = new Map<string, string>();
-
-/**
- * Whether a note's reactions snapshot is older than one already applied: two people reacting at
- * once can have their events arrive out of order. A snapshot without a time is always applied.
- */
-export function staleReactions(messageId: string, at: string | undefined) {
-  if (!at) return false;
-  const seen = reactionsSeen.get(messageId);
-  if (seen && seen > at) return true;
-  reactionsSeen.set(messageId, at);
-  return false;
 }
 
 /** `memberId`'s `emoji` on a note, on or off, as the server will have it. */
@@ -159,17 +146,16 @@ export const messageOf = (client: QueryClient, threadId: string, messageId: stri
  */
 export async function fetchNewest(client: QueryClient, threadId: string) {
   if (!client.getQueryData(keys.talkMessages(threadId))) return;
-  const started = ++reactionsClock;
   const page = await call(
     api.talk.threads[":id"].messages.$get({ param: { id: threadId }, query: {} }),
   );
   const fresh = new Map(page.messages.map((m) => [m.id, m]));
-  const newer = (id: string) => (reactionsVersion.get(id) ?? 0) > started;
-  for (const id of fresh.keys()) if (!newer(id)) reactionsVersion.set(id, started);
   const merged = (m: TalkMessage) => {
     const got = fresh.get(m.id);
     if (!got) return m;
-    return newer(m.id) ? { ...got, reactions: m.reactions } : got;
+    return versionOf(m) > versionOf(got)
+      ? { ...got, reactions: m.reactions, reactionsVersion: m.reactionsVersion }
+      : got;
   };
   editPages(client, threadId, (data) => {
     const known = new Set(data.pages.flatMap((p) => p.messages.map((m) => m.id)));

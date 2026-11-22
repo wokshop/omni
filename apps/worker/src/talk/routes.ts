@@ -85,7 +85,7 @@ async function reaction(c: Context<AppEnv>, on: boolean) {
       reactions: {
         messageId: c.req.param("id") ?? "",
         reactions: done.reactions,
-        at: done.reactionsAt,
+        version: done.reactionsVersion,
       },
     }),
   );

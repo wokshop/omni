@@ -24,14 +24,7 @@ import { crmChangedElsewhere } from "./crm-cache.ts";
 import { conversationFilterOf, filterOf, keys } from "./query-keys.ts";
 import { storageDrivesChanged, type StorageDriveChange } from "./storage-cache.ts";
 import { setOnline } from "./talk.ts";
-import {
-  addMessage,
-  fetchNewest,
-  noteWentBy,
-  setReactions,
-  staleReactions,
-  threadRead,
-} from "./talk-cache.ts";
+import { addMessage, fetchNewest, noteWentBy, setReactions, threadRead } from "./talk-cache.ts";
 import { talkWindow } from "./talk-window.ts";
 import { inBackground } from "./desktop-notifications.ts";
 
@@ -82,8 +75,8 @@ function talkChanged(client: QueryClient, event: Extract<TalkEvent, { type: "tal
   if (event.read) return threadRead(client, event.threadId, event.readAt);
   const { reactions } = event;
   if (reactions) {
-    if (staleReactions(reactions.messageId, reactions.at)) return;
-    if (setReactions(client, event.threadId, reactions.messageId, reactions.reactions)) return;
+    const { messageId, version } = reactions;
+    if (setReactions(client, event.threadId, messageId, reactions.reactions, version)) return;
     return void fetchNewest(client, event.threadId).catch(() => {});
   }
   void client.invalidateQueries({ queryKey: keys.talkPeople() });
@@ -238,7 +231,7 @@ export function startRealtime(client: QueryClient, activeOrgId: string) {
   const onTalk = (event: TalkEvent) => {
     if (event.type === "talk.online") return setOnline(client, event.memberId, event.online);
     if (event.type === "talk.changed") return talkChanged(client, event);
-    if (event.message) addMessage(client, event.message);
+    if (event.message) addMessage(client, { reactionsVersion: 0, ...event.message });
     else void fetchNewest(client, event.threadId).catch(() => {});
     const looking = talkWindow.get() === event.fromMemberId && !inBackground();
     noteWentBy(client, { ...event, createdAt: event.message?.createdAt }, looking);

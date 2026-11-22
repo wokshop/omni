@@ -71,7 +71,7 @@ All tables carry `org_id`, cascade with the workspace, and are named `talk_*`.
 - `talk_messages`: `id` (uuidv7, so ids sort by time), `org_id`, `thread_id`, `author_member_id`,
   `body` (text, at most 4,000 characters) and/or a file: `file_node_id` (Storage node, set null
   when the node is deleted for good), `file_name`, `file_size`, `file_mime`. At least one of body
-  and file. `created_at`.
+  and file. `reactions_version` (goes up with each change to its reactions). `created_at`.
 - `talk_reactions`: (`message_id`, `member_id`, `emoji`), `org_id`, `created_at`. An emoji is
   one grapheme of at most 16 bytes; a person has at most 8 different ones on a note.
 - `talk_reads`: (`thread_id`, `member_id`), `org_id`, `read_at`. Unread is the other person's
@@ -156,8 +156,9 @@ know. Then:
   with no `team` socket open gets an Expo push when push is on. The Worker sends it after
   answering the sender, so a send never waits on the realtime object.
 - `talk.changed` `{ threadId, reactions?, read? }`: a reaction changed, to both members, with
-  `reactions: { messageId, reactions, at }` as the note now has them, read at `at` (reactions
-  to one note are serialized, so a client skips a snapshot older than one it applied); a read, to the reader's own
+  `reactions: { messageId, reactions, version }` as the note now has them. A note's
+  `reactionsVersion` (also on every note a page returns) goes up with each change to its reactions,
+  under one lock per note, so a client keeps the highest and skips an older snapshot; a read, to the reader's own
   devices only, with `read: true` and `readAt`, how far it read.
 
 A client applies what an event carries to the thread it has loaded: a note goes on top (once,
