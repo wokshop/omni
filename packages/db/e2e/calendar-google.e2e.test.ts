@@ -176,6 +176,15 @@ describe("a Gmail inbox's Google Calendar", () => {
     expect(await shown(rodrigo.id)).toContain("2026-11-30T09:00:00.000Z Weekly sync");
   });
 
+  test("a meeting deleted in Google stays deleted when its invitation for the same version lands later", async () => {
+    const { box, rodrigo, calendar } = await gmailInbox("google-delete-then-mail");
+    const early = { ...itemOf(KICKOFF), sequence: 0, updated: "2026-11-19T00:00:00.000Z" };
+    await applyGoogleChanges(db, calendar, changes([early]));
+    await applyGoogleChanges(db, calendar, changes([{ id: KICKOFF, status: "cancelled" }]));
+    expect(await deliverInvite(box)).toMatchObject({ status: "stale" });
+    expect(await shown(rodrigo.id)).toEqual([]);
+  });
+
   test("a meeting Google listed first and mail then brought survives a full pass that no longer sees it", async () => {
     const { box, rodrigo, calendar } = await gmailInbox("google-then-mail");
     await applyGoogleChanges(db, calendar, changes([itemOf(KICKOFF)]));

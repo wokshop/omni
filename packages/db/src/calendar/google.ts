@@ -242,6 +242,9 @@ const sameVersion = (event: CalendarEvent, current: Stored) =>
   current.dtstamp !== null &&
   event.dtstamp.getTime() === current.dtstamp.getTime();
 
+const cancellationStamp = (now: Date) =>
+  sql`greatest(coalesce(${calendarEvents.dtstamp}, ${now.toISOString()}::timestamptz), ${now.toISOString()}::timestamptz)`;
+
 const notOmni = ne(calendarEvents.source, "omni");
 
 async function applyCancel(
@@ -250,7 +253,11 @@ async function applyCancel(
   change: Extract<GoogleCalendarChange, { kind: "cancelled" }>,
   now: Date,
 ) {
-  const cancelled = { status: "cancelled" as const, updatedAt: now };
+  const cancelled = {
+    status: "cancelled" as const,
+    dtstamp: cancellationStamp(now),
+    updatedAt: now,
+  };
   const [known] = await tx
     .select({
       id: calendarEvents.id,
@@ -275,7 +282,10 @@ async function applyCancel(
       .where(and(rows, ne(calendarEvents.status, "cancelled")))
       .returning({ id: calendarEvents.id });
     if (changed.length === 0) {
-      await tx.update(calendarEvents).set({ updatedAt: now }).where(rows);
+      await tx
+        .update(calendarEvents)
+        .set({ dtstamp: cancellationStamp(now), updatedAt: now })
+        .where(rows);
     }
     return changed.length > 0;
   }
@@ -324,7 +334,7 @@ async function cancelInstance(
       uid: series.uid,
       recurrenceId: start,
       sequence: series.sequence,
-      dtstamp: series.dtstamp,
+      dtstamp: now,
       source: "google",
       status: "cancelled",
       busy: series.busy,
@@ -343,7 +353,7 @@ async function cancelInstance(
     })
     .onConflictDoUpdate({
       target: [calendarEvents.calendarId, calendarEvents.uid, calendarEvents.recurrenceId],
-      set: { status: "cancelled", googleId, updatedAt: now },
+      set: { status: "cancelled", googleId, dtstamp: cancellationStamp(now), updatedAt: now },
       setWhere: notOmni,
     })
     .returning({ id: calendarEvents.id });

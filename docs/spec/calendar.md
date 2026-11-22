@@ -138,7 +138,9 @@ verified for it). The inbox's calendar then shows the account's primary Google C
   `source = 'google'` and is read only in Omni, like an invitation; its row keeps Google's id
   (`google_id`), because a deleted event comes back from Google as its id alone.
 - **Deleting.** A cancelled item cancels the row with its Google id (a series with all its
-  instances); a cancelled instance Omni has no row for becomes a cancelled instance row, so
+  instances) and stamps its `dtstamp` with when that was applied, so an invitation of the same
+  `SEQUENCE` that mail delivers later is older and cannot bring it back (a higher one can, as in
+  Gmail); a cancelled instance Omni has no row for becomes a cancelled instance row, so
   expanding the series skips it. Google lists events in no set order, so a cancelled instance can
   come before its series: it waits (`calendar_google_sync.waiting`) and is applied once the series
   is in, and what still waits when the pass ends had no series. A full pass that finishes deletes
