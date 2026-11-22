@@ -79,6 +79,20 @@ export function timedTodo(task: CrmTask) {
 export const atMinutes = (day: Date, minutes: number) =>
   new Date(day.getFullYear(), day.getMonth(), day.getDate(), 0, minutes);
 
-/** The instant a drop on the hours puts the item's start at: the slot, less the elapsed lead. */
-export const dropStart = (drop: Drop & { minutes: number }) =>
-  new Date(atMinutes(drop.day, drop.minutes).getTime() - (drop.lead ?? 0) * 60_000);
+const HOUR_MS = 3_600_000;
+
+function slotOf(day: Date, minutes: number, was: Date) {
+  const first = atMinutes(day, minutes);
+  const second = new Date(first.getTime() + HOUR_MS);
+  const repeated =
+    second.getHours() === first.getHours() && second.getMinutes() === first.getMinutes();
+  return repeated && second.getTimezoneOffset() === was.getTimezoneOffset() ? second : first;
+}
+
+/**
+ * The instant a drop on the hours puts the item's start at, `was` being its start before: the
+ * slot, less the elapsed lead. A wall-clock time the clocks pass twice (the hour they go back) is
+ * read at the UTC offset the item had, so a drop back in place on the second pass stays there.
+ */
+export const dropStart = (drop: Drop & { minutes: number }, was: Date) =>
+  new Date(slotOf(drop.day, drop.minutes, was).getTime() - (drop.lead ?? 0) * 60_000);

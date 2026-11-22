@@ -23,7 +23,7 @@ function shiftOf(event: CalendarEvent, drop: Drop, shownOn?: Date) {
           new Date(start.getFullYear(), start.getMonth(), start.getDate() + days),
           start.getHours() * 60 + start.getMinutes(),
         )
-      : dropStart({ ...drop, minutes: drop.minutes });
+      : dropStart({ ...drop, minutes: drop.minutes }, start);
   return Math.round((target.getTime() - start.getTime()) / 60_000);
 }
 
@@ -48,7 +48,10 @@ export function useCalendarDrop(move: (event: CalendarEvent, minutes: number) =>
       const dueAt =
         drop.minutes === undefined
           ? dueAtOf(dayKey(drop.day))
-          : dropStart({ ...drop, minutes: drop.minutes }).toISOString();
+          : dropStart(
+              { ...drop, minutes: drop.minutes },
+              new Date(item.task.dueAt ?? Date.now()),
+            ).toISOString();
       if (dueAt !== item.task.dueAt) save(item.task.id, dueAt);
       return;
     }

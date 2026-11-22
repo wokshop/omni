@@ -826,11 +826,8 @@ test("an all-day event moved twice before the first save lands where it was drop
 });
 
 async function gesture(page: Page, dx: number, dy: number) {
-  for (let i = 0; i < 12; i++) {
-    await page.mouse.wheel(dx, dy);
-    await page.waitForTimeout(16);
-  }
-  await page.waitForTimeout(500);
+  for (let i = 0; i < 12; i++) await page.mouse.wheel(dx, dy);
+  await page.waitForTimeout(700);
 }
 
 const shownDate = (page: Page) => new URL(page.url()).searchParams.get("date");
@@ -860,6 +857,11 @@ test("one scroll steps the month, one sideways swipe steps the week, and each ge
   await gesture(page, 0, 30);
   await month.getByRole("heading", { name: "January 2027" }).waitFor();
   expect(shownDate(page)).toBe("2026-12-01");
+
+  await page.keyboard.down("Control");
+  await gesture(page, 0, 30);
+  await page.keyboard.up("Control");
+  expect(await month.getByRole("heading", { name: "January 2027" }).count()).toBe(1);
 });
 
 test("a to-do dragged twice before its first save lands where it was dropped last", async () => {
@@ -890,6 +892,24 @@ test("a to-do dragged twice before its first save lands where it was dropped las
   });
   await page.waitForTimeout(2500);
   await expect.poll(() => dueOf(org.id, "Water the plants")).toBe("2026-11-26T14:00:00.000Z");
+});
+
+test("an event dropped on the second pass of the hour the clocks go back stays on that pass", async () => {
+  const { org, page, origin } = await invited();
+  await madeEvent(org.id, page, origin, "Night audit", [
+    "2026-10-25T03:30:00.000Z",
+    "2026-10-25T04:00:00.000Z",
+  ]);
+  await page.goto(new URL(`/${org.slug}/calendar?date=2026-10-25&view=day`, origin).toString());
+  await page
+    .getByRole("button", { name: /Night audit/ })
+    .dragTo(page.locator('[data-day="2026-10-25"]'), {
+      sourcePosition: { x: 10, y: 4 },
+      targetPosition: { x: 20, y: 2.5 * 48 + 4 },
+    });
+  await expect
+    .poll(() => spanOf(org.id, "Night audit"))
+    .toEqual([["2026-10-25T01:30:00.000Z", "2026-10-25T02:00:00.000Z"]]);
 });
 
 test("Delete pressed in an open to-do leaves the selected event alone", async () => {
