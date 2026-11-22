@@ -30,6 +30,7 @@ import { useMeeting, useMeetingWrites } from "@/hooks/use-meetings.ts";
 import { ApiError } from "@/lib/api.ts";
 import { groupKind, meetingClock, meetingGroupPath, type Meeting } from "@/lib/meetings.ts";
 import { Link } from "@/components/ui/link";
+import { useWorkspacePaths } from "@/hooks/use-workspaces.ts";
 import { ActionItem } from "./meeting-actions.tsx";
 import { MeetingAudio, PlayerRow, usePlayer } from "./meeting-player.tsx";
 import { ShareMeetingDialog } from "./meeting-share.tsx";
@@ -105,6 +106,7 @@ export function MeetingPage({ id }: { id: string }) {
 }
 
 function GroupCrumb({ meeting }: { meeting: Meeting }) {
+  const { href } = useWorkspacePaths();
   const key = meeting.meeting.groupKey;
   const label =
     groupKind(key) === "domain"
@@ -112,7 +114,7 @@ function GroupCrumb({ meeting }: { meeting: Meeting }) {
       : (meeting.meeting.title ?? "Meetings");
   return (
     <Link
-      href={meetingGroupPath(key)}
+      href={href(meetingGroupPath(key))}
       className="truncate text-md text-muted-foreground hover:text-foreground"
     >
       {label}
