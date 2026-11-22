@@ -84,11 +84,11 @@ async function prune() {
   try {
     const store = await open();
     if (!store) return;
-    const firsts = (await store.keys()).filter((key) => key.url.endsWith("&p=0"));
-    for (const key of firsts.slice(0, Math.max(0, firsts.length - KEEP))) {
-      const prefix = key.url.slice(0, -1);
-      for (let page = 0; page < 3; page += 1) await store.delete(`${prefix}${page}`);
-    }
+    const keys = await store.keys();
+    const tileOf = (key: Request) => key.url.replace(/&p=\d+$/, "");
+    const firsts = keys.filter((key) => key.url.endsWith("&p=0"));
+    const kept = new Set(firsts.slice(-KEEP).map(tileOf));
+    for (const key of keys) if (!kept.has(tileOf(key))) await store.delete(key);
   } catch {}
 }
 
