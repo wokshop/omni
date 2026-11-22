@@ -254,3 +254,38 @@ async function freePort() {
   await new Promise((resolve) => server.close(resolve));
   return port;
 }
+
+test("in a Personal space, Add a shared mailbox asks for a shared inbox, not the owner's own", async () => {
+  const email = `shares-${Date.now()}@gmail.test`;
+  const page = await signedIn(email, "/settings/shared");
+  const [user] = await db
+    .select({ id: schema.users.id })
+    .from(schema.users)
+    .where(eq(schema.users.email, email));
+  const [space] = await db
+    .select({ orgId: schema.personalSpaces.orgId })
+    .from(schema.personalSpaces)
+    .where(eq(schema.personalSpaces.userId, user!.id));
+  const now = new Date();
+  await db.insert(schema.mailDomains).values({
+    orgId: space!.orgId,
+    domain: `shares-${Date.now()}.test`,
+    provider: "purelymail",
+    verifiedAt: now,
+    addedAt: now,
+  });
+  await page.reload();
+
+  await page.getByRole("button", { name: "Add a shared mailbox" }).first().click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("textbox", { name: "Address" }).fill("hello");
+  const sent = page.waitForRequest(
+    (request) =>
+      request.method() === "POST" &&
+      /\/api\/(workspace\/shared-inboxes|onboarding\/mailboxes)$/.test(
+        new URL(request.url()).pathname,
+      ),
+  );
+  await dialog.getByRole("button", { name: "Add" }).click();
+  expect(new URL((await sent).url()).pathname).toBe("/api/workspace/shared-inboxes");
+});
