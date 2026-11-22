@@ -34,6 +34,7 @@ const UNAVAILABLE_MAX_MS = 15_000;
 const SETTLE_MS = 5000;
 const ORPHAN_MS = 6000;
 const ORPHAN_JITTER_MS = 4000;
+const ORPHAN_RETRY_MAX_MS = 120_000;
 const MAX_SNAP_CHARS = 850_000;
 
 const toBase64 = (bytes: Uint8Array) => {
@@ -121,6 +122,7 @@ export class LiveDoc {
   private startAt = -1;
   private snapping = false;
   private orphanTimer: ReturnType<typeof setTimeout> | undefined;
+  private orphanTries = 0;
   private folds = new Set<number>();
   private pending = new Map<number, { record: StorageLiveRecord; matchSeqNum?: number }>();
   private answers = new Map<number, (event: StorageDocEvent) => void>();
@@ -147,6 +149,7 @@ export class LiveDoc {
         for (const [ref, item] of this.pending) this.transmit(ref, item);
         if (this.started) void this.catchUp();
         if (this.started) this.announce();
+        if (this.started) this.watchOrphans();
       }),
     );
   }
@@ -369,16 +372,19 @@ export class LiveDoc {
     });
   }
 
-  private watchOrphans() {
+  private watchOrphans(retry = false) {
     clearTimeout(this.orphanTimer);
     if (this.closed || !this.options.onOrphaned) return;
+    this.orphanTries = retry ? this.orphanTries + 1 : 0;
+    const wait = Math.min(ORPHAN_MS * 2 ** this.orphanTries, ORPHAN_RETRY_MAX_MS);
     this.orphanTimer = setTimeout(
       () => {
-        if (this.closed) return;
-        const unsaved = this.last.seqNum > this.lastFold && this.pending.size === 0;
-        if (unsaved && !this.last.mine) this.options.onOrphaned?.();
+        const orphaned = this.last.seqNum > this.lastFold && !this.last.mine;
+        if (this.closed || !orphaned) return;
+        if (this.pending.size === 0) this.options.onOrphaned?.();
+        this.watchOrphans(true);
       },
-      ORPHAN_MS + Math.random() * ORPHAN_JITTER_MS,
+      wait + Math.random() * ORPHAN_JITTER_MS,
     );
   }
 
