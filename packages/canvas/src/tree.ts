@@ -64,13 +64,15 @@ function dissolveThinGroups(byId: Map<string, Keyed>) {
 }
 
 function unbindMissing(end: ConnectorEnd | undefined, byId: Map<string, Keyed>) {
-  if (end?.id !== undefined && !byId.has(end.id)) delete end.id;
+  if (end?.id === undefined) return;
+  const bound = byId.get(end.id)?.element;
+  if (!bound || bound.kind === "connector") delete end.id;
 }
 
 /**
  * The elements as a valid scene, in paint order (each parent before its children, siblings by
  * key): an element whose parent is gone sits at the top, parent cycles are broken, groups of
- * fewer than two dissolve, and a connector end whose element is gone stays where it was drawn.
+ * fewer than two dissolve, and a connector end whose element is gone, or is a connector, stays where it was drawn.
  * Pure: `elements` are copied, not changed.
  */
 export function paintOrder(elements: Keyed[]) {

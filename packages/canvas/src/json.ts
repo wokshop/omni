@@ -40,13 +40,18 @@ export function sceneToJson(scene: Scene) {
 
 export type SceneResult = { ok: true; scene: Scene } | { ok: false; error: string };
 
-/** What is wrong with a scene beyond its schema (an id used twice), or null. */
+/** What is wrong with a scene beyond its schema (an id used twice, a connector joined to a connector), or null. */
 export function sceneProblem(scene: Scene) {
-  const ids = new Set<string>();
+  const kinds = new Map<string, CanvasElement["kind"]>();
   for (const element of scene.elements) {
-    if (ids.has(element.id)) return `Two elements share the id "${element.id}".`;
-    ids.add(element.id);
+    if (kinds.has(element.id)) return `Two elements share the id "${element.id}".`;
+    kinds.set(element.id, element.kind);
   }
+  const joined = scene.elements.find((element) =>
+    [element.from?.id, element.to?.id].some((id) => id && kinds.get(id) === "connector"),
+  );
+  if (joined)
+    return `The connector "${joined.id}" is joined to a connector: join elements instead.`;
   return null;
 }
 
