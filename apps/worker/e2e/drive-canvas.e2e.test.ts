@@ -379,3 +379,23 @@ test("deleting a group's child redraws connectors bound to the group", async () 
   const line = (await body(ana, made.canvas.id)).scene.elements.find((e) => e.kind === "connector");
   expect(line).toMatchObject({ from: { id: made.created.row, at: [500, 100] } });
 });
+
+test("arranging a connector that still joins elements is refused and changes nothing", async () => {
+  const { ana, agent } = await person();
+  const made = (await call(agent, "drive_create_canvas", {
+    name: "Arrange",
+    ops: [
+      { op: "add", kind: "sticky", text: "A", at: { x: 0, y: 0 }, ref: "a" },
+      { op: "add", kind: "sticky", text: "B", at: { x: 400, y: 0 }, ref: "b" },
+      { op: "add", kind: "sticky", text: "C", at: { x: 800, y: 0 }, ref: "c" },
+      { op: "connect", from: "a", to: "b", ref: "line" },
+    ],
+  })) as Answer & { canvas: { id: string }; created: Record<string, string> };
+  const before = (await body(ana, made.canvas.id)).text;
+  const arranged = await call(agent, "drive_edit_canvas", {
+    id: made.canvas.id,
+    ops: [{ op: "arrange", ids: [made.created.c, made.created.line], as: "row" }],
+  });
+  expect(arranged.error).toContain("moves with the elements it joins");
+  expect((await body(ana, made.canvas.id)).text).toBe(before);
+});
