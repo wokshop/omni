@@ -153,9 +153,18 @@ function useMonthScroll(props: MonthGridProps, weeks: readonly (readonly Date[])
     const onScroll = () => {
       if (!frame) frame = requestAnimationFrame(report);
     };
+    let laidHeight = rowHeight(element);
+    const resized = new ResizeObserver(() => {
+      const height = rowHeight(element);
+      if (height === laidHeight) return;
+      element.scrollTop = (element.scrollTop / laidHeight) * height;
+      laidHeight = height;
+    });
+    resized.observe(element);
     element.addEventListener("scroll", onScroll, { passive: true });
     return () => {
       cancelAnimationFrame(frame);
+      resized.disconnect();
       element.removeEventListener("scroll", onScroll);
     };
   }, []);

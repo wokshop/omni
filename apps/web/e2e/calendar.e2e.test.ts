@@ -1004,6 +1004,26 @@ test("Today scrolls back to today's month even when the date has not changed", a
   await expect.poll(topOf).toBeCloseTo(0, 0);
 });
 
+test("resizing the window keeps the month's weeks where they were", async () => {
+  const { org, page, origin } = await invited();
+  await page.goto(new URL(`/${org.slug}/calendar?date=2026-11-24&view=month`, origin).toString());
+  const week = page.locator('[data-week="2026-10-26"]');
+  await week.waitFor();
+  const offBy = () =>
+    week.evaluate((row) =>
+      Math.abs(
+        row.getBoundingClientRect().top - (row.parentElement?.getBoundingClientRect().top ?? 0),
+      ),
+    );
+  await expect.poll(offBy).toBeLessThan(1);
+  const size = page.viewportSize() ?? { width: 1440, height: 900 };
+  await page.setViewportSize({ width: size.width, height: size.height - 220 });
+  await expect.poll(offBy).toBeLessThan(1);
+  await page.setViewportSize(size);
+  await expect.poll(offBy).toBeLessThan(1);
+  expect(shownDate(page)).toBe("2026-11-24");
+});
+
 test("one sideways swipe steps the week, and each gesture steps once", async () => {
   const { org, page, origin } = await invited();
   await page.goto(new URL(`/${org.slug}/calendar?date=2026-11-24&view=week`, origin).toString());
