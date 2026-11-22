@@ -33,10 +33,11 @@ function useRows() {
   const recent = useQuery(storageRecentQuery());
   const shared = useSharedWithMe();
   const pages = shared.data?.pages.length ?? 0;
-  const { hasNextPage, isFetchingNextPage, fetchNextPage } = shared;
+  const { hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } = shared;
   useEffect(() => {
-    if (hasNextPage && !isFetchingNextPage && pages < SHARED_PAGES) void fetchNextPage();
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage, pages]);
+    if (!hasNextPage || isFetchingNextPage || isFetchNextPageError) return;
+    if (pages < SHARED_PAGES) void fetchNextPage();
+  }, [hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage, pages]);
   const { drives } = useDrives();
   const href = useStorageHref();
   const label = (node: StorageNode) =>
@@ -61,7 +62,7 @@ function useRows() {
   return {
     rows,
     isPending: recent.isPending || shared.isPending,
-    isError: recent.isError || shared.isError,
+    isError: recent.isError || shared.isError || isFetchNextPageError,
     retry: () => {
       void recent.refetch();
       void shared.refetch();

@@ -42,8 +42,9 @@ import { storageErrorToast } from "./storage-errors.ts";
 import { drivePath } from "./storage-nav.tsx";
 
 function useWorkspacePeople() {
-  const members = useMembers().data?.members;
-  return useMemo(
+  const query = useMembers();
+  const members = query.data?.members;
+  const people = useMemo(
     () =>
       (members ?? []).map((m) => ({
         id: m.id,
@@ -52,6 +53,7 @@ function useWorkspacePeople() {
       })),
     [members],
   );
+  return { people, query };
 }
 
 function PeopleField(props: {
@@ -60,7 +62,16 @@ function PeopleField(props: {
   onChange: (memberIds: string[]) => void;
   exclude: Set<string>;
 }) {
-  const people = useWorkspacePeople().filter((person) => !props.exclude.has(person.id));
+  const { people: everyone, query } = useWorkspacePeople();
+  const people = everyone.filter((person) => !props.exclude.has(person.id));
+  if (query.isPending) {
+    return (
+      <Skeleton loading label="Loading people" skeleton={<SkeletonBox width="100%" height={36} />}>
+        {null}
+      </Skeleton>
+    );
+  }
+  if (query.isError) return <ListFailed retry={() => void query.refetch()} />;
   return (
     <MultipleSelect
       aria-label={props.label}
