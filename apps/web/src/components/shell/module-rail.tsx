@@ -2,7 +2,12 @@ import { useLocation, useSearch } from "@tanstack/react-router";
 import { cn } from "cn";
 import { useEffect, useSyncExternalStore, type ComponentType, type ReactNode } from "react";
 import { IconSettings, IconSettingsFilled } from "@/components/icons/central";
-import { IconCrmMark, IconDriveMark, IconMailMark } from "@/components/icons/module-marks";
+import {
+  IconCalendarMark,
+  IconCrmMark,
+  IconDriveMark,
+  IconMailMark,
+} from "@/components/icons/module-marks";
 import {
   Sidebar,
   SidebarContent,
@@ -20,12 +25,14 @@ const MARKS: Record<ModuleId, ComponentType<{ className?: string }>> = {
   mail: IconMailMark,
   files: IconDriveMark,
   crm: IconCrmMark,
+  calendar: IconCalendarMark,
 };
 
 const PATHS: Record<ModuleId, string> = {
   mail: "mail/inbox",
   files: "files",
   crm: "crm/companies",
+  calendar: "calendar",
 };
 
 const PEEK_LEAVE_MS = 200;

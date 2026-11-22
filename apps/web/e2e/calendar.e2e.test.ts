@@ -1,0 +1,194 @@
+import { readFileSync } from "node:fs";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
+import { join } from "node:path";
+import { parseCalendar } from "@omni/mail-core/calendar";
+import { applyCalendarPart, calendarArrivals, schema } from "@omni/db";
+import { and, eq } from "drizzle-orm";
+import { chromium, type Browser, type Page } from "playwright-core";
+import { afterAll, beforeAll, expect, test } from "vitest";
+import {
+  createMailbox,
+  createMember,
+  createOrg,
+  createTestDatabase,
+  grant,
+  seedMessage,
+  signIn,
+  startMailServiceEndpoint,
+  startWorkerWithNetwork,
+  SYSTEM_MAIL_FROM,
+  type TestDb,
+} from "../../worker/e2e/support.ts";
+
+const invite = readFileSync(
+  join(import.meta.dirname, "../../../fixtures/ics/google-invite.ics"),
+  "utf8",
+);
+
+let database: Awaited<ReturnType<typeof createTestDatabase>>;
+let db: TestDb;
+let mailService: Awaited<ReturnType<typeof startMailServiceEndpoint>>;
+let worker: Awaited<ReturnType<typeof startWorkerWithNetwork>>;
+let browser: Browser;
+
+beforeAll(async () => {
+  database = await createTestDatabase();
+  db = database.db;
+  mailService = await startMailServiceEndpoint();
+  const port = await freePort();
+  worker = await startWorkerWithNetwork({
+    databaseUrl: database.url,
+    mailServiceUrl: mailService.url,
+    port,
+    vars: { BETTER_AUTH_URL: `http://127.0.0.1:${port}`, RATE_LIMIT_AUTH: "off" },
+  });
+  const system = await createOrg(db, "system");
+  await createMailbox(db, system.id, SYSTEM_MAIL_FROM);
+  browser = await chromium.launch().catch(() => chromium.launch({ channel: "chrome" }));
+});
+
+afterAll(async () => {
+  await browser?.close();
+  await worker?.close();
+  await mailService?.close();
+  await database?.teardown();
+});
+
+async function invited() {
+  const org = await createOrg(db, "studio");
+  await db.insert(schema.orgSetup).values({ orgId: org.id, step: "complete" });
+  const address = `rodrigo-${Date.now()}@studio.example`;
+  const member = await createMember(db, org.id, address);
+  await db.update(schema.members).set({ role: "owner" }).where(eq(schema.members.id, member.id));
+  const inbox = await createMailbox(db, org.id, address, "personal");
+  await grant(db, org.id, inbox.id, member.id);
+  const ics = invite
+    .replaceAll("rodrigo@studio.example", address)
+    .replace("Rodrigo@Studio.example", address);
+  const seeded = await seedMessage(db, inbox, {
+    subject: "Invitation: Acme × Studio: kickoff",
+    fromAddress: "ana@acme.example",
+    uid: 1,
+    sentAt: new Date("2026-11-20T09:15:03Z"),
+  });
+  await db.insert(schema.attachments).values({
+    orgId: org.id,
+    messageId: seeded.messageId,
+    filename: "invite.ics",
+    mimeType: "text/calendar",
+    size: ics.length,
+    r2Key: `${org.id}/${inbox.id}/att/invite`,
+  });
+  const [part] = await calendarArrivals(db, [seeded.messageId]);
+  if (!part) throw new Error("no calendar part");
+  expect(await applyCalendarPart(db, part, parseCalendar(ics))).toMatchObject({
+    status: "applied",
+  });
+  const origin = String(worker.url);
+  const cookie = await signIn({ url: new URL(origin) }, db, address);
+  const context = await browser.newContext({
+    timezoneId: "Europe/Madrid",
+    viewport: { width: 1440, height: 900 },
+  });
+  await context.addCookies(
+    cookie.split("; ").map((pair) => {
+      const at = pair.indexOf("=");
+      return { name: pair.slice(0, at), value: pair.slice(at + 1), url: origin };
+    }),
+  );
+  return { org, address, inbox, threadId: seeded.threadId, page: await context.newPage(), origin };
+}
+
+const answerOf = (address: string) =>
+  db
+    .select({ response: schema.calendarAttendees.response })
+    .from(schema.calendarAttendees)
+    .where(eq(schema.calendarAttendees.address, address));
+
+const replies = (mailboxId: string) =>
+  db
+    .select({ payload: schema.mailActions.payload })
+    .from(schema.mailActions)
+    .where(and(eq(schema.mailActions.mailboxId, mailboxId), eq(schema.mailActions.kind, "send")));
+
+const ownEvents = (orgId: string) =>
+  db
+    .select({ title: schema.calendarEvents.title, startsAt: schema.calendarEvents.startsAt })
+    .from(schema.calendarEvents)
+    .where(and(eq(schema.calendarEvents.orgId, orgId), eq(schema.calendarEvents.source, "omni")));
+
+async function openWeek(page: Page, origin: string, slug: string) {
+  await page.goto(new URL(`/${slug}/calendar?date=2026-11-24&view=week`, origin).toString());
+  await page.getByRole("button", { name: /Acme × Studio: kickoff/ }).waitFor();
+}
+
+test("an invitation on the week is answered by key, and its answer goes to the organizer", async () => {
+  const { org, address, inbox, page, origin } = await invited();
+  await openWeek(page, origin, org.slug);
+  const kickoff = page.getByRole("button", { name: /Acme × Studio: kickoff/ });
+  await expect.poll(() => kickoff.textContent()).toMatch(/4:30\s?PM|16:30/);
+
+  await kickoff.click();
+  await page.keyboard.press("Enter");
+  await page.getByRole("complementary", { name: "Acme × Studio: kickoff" }).waitFor();
+  await page.keyboard.press("y");
+  await expect
+    .poll(async () => (await answerOf(address)).map((a) => a.response))
+    .toContain("accepted");
+  await expect
+    .poll(async () =>
+      (await replies(inbox.id)).map((r) => (r.payload as { subject: string }).subject),
+    )
+    .toEqual(["Accepted: Acme × Studio: kickoff"]);
+  await expect
+    .poll(() => page.getByRole("button", { name: "Yes" }).getAttribute("aria-pressed"))
+    .toBe("true");
+});
+
+test("c makes an event at the selected slot, and an arrow moves it a quarter hour", async () => {
+  const { org, page, origin } = await invited();
+  await openWeek(page, origin, org.slug);
+  await page.locator('[data-day="2026-11-24"]').click({ position: { x: 20, y: 10 * 48 + 6 } });
+  await page.keyboard.press("c");
+  const title = page.getByRole("textbox", { name: "Title" });
+  await title.waitFor();
+  await title.fill("Focus block");
+  await page.keyboard.press("Enter");
+  await expect
+    .poll(async () => (await ownEvents(org.id)).map((e) => e.title))
+    .toEqual(["Focus block"]);
+  const [made] = await ownEvents(org.id);
+  expect(made?.startsAt).toEqual(new Date("2026-11-24T09:00:00Z"));
+
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: /Focus block/ }).click();
+  await page.keyboard.press("ArrowDown");
+  await expect
+    .poll(async () => (await ownEvents(org.id))[0]?.startsAt.getTime())
+    .toBe((made?.startsAt.getTime() ?? 0) + 15 * 60_000);
+});
+
+test("the thread shows the invitation with Yes, No and Maybe, and No answers it", async () => {
+  const { org, address, inbox, threadId, page, origin } = await invited();
+  await page.goto(new URL(`/${org.slug}/mail/all/${threadId}`, origin).toString());
+  const card = page.getByRole("group", { name: "Invitation: Acme × Studio: kickoff" });
+  await card.waitFor();
+  await card.getByRole("button", { name: "No" }).click();
+  await expect
+    .poll(async () => (await answerOf(address)).map((a) => a.response))
+    .toContain("declined");
+  await expect
+    .poll(async () =>
+      (await replies(inbox.id)).map((r) => (r.payload as { subject: string }).subject),
+    )
+    .toEqual(["Declined: Acme × Studio: kickoff"]);
+});
+
+async function freePort() {
+  const server = createServer();
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address() as AddressInfo;
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+  return port;
+}
