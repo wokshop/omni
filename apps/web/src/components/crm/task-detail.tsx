@@ -7,6 +7,7 @@ import { TextField } from "@/components/ui/text-field";
 import { Textarea } from "@/components/ui/textarea";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useDeleteTask } from "@/hooks/use-crm-tasks.ts";
+import { useMember } from "@/hooks/use-session.ts";
 import { CRM_WRITE } from "@/lib/crm-cache.ts";
 import {
   dayOf,
@@ -34,7 +35,7 @@ const BODY_MAX = 20_000;
  */
 export function useSaveTask(id: string) {
   const client = useQueryClient();
-  const base = updateTaskMutation(client);
+  const base = updateTaskMutation(client, useMember().member.id);
   const mutationKey = [...CRM_WRITE, "task-save", id];
   const update = useMutation({
     ...base,

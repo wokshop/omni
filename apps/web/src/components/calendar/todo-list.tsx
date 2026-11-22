@@ -139,9 +139,9 @@ function NewTodo({ section, onDone }: { section: DueGroup; onDone: () => void })
     const trimmed = title.trim();
     if (!trimmed) return onDone();
     setTitle("");
-    create.mutate(
+    create.create(
       { title: trimmed, assigneeMemberId: member.id, dueAt: dueFor(section) },
-      { onError: (error) => crmErrorToast(error, "The to-do was not added") },
+      (error) => crmErrorToast(error, "The to-do was not added"),
     );
   };
   return (

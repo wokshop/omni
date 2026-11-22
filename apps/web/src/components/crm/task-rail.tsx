@@ -31,10 +31,11 @@ export function TaskRail({ filter, onNew }: { filter: TaskFilter; onNew: () => v
     );
   }
   if (open.isError) return <ListFailed retry={() => void open.refetch()} />;
+  const { opened, finished } = splitTasks(open.tasks, done.tasks);
   const items: RailItem[] = [
-    ...open.tasks.map((task) => ({ kind: "task" as const, task })),
-    ...(done.tasks.length ? [{ kind: "done" as const }] : []),
-    ...done.tasks.map((task) => ({ kind: "task" as const, task })),
+    ...opened.map((task) => ({ kind: "task" as const, task })),
+    ...(finished.length ? [{ kind: "done" as const }] : []),
+    ...finished.map((task) => ({ kind: "task" as const, task })),
   ];
   if (!items.length) {
     return (
@@ -89,6 +90,19 @@ export function TaskRail({ filter, onNew }: { filter: TaskFilter; onNew: () => v
       </div>
     </>
   );
+}
+
+function splitTasks(open: CrmTask[], done: CrmTask[]) {
+  const seen = new Set<string>();
+  const all = [...open, ...done].filter((task) => !seen.has(task.id) && !!seen.add(task.id));
+  const due = (task: CrmTask) => (task.dueAt ? Date.parse(task.dueAt) : Infinity);
+  const opened = all
+    .filter((task) => !task.completedAt)
+    .toSorted((a, b) => due(a) - due(b) || (a.id < b.id ? -1 : 1));
+  const finished = all
+    .filter((task) => task.completedAt)
+    .toSorted((a, b) => Date.parse(b.completedAt!) - Date.parse(a.completedAt!));
+  return { opened, finished };
 }
 
 function TaskRailRow(props: { task: CrmTask; place: RailPlace }) {
