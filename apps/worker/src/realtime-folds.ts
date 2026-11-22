@@ -19,6 +19,7 @@ interface Owed {
   firstAt: number;
   dueAt: number;
   tries: number;
+  rev: number;
   authors: Record<string, FoldAuthor>;
   member?: { memberId: string; lastSeq: number };
 }
@@ -55,9 +56,11 @@ export async function noteOwed(
     firstAt: now,
     dueAt: now,
     tries: 0,
+    rev: 0,
     authors: {},
   };
   owed.authors[input.by] = input.author;
+  owed.rev = (owed.rev ?? 0) + 1;
   owed.dueAt = Math.min(now + FOLD_MS, owed.firstAt + FOLD_MAX_MS);
   await ctx.storage.put(owedKey(input.nodeId), owed);
   await scheduleAlarm(ctx);
@@ -153,7 +156,9 @@ export async function runAlarm(
         log.warn("doc.fold_refused", { nodeId, reason: outcome.reason });
       }
       const now = await ctx.storage.get<Owed>(key);
-      if (now?.dueAt === one.dueAt) await ctx.storage.delete(key);
+      if (now?.rev === one.rev) await ctx.storage.delete(key);
+      else if (now)
+        await ctx.storage.put(key, { ...now, firstAt: Date.now(), dueAt: Date.now() + FOLD_MS });
     } catch (error) {
       log.error("doc.fold_failed", { error, nodeId, tries: one.tries + 1 });
       if (one.tries + 1 >= MAX_TRIES) await ctx.storage.delete(key);

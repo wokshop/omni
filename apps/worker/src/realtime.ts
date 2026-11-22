@@ -112,7 +112,8 @@ export class Realtime extends DurableObject<Env> {
 
   override async fetch(request: Request) {
     const outside = request.headers.get(OUTSIDE_HEADER);
-    if (outside !== null && request.headers.get("upgrade") === "websocket") {
+    const member = request.headers.has(MEMBER_HEADER);
+    if (outside !== null && !member && request.headers.get("upgrade") === "websocket") {
       const opening = outsideOpening.safeParse(JSON.parse(outside));
       if (!opening.success) return new Response("bad outside opening", { status: 400 });
       const response = acceptOutside(this.ctx, opening.data);

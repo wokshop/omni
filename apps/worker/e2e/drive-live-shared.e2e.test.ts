@@ -29,11 +29,11 @@ type Event = Record<string, unknown>;
 const bytes = (text: string) => new TextEncoder().encode(text);
 const base64 = (update: Uint8Array) => Buffer.from(update).toString("base64");
 
-async function open(path: string, jar: CookieJar) {
+async function open(path: string, jar: CookieJar, extra: Record<string, string> = {}) {
   const url = new URL(path, stack.worker.url);
   url.protocol = "ws:";
   const socket = new WebSocket(url, {
-    headers: { cookie: jar.header, origin: WEB_ORIGIN },
+    headers: { cookie: jar.header, origin: WEB_ORIGIN, ...extra },
   } as unknown as string[]);
   const received: Event[] = [];
   const waiters = new Set<() => void>();
@@ -277,6 +277,36 @@ test("the server names an outsider's cursor, and an outsider cannot take a membe
     .flatMap((e) => decodePresence(Buffer.from(String(e.u), "base64")) ?? []);
   expect(forged.some((entry) => entry.clientId === 111)).toBe(false);
   for (const t of [tab, guest, again]) t.socket.close();
+});
+
+test("a member's socket that sends an outsider's opening itself is a member's socket still", async () => {
+  const { org, doc } = await sharedDoc("# Victim");
+  const elsewhere = await stack.company(`elsewhere-${randomUUID().slice(0, 8)}`);
+  const mallory = await stack.member(elsewhere.id);
+  const forged = {
+    door: "link",
+    shareId: "x",
+    orgId: org.id,
+    nodeId: doc.id,
+    space: "shared",
+    ownerMemberId: null,
+    locked: false,
+    role: "editor",
+    writable: true,
+    userId: null,
+    scopeOrgId: null,
+    guestId: "g".repeat(22),
+    name: "",
+    linkKey: null,
+    endsAt: null,
+  };
+  const header = { "x-omni-outside": JSON.stringify(forged) };
+  const update = { t: "update", e: 0, u: base64(new Uint8Array([0, 0])) };
+  const app = await open("/api/realtime", mallory.jar, header);
+  expect(await app.send(update, doc.id)).toMatchObject({ type: "doc.refused", reason: "editing" });
+  app.socket.close();
+  const live = await stack.api((await stack.member(org.id)).jar, "GET", `/files/${doc.id}/live`);
+  expect(JSON.stringify(live.body)).not.toContain("AAA=");
 });
 
 test("a guest's socket needs the page's guest key, and a member or a Viewer link gets none", async () => {
