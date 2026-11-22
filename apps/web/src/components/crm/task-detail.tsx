@@ -37,14 +37,15 @@ const BODY_MAX = 20_000;
 export function useSaveTask(id: string) {
   const client = useQueryClient();
   const base = updateTaskMutation(client, useMember().member.id);
-  const mutationKey = [...CRM_WRITE, "task-save", id];
+  const queue = stableId(id);
+  const mutationKey = [...CRM_WRITE, "task-save", queue];
   const update = useMutation({
     ...base,
     mutationKey,
-    scope: { id: `crm-task:${id}` },
+    scope: { id: `crm-task:${queue}` },
     onSettled: (...args) => {
       if (client.isMutating({ mutationKey }) > 1) return;
-      if (args[0]) client.setQueryData(taskKeys.one(id), args[0]);
+      if (args[0]) client.setQueryData(taskKeys.one(args[0].task.id), args[0]);
       return base.onSettled?.(...args);
     },
   });
