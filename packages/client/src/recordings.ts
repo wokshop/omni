@@ -109,10 +109,10 @@ async function openUpload(call: Call, spool: RecordingSpool, recording: DesktopR
   if (recording.uploadId) {
     const found = await call("GET", `/storage/uploads/${recording.uploadId}`);
     const upload = found.ok ? (found.json as StorageUploadResponse).upload : null;
-    if (upload && upload.size === recording.size) return { upload };
+    if (upload && upload.size === recording.size) return { kind: "upload" as const, upload };
     if (!found.ok && found.status !== 404) throw fail(found, "reading the upload");
     const nodeId = await fileTheExpiredUploadBecame(call, recording.uploadId, recording.size);
-    if (nodeId) return { nodeId };
+    if (nodeId) return { kind: "file" as const, nodeId };
   }
   const opened = await call("POST", "/storage/uploads", {
     name: recordingFileName(recording),
@@ -123,7 +123,7 @@ async function openUpload(call: Call, spool: RecordingSpool, recording: DesktopR
   if (!opened.ok) throw fail(opened, "opening the upload");
   const { upload } = opened.json as StorageUploadResponse;
   await spool.mark(recording.id, { uploadId: upload.id });
-  return { upload };
+  return { kind: "upload" as const, upload };
 }
 
 async function sendParts(call: Call, spool: RecordingSpool, id: string, upload: StorageUpload) {
@@ -138,7 +138,7 @@ async function sendParts(call: Call, spool: RecordingSpool, id: string, upload: 
 
 async function uploadFile(call: Call, spool: RecordingSpool, recording: DesktopRecording) {
   const opened = await openUpload(call, spool, recording);
-  if ("nodeId" in opened) return opened.nodeId;
+  if (opened.kind === "file") return opened.nodeId;
   let { upload } = opened;
   if (upload.nodeId) return upload.nodeId;
   for (let attempt = 0; ; attempt++) {
