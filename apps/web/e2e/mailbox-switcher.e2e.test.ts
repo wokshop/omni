@@ -277,20 +277,36 @@ test("switching workspace keeps the module; switching module keeps the workspace
     );
   const before = await active();
 
-  await page.getByRole("button", { name: "Go to Drive" }).click();
-  await page.waitForURL((url) => place(url) === "/files/my");
+  const rail = page.getByRole("navigation", { name: "Modules" });
+  await rail.getByRole("link", { name: "Drive" }).click();
+  await page.waitForURL((url) => place(url) === "/files");
   expect(await active()).toBe(before);
   expect(await page.getByRole("link", { name: "Later", exact: true }).count()).toBe(0);
 
   await page.getByRole("link", { name: "Trash", exact: true }).click();
   await page.waitForURL((url) => place(url) === "/files/trash");
   const other = before === acme.orgId ? "Beta" : "Acme";
+  await page.route(/\/api\/(mailboxes|counts)/, () => undefined);
   await page.getByRole("button", { name: /^Switch workspace, currently / }).click();
   await page.getByRole("menuitem", { name: other }).click();
+  const otherSlug = other === "Beta" ? beta.slug : acme.slug;
+  await rail.locator(`a[href^="/${otherSlug}/files"]`).waitFor({ timeout: 3_000 });
   await page.getByRole("button", { name: `Switch workspace, currently ${other}` }).waitFor();
-  await page.locator('[role="group"][aria-label="Modules"][data-module="files"]').waitFor();
+  await page.unroute(/\/api\/(mailboxes|counts)/);
   expect(place(page.url())).toBe("/files/trash");
   await expect.poll(active).toBe(other === "Beta" ? beta.orgId : acme.orgId);
+
+  await rail.getByRole("link", { name: "Calendar" }).click();
+  await page.waitForURL((url) => place(url) === "/calendar");
+  await page.goto(page.url().replace(/\/calendar.*$/, "/calendar?date=2026-11-24&view=day"));
+  const back = other === "Beta" ? "Acme" : "Beta";
+  await page.getByRole("button", { name: /^Switch workspace, currently / }).click();
+  await page.getByRole("menuitem", { name: back }).click();
+  await page.getByRole("button", { name: `Switch workspace, currently ${back}` }).waitFor();
+  const url = new URL(page.url());
+  expect(place(page.url())).toBe("/calendar");
+  expect(url.searchParams.get("date")).toBe("2026-11-24");
+  expect(url.searchParams.get("view")).toBe("day");
 });
 
 test("g then f keeps the mailbox for the way back to Mail", async () => {
