@@ -267,6 +267,11 @@ export function startRealtime(client: QueryClient, activeOrgId: string) {
     if (orgId === activeOrgId) {
       // WARNING: a Talk fetch already in flight may predate the socket; start it again after.
       void client.invalidateQueries({ queryKey: keys.talk() });
+      // WARNING: teamspace changes send no realtime event, so a resumed socket can't replay them.
+      void client.invalidateQueries(
+        { queryKey: keys.storageTeamspaces() },
+        { cancelRefetch: false },
+      );
     }
   };
   const wide = window.matchMedia(`(min-width: ${TITLE_BAR_MIN}px)`);

@@ -57,6 +57,7 @@ gives it from the session, so a forged `since` reaches nothing it would not have
 - One hour, at most 20,000 events, pruned every 256 appends and before each replay.
 - At most 500 of a socket's events replayed; past that a refetch is cheaper.
 - The web app skips its mail, CRM and Drive refetch on a resumed reconnect; Talk still refetches
-  on every open, since a fetch started before the socket may land after it.
+  on every open, since a fetch started before the socket may land after it, and so does the
+  teamspace list, whose changes send no event to replay.
 - iOS keeps refetching on every return to the foreground (it opens a new socket, so it has no
   cursor yet).
