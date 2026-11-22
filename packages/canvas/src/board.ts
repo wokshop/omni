@@ -120,8 +120,10 @@ export class Board {
         [element.from, element.to],
         [element.to, element.from],
       ];
+      const moved = [element.from.id, element.to.id].some((id) => id && this.changed.has(id));
+      if (!moved) continue;
       for (const [end, other] of ends) {
-        if (end.id === undefined || !this.changed.has(end.id)) continue;
+        if (end.id === undefined) continue;
         const bound = this.byId.get(end.id);
         const box = bound ? this.boundsOf(bound) : null;
         if (!box) continue;

@@ -1,3 +1,4 @@
+import diff from "fast-diff";
 import * as Y from "yjs";
 import { isKey, keysBetween } from "./order.ts";
 import { copy, elementSchema, FIELDS, type CanvasElement, type Scene } from "./scene.ts";
@@ -64,18 +65,15 @@ function newFields(element: CanvasElement, z: string) {
 function retype(text: Y.Text, next: string) {
   const now = text.toString();
   if (now === next) return;
-  let start = 0;
-  while (start < now.length && start < next.length && now[start] === next[start]) start++;
-  let end = 0;
-  while (
-    end < now.length - start &&
-    end < next.length - start &&
-    now[now.length - 1 - end] === next[next.length - 1 - end]
-  ) {
-    end++;
+  let at = 0;
+  for (const [kind, part] of diff(now, next)) {
+    if (kind === diff.EQUAL) at += part.length;
+    else if (kind === diff.DELETE) text.delete(at, part.length);
+    else {
+      text.insert(at, part);
+      at += part.length;
+    }
   }
-  text.delete(start, now.length - start - end);
-  text.insert(start, next.slice(start, next.length - end));
 }
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
