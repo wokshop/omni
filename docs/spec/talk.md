@@ -27,8 +27,8 @@ and rules (`docs/spec/modules.md`), because it owns tables and reads Storage thr
   - A one-line header: their name and a green dot while they are online; close shows on hover.
   - The notes as bubbles: yours on the right in primary, theirs on the left in secondary. A time
     line wherever an hour passes. An image is a rounded picture; any other file a chip with its
-    glyph, name and `PNG • 5 KB`. Reactions are chips under a note; four quick ones appear beside
-    a bubble on hover.
+    glyph, name and `PNG • 5 KB`. Reactions are white chips over the bubble's lower corner, in
+    the platform's emoji (Apple's first); four quick ones float above a bubble on hover.
   - The composer inside the island at its foot: `Note to <first name>…`, attach (+) and a round
     send button with an up arrow. Dropping files on the island sends them.
   - No expanded mode: it stays small. One window is open at a time; opening another teammate

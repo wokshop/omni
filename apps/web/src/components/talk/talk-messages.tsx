@@ -38,20 +38,30 @@ function Reactions(props: { message: TalkMessage; meId: string; mine: boolean })
   const { has, set } = useToggle(props.message, props.meId);
   if (props.message.reactions.length === 0) return null;
   return (
-    <div className={cn("flex items-center gap-0.5", props.mine && "flex-row-reverse")}>
+    <div
+      className={cn(
+        "absolute -bottom-3 z-10 flex items-center gap-0.5",
+        props.mine ? "start-0 -translate-x-1/3" : "end-0 translate-x-1/3",
+      )}
+    >
       {props.message.reactions.map((r) => (
         <Button
           key={r.emoji}
-          intent="outline"
+          intent="plain"
           size="text"
           isCircle
           aria-pressed={has(r.emoji)}
           aria-label={`${r.emoji} ${r.memberIds.length}`}
           onPress={() => set(r.emoji, !has(r.emoji))}
-          className={cn("h-5 px-1.5 tabular-nums shadow-none", has(r.emoji) && "bg-accent")}
+          className={cn(
+            "h-6 gap-0.5 bg-background px-1.5 font-emoji text-sm tabular-nums shadow-overlay",
+            has(r.emoji) && "ring-1 ring-primary/30",
+          )}
         >
           {r.emoji}
-          {r.memberIds.length > 1 && <span>{r.memberIds.length}</span>}
+          {r.memberIds.length > 1 && (
+            <span className="font-sans text-xs text-muted-foreground">{r.memberIds.length}</span>
+          )}
         </Button>
       ))}
     </div>
@@ -63,18 +73,20 @@ function QuickReactions(props: { message: TalkMessage; meId: string; mine: boole
   return (
     <span
       className={cn(
-        "absolute top-0 flex opacity-0 transition-opacity duration-150 group-hover/note:opacity-100 group-focus-within/note:opacity-100 pointer-coarse:opacity-100",
-        props.mine ? "start-0" : "end-0",
+        "pointer-events-none absolute -top-7 z-20 flex rounded-full bg-background p-0.5 opacity-0 shadow-overlay transition-opacity duration-150",
+        "group-hover/note:pointer-events-auto group-hover/note:opacity-100 group-focus-within/note:pointer-events-auto group-focus-within/note:opacity-100",
+        props.mine ? "end-0" : "start-0",
       )}
     >
       {QUICK.filter((emoji) => !has(emoji)).map((emoji) => (
         <Button
           key={emoji}
           intent="ghost"
-          size="sq-2xs"
+          size="sq-xs"
+          isCircle
           aria-label={`React ${emoji}`}
           onPress={() => set(emoji, true)}
-          className="text-xs"
+          className="font-emoji text-sm"
         >
           {emoji}
         </Button>
@@ -128,27 +140,33 @@ function Attachment(props: { message: TalkMessage; mine: boolean }) {
 function Note(props: { message: TalkMessage; meId: string; tail: boolean }) {
   const { message } = props;
   const mine = message.authorMemberId === props.meId;
+  const reacted = message.reactions.length > 0;
   return (
     <div
       className={cn(
-        "group/note relative flex flex-col gap-0.5",
-        mine ? "items-end ps-20" : "items-start pe-20",
-        props.tail && "mb-1",
+        "group/note flex",
+        mine ? "justify-end ps-14" : "justify-start pe-14",
+        props.tail && "mb-2.5",
+        reacted && "mb-3.5",
       )}
     >
-      {message.body && (
-        <p
-          className={cn(
-            "max-w-full rounded-xl px-2.5 py-1 text-sm/5 break-words whitespace-pre-wrap",
-            mine ? "bg-primary text-primary-foreground" : "bg-secondary text-foreground",
-          )}
-        >
-          {message.body}
-        </p>
-      )}
-      {message.file && <Attachment message={message} mine={mine} />}
-      <Reactions message={message} meId={props.meId} mine={mine} />
-      <QuickReactions message={message} meId={props.meId} mine={mine} />
+      <div
+        className={cn("relative flex min-w-0 flex-col gap-1", mine ? "items-end" : "items-start")}
+      >
+        <QuickReactions message={message} meId={props.meId} mine={mine} />
+        {message.body && (
+          <p
+            className={cn(
+              "max-w-full rounded-xl px-3 py-1.5 text-sm/5 break-words whitespace-pre-wrap",
+              mine ? "bg-primary text-primary-foreground" : "bg-secondary text-foreground",
+            )}
+          >
+            {message.body}
+          </p>
+        )}
+        {message.file && <Attachment message={message} mine={mine} />}
+        <Reactions message={message} meId={props.meId} mine={mine} />
+      </div>
     </div>
   );
 }
@@ -157,7 +175,7 @@ function Note(props: { message: TalkMessage; meId: string; tail: boolean }) {
 export function TalkMessages(props: { messages: TalkMessage[]; meId: string }) {
   const ordered = props.messages.toReversed();
   return (
-    <div className="flex flex-col gap-0.5 px-3 py-1.5">
+    <div className="flex flex-col gap-1 px-3.5 pt-3 pb-2">
       {ordered.map((message, i) => {
         const before = ordered[i - 1];
         const after = ordered[i + 1];
@@ -167,7 +185,7 @@ export function TalkMessages(props: { messages: TalkMessage[]; meId: string }) {
         return (
           <Fragment key={message.id}>
             {newHour && (
-              <p className="py-1.5 text-center text-xs text-muted-foreground tabular-nums">
+              <p className="pt-1 pb-2.5 text-center text-xs text-muted-foreground tabular-nums">
                 {timeLine(new Date(at))}
               </p>
             )}

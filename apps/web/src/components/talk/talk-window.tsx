@@ -33,7 +33,7 @@ const BELOW = 6;
 
 function Header(props: { person: TalkPerson }) {
   return (
-    <header className="flex h-9 shrink-0 items-center gap-1.5 ps-3.5 pe-1.5">
+    <header className="flex h-11 shrink-0 items-center gap-1.5 ps-4 pe-2">
       <h2 className="min-w-0 truncate text-sm">{props.person.name}</h2>
       {props.person.online && (
         <span aria-label="Active now" className="size-1.5 shrink-0 rounded-full bg-success" />
@@ -79,7 +79,7 @@ function Composer(props: { person: TalkPerson; threadId: string | undefined }) {
     list.length > 0 &&
     files.mutate(list, { onError: () => appToast.error("The file was not sent. Try again.") });
   return (
-    <div className="flex shrink-0 items-end gap-0.5 p-1.5 ps-3.5">
+    <div className="flex shrink-0 items-end gap-1 p-1.5 ps-4">
       <Textarea
         ref={field}
         plain
@@ -91,7 +91,13 @@ function Composer(props: { person: TalkPerson; threadId: string | undefined }) {
         className="max-h-28 min-h-7 flex-1 resize-none py-1 sm:py-1"
       />
       <FileTrigger allowsMultiple onSelect={(list) => list && attach([...list])}>
-        <Button intent="ghost" size="sq-sm" aria-label="Attach" isPending={files.isPending}>
+        <Button
+          intent="ghost"
+          size="sq-sm"
+          aria-label="Attach"
+          isPending={files.isPending}
+          className="rounded-[10px]"
+        >
           <IconPlus />
         </Button>
       </FileTrigger>
@@ -101,6 +107,7 @@ function Composer(props: { person: TalkPerson; threadId: string | undefined }) {
         aria-label="Drop"
         isDisabled={!text.trim() || !props.threadId}
         onPress={send}
+        className="rounded-[10px]"
       >
         <IconArrowUp />
       </Button>

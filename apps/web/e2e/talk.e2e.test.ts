@@ -213,7 +213,8 @@ test("the stack shows who is online, and a note and a file reach the teammate's 
   });
   const image = window.getByRole("img", { name: "board.png" });
   await expect.poll(() => image.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(480);
-  await window.getByRole("button", { name: "React 🎉" }).first().click({ force: true });
+  await bubble("Dropping the brand board now").hover();
+  await window.getByRole("button", { name: "React 🎉" }).first().click();
   await window.getByRole("button", { name: "🎉 1" }).waitFor();
   await composer.focus();
   await shoot(ana, "2-window");
