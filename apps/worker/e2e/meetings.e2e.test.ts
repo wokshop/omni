@@ -290,3 +290,60 @@ test("a step delivered late carries the meeting on from its saved status", async
   const resumed = await settled(dana, meetingId);
   expect(resumed.body.meeting.status).toBe("ready");
 });
+
+test("a stopped meeting whose hand-off to the queue was lost is sent on by the minute sweep", async () => {
+  const org = await stack.company(`meetings-${randomUUID().slice(0, 8)}`);
+  const dana = await stack.member(org.id);
+  const { meetingId, folderId } = (await api(dana, "POST", "/", { attendees: [], consent: true }))
+    .body;
+  const node = await stack.upload(
+    dana.jar,
+    { parentId: folderId },
+    "c.ogg",
+    new Uint8Array(64),
+    "audio/ogg",
+  );
+  const longAgo = new Date(Date.now() - 10 * 60_000);
+  await stack.db
+    .update(schema.meetingsMeetings)
+    .set({ status: "uploaded", audioNodeId: node.id, durationMs: 95_400, updatedAt: longAgo })
+    .where(eq(schema.meetingsMeetings.id, meetingId));
+  await stack.db
+    .update(schema.meetingsJobs)
+    .set({ updatedAt: longAgo })
+    .where(eq(schema.meetingsJobs.meetingId, meetingId));
+
+  expect(await stack.cron("* * * * *")).toBe("ok");
+  expect((await settled(dana, meetingId)).body.meeting.status).toBe("ready");
+  const stopReady = await api(dana, "POST", `/${meetingId}/stop`, {
+    audioNodeId: node.id,
+    durationMs: 95_400,
+    micSpans: null,
+  });
+  expect(stopReady.status).toBe(409);
+});
+
+test("stopping again while the meeting waits for the pipeline sends it on instead of refusing", async () => {
+  const org = await stack.company(`meetings-${randomUUID().slice(0, 8)}`);
+  const dana = await stack.member(org.id);
+  const { meetingId, folderId } = (await api(dana, "POST", "/", { attendees: [], consent: true }))
+    .body;
+  const node = await stack.upload(
+    dana.jar,
+    { parentId: folderId },
+    "c.ogg",
+    new Uint8Array(64),
+    "audio/ogg",
+  );
+  await stack.db
+    .update(schema.meetingsMeetings)
+    .set({ status: "uploaded", audioNodeId: node.id, durationMs: 95_400 })
+    .where(eq(schema.meetingsMeetings.id, meetingId));
+  const again = await api(dana, "POST", `/${meetingId}/stop`, {
+    audioNodeId: node.id,
+    durationMs: 95_400,
+    micSpans: null,
+  });
+  expect(again.status).toBe(204);
+  expect((await settled(dana, meetingId)).body.meeting.status).toBe("ready");
+});

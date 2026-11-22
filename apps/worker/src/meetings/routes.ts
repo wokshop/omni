@@ -14,7 +14,7 @@ import { apiError } from "../errors.ts";
 import { zValidator } from "../validator.ts";
 import { meetingFile } from "./audio.ts";
 import { memberFiles, memberMeetings, recordingsFolder, refused, wire } from "./http.ts";
-import { deleteMeetingObjects } from "./jobs.ts";
+import { deleteMeetingObjects, meetingEngine } from "./jobs.ts";
 import { enqueueMeeting } from "./queue.ts";
 
 const job = (c: Context<AppEnv>, meetingId: string) => ({
@@ -25,7 +25,7 @@ const job = (c: Context<AppEnv>, meetingId: string) => ({
 
 export const meetings = new Hono<AppEnv>()
   .use(async (c, next) => {
-    if (c.var.config.TRANSCRIBE_PROVIDER === "none") return apiError(c, "not_found", "not found");
+    if (!meetingEngine(c.var.config, c.env)) return apiError(c, "not_found", "not found");
     return next();
   })
   .get("/groups", zValidator("query", meetingsListQuerySchema), async (c) => {
@@ -144,7 +144,8 @@ export const meetings = new Hono<AppEnv>()
       micSpans: body.micSpans,
       cuts: body.cuts,
     });
-    if (!stopped) return refused(c, { status: "not_stoppable" });
+    if (!stopped && meeting.meeting.status !== "uploaded")
+      return refused(c, { status: "not_stoppable" });
     await enqueueMeeting(c.env, { ...job(c, id), step: "transcribe" });
     return c.body(null, 204);
   })

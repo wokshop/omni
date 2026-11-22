@@ -14,7 +14,7 @@ import {
 import { meetingsPipeline, storageWorkspaceFile, type Db } from "@omni/db";
 import type { Config } from "../env.ts";
 import type { Logger } from "../log.ts";
-import { engineFor, EngineError, type Engine } from "./engines.ts";
+import { engineFor, EngineError, type Engine, type EngineConfig } from "./engines.ts";
 
 export const MEETING_STEPS = ["transcribe", "poll", "name", "write"] as const;
 export type MeetingStep = (typeof MEETING_STEPS)[number];
@@ -52,6 +52,8 @@ export interface MeetingRun {
 }
 
 export function meetingEngine(config: Config, env: Env) {
+  const ai = (env as unknown as { AI?: EngineConfig["ai"] }).AI;
+  if (config.TRANSCRIBE_PROVIDER === "workers-ai" && !ai) return null;
   return engineFor({
     provider: config.TRANSCRIBE_PROVIDER,
     url: config.TRANSCRIBE_URL,

@@ -92,7 +92,8 @@ DRIVE_OCR=
 # --- Meetings ---
 # Optional. The transcription engine: "assemblyai" (speakers labelled and named), "openai" (any
 # OpenAI-compatible /audio/transcriptions server), "workers-ai" (the AI binding, no speakers) or
-# "none" (the default: Meetings is off). docs/spec/meetings.md, "Transcription".
+# "none" (the default: Meetings is off). docs/spec/meetings.md, "Transcription". "workers-ai"
+# also needs "ai": { "binding": "AI" } in wrangler.jsonc; without it Meetings stays off.
 TRANSCRIBE_PROVIDER=
 # Optional. The engine's base URL: AssemblyAI's EU host, or the OpenAI-compatible server.
 TRANSCRIBE_URL=

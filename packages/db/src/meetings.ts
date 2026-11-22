@@ -112,6 +112,8 @@ export function meetingsPipeline(db: Db) {
       db.transaction((tx) => pipeline.saveNotes(tx, meetingId, orgId, notes)),
     claimDocWrite: (meetingId: string) => pipeline.claimDocWrite(db, meetingId),
     audience: (meetingId: string) => pipeline.memberAudience(db, meetingId),
+    stalled: (olderThanMs: number) => pipeline.stalled(db, olderThanMs),
+    nudged: (meetingId: string) => pipeline.nudged(db, meetingId),
     restartFailed: (meetingId: string) =>
       db.transaction((tx) => pipeline.restartFailed(tx, meetingId)),
     setFiles: (meetingId: string, files: { notesNodeId?: string; groupKey?: string }) =>
