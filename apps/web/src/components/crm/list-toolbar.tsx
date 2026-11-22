@@ -1,6 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useCallback, type ReactNode } from "react";
-import { IconBoard, IconTable } from "@/components/icons/central";
+import { IconColumns, IconRows } from "@/components/icons/central";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipTrigger } from "@/components/ui/tooltip";
 import type { CrmSort } from "@/lib/crm.ts";
@@ -63,10 +63,10 @@ export function ProjectsView(props: { search: { view?: ProjectsLayout } }) {
       }}
     >
       <LayoutOption id="board" label="Board">
-        <IconBoard />
+        <IconColumns />
       </LayoutOption>
       <LayoutOption id="table" label="Table">
-        <IconTable />
+        <IconRows />
       </LayoutOption>
     </ToggleGroup>
   );

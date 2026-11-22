@@ -8,6 +8,10 @@ Every company workspace gets a CRM: the companies it works with, the people ther
 deals with them. It is small on purpose. What makes it worth using is where it sits: on the
 mail and the files the workspace already has in Omni.
 
+The web and desktop apps name the module **Clients** (founder's call, Nov 22, 2026): in the module
+rail, the sidebar, the command menu and the agent consent screen. Code, routes, the API and
+scopes keep `crm`.
+
 - Add someone from an email once, and every email with them is on their record from then on.
   Nobody files anything.
 - A deal's files are a folder in the shared drive. Its contract is a file there that cannot be
