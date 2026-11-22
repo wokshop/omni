@@ -70,12 +70,10 @@ export function VideoArt(props: { node: StorageNode; url: string }) {
       )}
       {shown && (
         <>
-          <span
+          <IconPlayFilled
             aria-hidden
-            className={`relative flex size-10 items-center justify-center rounded-full bg-foreground/40 text-background backdrop-blur-sm transition-[opacity,scale] duration-200 ease-out motion-reduce:transition-none ${playing ? "scale-90 opacity-0" : "opacity-100"}`}
-          >
-            <IconPlayFilled className="size-4 translate-x-px" />
-          </span>
+            className={`relative size-10 text-background drop-shadow-sm transition-[opacity,scale] duration-200 ease-out motion-reduce:transition-none ${playing ? "scale-90 opacity-0" : "opacity-100"}`}
+          />
         </>
       )}
     </div>

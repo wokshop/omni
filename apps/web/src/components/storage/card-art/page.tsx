@@ -7,10 +7,11 @@ import { useSeen } from "../file-card.tsx";
 import { FileGlyph } from "../file-glyph.tsx";
 
 const PAGE = "absolute inset-0 @container overflow-hidden bg-background";
-const MINI: Record<"title" | "body" | "cell", CSSProperties> = {
+const MINI: Record<"title" | "body" | "cell" | "code", CSSProperties> = {
   title: { fontSize: "6.5cqw", lineHeight: 1.3 },
   body: { fontSize: "4.6cqw", lineHeight: 1.65 },
-  cell: { fontSize: "4.2cqw", lineHeight: 1.5 },
+  cell: { fontSize: "5.4cqw", lineHeight: 1.5 },
+  code: { fontSize: "6cqw", lineHeight: 1.6 },
 };
 const MARGIN: CSSProperties = { padding: "10cqw" };
 
@@ -143,7 +144,7 @@ function PlainBody(props: { text: string }) {
 function CodeBody(props: { text: string; hash: boolean }) {
   return (
     <Page>
-      <pre style={MINI.body} className="font-mono">
+      <pre style={MINI.code} className="font-mono">
         {textLines(props.text).map((line, i) => (
           <span key={i} className="block whitespace-pre">
             {line
@@ -163,14 +164,14 @@ function CodeBody(props: { text: string; hash: boolean }) {
 function Grid(props: { rows: string[][] }) {
   return (
     <Page bare>
-      <table style={MINI.cell} className="w-full table-fixed border-collapse">
+      <table style={{ ...MINI.cell, width: "170cqw" }} className="table-fixed border-collapse">
         <tbody>
           {props.rows.map((row, r) => (
             <tr key={r} className={r === 0 ? "bg-accent text-foreground" : "text-muted-foreground"}>
               {row.map((cell, c) => (
                 <td
                   key={c}
-                  style={{ padding: "1.4cqw 2.4cqw" }}
+                  style={{ padding: "2.2cqw 3.4cqw" }}
                   className={`truncate border-e border-b border-border tabular-nums ${/^-?[\d.,%$€£]+$/.test(cell) ? "text-end" : ""}`}
                 >
                   {cell || "\u00a0"}

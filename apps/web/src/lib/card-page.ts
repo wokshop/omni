@@ -6,8 +6,8 @@ export interface DocLine {
 }
 
 const LINES = 14;
-const ROWS = 10;
-const COLUMNS = 4;
+const ROWS = 12;
+const COLUMNS = 5;
 
 const inline = (line: string) =>
   line
@@ -63,11 +63,14 @@ export function csvGrid(text: string, name: string) {
   return grid(parsed.data);
 }
 
-/** Rows cut to the card's grid: `ROWS` by `COLUMNS`, every row as wide. */
+/**
+ * Rows as the card's grid: always `ROWS` by `COLUMNS`, more than the card shows, so a short
+ * sheet still fills it with empty cells and a wide one runs off its edges.
+ */
 export function grid(rows: string[][]) {
-  return rows
-    .slice(0, ROWS)
-    .map((row) => Array.from({ length: COLUMNS }, (_, c) => (row[c] ?? "").trim()));
+  return Array.from({ length: ROWS }, (_, r) =>
+    Array.from({ length: COLUMNS }, (_, c) => (rows[r]?.[c] ?? "").trim()),
+  );
 }
 
 export type CodeTone = "keyword" | "string" | "comment" | "plain";
