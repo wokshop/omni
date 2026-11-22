@@ -68,7 +68,7 @@ function MonthDay(props: WeekGridProps & { day: Date; month: number; onDay: (day
         aria-label={`Open ${day.toDateString()}`}
         onClick={() => props.onDay(day)}
         className={cn(
-          "grid h-5 min-w-5 place-items-center self-start rounded-md px-1 text-xs tabular-nums",
+          "mb-1 grid h-5 min-w-5 place-items-center self-start rounded-md px-1 text-xs tabular-nums",
           day.getMonth() === props.month ? "text-foreground" : "text-subtle-foreground",
           today && "bg-module-calendar font-medium text-primary-foreground",
         )}

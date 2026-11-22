@@ -140,7 +140,8 @@ function Todos() {
 }
 
 const ROW = "flex h-8 min-w-0 items-center gap-2 rounded-md ps-1.5 pe-1";
-const ROUND = "gap-x-0 **:data-[slot=control-label]:hidden **:data-[slot=indicator]:rounded-full";
+const ROUND =
+  "w-4.25 shrink-0 gap-x-0 overflow-hidden **:data-[slot=control-label]:hidden **:data-[slot=indicator]:rounded-full";
 
 function NewTodo({ section, onDone }: { section: DueGroup; onDone: () => void }) {
   const [title, setTitle] = useState("");

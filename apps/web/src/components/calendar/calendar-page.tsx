@@ -3,7 +3,6 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { IconChevronLeft, IconChevronRight } from "@/components/icons/central";
 import { StorageFrame } from "@/components/storage/storage-frame";
 import { Button } from "@/components/ui/button";
-import { Keyboard } from "@/components/ui/keyboard";
 import { Tooltip, TooltipTrigger } from "@/components/ui/tooltip";
 import { useCalendarEvents, useCalendars } from "@/hooks/use-calendar.ts";
 import { useWorkspaceSlug } from "@/hooks/use-workspaces.ts";
@@ -45,7 +44,7 @@ function Hinted(props: { label: string; keyName: string; children: ReactNode }) 
       <Tooltip>
         <span className="flex items-center gap-2">
           {props.label}
-          <Keyboard>{props.keyName}</Keyboard>
+          <span className="opacity-60">{props.keyName}</span>
         </span>
       </Tooltip>
     </TooltipTrigger>

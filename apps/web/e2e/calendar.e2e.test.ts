@@ -537,6 +537,20 @@ test("a to-do checked off stays in its section, crossed out", async () => {
   );
 });
 
+test("a to-do's text sits close to its check", async () => {
+  const { org, member, page, origin } = await invited();
+  await db
+    .insert(schema.crmTasks)
+    .values({ orgId: org.id, title: "Draft Q1 plan", assigneeMemberId: member.id });
+  await openWeek(page, origin, org.slug);
+  const section = page.getByRole("region", { name: "No date" });
+  await section.getByText("Draft Q1 plan").waitFor();
+  const circle = await section.locator('[data-slot="indicator"]').first().boundingBox();
+  const text = await section.getByRole("link", { name: "Draft Q1 plan" }).boundingBox();
+  const gap = (text?.x ?? 0) - ((circle?.x ?? 0) + (circle?.width ?? 0));
+  expect(gap).toBeLessThanOrEqual(10);
+});
+
 async function freePort() {
   const server = createServer();
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
