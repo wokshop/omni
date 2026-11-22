@@ -1,8 +1,10 @@
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { members, users } from "../schema/auth.ts";
+import { userEmails } from "../schema/identity.ts";
 import {
   meetingsActions,
   meetingsAttendees,
+  meetingsGrants,
   meetingsJobs,
   meetingsMeetings,
   meetingsNotes,
@@ -283,4 +285,47 @@ export async function setFiles(
   files: { notesNodeId?: string; groupKey?: string },
 ) {
   await ex.update(meetingsMeetings).set(files).where(eq(meetingsMeetings.id, meetingId));
+}
+
+/** The workspace's members who can open the meeting now: who its realtime events go to. */
+export async function memberAudience(ex: Ex, meetingId: string) {
+  const [meeting] = await ex
+    .select()
+    .from(meetingsMeetings)
+    .where(eq(meetingsMeetings.id, meetingId));
+  if (!meeting) return [];
+  const [people, grants] = await Promise.all([
+    ex
+      .select({
+        id: members.id,
+        role: members.role,
+        email: users.email,
+        verified: users.emailVerified,
+        extra: userEmails.email,
+      })
+      .from(members)
+      .innerJoin(users, eq(users.id, members.userId))
+      .leftJoin(userEmails, eq(userEmails.userId, users.id))
+      .where(eq(members.organizationId, meeting.orgId)),
+    ex
+      .select({ address: meetingsGrants.address })
+      .from(meetingsGrants)
+      .where(eq(meetingsGrants.meetingId, meetingId)),
+  ]);
+  const granted = new Set(grants.map((g) => g.address));
+  const reach = new Set<string>();
+  for (const p of people) {
+    const teammate = p.role.split(",").some((r) => r.trim() !== "freelancer");
+    const addresses = [p.verified ? p.email : null, p.extra]
+      .filter((a): a is string => !!a)
+      .map((a) => a.toLowerCase());
+    if (
+      p.id === meeting.recordedByMemberId ||
+      (teammate && meeting.access === "workspace") ||
+      addresses.some((a) => granted.has(a))
+    ) {
+      reach.add(p.id);
+    }
+  }
+  return [...reach];
 }

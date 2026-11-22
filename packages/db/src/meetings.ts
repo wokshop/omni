@@ -111,6 +111,7 @@ export function meetingsPipeline(db: Db) {
     saveNotes: (meetingId: string, orgId: string, notes: pipeline.SavedNotes) =>
       db.transaction((tx) => pipeline.saveNotes(tx, meetingId, orgId, notes)),
     claimDocWrite: (meetingId: string) => pipeline.claimDocWrite(db, meetingId),
+    audience: (meetingId: string) => pipeline.memberAudience(db, meetingId),
     setFiles: (meetingId: string, files: { notesNodeId?: string; groupKey?: string }) =>
       pipeline.setFiles(db, meetingId, files),
     saveGroupSummary: (
