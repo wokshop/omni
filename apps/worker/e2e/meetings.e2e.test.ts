@@ -171,6 +171,23 @@ test("a recorded call becomes a transcript with names, notes and actions, for it
   const email = ready.body.actions.find((a: any) => a.kind === "email");
   expect(email.payload.to).toContain(marta);
 
+  const task = ready.body.actions.find((a: any) => a.kind === "task");
+  expect((await api(ben, "POST", `/actions/${task.id}/accept`)).status).toBe(403);
+  const accepted = await api(dana, "POST", `/actions/${task.id}/accept`);
+  expect(accepted.body.action).toMatchObject({ state: "done" });
+  const [made] = await stack.db
+    .select()
+    .from(schema.calendarTasks)
+    .where(eq(schema.calendarTasks.title, task.payload.title));
+  expect(made).toMatchObject({ ownerMemberId: dana.id, recordKind: null });
+  expect((await api(dana, "POST", `/actions/${task.id}/accept`)).status).toBe(409);
+  expect(
+    await stack.db
+      .select()
+      .from(schema.calendarTasks)
+      .where(eq(schema.calendarTasks.title, task.payload.title)),
+  ).toHaveLength(1);
+
   const transcript = await api(ben, "GET", `/${meetingId}/transcript`);
   expect(transcript.body.segments).toHaveLength(6);
   expect((await api(ben, "GET", `/${meetingId}`)).body.role).toBe("viewer");

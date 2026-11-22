@@ -7,7 +7,7 @@ import {
   startMeetingBodySchema,
   stopMeetingBodySchema,
 } from "@omni/contracts";
-import { groupKeyFor, meetingsPipeline, storageWorkspaceFile } from "@omni/db";
+import { forMember, groupKeyFor, meetingsPipeline, storageWorkspaceFile } from "@omni/db";
 import { Hono, type Context } from "hono";
 import type { AppEnv } from "../context.ts";
 import { apiError } from "../errors.ts";
@@ -210,9 +210,12 @@ export const meetings = new Hono<AppEnv>()
     return c.body(null, 204);
   })
   .post("/actions/:id/:decision{accept|dismiss}", async (c) => {
-    const decided = await memberMeetings(c).decideAction(c.req.param("id"), {
-      accept: c.req.param("decision") === "accept",
-    });
+    const accept = c.req.param("decision") === "accept";
+    const taskId = accept ? await taskFor(c, c.req.param("id")) : null;
+    const decided = await memberMeetings(c).decideAction(c.req.param("id"), { accept, taskId });
+    if (decided.status !== "ok" && taskId) {
+      await forMember(c.var.db, c.var.member.id).calendar.deleteTask(taskId);
+    }
     if (decided.status !== "ok") return refused(c, decided);
     return c.json({ action: decided.action });
   })
@@ -225,3 +228,21 @@ export const meetings = new Hono<AppEnv>()
     for (const nodeId of removed.files) await files.trash(nodeId);
     return c.body(null, 204);
   });
+
+async function taskFor(c: Context<AppEnv>, actionId: string) {
+  const found = await memberMeetings(c).action(actionId);
+  if (found.status !== "ok") return null;
+  const { action, role, meetingTitle } = found;
+  if (action.kind !== "task" || action.state !== "open" || role === "viewer") return null;
+  const payload = action.payload as { title?: string; owner?: string | null; due?: string | null };
+  const notes = [
+    `From the meeting ${meetingTitle ?? "without a title"}`,
+    payload.owner ? `Owner: ${payload.owner}` : null,
+    payload.due ? `Due: ${payload.due}` : null,
+  ].filter(Boolean);
+  const made = await forMember(c.var.db, c.var.member.id).calendar.createTask({
+    title: payload.title ?? "Task from a meeting",
+    body: notes.join("\n"),
+  });
+  return made.status === "ok" ? made.task.id : null;
+}
