@@ -201,7 +201,12 @@ export function noteWentBy(
  * that, in which case the counts are fetched again. Without `readAt`, everything is read.
  */
 export function threadRead(client: QueryClient, threadId: string, readAt: string | undefined) {
-  const people = client.getQueryData<TalkPerson[]>(keys.talkPeople());
+  const queryKey = keys.talkPeople();
+  // WARNING: a count already on its way may predate this read; ask again, after it.
+  if (client.getQueryCache().find({ queryKey, exact: true })?.state.fetchStatus === "fetching") {
+    return void client.invalidateQueries({ queryKey });
+  }
+  const people = client.getQueryData<TalkPerson[]>(queryKey);
   const person = people?.find((p) => p.threadId === threadId);
   if (!person?.unread) return;
   if (readAt && person.lastMessageAt && person.lastMessageAt > readAt) {

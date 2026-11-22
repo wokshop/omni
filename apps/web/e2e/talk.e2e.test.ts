@@ -438,6 +438,7 @@ test("realtime that comes late or out of order never misorders notes or hides a 
   const noteHeld = Promise.withResolvers<void>();
   const heldLate: string[] = [];
   const lateHeld = Promise.withResolvers<void>();
+  const readSeen: Array<PromiseWithResolvers<void>> = [];
   const deliver: Array<(frame: string) => void> = [];
   await context.routeWebSocket(/\/api\/realtime/, (ws) => {
     const server = ws.connectToServer();
@@ -456,6 +457,7 @@ test("realtime that comes late or out of order never misorders notes or hides a 
         heldNote.push(text);
         return noteHeld.resolve();
       }
+      if (event.type === "talk.changed" && event.read) readSeen.at(-1)?.resolve();
       if (holdReads && event.type === "talk.changed" && event.read) {
         heldReads.push(text);
         return readHeld.resolve();
@@ -557,4 +559,34 @@ test("realtime that comes late or out of order never misorders notes or hides a 
   deliver.at(-1)!(heldLate[0]!);
   await kofi.waitForTimeout(1_000);
   await early.getByRole("button", { name: "👍 1" }).waitFor();
+
+  await kofi.keyboard.press("Escape");
+  await window.waitFor({ state: "detached" });
+  await kofi.mouse.move(4, 400);
+  const peopleHeld = Promise.withResolvers<void>();
+  const peopleRelease = Promise.withResolvers<void>();
+  let holdPeople = true;
+  await kofi.route("**/api/talk/people", async (route) => {
+    if (!holdPeople) return route.fallback();
+    holdPeople = false;
+    const before = await route.fetch();
+    peopleHeld.resolve();
+    await peopleRelease.promise;
+    await route.fulfill({ response: before }).catch(() => {});
+  });
+  await post(`/threads/${thread.id}/messages`, { body: "Fifth" });
+  await peopleHeld.promise;
+  const seen = Promise.withResolvers<void>();
+  readSeen.push(seen);
+  holdReads = false;
+  const readAll = await fetch(new URL(`/api/talk/threads/${thread.id}/read`, origin()), {
+    method: "PUT",
+    headers: { cookie: kofiCookie, origin: WEB_ORIGIN },
+  });
+  expect(readAll.status).toBe(204);
+  await seen.promise;
+  await kofi.waitForTimeout(300);
+  peopleRelease.resolve();
+  await kofi.waitForTimeout(1_000);
+  await stack.getByRole("button", { name: "Ana Lima, offline", exact: true }).waitFor();
 });
