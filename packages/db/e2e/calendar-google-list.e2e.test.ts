@@ -74,7 +74,11 @@ async function shownOn(door: ReturnType<typeof forMember>["calendar"], calendarI
 describe("a Gmail inbox's Google calendar list", () => {
   test("adds the account's other calendars under its inbox, named and coloured by Google, the primary staying the inbox's own, and saving it again adds nothing", async () => {
     const { box, own, door } = await gmailInbox("list-add");
-    expect(await saveGoogleCalendarList(db, box, listed())).toEqual({ added: 3, retired: [] });
+    expect(await saveGoogleCalendarList(db, box, listed())).toEqual({
+      added: 3,
+      retired: [],
+      updated: true,
+    });
     const view = (await door.calendars()).map(({ name, readOnly, color, address }) => ({
       address,
       name,
@@ -93,11 +97,15 @@ describe("a Gmail inbox's Google calendar list", () => {
       { address: "rodrigo@studio.example", name: "Studio team", readOnly: true, color: "#fa573c" },
     ]);
     expect((await door.calendars())[0]?.id).toBe(own.id);
-    expect(await saveGoogleCalendarList(db, box, listed())).toEqual({ added: 0, retired: [] });
+    expect(await saveGoogleCalendarList(db, box, listed())).toEqual({
+      added: 0,
+      retired: [],
+      updated: false,
+    });
     expect(await door.calendars()).toHaveLength(4);
   });
 
-  test("a colour the member picked wins over Google's, and a calendar renamed in Google is renamed in Omni", async () => {
+  test("a colour the member picked wins over Google's, and a calendar renamed or recoloured in Google changes in Omni and says so", async () => {
     const { box, door } = await gmailInbox("list-rename");
     await saveGoogleCalendarList(db, box, listed());
     const team = await calendarIdOf(box.id, TEAM);
@@ -105,7 +113,14 @@ describe("a Gmail inbox's Google calendar list", () => {
     const renamed = listed().map((c) =>
       c.googleId === TEAM ? { ...c, name: "Studio crew", color: "#000000" } : c,
     );
-    await saveGoogleCalendarList(db, box, renamed);
+    expect(await saveGoogleCalendarList(db, box, renamed)).toEqual({
+      added: 0,
+      retired: [],
+      updated: true,
+    });
+    const recoloured = renamed.map((c) => (c.primary ? { ...c, color: "#ffffff" } : c));
+    expect((await saveGoogleCalendarList(db, box, recoloured)).updated).toBe(true);
+    expect((await saveGoogleCalendarList(db, box, recoloured)).updated).toBe(false);
     expect((await door.calendars()).find((c) => c.id === team.id)).toMatchObject({
       name: "Studio crew",
       color: "#123456",
@@ -123,7 +138,7 @@ describe("a Gmail inbox's Google calendar list", () => {
     expect(await shownOn(door, team.id)).toContain("2026-11-25T09:00:00.000Z Lookbook shoot");
 
     const saved = await saveGoogleCalendarList(db, box, listed([TEAM]));
-    expect(saved).toEqual({ added: 0, retired: [team.id] });
+    expect(saved).toEqual({ added: 0, retired: [team.id], updated: false });
     expect((await door.calendars()).map((c) => c.name)).toEqual([
       null,
       "Family",
