@@ -47,7 +47,18 @@ const LOCAL_SECRETS = {
   MAIL_CREDENTIALS_KEY: `k1:${randomBytes(32).toString("base64")}`,
   BETTER_AUTH_SECRET: randomBytes(32).toString("base64"),
 };
+function existingValue(name) {
+  for (const [file] of ENV_FILES) {
+    if (!existsSync(join(root, file))) continue;
+    const match = readFileSync(join(root, file), "utf8").match(new RegExp(`^${name}=(.+)$`, "m"));
+    if (match) return match[1].trim();
+  }
+  return undefined;
+}
 if (!useDoppler) {
+  for (const name of Object.keys(LOCAL_SECRETS)) {
+    LOCAL_SECRETS[name] = existingValue(name) ?? LOCAL_SECRETS[name];
+  }
   for (const [file, example] of ENV_FILES) {
     if (existsSync(join(root, file))) continue;
     const text = readFileSync(join(root, example), "utf8").replace(/^([A-Z_]+)=$/gm, (line, name) =>
