@@ -220,7 +220,14 @@ function move(board: Board, op: Op<"move">) {
   if (given > 1) throw new OpError("Give one of `to`, `by` or `place`.");
   if (!given && op.into === undefined)
     throw new OpError("Say where: `to`, `by`, `place` or `into`.");
+  const tied = moving.find(
+    (element) => element.kind === "connector" && (element.from?.id ?? element.to?.id) !== undefined,
+  );
+  if (given && tied) {
+    throw new OpError(`"${tied.id}" moves with the elements it joins: move those instead.`);
+  }
   const bounds = board.boundsOfAll(moving);
+  if (given && !bounds) throw new OpError("Nothing in `ids` has a place on the board to move.");
   if (given && bounds) {
     const self = new Set(moving.map((element) => element.id));
     const corner = op.place ? board.placed(op.place, bounds[2], bounds[3], self) : op.to;

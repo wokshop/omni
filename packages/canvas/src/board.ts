@@ -60,6 +60,10 @@ export class Board {
   /** An element's bounds: its box, or for a group what its children cover. */
   boundsOf(element: CanvasElement) {
     if (element.box) return element.box;
+    if (element.kind === "connector" && element.from && element.to) {
+      const points = [this.pointOf(element.from), this.pointOf(element.to)];
+      return union(points.map(([x, y]) => [x, y, 0, 0] satisfies Box));
+    }
     if (element.kind !== "group") return null;
     return union(
       [...this.under(element.id)].map((id) => this.byId.get(id)?.box).filter((box) => !!box),
