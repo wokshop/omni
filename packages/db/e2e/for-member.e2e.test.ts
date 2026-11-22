@@ -1269,6 +1269,7 @@ test("calendar occurrences: an event by row or UID, and the one on now, only fro
     expect(await door.occurrence({ uid }, null)).toEqual({ status: "not_found" });
     expect(await door.occurrenceAt(new Date(now))).toBeNull();
   }
+});
 
 test("meetings Ask sources: only notes and transcripts of meetings the member can open, in their own workspace", async () => {
   const t = crypto.randomUUID().slice(0, 8);
