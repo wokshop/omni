@@ -1,4 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
+import { Skeleton, SkeletonBox } from "skullet/react";
+import { ListFailed } from "@/components/inbox/thread-list";
 import { useMemo, useState, type FormEvent } from "react";
 import { IconTrash, IconUserCog, IconUserMinus } from "@/components/icons/central";
 import {
@@ -108,14 +110,14 @@ export function NewTeamspaceDialog(props: { selfId: string | undefined; onClose:
           props.onClose();
           void navigate({ href: href(drivePath({ teamspaceId: teamspace.id })) });
         },
-        onError: (error) => storageErrorToast(error, "The teamspace was not made"),
+        onError: (error) => storageErrorToast(error, "The space was not made"),
       },
     );
   };
   return (
     <Dialog size="md" isOpen onOpenChange={(open) => !open && !create.isPending && props.onClose()}>
       <DialogHeader>
-        <DialogTitle>New teamspace</DialogTitle>
+        <DialogTitle>New space</DialogTitle>
       </DialogHeader>
       <form className="contents" onSubmit={submit}>
         <DialogBody className="gap-4">
@@ -149,7 +151,7 @@ export function BrowseTeamspacesDialog(props: { onClose: () => void }) {
   return (
     <Dialog size="md" isOpen onOpenChange={(isOpen) => !isOpen && props.onClose()}>
       <DialogHeader>
-        <DialogTitle>Teamspaces</DialogTitle>
+        <DialogTitle>Spaces</DialogTitle>
       </DialogHeader>
       <DialogBody>
         <ul className="flex flex-col">
@@ -200,7 +202,7 @@ export function TeamspaceSettingsDialog(props: {
       { id: teamspace.id, name: name.trim(), private: closed },
       {
         onSuccess: props.onClose,
-        onError: (error) => storageErrorToast(error, "The teamspace was not changed"),
+        onError: (error) => storageErrorToast(error, "The space was not changed"),
       },
     );
   };
@@ -254,6 +256,14 @@ function Members(props: { teamspace: StorageTeamspace }) {
       { id: teamspace.id, memberId, role },
       { onError: (error) => storageErrorToast(error, "Its people were not changed") },
     );
+  if (listed.isPending) {
+    return (
+      <Skeleton loading label="Loading people" skeleton={<MembersBones />}>
+        {null}
+      </Skeleton>
+    );
+  }
+  if (listed.isError) return <ListFailed retry={() => void listed.refetch()} />;
   return (
     <div className="flex flex-col gap-2">
       {teamspace.manage && (
@@ -294,6 +304,19 @@ function Members(props: { teamspace: StorageTeamspace }) {
   );
 }
 
+function MembersBones() {
+  return (
+    <div className="flex flex-col">
+      {Array.from({ length: 3 }, (_, i) => (
+        <div key={i} className="flex h-10 items-center gap-2.5">
+          <SkeletonBox width={24} height={24} radius="9999px" />
+          <SkeletonBox width={`${30 + i * 12}%`} height={10} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 const memberMenu = (
   member: StorageTeamspaceMember,
   change: (memberId: string, role: StorageTeamspaceMember["role"] | null) => void,
@@ -326,12 +349,12 @@ function DeleteTeamspace(props: { teamspace: StorageTeamspace; onDone: () => voi
             props.onDone();
             void navigate({ href: href("/files") });
           },
-          onError: (error) => storageErrorToast(error, "The teamspace was not deleted"),
+          onError: (error) => storageErrorToast(error, "The space was not deleted"),
         })
       }
     >
       <IconTrash data-slot="icon" />
-      Delete teamspace
+      Delete space
     </Button>
   );
 }

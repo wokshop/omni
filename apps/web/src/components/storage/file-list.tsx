@@ -132,12 +132,12 @@ function TeamspaceButton(props: { id: string }) {
         <Button
           intent="plain"
           size="sq-sm"
-          aria-label="Teamspace settings"
+          aria-label="Space settings"
           onPress={() => setOpen(true)}
         >
           <IconSettings />
         </Button>
-        <Tooltip>Teamspace settings</Tooltip>
+        <Tooltip>Space settings</Tooltip>
       </TooltipTrigger>
       {open && <TeamspaceSettingsDialog teamspace={teamspace} onClose={() => setOpen(false)} />}
     </>
@@ -169,10 +169,18 @@ const docExports = (node: StorageNode, exportAs: ExportDoc) =>
 export function useCanTrash() {
   const { member } = useMember();
   const manager = /\b(owner|admin)\b/.test(member.role);
+  const { teamspaces } = useTeamspaces();
+  const owned = useMemo(
+    () => new Set(teamspaces.filter((t) => t.role === "owner").map((t) => t.id)),
+    [teamspaces],
+  );
   return useCallback(
     (node: StorageNode) =>
-      node.space === "personal" || manager || node.createdByMemberId === member.id,
-    [manager, member.id],
+      node.space === "personal" ||
+      manager ||
+      node.createdByMemberId === member.id ||
+      (!!node.teamspaceId && owned.has(node.teamspaceId)),
+    [manager, member.id, owned],
   );
 }
 
