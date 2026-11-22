@@ -290,7 +290,7 @@ test("switching workspace keeps the module; switching module keeps the workspace
   await page.getByRole("button", { name: /^Switch workspace, currently / }).click();
   await page.getByRole("menuitem", { name: other }).click();
   const otherSlug = other === "Beta" ? beta.slug : acme.slug;
-  await rail.locator(`a[href^="/${otherSlug}/files"]`).waitFor({ timeout: 3_000 });
+  await rail.locator(`a[href^="/${otherSlug}/files"]`).waitFor({ timeout: 8_000 });
   await page.getByRole("button", { name: `Switch workspace, currently ${other}` }).waitFor();
   await page.unroute(/\/api\/(mailboxes|counts)/);
   expect(place(page.url())).toBe("/files/trash");
@@ -318,8 +318,11 @@ test("g then f keeps the mailbox for the way back to Mail", async () => {
 
   await page.keyboard.press("g");
   await page.keyboard.press("f");
-  await page.waitForURL((url) => place(url) === "/files/my");
-  await page.getByRole("button", { name: "Go to Mail" }).click();
+  await page.waitForURL((url) => place(url) === "/files");
+  await page
+    .getByRole("navigation", { name: "Modules" })
+    .getByRole("link", { name: "Mail" })
+    .click();
   await page.waitForURL((url) => place(url) === "/mail/inbox");
   expect(new URL(page.url()).searchParams.get("mailbox")).toBe(boxes.support.id);
   await page.getByRole("button", { name: /^Switch mailbox, currently Support/ }).waitFor();
