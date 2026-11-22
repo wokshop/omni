@@ -109,6 +109,19 @@ export async function readTask(ex: Ex, orgId: string, id: string) {
   return row ? toTask(row as Row) : null;
 }
 
+/**
+ * The task, locked until the transaction ends, so two changes to it run one after the other and
+ * the second builds on the first.
+ */
+export async function lockTask(tx: Ex, orgId: string, id: string) {
+  const [row] = await tx
+    .select(columns)
+    .from(calendarTasks)
+    .where(and(eq(calendarTasks.orgId, orgId), eq(calendarTasks.id, id)))
+    .for("update");
+  return row ? toTask(row as Row) : null;
+}
+
 /** The workspace's member, or null when they are gone. */
 export async function taskMember(ex: Ex, memberId: string) {
   const [row] = await ex
@@ -282,7 +295,7 @@ export async function changeTask(
 ) {
   const title = patch.title === undefined ? undefined : cleanTitle(patch.title);
   if (title === null) return { status: "invalid_title" } as InvalidTitle;
-  const current = await readTask(tx, orgId, id);
+  const current = await lockTask(tx, orgId, id);
   if (!current) return NOT_FOUND;
   const set = setFor(memberId, current, patch, title);
   if (Object.keys(set).length > 0) {

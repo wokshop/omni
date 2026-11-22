@@ -6,7 +6,7 @@ import { releaseCalendarTasks } from "../src/calendar.ts";
 import { ensurePersonalSpace } from "../src/personal-space.ts";
 import { calendarTasks, crmTasks, members } from "../src/schema/index.ts";
 import { createPerson, setRole } from "./storage-support.ts";
-import { createMember, createOrg, createTestDatabase } from "./support.ts";
+import { createMember, createOrg, createTestDatabase, untilLockWaiters } from "./support.ts";
 
 const { db, teardown } = await createTestDatabase();
 afterAll(teardown);
@@ -284,4 +284,61 @@ test("the copy job reaches every row in turns when the table is longer than one 
     await copyTasksToCalendar(db, { batch: 1, pages: 1, now: new Date(minute * 60_000) });
   }
   for (const row of made) expect(await calendarRow(row.id)).toMatchObject({ title: row.title });
+});
+
+test("a change waiting on another to the same task builds on it, not on what it read before", async () => {
+  const { ana, ben } = await workspace("tasks-race");
+  const crm = forMember(db, ana.id).crm;
+  const deal = ok(await crm.createDeal({ name: "Launch" })).deal;
+  const task = ok(await crm.createTask({ title: "Ship", record: { dealId: deal.id } })).task;
+
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  const first = db.transaction(async (tx) => {
+    await tx.select().from(calendarTasks).where(eq(calendarTasks.id, task.id)).for("update");
+    await held;
+    await tx
+      .update(calendarTasks)
+      .set({ completedAt: new Date(), completedByMemberId: ben.id })
+      .where(eq(calendarTasks.id, task.id));
+  });
+  let finished = false;
+  const second = crm.updateTask(task.id, { title: "Ship it" }).finally(() => (finished = true));
+  await untilLockWaiters(db, 1, () => finished);
+  release();
+  await first;
+  ok(await second);
+  expect(await calendarRow(task.id)).toMatchObject({
+    title: "Ship it",
+    completedByMemberId: ben.id,
+  });
+});
+
+test("a freelancer puts their own private task on their project, and on no other", async () => {
+  const { org, owner } = await workspace("tasks-freelancer-link");
+  const fran = await createPerson(db, `fran-${crypto.randomUUID()}@freelance.test`);
+  const [member] = await db
+    .insert(members)
+    .values({
+      id: crypto.randomUUID(),
+      organizationId: org.id,
+      userId: fran.id,
+      role: "freelancer",
+      createdAt: new Date(),
+    })
+    .returning();
+  const crm = forMember(db, owner.id).crm;
+  const website = ok(await crm.createDeal({ name: "Website" })).deal;
+  const app = ok(await crm.createDeal({ name: "App" })).deal;
+  ok(await crm.grantProjectAccess(website.id, { email: fran.email, scope: "freelancer" }));
+
+  const own = ok(
+    await forMember(db, member!.id).calendar.createTask({ title: "Draft wireframes" }),
+  ).task;
+  const theirs = forMember(db, member!.id).crm;
+  expect((await theirs.updateTask(own.id, { record: { dealId: app.id } })).status).toBe(
+    "not_found",
+  );
+  const linked = ok(await theirs.updateTask(own.id, { record: { dealId: website.id } })).task;
+  expect(linked.dealId).toBe(website.id);
 });

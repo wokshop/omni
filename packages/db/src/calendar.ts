@@ -170,6 +170,7 @@ export {
   isSoleOwner,
   linkedTasks,
   putTask,
+  lockTask,
   readTask as calendarTask,
   removeTask,
   taskVersions,
