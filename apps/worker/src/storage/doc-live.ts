@@ -71,6 +71,11 @@ export class LiveFile {
     return liveMarkdown(this.doc);
   }
 
+  /** The last record it holds, with every one before it. */
+  get through() {
+    return this.next - 1;
+  }
+
   /** Whether it holds changes made after its latest save: typing the file does not have yet. */
   get unsaved() {
     return this.changedAt > this.fold.s;

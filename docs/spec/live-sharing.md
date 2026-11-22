@@ -95,7 +95,9 @@ already gets. Then:
    the auth secret by `@omni/crypto` (`signGuestKey`, next to `signLinkKey`): a random 128-bit
    guest id with an expiry, in an `omni_guest` cookie on the same per-link path, kept 30 days.
    The same browser is the same guest on that link across reloads, and a guest on two links is
-   two guests: nothing follows a visitor from one workspace's link to another's.
+   two guests: nothing follows a visitor from one workspace's link to another's. The key is given
+   by `GET /shared/:shareId` when it opens a file the link's role lets them comment on or edit;
+   the socket refuses a guest without one (`403`).
 6. **Into the object.** The Worker strips every `x-omni-*` header the client sent, then sets
    `x-omni-outside` to the JSON the object needs (door, ids, role, identity, the link key) and
    forwards to `REALTIME.get(idFromName(node.orgId))`. The object trusts that header because
@@ -225,7 +227,8 @@ Guests comment too, which they cannot do today (the link door has no writer).
 `storage_comments.author_guest` (`{ id, name }`, nullable) is the author when there is no member.
 `mine` compares the guest id, so a guest edits and deletes only their own comments, and anyone
 who may comment resolves. Guest comments count against a new rule,
-`RATE_LIMIT_STORAGE_LINK_COMMENT` (`30/600`, per guest), and do not notify anyone by mail or
+`RATE_LIMIT_STORAGE_LINK_COMMENT` (`30/600`, per link and IP, since a new guest key is free to
+get), and do not notify anyone by mail or
 push; members see them in the doc.
 
 ### 7. Saves by outsiders, and how versions and the edit history name them
@@ -261,9 +264,11 @@ ids.
   a member of another workspace or their Personal space, the way their comments already do, via
   `grantDoor.actor`). For the fold: the author of the latest record in the range, and for a
   guest, `written_by_guest` (`{ id, name }`) with no member.
-- **The coauthors.** Everyone whose records the saved range holds (`by`, between the previous fold
-  and this one), as `coauthors`: `[{ kind, memberId?, userId?, guestId?, name }]`. A member's
-  save that carries a guest's typing names the guest.
+- **The coauthors.** The outsiders whose records the save holds, as `coauthors`:
+  `[{ kind: "guest" | "grantee", id, name }]` (a guest id or a grantee's user id). Members are not
+  listed: their own saves name them. The realtime object knows who appended since the last save,
+  so the fold names them, and when a member's tab saves (its `fold` record), the object adds the
+  outsiders that save holds to the file's content (`addCoauthors`).
 - **Sessions (#706).** A session is one writer: a member id, or a guest id. A fold's save
   continues a session when its writer is the session's. Superseded autosaves merge their
   coauthors into the version that is kept, so the one entry Versions shows names everyone who
@@ -287,13 +292,16 @@ order, and the Worker serves the web build, so a tab open across the deploy runs
 
 **`@omni/db`** (one migration, numbered above #706's `0066`):
 
-- `storage_nodes.link_role` and `storage_upload_links.link_role`: enum `storage_link_role`
-  (`viewer`, `commenter`, `editor`), not null, default `viewer`. `linkDoor` returns it as the
-  role; `inside`, `change`, `remove` and `share` stay false. Existing links stay Viewer.
+- `storage_nodes.link_role` and `storage_upload_links.link_role`: the grants' enum
+  `storage_grant_role` (`viewer`, `commenter`, `editor`), not null, default `viewer`. `linkDoor`
+  returns it as the role, marked `viaLink` so `editsContent` stays false; `inside`, `change`,
+  `remove` and `share` stay false. Existing links stay Viewer. Editor means editing a doc's live
+  document: through a link, nothing else is written over HTTP.
 - `storage_policies.link_editing`, boolean, default true (a workspace that never set a policy
   allows everything, as today): when false, links open no wider than Commenter.
-- `storage_contents.written_by_guest`, `storage_versions.written_by_guest` (jsonb, nullable),
-  `storage_versions.coauthors` (jsonb, nullable; null for versions from before).
+- `storage_contents.written_by_guest`, `storage_versions.written_by_guest`,
+  `storage_contents.coauthors` and `storage_versions.coauthors` (jsonb, nullable; null for
+  versions from before).
 - `storage_comments.author_guest` (jsonb, nullable).
 - `storage_share_event_kind` gains `edited`.
 - Every table is already workspace-owned with `org_id`; none is new.
@@ -331,7 +339,9 @@ outsider branch of `doc.append` and `doc.presence`; awareness stamping; `by` sta
 
 **Config:** `RATE_LIMIT_STORAGE_LINK_LIVE` and `RATE_LIMIT_STORAGE_LINK_COMMENT`, zod-validated in
 `env.ts`, in `apps/worker/.dev.vars.example` and `docs/self-hosting.md`. No new binding: the
-fold runs in the realtime object's alarm.
+fold runs in the realtime object's alarm, through the Storage module's `foldLive` hook
+(`apps/worker/src/modules.ts`), since platform code reaches a module's Worker folder only
+through the registrar.
 
 **Self-hosting without the live layer.** When S2 is not configured, `live` is false and docs save
 with checked saves alone, as today. Then a link's Editor role saves nothing for a guest (there is
@@ -375,6 +385,9 @@ The implementation is a stack on top of #707, each layer a `gh stack` layer:
 - Guests choosing their own name.
 - Outsiders in `file.presence` (members see them through awareness).
 - Mail or push notifications for guests' comments.
+- A doc opened inside a shared folder joins live only once the folder page passes the doc's
+  `live` along; the web app does this for a doc opened directly by its link. Inside a folder, a
+  grantee still saves version by version, and a guest Editor reads only.
 
 ## Verify
 
