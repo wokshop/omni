@@ -42,12 +42,17 @@ async function writerOf(env: Env, orgId: string, author: FoldAuthor) {
 /**
  * Saves a doc's live document that outsiders typed in and nobody saved yet
  * (`docs/spec/live-sharing.md`): the Worker's own save, as its tabs never write over HTTP. Its
- * writer is the outsider who typed last, and every outsider it holds is a coauthor. Idempotent:
+ * writer is whoever typed last (a member too), and every outsider it holds is a coauthor. Idempotent:
  * once a fold holds the records, another run finds nothing unsaved.
  */
 export const foldLive: (
   env: Env,
-  input: { orgId: string; nodeId: string; authors: FoldAuthor[] },
+  input: {
+    orgId: string;
+    nodeId: string;
+    authors: FoldAuthor[];
+    member: { memberId: string; lastSeq: number } | null;
+  },
 ) => Promise<FoldOutcome> = async (env, input) => {
   const config = loadConfig(env);
   const basin = s2Basin(config);
@@ -59,7 +64,10 @@ export const foldLive: (
     const live = await LiveFile.open(basin, input.nodeId, node.contentVersion);
     if (!live || !live.unsaved) return { status: "nothing" };
     const last = input.authors.reduce((a, b) => (b.lastSeq > a.lastSeq ? b : a));
-    const writer = await writerOf(env, input.orgId, last);
+    const writer =
+      input.member && input.member.lastSeq > last.lastSeq
+        ? ({ memberId: input.member.memberId } satisfies StorageWriter)
+        : await writerOf(env, input.orgId, last);
     const coauthors = input.authors.map(({ kind, id, name }) => ({ kind, id, name }));
     let base = node.contentVersion;
     for (let tries = 0; ; tries++) {

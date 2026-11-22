@@ -16,7 +16,7 @@ import {
   leaveFile,
   setEditing,
 } from "./realtime-files.ts";
-import { settleOwed } from "./realtime-folds.ts";
+import { noteMemberTyped, settleOwed } from "./realtime-folds.ts";
 import { sendToOutsiders } from "./realtime-outside.ts";
 import { relayPresence, sendPresence } from "./realtime-presence.ts";
 import { s2Basin } from "./s2.ts";
@@ -122,6 +122,7 @@ export async function onDocAppend(
     } catch {}
   }
   sendToOutsiders(ctx, nodeId, [event]);
+  if (record.t === "update") await noteMemberTyped(ctx, { nodeId, memberId, seqNum });
   if (record.t === "fold") {
     await settleOwed(ctx, env, { nodeId, contentVersion: record.cv, s: record.s });
   }

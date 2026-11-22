@@ -23,7 +23,12 @@ export interface Module extends ModuleLifecycle {
    */
   foldLive?: (
     env: Env,
-    input: { orgId: string; nodeId: string; authors: FoldAuthor[] },
+    input: {
+      orgId: string;
+      nodeId: string;
+      authors: FoldAuthor[];
+      member: { memberId: string; lastSeq: number } | null;
+    },
   ) => Promise<FoldOutcome>;
 }
 

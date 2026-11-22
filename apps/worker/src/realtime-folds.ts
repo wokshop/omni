@@ -20,6 +20,7 @@ interface Owed {
   dueAt: number;
   tries: number;
   authors: Record<string, FoldAuthor>;
+  member?: { memberId: string; lastSeq: number };
 }
 
 /** An outsider whose records a save holds, and the last of them it holds. */
@@ -60,6 +61,17 @@ export async function noteOwed(
   owed.dueAt = Math.min(now + FOLD_MS, owed.firstAt + FOLD_MAX_MS);
   await ctx.storage.put(owedKey(input.nodeId), owed);
   await scheduleAlarm(ctx);
+}
+
+/** A member typed in a doc that owes a save: if they typed last, the save is theirs. */
+export async function noteMemberTyped(
+  ctx: DurableObjectState,
+  input: { nodeId: string; memberId: string; seqNum: number },
+) {
+  const owed = await ctx.storage.get<Owed>(owedKey(input.nodeId));
+  if (!owed) return;
+  owed.member = { memberId: input.memberId, lastSeq: input.seqNum };
+  await ctx.storage.put(owedKey(input.nodeId), owed);
 }
 
 /**
@@ -134,6 +146,7 @@ export async function runAlarm(
         orgId: one.orgId,
         nodeId,
         authors: Object.values(one.authors),
+        member: one.member ?? null,
       });
       if (outcome.status === "saved") await saved(nodeId, outcome.node, outcome.events);
       if (outcome.status === "refused") {

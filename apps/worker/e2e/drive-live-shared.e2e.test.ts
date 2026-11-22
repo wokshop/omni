@@ -384,6 +384,30 @@ test("a guest's typing with nobody else on the doc is saved, as the guest's, onc
   guest.socket.close();
 });
 
+test("a save holding a guest's and a member's typing is the member's when they typed last, and names the guest", async () => {
+  const { ana, doc, shareId } = await sharedDoc("# Plan");
+  const guest = await visitorPage(new CookieJar(), shareId, doc.id);
+  const tab = await memberTab(ana, doc.id);
+  const typed = rewriteLive(guest.doc, "# Plan, from the guest");
+  await guest.send({ t: "update", e: guest.epoch, u: base64(typed) }, doc.id);
+  const anaDoc = new Y.Doc();
+  Y.applyUpdate(anaDoc, Y.encodeStateAsUpdate(guest.doc));
+  const both = "# Plan, from the guest, and from Ana";
+  await tab.append({ t: "update", e: guest.epoch, u: base64(rewriteLive(anaDoc, both)) });
+  await vi.waitFor(
+    async () => expect(await (await stack.download(ana.jar, doc.id)).text()).toBe(both),
+    { timeout: 15_000, interval: 250 },
+  );
+  const versions = await stack.api(ana.jar, "GET", `/files/${doc.id}/versions`);
+  expect(versions.body.current).toMatchObject({
+    writtenByName: ana.email,
+    writtenByGuest: false,
+    coauthors: [{ kind: "guest", name: expect.stringMatching(/^Guest /) }],
+  });
+  guest.socket.close();
+  tab.socket.close();
+});
+
 test("a guest's comment on a Commenter link reaches everyone on the doc live", async () => {
   const { ana, doc, shareId } = await sharedDoc("# Plan", "commenter");
   const jar = new CookieJar();
