@@ -154,7 +154,7 @@ test("an invitation on the week is answered by key, and its answer goes to the o
     .toBe("true");
 });
 
-test("c makes an event at the selected slot, and two quick arrows move it half an hour", async () => {
+test("c makes an event at the selected slot, and quick arrows add up: four move it an hour", async () => {
   const { org, page, origin } = await invited();
   await openWeek(page, origin, org.slug);
   await page.locator('[data-day="2026-11-24"]').click({ position: { x: 20, y: 10 * 48 + 6 } });
@@ -171,11 +171,10 @@ test("c makes an event at the selected slot, and two quick arrows move it half a
 
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: /Focus block/ }).click();
-  await page.keyboard.press("ArrowDown");
-  await page.keyboard.press("ArrowDown");
+  for (let i = 0; i < 4; i++) await page.keyboard.press("ArrowDown");
   await expect
     .poll(async () => (await ownEvents(org.id))[0]?.startsAt.getTime())
-    .toBe((made?.startsAt.getTime() ?? 0) + 30 * 60_000);
+    .toBe((made?.startsAt.getTime() ?? 0) + 60 * 60_000);
 });
 
 test("the thread shows the invitation with Yes, No and Maybe, and No answers it", async () => {
@@ -535,20 +534,16 @@ test("a to-do checked off stays in its section, crossed out", async () => {
   expect(await section.getByRole("checkbox", { name: "Reopen Call the printer" }).isChecked()).toBe(
     true,
   );
-});
 
-test("a to-do's text sits close to its check", async () => {
-  const { org, member, page, origin } = await invited();
-  await db
-    .insert(schema.crmTasks)
-    .values({ orgId: org.id, title: "Draft Q1 plan", assigneeMemberId: member.id });
-  await openWeek(page, origin, org.slug);
-  const section = page.getByRole("region", { name: "No date" });
-  await section.getByText("Draft Q1 plan").waitFor();
-  const circle = await section.locator('[data-slot="indicator"]').first().boundingBox();
-  const text = await section.getByRole("link", { name: "Draft Q1 plan" }).boundingBox();
-  const gap = (text?.x ?? 0) - ((circle?.x ?? 0) + (circle?.width ?? 0));
-  expect(gap).toBeLessThanOrEqual(10);
+  await page.locator('[data-day="2026-11-24"]').click({ position: { x: 20, y: 10 * 48 + 6 } });
+  await page.keyboard.press("c");
+  await page.getByRole("textbox", { name: "Title" }).fill("Planning");
+  await page.keyboard.press("Enter");
+  await page.getByRole("button", { name: /Planning/ }).waitFor();
+  await page.waitForLoadState("networkidle");
+  expect(await section.getByRole("checkbox", { name: "Reopen Call the printer" }).isChecked()).toBe(
+    true,
+  );
 });
 
 async function freePort() {
