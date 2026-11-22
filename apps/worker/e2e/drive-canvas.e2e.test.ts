@@ -303,3 +303,57 @@ test("drive_fetch gives a long sticky's whole text", async () => {
   expect(fetched.text).toContain(JSON.stringify(long));
   expect(fetched.metadata.truncated).toBe(false);
 });
+
+test("deleting a frame refuses while something inside it is locked", async () => {
+  const { ana, agent } = await person();
+  const made = (await call(agent, "drive_create_canvas", {
+    name: "Locked inside",
+    ops: [
+      { op: "frame", title: "Plan", ref: "plan" },
+      { op: "add", kind: "sticky", text: "Keep", parent: "plan", ref: "keep" },
+      { op: "update", id: "keep", locked: true },
+    ],
+  })) as Answer & { canvas: { id: string }; created: Record<string, string> };
+  const before = (await body(ana, made.canvas.id)).text;
+  const deleted = await call(agent, "drive_edit_canvas", {
+    id: made.canvas.id,
+    ops: [{ op: "delete", ids: [made.created.plan] }],
+  });
+  expect(deleted.error).toContain(`"${made.created.keep}" inside "${made.created.plan}" is locked`);
+  expect((await body(ana, made.canvas.id)).text).toBe(before);
+});
+
+test("a group of loose connectors moves as one", async () => {
+  const { ana, agent } = await person();
+  const made = (await call(agent, "drive_create_canvas", {
+    name: "Loose lines",
+    ops: [
+      { op: "add", kind: "sticky", text: "A", at: { x: 0, y: 0 }, ref: "a" },
+      { op: "add", kind: "sticky", text: "B", at: { x: 400, y: 0 }, ref: "b" },
+      { op: "add", kind: "sticky", text: "C", at: { x: 0, y: 400 }, ref: "c" },
+      { op: "connect", from: "a", to: "b", ref: "top" },
+      { op: "connect", from: "a", to: "c", ref: "side" },
+      { op: "delete", ids: ["a", "b", "c"] },
+      { op: "group", ids: ["top", "side"], ref: "lines" },
+    ],
+  })) as Answer & { canvas: { id: string }; created: Record<string, string> };
+  expect(made).not.toHaveProperty("error");
+  const moved = await call(agent, "drive_edit_canvas", {
+    id: made.canvas.id,
+    ops: [{ op: "move", ids: [made.created.lines], to: { x: 1000, y: 1000 } }],
+  });
+  expect(moved).not.toHaveProperty("error");
+  const lines = (await body(ana, made.canvas.id)).scene.elements.filter(
+    (e) => e.kind === "connector",
+  );
+  expect(lines.map((line) => [line.from!.at, line.to!.at])).toEqual([
+    [
+      [1100, 1000],
+      [1300, 1000],
+    ],
+    [
+      [1000, 1100],
+      [1000, 1300],
+    ],
+  ]);
+});
