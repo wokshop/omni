@@ -101,7 +101,7 @@ export async function editSheet(
   deps: WriteDeps,
   files: MemberStorage,
   nodeId: string,
-  input: { edits: SheetEdit[]; layout?: string },
+  input: { edits: SheetEdit[]; layout?: string; by?: string },
 ) {
   const opened = await openSheet(deps, files, nodeId);
   if (opened.status !== "ok") return opened;
@@ -130,7 +130,7 @@ export async function editSheet(
   const merged = savedWithin(live.doc, now);
   if ("problem" in merged) return { status: "over_limits", problem: merged.problem } as const;
   await files.endSession(nodeId);
-  const { entries, through, mine } = await live.append(outcome.update);
+  const { entries, through, mine } = await live.append(outcome.update, input.by);
   passOn(deps, node.orgId, nodeId, entries);
   const written = await saveLive(
     deps,

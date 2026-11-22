@@ -264,8 +264,10 @@ async function edit(context: ToolContext, input: z.infer<typeof editInput>) {
   if (!writer) return refusal("forbidden");
   const blocked = await ready(context, found.workspace.id);
   if (blocked) return toolError(blocked);
-  const edited = await editSheet(await deps(context), writer.files, input.id, {
+  const writing = await deps(context);
+  const edited = await editSheet(writing, writer.files, input.id, {
     edits: input.edits as SheetEdit[],
+    by: `a:${writer.memberId}:${writing.agent}`,
     ...(input.layout ? { layout: input.layout } : {}),
   });
   if (edited.status === "stale") {
