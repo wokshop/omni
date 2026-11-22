@@ -443,7 +443,8 @@ export class LiveDoc {
           again(RETRY_MS);
           return;
         }
-        if (event.type === "doc.refused" && event.reason === "unavailable" && !this.closed) {
+        const retried = event.type === "doc.refused" && /^(unavailable|rate)$/.test(event.reason);
+        if (retried && !this.closed) {
           if (record.t === "update") {
             again(wait);
             wait = Math.min(wait * 2, UNAVAILABLE_MAX_MS);
