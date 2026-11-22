@@ -4,7 +4,7 @@ import { useUpdateTask } from "@/hooks/use-crm-tasks.ts";
 import type { CalendarEvent } from "@/lib/calendar.ts";
 import { atMinutes, dropStart, type Dragged, type Drop } from "@/lib/calendar-drag.ts";
 import { dayKey, parseDayKey } from "@/lib/calendar-grid.ts";
-import { dueAtOf } from "@/lib/crm-tasks.ts";
+import { dueAtOf, type CrmTask } from "@/lib/crm-tasks.ts";
 import { ownEvent } from "./week-grid.tsx";
 
 const DAY_MINUTES = 24 * 60;
@@ -34,14 +34,18 @@ function shiftOf(event: CalendarEvent, drop: Drop, shownOn?: Date) {
  */
 export function useCalendarDrop(move: (event: CalendarEvent, minutes: number) => void) {
   const update = useUpdateTask();
-  const saving = useRef(new Map<string, Promise<unknown>>());
+  const saving = useRef(new Map<string, { last: Promise<unknown>; to: string | null }>());
   const save = (id: string, dueAt: string | null) => {
     const queue = saving.current;
-    const next = (queue.get(id) ?? Promise.resolve())
+    const last = (queue.get(id)?.last ?? Promise.resolve())
       .then(() => update.mutateAsync({ id, dueAt }))
       .catch((error: unknown) => crmErrorToast(error, "The to-do was not moved"));
-    queue.set(id, next);
-    void next.finally(() => queue.get(id) === next && queue.delete(id));
+    queue.set(id, { last, to: dueAt });
+    void last.finally(() => queue.get(id)?.last === last && queue.delete(id));
+  };
+  const queuedDue = (task: CrmTask) => {
+    const queued = saving.current.get(task.id);
+    return queued ? queued.to : task.dueAt;
   };
   return (item: Dragged, drop: Drop) => {
     if (item.kind === "todo") {
@@ -52,7 +56,7 @@ export function useCalendarDrop(move: (event: CalendarEvent, minutes: number) =>
               { ...drop, minutes: drop.minutes },
               new Date(item.task.dueAt ?? Date.now()),
             ).toISOString();
-      if (dueAt !== item.task.dueAt) save(item.task.id, dueAt);
+      if (dueAt !== queuedDue(item.task)) save(item.task.id, dueAt);
       return;
     }
     if (!ownEvent(item.event)) return;

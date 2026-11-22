@@ -894,6 +894,39 @@ test("a to-do dragged twice before its first save lands where it was dropped las
   await expect.poll(() => dueOf(org.id, "Water the plants")).toBe("2026-11-26T14:00:00.000Z");
 });
 
+test("a to-do dropped back where it shows, while a later drop is still queued, ends there", async () => {
+  const { org, member, page, origin } = await invited();
+  await db.insert(schema.crmTasks).values({
+    orgId: org.id,
+    title: "Book the room",
+    assigneeMemberId: member.id,
+    dueAt: new Date("2026-11-24T09:00:00.000Z"),
+  });
+  await openWeek(page, origin, org.slug);
+  let patches = 0;
+  await page.route("**/api/crm/tasks/*", async (route) => {
+    if (route.request().method() === "PATCH" && patches++ === 0) {
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+    await route.continue();
+  });
+  const block = () => page.locator("[data-day] [data-todo]");
+  const at = (day: string, hour: number) => ({
+    target: page.locator(`[data-day="${day}"]`),
+    targetPosition: { x: 20, y: hour * 48 + 4 },
+  });
+  const drop = async (day: string, hour: number) => {
+    const { target, targetPosition } = at(day, hour);
+    await block().dragTo(target, { sourcePosition: { x: 60, y: 4 }, targetPosition });
+  };
+  await drop("2026-11-25", 11);
+  await page.locator('[data-day="2026-11-25"] [data-todo]').waitFor();
+  await drop("2026-11-26", 15);
+  await drop("2026-11-25", 11);
+  await page.waitForTimeout(3000);
+  await expect.poll(() => dueOf(org.id, "Book the room")).toBe("2026-11-25T10:00:00.000Z");
+});
+
 test("an event dropped on the second pass of the hour the clocks go back stays on that pass", async () => {
   const { org, page, origin } = await invited();
   await madeEvent(org.id, page, origin, "Night audit", [
