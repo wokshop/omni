@@ -111,6 +111,7 @@ export { IconSettingsGear2 as IconSettingsFilled } from "central-icons-filled/Ic
 export { IconFolder1 as IconFolderFilled } from "central-icons-filled/IconFolder1";
 export { IconFolderOpen as IconFolderOpenFilled } from "central-icons-filled/IconFolderOpen";
 export { IconHandshake as IconHandshakeFilled } from "central-icons-filled/IconHandshake";
+export { IconPlay as IconPlayFilled } from "central-icons-filled/IconPlay";
 export { IconCalendar1 as IconCalendarFilled } from "central-icons-filled/IconCalendar1";
 export { IconArrowUpCircle as IconUpgrade } from "central-icons-outlined/IconArrowUpCircle";
 export { IconConnectors1 as IconConnections } from "central-icons-outlined/IconConnectors1";
@@ -147,3 +148,6 @@ export { IconShapesPlusXSquareCircle as IconCanvas } from "central-icons-outline
 export { IconEyeOpen as IconEye } from "central-icons-outlined/IconEyeOpen";
 export { IconPencilWave as IconSuggest } from "central-icons-outlined/IconPencilWave";
 export { IconAlignmentLeft as IconOutline } from "central-icons-outlined/IconAlignmentLeft";
+export { IconCalenderToday as IconCalendarDay } from "central-icons-outlined/IconCalenderToday";
+export { IconCalenderNextWeek as IconCalendarWeek } from "central-icons-outlined/IconCalenderNextWeek";
+export { IconCalendarDays as IconCalendarMonth } from "central-icons-outlined/IconCalendarDays";

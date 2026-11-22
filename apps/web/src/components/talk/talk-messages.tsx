@@ -91,7 +91,7 @@ function QuickReactions(props: NoteProps & { mine: boolean }) {
   return (
     <span
       className={cn(
-        "pointer-events-none absolute -top-7 z-20 flex rounded-full bg-background p-0.5 opacity-0 shadow-overlay transition-opacity duration-150",
+        "pointer-events-none absolute -top-7 z-20 flex rounded-full border border-border bg-background p-0.5 opacity-0 shadow-overlay transition-opacity duration-150",
         "group-hover/note:pointer-events-auto group-hover/note:opacity-100 group-focus-within/note:pointer-events-auto group-focus-within/note:opacity-100",
         props.mine ? "end-0" : "start-0",
       )}
@@ -123,7 +123,7 @@ function Attachment(props: { message: TalkMessage; mine: boolean }) {
           src={href}
           alt={file.name}
           loading="lazy"
-          className="aspect-[4/3] w-44 rounded-xl border border-border bg-secondary object-cover"
+          className="block h-auto max-h-64 min-h-12 w-auto max-w-44 min-w-12 rounded-xl border border-border bg-secondary object-contain"
         />
       </Link>
     );
@@ -198,7 +198,7 @@ export function TalkMessages(props: { messages: TalkMessage[]; meId: string; thr
   );
   const ordered = props.messages.toReversed();
   return (
-    <div className="flex flex-col gap-1 px-3.5 pt-3 pb-2">
+    <div className="flex flex-col gap-1 px-3.5 pt-3 pb-4">
       {ordered.map((message, i) => {
         const before = ordered[i - 1];
         const after = ordered[i + 1];
