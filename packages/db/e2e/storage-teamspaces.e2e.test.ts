@@ -286,3 +286,25 @@ test("whoever a teamspace file is shared with hears its live edits, and nobody e
   expect((await teamspaceFileAudience(db, doc.id)).toSorted()).toEqual([ana.id, gil.id].toSorted());
   expect((await teamspaceFileAudience(db, doc.id)).includes(cy.id)).toBe(false);
 });
+
+test("a colleague outside a private teamspace, given a folder in it, trashes what they uploaded and nothing else", async () => {
+  const org = await createOrg(db, "ts-grant-trash");
+  const ana = await createMember(db, org.id, "ana");
+  const cy = await createMember(db, org.id, "cy");
+  const anaStorage = forMember(db, ana.id).storage;
+  const cyStorage = forMember(db, cy.id).storage;
+  const legal = await teamspace(anaStorage, "Legal", { private: true });
+  const inbox = await addFolder(anaStorage, { teamspaceId: legal.id }, "Inbox");
+  const anas = await addFile(anaStorage, { teamspaceId: legal.id, parentId: inbox.id }, "a.txt");
+  const [cyUser] = await db
+    .select({ email: users.email })
+    .from(users)
+    .innerJoin(members, eq(members.userId, users.id))
+    .where(eq(members.id, cy.id));
+  await db.update(users).set({ emailVerified: true }).where(eq(users.email, cyUser!.email));
+  expect((await anaStorage.putGrant(inbox.id, cyUser!.email, "editor")).status).toBe("ok");
+
+  const cys = await addFile(cyStorage, { teamspaceId: legal.id, parentId: inbox.id }, "c.txt");
+  expect((await cyStorage.trash(anas.id)).status).not.toBe("ok");
+  expect((await cyStorage.trash(cys.id)).status).toBe("ok");
+});

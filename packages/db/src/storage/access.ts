@@ -251,7 +251,15 @@ export const grantDoor: (
       .select({ id: members.id })
       .from(members)
       .where(and(eq(members.userId, userId), eq(members.organizationId, node.orgId)));
-    return row ? memberDoor(row.id, false) : null;
+    return row ? { id: row.id, door: memberDoor(row.id, false) } : null;
+  }
+  async function memberRemoves(ex: Db, chain: NodeRow[]) {
+    const node = chain[0]!;
+    const member = await asMember(ex, node);
+    if (!member) return true;
+    const access = await member.door.access(ex, chain);
+    if (access) return access.remove;
+    return node.space === "teamspace" && node.createdByMemberId === member.id;
   }
   return {
     kind: "grant",
@@ -282,19 +290,18 @@ export const grantDoor: (
       const editorAbove = chain.slice(1).some((row) => editing.has(row.id));
       const editor = editorAbove || editing.has(node.id);
       const commenter = grants.some((grant) => grant.role === "commenter");
-      const member = editorAbove ? await asMember(ex, node) : null;
-      const memberRemoves = member ? ((await member.access(ex, chain))?.remove ?? false) : true;
+      const removes = editorAbove && (await memberRemoves(ex, chain));
       return {
         role: editor ? "editor" : commenter ? "commenter" : "viewer",
         top: chain.findLastIndex((row) => granted.has(row.id)),
         inside: editor && node.kind === "folder",
         change: editorAbove,
-        remove: editorAbove && memberRemoves,
+        remove: removes,
         share: false,
       };
     },
     async removesWhole(ex, node) {
-      return (await (await asMember(ex, node))?.removesWhole(ex, node)) ?? true;
+      return (await (await asMember(ex, node))?.door.removesWhole(ex, node)) ?? true;
     },
     root: async () => null,
     teamspace: async () => null,
