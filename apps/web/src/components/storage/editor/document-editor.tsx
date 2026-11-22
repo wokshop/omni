@@ -300,6 +300,10 @@ export function useEditSession(
                       if (role === null) void client.resetQueries({ queryKey });
                       else void client.invalidateQueries({ queryKey });
                     },
+                    onReconnected: () => {
+                      const queryKey = keys.storageLink(shareId, undefined).slice(0, -1);
+                      void client.invalidateQueries({ queryKey });
+                    },
                   }
                 : undefined,
               contentVersion: base.current,

@@ -138,6 +138,7 @@ export class LiveDoc {
   private pending = new Map<number, { record: StorageLiveRecord; matchSeqNum?: number }>();
   private answers = new Map<number, (event: StorageDocEvent) => void>();
   private batch: Uint8Array[] = [];
+  private lost = false;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private catchingUp = false;
   private stops: (() => void)[] = [];
@@ -276,7 +277,7 @@ export class LiveDoc {
 
   /** Changes this tab made that the stream has not taken yet. */
   get unsent() {
-    return this.batch.length > 0 || this.pendingUpdates();
+    return this.lost || this.batch.length > 0 || this.pendingUpdates();
   }
 
   /** Opened through a share link: the Worker saves what this tab types. */
@@ -333,7 +334,7 @@ export class LiveDoc {
     while (this.pendingUpdates() && Date.now() < until && !this.closed) {
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
-    return !this.closed && this.batch.length === 0 && !this.pendingUpdates();
+    return !this.closed && !this.unsent;
   }
 
   private pendingUpdates() {
@@ -458,6 +459,8 @@ export class LiveDoc {
         }
         this.pending.delete(ref);
         this.answers.delete(ref);
+        const refused = event.type === "doc.refused" && record.t === "update";
+        if (refused && this.options.shared) this.lost = true;
         if (event.type === "doc.appended") this.markKnown(event.seqNum, record.t === "update");
         resolve(event);
       });

@@ -52,6 +52,7 @@ export const sharedChannel: (shared: SharedLive, nodeId: string) => LiveChannel 
 ) => {
   const events = new Set<(event: ChannelEvent) => void>();
   const opens = new Set<() => void>();
+  let opened = false;
   const socket = connectRealtime({
     baseUrl: window.location.origin,
     shared: { shareId: shared.shareId, nodeId, onEnded: () => shared.onAccess(null) },
@@ -60,7 +61,10 @@ export const sharedChannel: (shared: SharedLive, nodeId: string) => LiveChannel 
       for (const listener of events) listener(event as ChannelEvent);
     },
     onStatus: (status) => {
-      if (status === "open") for (const listener of opens) listener();
+      if (status !== "open") return;
+      if (opened) shared.onReconnected();
+      opened = true;
+      for (const listener of opens) listener();
     },
   });
   return {
@@ -89,4 +93,6 @@ export interface SharedLive {
   shareId: string;
   /** Their role on it changed (`null`: the link no longer opens it to them). */
   onAccess: (role: "editor" | "commenter" | null) => void;
+  /** Its socket opened again: its role may have changed while it was away. */
+  onReconnected: () => void;
 }
