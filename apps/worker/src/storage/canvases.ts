@@ -73,7 +73,7 @@ export async function editCanvas(
   const node = found.file;
   if (!isOmniCanvas(node.mimeType)) return { status: "not_a_canvas" } as const;
   if (node.lockedAt) return { status: "locked" } as const;
-  if (node.size > CANVAS_MAX_BYTES) return { status: "too_large" } as const;
+  if (node.size > CANVAS_MAX_BYTES * 2) return { status: "too_large" } as const;
   const writable = await files.mayWrite(nodeId);
   if (writable !== "ok") return { status: writable } as const;
   const { live, read } = await currentScene(deps, node, found.r2Key);
@@ -81,7 +81,10 @@ export async function editCanvas(
   const changed = change(read.scene);
   if (!changed.ok) return { status: "invalid", error: changed.error, scene: read.scene } as const;
   const body = sceneToJson(changed.scene);
-  if (sizeOf(body) > CANVAS_MAX_BYTES) return { status: "too_large_after" } as const;
+  const size = sizeOf(body);
+  if (size > CANVAS_MAX_BYTES && size > sizeOf(sceneToJson(read.scene))) {
+    return { status: "too_large_after" } as const;
+  }
   const target = { nodeId, ifContentVersion: node.contentVersion };
   if (!live) {
     const written = await writeText(deps, files, node.orgId, target, body, node.mimeType);

@@ -415,9 +415,9 @@ state is about 1.85 times its JSON body (a 2,000-element board of short stickies
 500 KB of state), so a 400 KB body leaves room for its history.
 
 A change that would take a canvas past a limit is refused whole, in the editor and for agents
-alike. Two people editing at once can still take a board just past the element or tile limit
-together; it stays readable and editable, and only changes that would grow it further are
-refused.
+alike. Two people editing at once can still take a board just past the element, tile or body
+limit together; it stays readable and editable, and only changes that would grow it further are
+refused, so anyone can bring it back under. Agents change boards up to twice the body limit.
 
 ## Not in this change
 

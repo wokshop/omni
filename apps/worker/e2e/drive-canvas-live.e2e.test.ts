@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Client } from "@modelcontextprotocol/client";
 import {
   applyCanvasOps,
+  CANVAS_MAX_BYTES,
   CANVAS_TYPE,
   liveScene,
   rewriteCanvas,
@@ -452,4 +453,61 @@ test("a connector a tab joined to itself is freed where it is drawn, and an agen
   });
   expect(file.elements.find((e) => e.id === "loop")!.from).not.toHaveProperty("id");
   expect(find(file, "Next").box).toEqual([0, 340, 200, 200]);
+});
+
+test("a board two tabs took past the body limit together can be shrunk by an agent, but not grown", async () => {
+  const long = (label: string) => label.padEnd(4_900, ".");
+  const base = Array.from({ length: 78 }, (_, i) => ({
+    id: `s${i}`,
+    kind: "sticky" as const,
+    box: [(i % 10) * 300, Math.floor(i / 10) * 300, 200, 200] as [number, number, number, number],
+    text: long(`s${i}`),
+  }));
+  const org = await stack.company(`canvas-heavy-${randomUUID().slice(0, 8)}`);
+  const ana = await stack.member(org.id);
+  const scene: Scene = { elements: base };
+  expect(sceneToJson(scene).length).toBeLessThan(CANVAS_MAX_BYTES);
+  const node = await stack.upload(
+    ana.jar,
+    { space: "shared" },
+    "Heavy",
+    new TextEncoder().encode(sceneToJson(scene)),
+    CANVAS_TYPE,
+  );
+  const agent = await connectAgent(stack.worker.url, ana.jar, { scope: WRITE });
+  const one = await tab(ana.jar, node.id);
+  const epoch = await one.seed(scene, 1);
+  const two = await tab(ana.jar, node.id);
+  await two.join(epoch);
+  const adds = (who: string) =>
+    [1, 2, 3].map(
+      (n) => ({ op: "add", kind: "sticky", text: long(`${who}${n}`) }) satisfies CanvasOp,
+    );
+  const first = one.change(adds("one"));
+  const second = two.change(adds("two"));
+  await first.send();
+  await second.send();
+  expect(sceneToJson(await stream(ana, node.id)).length).toBeGreaterThan(CANVAS_MAX_BYTES + 10_000);
+
+  const shrunk = await call(agent, "drive_edit_canvas", {
+    id: node.id,
+    ops: [{ op: "delete", ids: ["s0"] }],
+  });
+  expect(shrunk).not.toHaveProperty("error");
+  const file = await saved(ana, node.id);
+  expect(sceneToJson(file).length).toBeGreaterThan(CANVAS_MAX_BYTES);
+  expect(file.elements.find((e) => e.id === "s0")).toBeUndefined();
+
+  const again = await call(agent, "drive_edit_canvas", {
+    id: node.id,
+    ops: [{ op: "delete", ids: ["s1"] }],
+  });
+  expect(again).not.toHaveProperty("error");
+  const grown = await call(agent, "drive_edit_canvas", {
+    id: node.id,
+    ops: [{ op: "add", kind: "sticky", text: long("more") }],
+  });
+  expect(grown).toMatchObject({ error: expect.stringContaining("larger than 400 KB") });
+  one.ws.close();
+  two.ws.close();
 });
