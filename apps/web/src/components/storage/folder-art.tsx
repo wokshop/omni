@@ -58,7 +58,7 @@ export function FolderArt(props: {
           <Card key={card.id} node={card} url={fileUrl(card)} style={place(spots[i] ?? ONE)} />
         ))}
       <span
-        className={`absolute inset-x-0 top-[40%] bottom-0 rounded-lg border border-folder-edge bg-(image:--folder-front) inset-shadow-[0_1px_0] inset-shadow-folder-shine backdrop-blur-sm`}
+        className={`absolute inset-x-0 top-[35%] bottom-0 rounded-lg border border-folder-edge bg-(image:--folder-front) inset-shadow-[0_1px_0] inset-shadow-folder-shine backdrop-blur-sm`}
       />
     </div>
   );
