@@ -200,7 +200,11 @@ export function noteWentBy(
 ) {
   const people = client.getQueryData<TalkPerson[]>(keys.talkPeople());
   const person = people?.find((p) => p.threadId === event.threadId);
-  if (person && event.createdAt) {
+  if (
+    person &&
+    event.createdAt &&
+    !(person.lastMessageAt && person.lastMessageAt >= event.createdAt)
+  ) {
     editPeople(client, (p) => (p === person ? { ...p, lastMessageAt: event.createdAt! } : p));
   }
   if (person && (person.memberId !== event.fromMemberId || looking)) return;

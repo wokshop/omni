@@ -443,7 +443,8 @@ test("realtime that comes late or out of order never misorders notes or hides a 
   const fourth = holding("Fourth");
   const late = holding("Reacted first");
   const sixthNote = holding("Sixth");
-  const holds = [fourth, late, sixthNote];
+  const mine = holding("Mine, earlier");
+  const holds = [fourth, late, sixthNote, mine];
   const deliver: Array<(frame: string) => void> = [];
   const routed = (text: string) => {
     const event = JSON.parse(text) as { type?: string; preview?: string; read?: boolean };
@@ -629,4 +630,32 @@ test("realtime that comes late or out of order never misorders notes or hides a 
   await kofi.waitForTimeout(1_000);
   await bubble.getByRole("button", { name: "🎉 1" }).waitFor();
   await bubble.getByRole("button", { name: "👍 1" }).waitFor();
+
+  await kofi.keyboard.press("Escape");
+  await window.waitFor({ state: "detached" });
+  await kofi.mouse.move(4, 400);
+  const kofiPost = await fetch(new URL(`/api/talk/threads/${thread.id}/messages`, origin()), {
+    method: "POST",
+    headers: { cookie: kofiCookie, "content-type": "application/json", origin: WEB_ORIGIN },
+    body: JSON.stringify({ body: "Mine, earlier" }),
+  });
+  expect(kofiPost.status).toBe(201);
+  await mine.held.promise;
+  heldReads.length = 0;
+  const readLater = Promise.withResolvers<void>();
+  readSeen.push(readLater);
+  holdReads = true;
+  const readMine = await fetch(new URL(`/api/talk/threads/${thread.id}/read`, origin()), {
+    method: "PUT",
+    headers: { cookie: kofiCookie, origin: WEB_ORIGIN },
+  });
+  expect(readMine.status).toBe(204);
+  await readLater.promise;
+  holdReads = false;
+  await post(`/threads/${thread.id}/messages`, { body: "Seventh" });
+  await stack.getByRole("button", { name: "Ana Lima, 1 unread" }).waitFor();
+  deliver.at(-1)!(mine.frames[0]!);
+  deliver.at(-1)!(heldReads[0]!);
+  await kofi.waitForTimeout(1_000);
+  await stack.getByRole("button", { name: "Ana Lima, 1 unread" }).waitFor();
 });
