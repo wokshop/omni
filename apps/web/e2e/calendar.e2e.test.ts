@@ -499,12 +499,8 @@ test("unticking and re-ticking a calendar fast keeps it shown, whichever save la
   const shared = await createMailbox(db, org.id, `team-${Date.now()}@studio.example`, "shared");
   await grant(db, org.id, shared.id, member.id);
   await db.insert(schema.calendarCalendars).values({ orgId: org.id, mailboxId: shared.id });
-  let first = true;
   await page.route("**/api/calendar/calendars/*", async (route) => {
-    if (route.request().method() === "PATCH" && first) {
-      first = false;
-      await new Promise((done) => setTimeout(done, 1500));
-    }
+    if (route.request().method() === "PATCH") await new Promise((done) => setTimeout(done, 1500));
     await route.continue();
   });
   await openWeek(page, origin, org.slug);
@@ -513,8 +509,10 @@ test("unticking and re-ticking a calendar fast keeps it shown, whichever save la
   const row = page.getByRole("grid", { name: "Calendars" }).getByRole("row").last();
   await row.click();
   await row.click();
+  await page.waitForTimeout(2200);
+  expect(await page.getByRole("button", { name: /Acme × Studio: kickoff/ }).count()).toBe(1);
   await page.waitForLoadState("networkidle");
-  await page.waitForTimeout(2000);
+  await page.waitForTimeout(1500);
   const [prefs] = await db
     .select({ hidden: schema.calendarMemberPrefs.hidden })
     .from(schema.calendarMemberPrefs)

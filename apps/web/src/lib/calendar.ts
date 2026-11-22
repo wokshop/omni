@@ -198,7 +198,10 @@ export const calendarPrefsMutation = (client: QueryClient) =>
           },
       );
     },
-    onSettled: () => calendarChanged(client),
+    onSettled: () => {
+      if (client.isMutating({ mutationKey: calendarKeys.writes() }) > 1) return;
+      return calendarChanged(client);
+    },
   });
 
 /** A calendar's color when its person picked none: the calendar palette, in the calendar's order. */
