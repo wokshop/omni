@@ -79,7 +79,7 @@ function onFileEvent(orgId: string, event: FileEvent) {
 }
 
 function talkChanged(client: QueryClient, event: Extract<TalkEvent, { type: "talk.changed" }>) {
-  if (event.read) return threadRead(client, event.threadId);
+  if (event.read) return threadRead(client, event.threadId, event.readAt);
   const { reactions } = event;
   if (reactions) {
     if (staleReactions(reactions.messageId, reactions.at)) return;

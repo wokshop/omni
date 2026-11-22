@@ -44,7 +44,15 @@ function withMessage(data: Pages, message: TalkMessage) {
       isPending(m.id) && m.authorMemberId === message.authorMemberId && m.body === message.body,
   );
   const messages = twin === -1 ? [message, ...first.messages] : first.messages.with(twin, message);
-  return { ...data, pages: [{ ...first, messages }, ...rest] };
+  return { ...data, pages: [{ ...first, messages: newestFirst(messages) }, ...rest] };
+}
+
+function newestFirst(messages: TalkMessage[]) {
+  const stored = messages.filter((m) => !isPending(m.id));
+  const sorted = stored.every((m, i) => i === 0 || stored[i - 1]!.id > m.id);
+  if (sorted && messages.length === stored.length) return messages;
+  const pending = messages.filter((m) => isPending(m.id));
+  return [...pending, ...stored.toSorted((a, b) => (a.id < b.id ? 1 : -1))];
 }
 
 /** Swaps a note on its way for the one the server stored, or drops it (failed, or already in). */
@@ -65,7 +73,7 @@ export function settlePending(
               ...page,
               messages: drop
                 ? page.messages.filter((m) => m.id !== pending)
-                : page.messages.map((m) => (m.id === pending ? message : m)),
+                : newestFirst(page.messages.map((m) => (m.id === pending ? message : m))),
             }
           : page,
       ),
@@ -150,7 +158,9 @@ export async function fetchNewest(client: QueryClient, threadId: string) {
       ...data,
       pages: data.pages.map((p, i) => {
         const messages = p.messages.map((m) => fresh.get(m.id) ?? m);
-        return i === 0 ? { ...p, messages: [...added, ...messages] } : { ...p, messages };
+        return i === 0
+          ? { ...p, messages: newestFirst([...added, ...messages]) }
+          : { ...p, messages };
       }),
     };
   });
@@ -183,9 +193,24 @@ export function noteWentBy(
   );
 }
 
-/** You read the thread: nothing in it is unread any more. */
-export const threadRead = (client: QueryClient, threadId: string) =>
-  editPeople(client, (p) => (p.threadId === threadId && p.unread ? { ...p, unread: 0 } : p));
+/**
+ * You read the thread up to `readAt`: nothing in it is unread any more, unless a note went by after
+ * that, in which case the counts are fetched again. Without `readAt`, everything is read.
+ */
+export function threadRead(client: QueryClient, threadId: string, readAt: string | undefined) {
+  const people = client.getQueryData<TalkPerson[]>(keys.talkPeople());
+  const person = people?.find((p) => p.threadId === threadId);
+  if (!person?.unread) return;
+  if (readAt && person.lastMessageAt && person.lastMessageAt > readAt) {
+    return void client.invalidateQueries({ queryKey: keys.talkPeople() });
+  }
+  editPeople(client, (p) => (p === person ? { ...p, unread: 0 } : p));
+}
+
+/** When a thread's newest note went by, as far as the people list knows. */
+export const lastNoteAt = (client: QueryClient, threadId: string) =>
+  client.getQueryData<TalkPerson[]>(keys.talkPeople())?.find((p) => p.threadId === threadId)
+    ?.lastMessageAt ?? undefined;
 
 /**
  * Keeps only the thread's newest page once its window closes, so opening it again draws one page

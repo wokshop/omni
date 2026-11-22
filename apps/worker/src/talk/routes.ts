@@ -63,6 +63,7 @@ export const talk = new Hono<AppEnv>()
         type: "talk.changed",
         threadId: c.req.param("id"),
         read: true,
+        readAt: read.readAt.toISOString(),
       }),
     );
     return c.body(null, 204);

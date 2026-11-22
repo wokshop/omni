@@ -15,6 +15,7 @@ import {
   pendingId,
   setReactions,
   settlePending,
+  lastNoteAt,
   threadRead,
   toggledReactions,
 } from "./talk-cache.ts";
@@ -243,6 +244,7 @@ export const reactMutation = (client: QueryClient, threadId: string) =>
 
 /** Reads the thread up to now. */
 export async function readThread(client: QueryClient, threadId: string) {
+  const newest = lastNoteAt(client, threadId);
   await markRead(threadId);
-  threadRead(client, threadId);
+  threadRead(client, threadId, lastNoteAt(client, threadId) === newest ? undefined : newest);
 }

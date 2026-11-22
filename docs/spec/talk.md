@@ -158,10 +158,11 @@ know. Then:
 - `talk.changed` `{ threadId, reactions?, read? }`: a reaction changed, to both members, with
   `reactions: { messageId, reactions, at }` as the note now has them, read at `at` (reactions
   to one note are serialized, so a client skips a snapshot older than one it applied); a read, to the reader's own
-  devices only, with `read: true`.
+  devices only, with `read: true` and `readAt`, how far it read.
 
 A client applies what an event carries to the thread it has loaded: a note goes on top (once,
-by id), reactions replace the note's, a read clears that thread's unread count, a note from the
+by id), reactions replace the note's, a read clears that thread's unread count (or refetches the counts when a note went by after
+`readAt`), notes take their place by id so out-of-order events still show in order, a note from the
 other one adds to it. It never refetches a whole thread for one note. An event that carries
 nothing (an older Worker) makes it refetch what the event names, the thread's newest page for a
 note. A reconnect refetches Talk, so a missed event is caught up. Every write is a row with its
