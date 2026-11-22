@@ -55,6 +55,7 @@ function StackFace(props: { person: TalkPerson; open: boolean }) {
         isCircle
         aria-label={label(person)}
         aria-pressed={open}
+        data-talk-face={person.memberId}
         onPress={() => (open ? talkWindow.close() : talkWindow.open(person.memberId))}
         className={cn(
           "relative transition-transform duration-150 ease-out motion-reduce:transition-none",
@@ -83,6 +84,7 @@ function Everyone(props: { people: TalkPerson[]; more: number; openId: string | 
           size="sq-sm"
           isCircle
           aria-label={`Everyone, ${props.more} more online`}
+          data-talk-everyone
           className={OVERLAP}
         >
           <span

@@ -22,16 +22,18 @@ and rules (`docs/spec/modules.md`), because it owns tables and reads Storage thr
   else is online, there is no stack.
 - **Everyone.** `+n` opens the full list: online teammates first, then the others, each with
   their unread count. Any of them opens a conversation; an offline teammate reads it next time.
-- **The window.** A floating card above the page, anchored under the title bar at the right:
-  - a header with their picture, name, a green dot and `Active now` while they are online, an
-    expand control and close;
-  - the conversation: a centred time line wherever an hour passes between notes, your notes on
-    the right and theirs on the left, a file as a card (an image as a large rounded picture,
-    anything else as its file tile and name), and reactions as small chips under a note;
-  - a composer at the bottom, `Note to <first name>…`, with attach (+) and a `Drop ↵` send
-    button. Dropping files anywhere on the window sends them.
-  - Expand makes the same window taller and wider, still floating, so you never leave the page
-    you were on. One window is open at a time; opening another teammate replaces it.
+- **The window.** Opens just under the face it came from (or `+n`), kept on screen. A solid
+  black panel (the `ink` tokens, the same in either theme), compact like a command menu:
+  - a one-line header: their picture, name, a green dot and `Active now` while they are online,
+    expand and close;
+  - the notes in sections, each opening on a muted time line wherever an hour passes, with a
+    rule between sections; a row is a small face (on the first of a run) and the text, and a file
+    is a row of its own: an image's thumbnail or the file's glyph, its name, and `PNG • 5 KB`;
+    reactions sit at the row's end, with a quick four on hover;
+  - under the panel, the composer as its own black pill: `Note to <first name>…`, attach (+) and
+    a white square send button with an up arrow. Dropping files on either sends them.
+  - Expand makes it wider and taller, still floating under the face. One window is open at a
+    time; opening another teammate replaces it.
 - **Unread and notifying.** A teammate's picture carries a dot while you have unread notes from
   them. A note that arrives while its window is not open (or Omni is in the background) shows a
   system notification, when desktop notifications are on for this device, and opens the window
