@@ -1119,7 +1119,7 @@ test("a day picked in the sidebar right after scrolling into another month stays
   expect(shownDate(page)).toBe("2026-11-10");
 });
 
-test("after scrolling a month and back, a month picked in the sidebar scrolls the page there", async () => {
+test("after scrolling a month and back, a day picked in the sidebar's own month scrolls the page there", async () => {
   const { org, page, origin } = await invited();
   await page.goto(new URL(`/${org.slug}/calendar?date=2026-11-24&view=month`, origin).toString());
   const day = page.locator('[data-month-day="2026-11-24"]');
@@ -1135,10 +1135,15 @@ test("after scrolling a month and back, a month picked in the sidebar scrolls th
     await page.mouse.wheel(0, -row);
   }
   await expect.poll(() => shownDate(page)).toBe("2026-12-01");
+  const next = page.getByRole("application", { name: /Month/ }).getByRole("button", {
+    name: "Next month",
+  });
+  await next.click();
+  await next.click();
   await page
     .getByRole("application", { name: /Month/ })
-    .getByRole("button", { name: "Next month" })
-    .click();
+    .getByRole("heading", { name: "January 2027" })
+    .waitFor();
   await page.getByRole("grid", { name: /Month/ }).getByText("1", { exact: true }).first().click();
   await expect.poll(() => shownDate(page)).toBe("2027-01-01");
   await expect
@@ -1201,13 +1206,13 @@ test("one sideways swipe steps the week, and each gesture steps once", async () 
   const box = await month.boundingBox();
   await page.mouse.move((box?.x ?? 0) + 40, (box?.y ?? 0) + 80);
   await gesture(page, 0, 30);
-  await month.getByRole("heading", { name: "January 2027" }).waitFor();
+  await month.getByRole("heading", { name: "December 2026" }).waitFor();
   expect(shownDate(page)).toBe("2026-12-01");
 
   await page.keyboard.down("Control");
   await gesture(page, 0, 30);
   await page.keyboard.up("Control");
-  expect(await month.getByRole("heading", { name: "January 2027" }).count()).toBe(1);
+  expect(await month.getByRole("heading", { name: "December 2026" }).count()).toBe(1);
 });
 
 test("a to-do dragged twice before its first save lands where it was dropped last", async () => {
@@ -1570,4 +1575,26 @@ test("the month lays a stay over its days as one bar and shows every event that 
       .toBe(true);
   }
   expect(await busy.getByText(/more$/).count()).toBe(0);
+});
+
+test("the calendar opens on the month when the link names no view", async () => {
+  const { org, page, origin } = await invited();
+  await page.goto(new URL(`/${org.slug}/calendar?date=2026-11-24`, origin).toString());
+  await page.locator('[data-month-day="2026-11-24"]').waitFor();
+  expect(await page.locator("[data-day]").count()).toBe(0);
+});
+
+test("the sidebar month stays put while the big month moves, and moves without it", async () => {
+  const { org, page, origin } = await invited();
+  await page.goto(new URL(`/${org.slug}/calendar?date=2026-11-24&view=month`, origin).toString());
+  const sidebar = page.getByRole("application", { name: /Month/ });
+  await sidebar.getByRole("heading", { name: "November 2026" }).waitFor();
+  await page.getByRole("button", { name: "Next month", exact: true }).first().waitFor();
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowRight");
+  await expect.poll(() => new URL(page.url()).searchParams.get("date")).toBe("2027-01-01");
+  expect(await sidebar.getByRole("heading", { name: "November 2026" }).count()).toBe(1);
+  await sidebar.getByRole("button", { name: "Previous month" }).click();
+  await sidebar.getByRole("heading", { name: "October 2026" }).waitFor();
+  expect(new URL(page.url()).searchParams.get("date")).toBe("2027-01-01");
 });
