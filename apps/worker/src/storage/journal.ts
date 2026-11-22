@@ -86,8 +86,15 @@ async function checkpoint(db: Db, doc: Doc, epoch: number, through: number, runs
  * runs it, and the minute job runs it for any doc a save's run missed.
  */
 export async function journalDoc(deps: Deps, doc: Doc) {
+  for (let tries = 0; tries < 3; tries++) {
+    if (await journalOnce(deps, doc)) return;
+  }
+  deps.log.warn("storage.journal_busy", { nodeId: doc.id });
+}
+
+async function journalOnce(deps: Deps, doc: Doc) {
   const basin = s2Basin(deps.config);
-  if (!basin) return;
+  if (!basin) return true;
   const cursor = await docJournalOf(deps.db, doc.id);
   const start = await latestLiveStart(basin, doc.id);
   let entries = await readLiveTimed(basin, doc.id, start);
@@ -102,6 +109,7 @@ export async function journalDoc(deps: Deps, doc: Doc) {
       runs: [],
       baseline: null,
       sinceBaseline: cursor?.sinceBaseline ?? 0,
+      expected: cursor ? { epoch: cursor.epoch, lastSeq: cursor.lastSeq } : null,
       ...input,
     });
   if (!first) return mark({});

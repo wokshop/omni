@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
 import { members, users } from "../schema/auth.ts";
 import {
@@ -106,8 +106,9 @@ export async function docReplayFrom(db: Db, nodeId: string, epoch: number, seq: 
 
 /**
  * Writes runs of `epoch` (and a baseline, when one is due) and moves the doc's journal to
- * `lastSeq`. Idempotent: a run or baseline already written is skipped, and a journal that is
- * already further on is left where it is.
+ * `lastSeq`, if the journal is still where it was read (`expected`, null for none): the doc's
+ * journal writes take turns, and one made from a cursor another has since moved writes nothing
+ * and answers false, so the caller reads again. Runs and baselines already written are skipped.
  */
 export async function writeDocJournal(
   db: Db,
@@ -120,10 +121,20 @@ export async function writeDocJournal(
     runs: DocRun[];
     baseline: { seq: number; state: string } | null;
     sinceBaseline: number;
+    expected: { epoch: number; lastSeq: number } | null;
   },
 ) {
   const { orgId, nodeId, epoch } = input;
-  await db.transaction(async (tx) => {
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`doc-journal:${nodeId}`}))`);
+    const [now] = await tx
+      .select({ epoch: storageDocJournals.epoch, lastSeq: storageDocJournals.lastSeq })
+      .from(storageDocJournals)
+      .where(eq(storageDocJournals.nodeId, nodeId));
+    const moved = now
+      ? now.epoch !== input.expected?.epoch || now.lastSeq !== input.expected.lastSeq
+      : input.expected !== null;
+    if (moved) return false;
     if (input.runs.length) {
       await tx
         .insert(storageDocChanges)
@@ -154,29 +165,35 @@ export async function writeDocJournal(
     await tx
       .insert(storageDocJournals)
       .values({ nodeId, orgId, ...at })
-      .onConflictDoUpdate({
-        target: storageDocJournals.nodeId,
-        set: at,
-        setWhere: or(
-          lt(storageDocJournals.epoch, epoch),
-          and(eq(storageDocJournals.epoch, epoch), lte(storageDocJournals.lastSeq, input.lastSeq)),
-        ),
-      });
+      .onConflictDoUpdate({ target: storageDocJournals.nodeId, set: at });
+    return true;
   });
 }
 
 /**
- * Deletes runs that ended before `before`, and the baselines no remaining run needs (every one
- * of an epoch older than its oldest remaining run, but the latest of those). The daily job's.
+ * Deletes runs that ended before `before` that a kept baseline covers (a replay of what is left
+ * never needs them), and the baselines no remaining run needs (every one of an epoch older than
+ * its oldest remaining run, but the latest of those). Expired runs a later run still depends on
+ * stay until a checkpoint after them lets them go. The daily job's.
  */
 export async function purgeDocHistory(db: Db, before: Date) {
-  const gone = await db
-    .delete(storageDocChanges)
-    .where(lt(storageDocChanges.endedAt, before))
-    .returning({ nodeId: storageDocChanges.nodeId });
+  const cutoff = before.toISOString();
+  const gone = (await db.execute(sql`
+    delete from ${storageDocChanges} c
+    where c.ended_at < ${cutoff}::timestamptz
+      and (c.update = '' or exists (
+        select 1 from ${storageDocBaselines} b
+        where b.node_id = c.node_id and b.epoch = c.epoch and b.seq >= c.last_seq
+          and b.seq <= coalesce(
+            (select min(n.first_seq) from ${storageDocChanges} n
+              where n.node_id = c.node_id and n.epoch = c.epoch and n.update <> ''
+                and n.ended_at >= ${cutoff}::timestamptz),
+            2147483647)
+      ))
+    returning c.node_id`)) as unknown as unknown[];
   await db.execute(sql`
     delete from ${storageDocBaselines} b
-    where b.created_at < ${before.toISOString()}::timestamptz
+    where b.created_at < ${cutoff}::timestamptz
       and exists (
         select 1 from ${storageDocBaselines} newer
         where newer.node_id = b.node_id and newer.epoch = b.epoch and newer.seq > b.seq
