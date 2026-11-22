@@ -239,6 +239,27 @@ test("a tab and an agent moving the same sticky at once settle on one of the two
   open.ws.close();
 });
 
+test("a tab and an agent reordering different stickies at once both keep their move", async () => {
+  const { ana, agent, node, scene } = await board(STICKIES);
+  const [a, , c] = ["A", "B", "C"].map((text) => find(scene, text).id);
+  const open = await tab(ana.jar, node.id);
+  await open.seed(scene, 1);
+  const front = open.change([{ op: "order", ids: [a!], to: "front" }]);
+
+  const back = await call(agent, "drive_edit_canvas", {
+    id: node.id,
+    ops: [{ op: "order", ids: [c!], to: "back" }],
+  });
+  expect(back).not.toHaveProperty("error");
+  await front.send();
+
+  const merged = await stream(ana, node.id);
+  expect(merged.elements.map((e) => e.text)).toEqual(["C", "B", "A"]);
+  open.hear();
+  expect(open.scene().elements.map((e) => e.text)).toEqual(["C", "B", "A"]);
+  open.ws.close();
+});
+
 test("a whole-board rewrite leaves alone what it does not change, so a tab's move made meanwhile stays", async () => {
   const { ana, agent, node, scene } = await board(STICKIES);
   const a = find(scene, "A").id;

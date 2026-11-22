@@ -161,3 +161,54 @@ test("a canvas past its limits is refused whole", async () => {
   expect(tooBig.error).toContain("does not read as a scene at elements");
   expect((await body(ana, made.canvas.id)).text).toBe(before.text);
 });
+
+test("deleting what a connector points at leaves the line where it was drawn", async () => {
+  const { ana, agent } = await person();
+  const made = (await call(agent, "drive_create_canvas", {
+    name: "Flow",
+    ops: [
+      { op: "add", kind: "sticky", text: "From", at: { x: 0, y: 0 }, ref: "from" },
+      { op: "add", kind: "sticky", text: "To", at: { x: 400, y: 0 }, ref: "to" },
+      { op: "connect", from: "from", to: "to", ref: "line" },
+    ],
+  })) as Answer & { canvas: { id: string }; created: Record<string, string> };
+  const deleted = await call(agent, "drive_edit_canvas", {
+    id: made.canvas.id,
+    ops: [{ op: "delete", ids: [made.created.to] }],
+  });
+  expect(deleted).not.toHaveProperty("error");
+  const line = (await body(ana, made.canvas.id)).scene.elements.find((e) => e.kind === "connector");
+  expect(line).toMatchObject({
+    from: { id: made.created.from, at: [200, 100] },
+    to: { at: [400, 100] },
+  });
+  expect(line!.to).not.toHaveProperty("id");
+});
+
+test("an edit to a canvas whose nested groups thinned out keeps what was inside them", async () => {
+  const { ana, agent } = await person();
+  const json = JSON.stringify({
+    omni: "canvas",
+    v: 1,
+    elements: [
+      { id: "kept", kind: "sticky", parent: "inner", box: [0, 0, 200, 200], text: "Inside" },
+      { id: "inner", kind: "group", parent: "outer" },
+      { id: "outer", kind: "group" },
+    ],
+  });
+  const node = await stack.upload(
+    ana.jar,
+    { space: "personal" },
+    "Groups",
+    new TextEncoder().encode(json),
+    CANVAS_TYPE,
+  );
+  const edited = await call(agent, "drive_edit_canvas", {
+    id: node.id,
+    ops: [{ op: "update", id: "kept", color: "pink" }],
+  });
+  expect(edited).not.toHaveProperty("error");
+  expect((await body(ana, node.id)).scene.elements).toEqual([
+    { id: "kept", kind: "sticky", box: [0, 0, 200, 200], color: "pink", text: "Inside" },
+  ]);
+});
