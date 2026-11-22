@@ -89,12 +89,11 @@ export function PlanPicker(props: {
           onSelectionChange={(keys) => {
             const [next] = [...keys];
             if (next !== "month" && next !== "year") return;
-            const stays = (
-              plans.find((plan) => plan.key === value.plan)?.intervals as
-                | readonly Interval[]
-                | undefined
-            )?.includes(next);
-            onChange({ plan: stays ? value.plan : (plans[0]?.key ?? value.plan), interval: next });
+            const sold = plans.filter((plan) =>
+              (plan.intervals as readonly Interval[]).includes(next),
+            );
+            const stays = sold.some((plan) => plan.key === value.plan);
+            onChange({ plan: stays ? value.plan : (sold[0]?.key ?? value.plan), interval: next });
           }}
         >
           {INTERVALS.map((option) => (
