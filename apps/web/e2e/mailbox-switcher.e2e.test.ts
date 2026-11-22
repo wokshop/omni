@@ -546,3 +546,31 @@ async function freePort() {
   await new Promise((resolve) => server.close(resolve));
   return port;
 }
+
+test("opening a workspace still being set up shows its own setup, however slow its activation", async () => {
+  const { email, acme, beta } = await ana("unfinished");
+  const page = await openSwitcher(email);
+  await page.keyboard.press("Escape");
+  const trigger = page.getByRole("button", { name: /^Switch workspace, currently / });
+  const current = (await trigger.getAttribute("aria-label"))?.endsWith("Acme") ? acme : beta;
+  const other = current === acme ? beta : acme;
+  await db
+    .insert(schema.orgSetup)
+    .values({ orgId: other.orgId, step: "created" })
+    .onConflictDoUpdate({ target: schema.orgSetup.orgId, set: { step: "created" } });
+  await page.reload();
+  await page.route("**/api/auth/organization/set-active", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+    await route.continue();
+  });
+  const onboarding = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === "/api/onboarding" &&
+      !response.request().headers()["omni-workspace"],
+  );
+  await trigger.click();
+  await page.getByRole("menuitem", { name: other === beta ? "Beta" : "Acme" }).click();
+  await page.waitForURL((url) => url.pathname === "/onboarding");
+  const status = (await (await onboarding).json()) as { organization: { id: string } | null };
+  expect(status.organization?.id).toBe(other.orgId);
+});

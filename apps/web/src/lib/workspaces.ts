@@ -103,6 +103,8 @@ export function warmWorkspaces(client: QueryClient, workspaces: readonly Pick<Wo
   }
 }
 
+let activating: Promise<void> = Promise.resolve();
+
 /**
  * Makes `workspace` this tab's: every API call names it, and every workspace query key carries it
  * (`query-keys.ts`), so nothing cached for another workspace can show here, and coming back to one
@@ -123,14 +125,14 @@ export async function enterWorkspace(client: QueryClient, workspace: Pick<Worksp
   setCurrentWorkspaceId(workspace.id);
   if (!session) return !!before;
   if (session.session.activeOrganizationId !== workspace.id) {
-    void authCall(auth.organization.setActive({ organizationId: workspace.id }))
-      .then(() =>
-        client.setQueryData<Workspaces>(
+    activating = authCall(auth.organization.setActive({ organizationId: workspace.id })).then(
+      () =>
+        void client.setQueryData<Workspaces>(
           keys.workspaces(),
           (data) => data && { ...data, activeOrganizationId: workspace.id },
         ),
-      )
-      .catch(() => undefined);
+    );
+    activating.catch(() => undefined);
   }
   if (session.member?.orgId === workspace.id) return !!before;
   // WARNING: a session read still out for the workspace left would answer with its member.
@@ -200,7 +202,8 @@ const at = (workspace: Pick<Workspace, "slug">, place: string) =>
   workspaceHref(workspace.slug, place);
 
 /**
- * Opens the workspace: onboarding if you can finish its setup, else the same place in it. Its
+ * Opens the workspace: onboarding if you can finish its setup, else the same place in it.
+ * Onboarding names no workspace, so the session's active organization must be this one first. Its
  * route makes it this tab's workspace (`enterWorkspace`).
  */
 export async function openWorkspace(
@@ -210,6 +213,7 @@ export async function openWorkspace(
 ) {
   if (needsSetup(workspace)) {
     await enterWorkspace(client, workspace);
+    await activating;
     await router.navigate({ href: "/onboarding" });
     return;
   }
