@@ -230,3 +230,65 @@ test("an agent's edit of a doc nobody has open is in its History too, named for 
     sessions: [{ id: only!.id, authors: [{ name: ana.email, agent: "Drive agent" }] }],
   });
 });
+
+test("a session's diff is rebuilt from the journal: from before its first save, per session when journaled late, and unavailable once its baseline is gone", async () => {
+  const org = await stack.company(`replay-${randomUUID().slice(0, 8)}`);
+  const ana = await stack.member(org.id);
+  const first = "# Plan\n\nStart";
+  const doc = await stack.upload(ana.jar, { space: "shared" }, "plan.md", bytes(first));
+  const tab = await editor(stack, ana.jar, doc.id);
+  const page = new Y.Doc();
+  const epoch = await tab.append({ t: "seed", cv: 1, u: base64(rewriteLive(page, first)) }, 0);
+  const one = `${first}\n\nOne`;
+  const two = `${one}\n\nTwo`;
+  let at = await tab.append({ t: "update", e: epoch, u: base64(rewriteLive(page, one)) });
+  await save(ana.jar, doc.id, one, 1);
+  await tab.append({ t: "fold", e: epoch, cv: 2, s: at });
+  await expect.poll(async () => (await changesOf(doc.id)).length, { timeout: 10_000 }).toBe(1);
+  at = await tab.append({ t: "update", e: epoch, u: base64(rewriteLive(page, two)) });
+  await save(ana.jar, doc.id, two, 2);
+  await tab.append({ t: "fold", e: epoch, cv: 3, s: at });
+  await expect.poll(async () => (await changesOf(doc.id)).length, { timeout: 10_000 }).toBe(2);
+
+  const sessionsOf = async () =>
+    (await stack.api(ana.jar, "GET", `/files/${doc.id}/history`)).body.sessions as {
+      id: string;
+      versionId: string | null;
+    }[];
+  const diffOf = async (id: string) =>
+    (await stack.api(ana.jar, "GET", `/files/${doc.id}/history/${id}`)).body;
+  const [both] = await sessionsOf();
+  expect(await diffOf(both!.id)).toMatchObject({
+    available: true,
+    counts: { added: 2, removed: 0, changed: 0 },
+  });
+
+  const [, second] = await changesOf(doc.id);
+  await stack.db
+    .update(schema.storageDocChanges)
+    .set({
+      startedAt: new Date(Date.now() + 10 * 60_000),
+      endedAt: new Date(Date.now() + 10 * 60_000),
+    })
+    .where(eq(schema.storageDocChanges.id, second!.id));
+  await stack.db
+    .update(schema.storageDocChanges)
+    .set({ contentVersion: 3 })
+    .where(eq(schema.storageDocChanges.nodeId, doc.id));
+  const late = await sessionsOf();
+  expect(late).toHaveLength(2);
+  expect(late.map((s) => s.versionId)).toEqual([null, null]);
+  expect((await diffOf(late[0]!.id)).blocks).toEqual([
+    { kind: "same", text: "# Plan" },
+    { kind: "same", text: "Start" },
+    { kind: "same", text: "One" },
+    { kind: "added", text: "Two" },
+  ]);
+  expect((await diffOf(late[1]!.id)).counts).toEqual({ added: 1, removed: 0, changed: 0 });
+
+  await stack.db
+    .delete(schema.storageDocBaselines)
+    .where(eq(schema.storageDocBaselines.nodeId, doc.id));
+  expect(await diffOf(late[1]!.id)).toMatchObject({ available: false, blocks: [] });
+  tab.socket.close();
+});
