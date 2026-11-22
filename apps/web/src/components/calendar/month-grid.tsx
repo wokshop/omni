@@ -36,7 +36,7 @@ export function MonthGrid(props: WeekGridProps & { month: number; onDay: (day: D
       </div>
       <div className="grid min-h-0 flex-1 auto-rows-fr">
         {weeks.map((week) => (
-          <div key={week[0]?.getTime()} className="grid min-h-0 grid-cols-7">
+          <div key={week[0]?.getTime()} className="grid min-h-0 grid-cols-7 first:*:border-t-0">
             {week.map((day) => (
               <MonthDay key={day.getTime()} day={day} {...props} />
             ))}
@@ -63,7 +63,7 @@ function MonthDay(props: WeekGridProps & { day: Date; month: number; onDay: (day
       data-month-day={dayKey(day)}
       {...zone.handlers}
       className={cn(
-        "flex min-h-0 min-w-0 flex-col gap-0.5 overflow-hidden border-t border-l border-calendar-line p-1",
+        "flex min-h-0 min-w-0 flex-col gap-0.5 overflow-hidden border-t border-l border-calendar-line p-1 first:border-l-0",
         weekend && "bg-hover",
         zone.over && "bg-primary-subtle",
       )}
