@@ -95,13 +95,10 @@ export async function onDocAppend(
     at = now;
   }
   if (at.locked) return refuse("locked");
+  const stamped = { ...message.record, by: `m:${memberId}` };
   let seqNum: number | null;
   try {
-    seqNum = await basin.append(
-      docStream(nodeId),
-      JSON.stringify(message.record),
-      message.matchSeqNum,
-    );
+    seqNum = await basin.append(docStream(nodeId), JSON.stringify(stamped), message.matchSeqNum);
   } catch (error) {
     createLogger({ component: "realtime" }).error("doc.append_failed", { error, nodeId });
     return refuse("unavailable");
@@ -112,7 +109,7 @@ export async function onDocAppend(
     type: "doc.record",
     nodeId,
     seqNum,
-    record: message.record,
+    record: stamped,
   } satisfies StorageDocEvent);
   for (const other of audience(ctx, at)) {
     if (other === socket || editingOf(other)?.nodeId !== nodeId) continue;

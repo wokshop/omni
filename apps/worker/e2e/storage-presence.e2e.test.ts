@@ -217,21 +217,22 @@ test("only a socket editing the file appends to its live document, and the other
   boSocket.append(doc.id, 1, seed, 0);
   await boSocket.answer(doc.id, 1);
   expect(ofDoc(boSocket.received)).toEqual([
-    { type: "doc.record", nodeId: doc.id, seqNum: 0, record: seed },
+    { type: "doc.record", nodeId: doc.id, seqNum: 0, record: { ...seed, by: `m:${ana.id}` } },
     { type: "doc.refused", nodeId: doc.id, ref: 1, reason: "tail" },
   ]);
 
-  const update = { t: "update", e: 0, u: "AQ==" };
+  const update = { t: "update", e: 0, u: "AQ==", by: `m:${ana.id}` };
+  const stamped = { ...update, by: `m:${bo.id}` };
   boSocket.append(doc.id, 2, update);
   expect(await anaSocket.waitFor((e) => e.type === "doc.record" && e.seqNum === 1)).toEqual({
     type: "doc.record",
     nodeId: doc.id,
     seqNum: 1,
-    record: update,
+    record: stamped,
   });
   expect((await stack.api(cy.jar, "GET", `/files/${doc.id}/live?from=1`)).body).toEqual({
     enabled: true,
-    entries: [{ seqNum: 1, record: update }],
+    entries: [{ seqNum: 1, record: stamped }],
     more: false,
   });
   expect(ofDoc(cySocket.received)).toEqual([]);

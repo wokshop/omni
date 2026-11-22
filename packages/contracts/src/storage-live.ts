@@ -3,6 +3,14 @@ import { z } from "zod";
 const id = z.string().min(1);
 
 /**
+ * Who sent a live record, stamped by the realtime object (any value a client sends is replaced):
+ * `m:<memberId>` from a member's tab, `a:<memberId>:<agent>` for an agent's edit made for them.
+ * The Worker's saves carry none.
+ */
+export const storageLiveAuthorSchema = z.string().max(200).optional();
+const by = storageLiveAuthorSchema;
+
+/**
  * Live co-editing: an open document is one S2 stream of these
  * records, `docs/<nodeId>`. A `seed` starts an epoch: the editor's whole state, made from the file
  * at `contentVersion`. Each `update` (an editor update, base64) and `fold` names its epoch by the
@@ -18,14 +26,15 @@ const id = z.string().min(1);
  * update of the epoch, which it is.
  */
 export const storageLiveRecordSchema = z.discriminatedUnion("t", [
-  z.object({ t: z.literal("seed"), cv: z.number().int().nonnegative(), u: z.base64() }),
-  z.object({ t: z.literal("update"), e: z.number().int().nonnegative(), u: z.base64() }),
+  z.object({ t: z.literal("seed"), cv: z.number().int().nonnegative(), u: z.base64(), by }),
+  z.object({ t: z.literal("update"), e: z.number().int().nonnegative(), u: z.base64(), by }),
   z.object({
     t: z.literal("fold"),
     e: z.number().int().nonnegative(),
     cv: z.number().int().nonnegative(),
     /** The last record the saved text held, with every one before it. */
     s: z.number().int().nonnegative(),
+    by,
   }),
   z.object({
     t: z.literal("snap"),
@@ -36,6 +45,7 @@ export const storageLiveRecordSchema = z.discriminatedUnion("t", [
     /** The last record the save `cv` held: the epoch's seed when nothing was saved since. */
     f: z.number().int().nonnegative(),
     u: z.base64(),
+    by,
   }),
 ]);
 
