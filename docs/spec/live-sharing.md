@@ -140,8 +140,13 @@ appends are refused `read_only`, as their HTTP writes are.
 For a doc with outsiders on it, the object decodes it (the awareness encoding is a count and,
 per client, a client id, a clock and a JSON state: a pure codec in `@omni/docs`, no I/O) and:
 
-- **binds client ids to the socket.** The first client id a socket speaks for is its own; an
-  update for any other id is dropped. An outsider cannot move or remove someone else's cursor.
+- **binds client ids to the socket, across the doc.** Client ids are not secret: every awareness
+  update carries them. So the object records, on every doc and for members' sockets too, the
+  client id each socket first speaks for (in its attachment, which survives hibernation). A
+  socket's first id is bound to it only if no other socket on the doc, member or outsider, holds
+  it; otherwise the update is dropped and the socket binds nothing. After that, an update for any
+  id but the socket's own is dropped. An outsider cannot move or remove anyone's cursor, from this
+  socket or a second one.
 - **stamps `user`.** For an outsider's state, `user` is replaced with the identity the server
   gave it: `{ name, slot, kind }`. A client cannot name itself.
 - **keeps only what a cursor needs.** A state passed on keeps `user`, `cursor` and `comments`
@@ -229,7 +234,9 @@ push; members see them in the doc.
 saved by the Worker's **fold**:
 
 - After an outsider's accepted append, the object notes the doc as owed a fold and sets its alarm
-  for `FOLD_MS` (2 s) after the latest one, the same pause a member's tab waits.
+  for `FOLD_MS` (2 s) after the latest one, the same pause a member's tab waits, but never later
+  than `FOLD_MAX_MS` (10 s) after the first append the doc was owed for. Outsiders who type
+  without a pause still reach the file every 10 s, and the server's snaps are not put off either.
 - The alarm runs `foldLive(env, orgId, nodeId)` for each doc owed one. It awaits R2, S2 and
   Postgres, and a Durable Object takes other messages while it awaits, so the inbox's events are
   not held up; its CPU is one merge and one Markdown serialization. No queue: an alarm that throws
@@ -269,7 +276,7 @@ the link and when, next to `viewed` and `downloaded`.
 
 **Agents.** `drive_fetch` (#707) keeps saved text for files it reaches through a share link. That
 stays right: an agent acting for a grantee reads through the grant door, and the saved text now
-trails the live one by the fold's 2 s.
+trails the live one by 2 s after a pause, 10 s at most.
 
 ## Contracts and routes
 
@@ -364,7 +371,7 @@ The implementation is a stack on top of #707, each layer a `gh stack` layer:
 
 ## Not in this change
 
-- Viewers on the live document. A viewer reads the saved text, at most the fold's 2 s behind.
+- Viewers on the live document. A viewer reads the saved text, at most 10 s behind.
 - Guests choosing their own name.
 - Outsiders in `file.presence` (members see them through awareness).
 - Mail or push notifications for guests' comments.
@@ -394,12 +401,15 @@ E2e against the local stack (`pnpm stack:up`, s2-lite), no mocks. Each names the
   is unchanged. `GET /shared/:shareId/files/B/live` for a doc outside the link is `404`.
 - **Spoofing.** A guest's awareness update naming itself after a member arrives at the member's
   socket stamped `Guest <Animal>`, `kind: "guest"`; an update for another socket's client id is
-  dropped.
+  dropped. A guest's second socket whose first update claims a member's client id, or the guest's
+  own first socket's, binds nothing, and the member's cursor stays where it was.
 - A guest's `seed`, `snap` or `fold` is refused `read_only`; a 65 KiB update is refused; 100
   appends in one second are cut to the bucket and the socket closes after sustained refusals.
 - A guest types and leaves; with no member on the doc, the file's content holds their text
   within a few seconds, its version has `written_by_guest` set, the stream has the fold, and a
   second fold writes nothing. *(Guests' typing is never saved, or saved twice.)*
+- A guest types without a pause for 30 s; the file's content changes at least every 10 s.
+  *(Continuous typing postpones the only save.)*
 - A member and a guest type together; the member's save lists the guest in `coauthors`.
 - A guest comments through a Commenter link; a member's socket hears `doc.comments` and the
   comment lists the guest as author; the guest cannot delete a member's comment.
