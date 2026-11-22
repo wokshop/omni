@@ -180,6 +180,7 @@ export class LiveDoc {
     this.next = epoch;
     this.startAt = first.seqNum;
     this.foldCv = record.cv;
+    this.lastFold = epoch;
     if (record.t === "snap") {
       Y.applyUpdate(this.doc, fromBase64(record.u), REMOTE);
       this.next = record.s + 1;
@@ -206,6 +207,7 @@ export class LiveDoc {
     this.next = answer.seqNum;
     this.startAt = answer.seqNum;
     this.foldCv = this.options.contentVersion;
+    this.lastFold = answer.seqNum;
     this.markKnown(answer.seqNum, true);
     this.last = { seqNum: answer.seqNum, mine: false };
     return true;
