@@ -124,10 +124,9 @@ test("a recorded meeting reads as its client's group, its notes, actions and nam
   await db.update(schema.members).set({ role: "owner" }).where(eq(schema.members.id, member.id));
   const inbox = await createMailbox(db, org.id, address, "personal");
   await grant(db, org.id, inbox.id, member.id);
-  const meetingId = await recordedCall(member.id, org.id, address);
-
   const origin = String(worker.url);
   const cookie = await signIn({ url: new URL(origin) }, db, address);
+  const meetingId = await recordedCall(member.id, org.id, address);
   const context = await browser.newContext({
     viewport: { width: 1440, height: 900 },
     deviceScaleFactor: shots ? 2 : 1,
@@ -148,19 +147,43 @@ test("a recorded meeting reads as its client's group, its notes, actions and nam
 
   await page.getByRole("link", { name: /Entregas sitio web/ }).click();
   await expect.poll(() => page.url()).toContain(`/meetings/${meetingId}`);
-  await page.getByText("Gestionar el acceso al servidor").waitFor();
-  await expect
-    .poll(() => page.getByText("Hola Marta, quería revisar el calendario.").count())
-    .toBe(1);
-  await page.getByRole("button", { name: "Speaker 2" }).waitFor();
-  if (shots) await page.screenshot({ path: join(shots, "meeting.png"), fullPage: true });
+  await page.getByRole("tab", { name: "Summary" }).waitFor();
+  await page.getByText("Diseño final listo el viernes").waitFor();
+  if (shots) await page.screenshot({ path: join(shots, "meeting-summary.png") });
 
+  await page.getByRole("tab", { name: "Transcript" }).click();
+  await page.getByText("Hola Marta, quería revisar el calendario.").waitFor();
   await page.getByRole("button", { name: "Speaker 2" }).click();
   await page.getByRole("menuitem", { name: "Marta Gil" }).click();
-  await page.getByRole("button", { name: "Marta Gil" }).waitFor();
+  await page.getByRole("button", { name: "Marta Gil" }).first().waitFor();
+  await page.getByRole("searchbox", { name: "Find in transcript" }).fill("acceso");
+  await expect
+    .poll(() => page.getByText("Hola Marta, quería revisar el calendario.").count())
+    .toBe(0);
+  if (shots) await page.screenshot({ path: join(shots, "meeting-transcript.png") });
 
+  await page.getByRole("tab", { name: /Actions/ }).click();
+  await page.getByText("Gestionar el acceso al servidor").waitFor();
+  if (shots) await page.screenshot({ path: join(shots, "meeting-actions.png") });
   await page.getByRole("button", { name: "Add to calendar" }).click();
-  await page.getByText("Gestionar el acceso al servidor").waitFor({ state: "detached" });
+  await page.getByText("In calendar").waitFor();
+
+  await page.getByRole("button", { name: "Share" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("textbox", { name: "Email" }).fill("ben@studio.example");
+  await dialog.getByRole("button", { name: "Invite" }).click();
+  await dialog.getByText("ben@studio.example").waitFor();
+  if (shots) await page.screenshot({ path: join(shots, "meeting-share.png") });
+  const grants = await db
+    .select()
+    .from(schema.meetingsGrants)
+    .where(eq(schema.meetingsGrants.meetingId, meetingId));
+  expect(Object.fromEntries(grants.map((g) => [g.address, g.role]))).toMatchObject({
+    [address]: "owner",
+    "marta@client.test": "viewer",
+    "ben@studio.example": "viewer",
+  });
+
   const [task] = await db
     .select()
     .from(schema.calendarTasks)
