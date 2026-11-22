@@ -2,7 +2,7 @@
 //! and for the end-to-end test that kills it mid-meeting.
 //!
 //! ```text
-//! omni-record record <root> <meetingId> <folderId> [--seconds N] [--synthetic]
+//! omni-record record <root> <meetingId> <memberId> <folderId> [--seconds N] [--synthetic]
 //!                    [--pause-at S --resume-at S]   # seconds from the start
 //! omni-record list <root>               # recovers what a crash left, prints them as JSON
 //! omni-record part <root> <id> <n> <partSize>   # raw bytes on stdout
@@ -32,8 +32,10 @@ fn print(value: &impl serde::Serialize) -> io::Result<()> {
 }
 
 fn record(args: &[String]) -> io::Result<()> {
-    let [root, meeting_id, folder_id, ..] = args else {
-        return Err(io::Error::other("record <root> <meetingId> <folderId>"));
+    let [root, meeting_id, member_id, folder_id, ..] = args else {
+        return Err(io::Error::other(
+            "record <root> <meetingId> <memberId> <folderId>",
+        ));
     };
     let source = if args.iter().any(|a| a == "--synthetic") {
         Source::Synthetic
@@ -42,6 +44,7 @@ fn record(args: &[String]) -> io::Result<()> {
     };
     let new = NewRecording {
         meeting_id: meeting_id.clone(),
+        member_id: member_id.clone(),
         folder_id: folder_id.clone(),
         title: flag(args, "--title"),
     };

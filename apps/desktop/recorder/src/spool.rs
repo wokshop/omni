@@ -40,6 +40,7 @@ pub enum State {
 pub struct Manifest {
     pub id: String,
     pub meeting_id: String,
+    pub member_id: String,
     pub folder_id: String,
     pub title: Option<String>,
     pub started_at_ms: u64,
@@ -55,6 +56,7 @@ pub struct Manifest {
 #[serde(rename_all = "camelCase")]
 pub struct NewRecording {
     pub meeting_id: String,
+    pub member_id: String,
     pub folder_id: String,
     pub title: Option<String>,
 }
@@ -118,6 +120,7 @@ impl Spool {
             manifest: Manifest {
                 id,
                 meeting_id: new.meeting_id,
+                member_id: new.member_id,
                 folder_id: new.folder_id,
                 title: new.title,
                 started_at_ms: now_ms(),
@@ -260,6 +263,7 @@ impl Spool {
         DesktopRecording {
             id: m.id.clone(),
             meeting_id: m.meeting_id.clone(),
+            member_id: m.member_id.clone(),
             folder_id: m.folder_id.clone(),
             title: m.title.clone(),
             state: match m.state {
@@ -321,6 +325,7 @@ mod tests {
     fn new(meeting: &str) -> NewRecording {
         NewRecording {
             meeting_id: meeting.into(),
+            member_id: "member".into(),
             folder_id: "folder".into(),
             title: None,
         }

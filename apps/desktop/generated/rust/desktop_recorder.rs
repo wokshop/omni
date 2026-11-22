@@ -16,6 +16,8 @@ pub struct DesktopRecording {
 
     pub meeting_id: String,
 
+    pub member_id: String,
+
     pub mic_db: f64,
 
     pub mic_spans: Vec<MicSpan>,

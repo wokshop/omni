@@ -16,6 +16,8 @@ export const desktopRecordingSchema = z.object({
   /** The spool's own id, made on this computer. */
   id: z.string(),
   meetingId: z.string(),
+  /** The member who started it: only their session finishes it. */
+  memberId: z.string(),
   /** The recorder's `Recordings` folder, from `POST /api/meetings`. */
   folderId: z.string(),
   title: z.string().nullable(),
