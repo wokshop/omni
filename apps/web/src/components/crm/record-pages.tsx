@@ -147,7 +147,7 @@ export function PersonPage({ id }: { id: string }) {
 
 export function DealPage({ id }: { id: string }) {
   const query = useCrmDeal(id);
-  const update = useUpdateDeal();
+  const update = useUpdateDeal(id);
   const move = useMoveDeal();
   const stages = useCrmStages().data ?? [];
   const workspaceCurrency = useCrmDefaultCurrency();
