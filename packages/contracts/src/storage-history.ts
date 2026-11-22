@@ -57,6 +57,11 @@ const blockChangeSchema = z.discriminatedUnion("kind", [
  */
 export const storageHistorySessionResponseSchema = z.object({
   session: storageHistorySessionSchema,
+  /**
+   * False when the page before or after the session can no longer be rebuilt (its baseline or a
+   * version it needs is gone): `blocks` is then empty, never a guess.
+   */
+  available: z.boolean(),
   blocks: z.array(blockChangeSchema),
   counts: z.object({ added: z.number(), removed: z.number(), changed: z.number() }),
 });

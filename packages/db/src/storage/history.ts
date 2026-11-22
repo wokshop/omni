@@ -212,22 +212,29 @@ export interface DocAuthor {
   agent: string | null;
 }
 
-/** An editing session of a doc's history, newest first in `docHistory`. */
+/** An editing session of a doc's history, newest first in `docSessions`. */
 export interface DocSession {
   id: string;
   startedAt: Date;
   endedAt: Date;
   authors: DocAuthor[];
-  /** The file's content version once the session was saved. */
+  /** The file's content version once the session was journaled. */
   contentVersion: number;
+  /**
+   * Where the session lies in its epoch's change log: replaying the epoch through `lastSeq`
+   * gives the page at its end, and through `firstSeq - 1` the page before it. Null for a save
+   * the live document did not record (an upload, an agent's edit with nobody editing).
+   */
+  span: { epoch: number; firstSeq: number; lastSeq: number } | null;
 }
 
 const IDLE_MS = 5 * 60_000;
 const SPAN_MS = 15 * 60_000;
 
 /**
- * A doc's journal as editing sessions: runs at most 5 minutes apart, for 15 minutes at most, by
- * whoever wrote in them; an agent's runs are always a session of their own. Newest first.
+ * A doc's journal as editing sessions: runs at most 5 minutes apart, for 15 minutes at most, in
+ * one epoch, by whoever wrote in them; an agent's runs, and a save outside the live document,
+ * are always a session of their own. Newest first.
  */
 export async function docSessions(db: Db, nodeId: string, limit = 200) {
   const runs = await db
@@ -235,20 +242,23 @@ export async function docSessions(db: Db, nodeId: string, limit = 200) {
     .from(storageDocChanges)
     .where(eq(storageDocChanges.nodeId, nodeId))
     .orderBy(asc(storageDocChanges.startedAt), asc(storageDocChanges.firstSeq));
-  const sessions: (DocSession & { agentRun: boolean })[] = [];
+  const sessions: (DocSession & { alone: boolean })[] = [];
   for (const run of runs) {
-    const agentRun = run.agent !== null;
+    const live = run.update !== "";
+    const alone = run.agent !== null || !live;
     const open = sessions.at(-1);
     const continues =
       open &&
-      !agentRun &&
-      !open.agentRun &&
+      !alone &&
+      !open.alone &&
+      open.span?.epoch === run.epoch &&
       run.startedAt.getTime() - open.endedAt.getTime() <= IDLE_MS &&
       run.endedAt.getTime() - open.startedAt.getTime() <= SPAN_MS;
     const author = { by: run.by, name: run.authorName, agent: run.agent };
-    if (continues) {
+    if (continues && open.span) {
       open.endedAt = run.endedAt;
       open.contentVersion = Math.max(open.contentVersion, run.contentVersion);
+      open.span.lastSeq = Math.max(open.span.lastSeq, run.lastSeq);
       if (!open.authors.some((a) => a.by === run.by)) open.authors.push(author);
       continue;
     }
@@ -258,7 +268,8 @@ export async function docSessions(db: Db, nodeId: string, limit = 200) {
       endedAt: run.endedAt,
       authors: [author],
       contentVersion: run.contentVersion,
-      agentRun,
+      span: live ? { epoch: run.epoch, firstSeq: run.firstSeq, lastSeq: run.lastSeq } : null,
+      alone,
     });
   }
   return sessions
@@ -271,6 +282,7 @@ export async function docSessions(db: Db, nodeId: string, limit = 200) {
         endedAt: session.endedAt,
         authors: session.authors,
         contentVersion: session.contentVersion,
+        span: session.span,
       };
       return shown;
     });
