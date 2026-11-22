@@ -231,22 +231,22 @@ test("the stack shows who is online, and a note and a file reach the teammate's 
   expect(shown.indexOf("Second one")).toBeLessThan(shown.indexOf("Third, right away"));
   await ana.unroute("**/api/talk/threads/*/messages");
   const failing = Promise.withResolvers<void>();
-  let refused = false;
+  let holding = true;
   await ana.route("**/api/talk/threads/*/messages", async (route) => {
-    if (route.request().method() === "POST" && !refused) {
-      refused = true;
+    if (route.request().method() === "POST" && holding) {
+      holding = false;
       await failing.promise;
-      return route.fulfill({ status: 500, json: { error: { code: "internal" } } });
     }
     await route.fallback();
   });
-  await composer.fill("Lost on the way");
+  const tooLong = `Lost on the way ${"x".repeat(4_000)}`;
+  await composer.fill(tooLong);
   await composer.press("Enter");
   await composer.fill("Kept one");
   await composer.press("Enter");
   failing.resolve();
   await bubble("Kept one").waitFor();
-  await expect.poll(() => composer.inputValue()).toBe("Lost on the way");
+  await expect.poll(() => composer.inputValue()).toBe(tooLong);
   expect(await bubble("Lost on the way").count()).toBe(0);
   await ana.unroute("**/api/talk/threads/*/messages");
   await composer.fill("");

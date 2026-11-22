@@ -1,4 +1,4 @@
-import type { Api } from "@omni/client";
+import { WORKSPACE_HEADER, type Api } from "@omni/client";
 import type { InferResponseType } from "hono/client";
 import {
   infiniteQueryOptions,
@@ -8,7 +8,7 @@ import {
   type QueryClient,
 } from "@tanstack/react-query";
 import { api, ApiError, call } from "./api.ts";
-import { withWorkspace, workspaceHeaders } from "./current-workspace.ts";
+import { currentWorkspaceId, withWorkspace, workspaceHeaders } from "./current-workspace.ts";
 import { keys } from "./query-keys.ts";
 
 type Talk = Api["talk"];
@@ -77,20 +77,38 @@ export const talkThreadQuery = (memberId: string) =>
     staleTime: Infinity,
   });
 
-async function sendNote(threadId: string, body: string) {
-  return (
-    await call(api.talk.threads[":id"].messages.$post({ param: { id: threadId }, json: { body } }))
-  ).message;
+/** A note and the workspace it was written in, fixed when it was sent rather than when it goes. */
+export interface NoteToSend {
+  body: string;
+  workspaceId: string | undefined;
 }
 
-async function sendFile(threadId: string, file: File) {
+export const noteToSend = (body: string) =>
+  ({ body, workspaceId: currentWorkspaceId() }) satisfies NoteToSend;
+
+const inWorkspace = (workspaceId: string | undefined) =>
+  workspaceId ? { headers: { [WORKSPACE_HEADER]: workspaceId } } : {};
+
+async function sendNote(threadId: string, note: NoteToSend) {
+  const sent = api.talk.threads[":id"].messages.$post(
+    { param: { id: threadId }, json: { body: note.body } },
+    inWorkspace(note.workspaceId),
+  );
+  return (await call(sent)).message;
+}
+
+async function sendFile(threadId: string, file: File, workspaceId: string | undefined) {
   const url = api.talk.threads[":id"].files.$url({
     param: { id: threadId },
     query: { name: file.name },
   });
   const response = await fetch(url, {
     method: "POST",
-    headers: { ...workspaceHeaders(), "content-type": file.type || "application/octet-stream" },
+    headers: {
+      ...workspaceHeaders(),
+      ...inWorkspace(workspaceId).headers,
+      "content-type": file.type || "application/octet-stream",
+    },
     body: file,
   });
   if (!response.ok) throw new ApiError(response.status, `sending ${file.name} failed`);
@@ -136,10 +154,13 @@ export function setOnline(client: QueryClient, memberId: string, online: boolean
 const peopleChanged = (client: QueryClient) =>
   client.invalidateQueries({ queryKey: keys.talkPeople() });
 
-/** `mutate(body)`: notes to one thread go one after another, in the order they were sent. */
+/**
+ * `mutate(noteToSend(body))`: notes to one thread go one after another, in the order they were
+ * sent, each to the workspace it was written in.
+ */
 export const sendNoteMutation = (client: QueryClient, threadId: string | undefined) =>
   mutationOptions({
-    mutationFn: (body: string) => sendNote(threadId!, body),
+    mutationFn: (note: NoteToSend) => sendNote(threadId!, note),
     scope: { id: `talk-notes:${threadId}` },
     onSuccess: (message) => {
       addMessage(client, message);
@@ -151,7 +172,8 @@ export const sendNoteMutation = (client: QueryClient, threadId: string | undefin
 export const sendFilesMutation = (client: QueryClient, threadId: string | undefined) =>
   mutationOptions({
     mutationFn: async (files: File[]) => {
-      for (const file of files) addMessage(client, await sendFile(threadId!, file));
+      const workspaceId = currentWorkspaceId();
+      for (const file of files) addMessage(client, await sendFile(threadId!, file, workspaceId));
     },
     onSettled: () => peopleChanged(client),
   });

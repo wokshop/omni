@@ -23,7 +23,7 @@ import {
   useTalkThreadId,
 } from "@/hooks/use-talk.ts";
 import { inBackground } from "@/lib/desktop-notifications.ts";
-import { firstName, type TalkPerson } from "@/lib/talk.ts";
+import { firstName, noteToSend, type TalkPerson } from "@/lib/talk.ts";
 import { talkWindow, useTalkPinned, useTalkWindow } from "@/lib/talk-window.ts";
 import { TalkMessages } from "./talk-messages";
 
@@ -65,7 +65,7 @@ function Composer(props: { person: TalkPerson; threadId: string | undefined; pin
     const body = text.trim();
     if (!body || !props.threadId) return;
     setText("");
-    note.mutateAsync(body).catch(() => {
+    note.mutateAsync(noteToSend(body)).catch(() => {
       setText((now) => (now.trim() ? now : body));
       appToast.error("The note was not sent. Try again.");
     });
