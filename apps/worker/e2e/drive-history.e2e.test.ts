@@ -45,6 +45,9 @@ const changesOf = (nodeId: string) =>
     .where(eq(schema.storageDocChanges.nodeId, nodeId))
     .orderBy(asc(schema.storageDocChanges.firstSeq));
 
+const liveChangesOf = async (nodeId: string) =>
+  (await changesOf(nodeId)).filter((run) => run.update !== "");
+
 test("a doc's change log outlives its stream: runs by author in the order typed, over the seed, written once", async () => {
   const org = await stack.company(`history-${randomUUID().slice(0, 8)}`);
   const ana = await stack.member(org.id);
@@ -66,13 +69,18 @@ test("a doc's change log outlives its stream: runs by author in the order typed,
     [anaTab, `${first}\n\nAna's line, twice\n\nBo's line, Ana edits it`],
   ] as const;
   for (const [tab, text] of typed) {
-    await tab.append({ t: "update", e: epoch, u: base64(rewriteLive(page, text)) });
+    await tab.append({
+      t: "update",
+      e: epoch,
+      u: base64(rewriteLive(page, text)),
+    });
   }
   const last = typed.at(-1)![1];
   await save(ana.jar, doc.id, last, 1);
+  await anaTab.append({ t: "fold", e: epoch, cv: 2, s: epoch + 4 });
 
-  await expect.poll(async () => (await changesOf(doc.id)).length, { timeout: 10_000 }).toBe(3);
-  const runs = await changesOf(doc.id);
+  await expect.poll(async () => (await liveChangesOf(doc.id)).length, { timeout: 10_000 }).toBe(3);
+  const runs = await liveChangesOf(doc.id);
   expect(runs.map((run) => [run.by, run.authorName, run.firstSeq, run.lastSeq])).toEqual([
     [`m:${ana.id}`, ana.email, epoch + 1, epoch + 1],
     [`m:${bo.id}`, bo.email, epoch + 2, epoch + 2],
@@ -91,7 +99,8 @@ test("a doc's change log outlives its stream: runs by author in the order typed,
 
   await trim(doc.id, epoch + 5);
   expect(await stack.cron("* * * * *")).toBe("ok");
-  expect(await changesOf(doc.id)).toEqual(runs);
+  expect(await liveChangesOf(doc.id)).toEqual(runs);
+  expect((await changesOf(doc.id)).filter((run) => run.update === "")).toEqual([]);
   for (const tab of [anaTab, boTab]) tab.socket.close();
 });
 
@@ -104,9 +113,13 @@ test("typing left in an epoch when a new one starts is journaled before the jour
   const page = new Y.Doc();
   const epoch = await tab.append({ t: "seed", cv: 1, u: base64(rewriteLive(page, first)) }, 0);
   const saved = `${first}\n\nTwo`;
-  await tab.append({ t: "update", e: epoch, u: base64(rewriteLive(page, saved)) });
+  await tab.append({
+    t: "update",
+    e: epoch,
+    u: base64(rewriteLive(page, saved)),
+  });
   await save(ana.jar, doc.id, saved, 1);
-  await expect.poll(async () => (await changesOf(doc.id)).length, { timeout: 10_000 }).toBe(1);
+  await expect.poll(async () => (await liveChangesOf(doc.id)).length, { timeout: 10_000 }).toBe(1);
 
   const left = await tab.append({
     t: "update",
@@ -114,7 +127,11 @@ test("typing left in an epoch when a new one starts is journaled before the jour
     u: base64(rewriteLive(page, `${saved}\n\nThree, never saved`)),
   });
   const next = new Y.Doc();
-  const newer = await tab.append({ t: "seed", cv: 2, u: base64(rewriteLive(next, saved)) });
+  const newer = await tab.append({
+    t: "seed",
+    cv: 2,
+    u: base64(rewriteLive(next, saved)),
+  });
   expect(await stack.cron("* * * * *")).toBe("ok");
   await save(ana.jar, doc.id, `${saved}\n\nFour`, 2);
   await expect
@@ -221,7 +238,10 @@ test("an agent's edit of a doc nobody has open is in its History too, named for 
 
   const listed = await stack.api(ana.jar, "GET", `/files/${doc.id}/history`);
   expect(listed.body.sessions).toMatchObject([
-    { authors: [{ kind: "agent", name: ana.email, agent: "Drive agent" }], contentVersion: 2 },
+    {
+      authors: [{ kind: "agent", name: ana.email, agent: "Drive agent" }],
+      contentVersion: 2,
+    },
   ]);
   const [only] = listed.body.sessions as { id: string }[];
   const diff = await stack.api(ana.jar, "GET", `/files/${doc.id}/history/${only!.id}`);
@@ -241,11 +261,19 @@ test("a session's diff is rebuilt from the journal: from before its first save, 
   const epoch = await tab.append({ t: "seed", cv: 1, u: base64(rewriteLive(page, first)) }, 0);
   const one = `${first}\n\nOne`;
   const two = `${one}\n\nTwo`;
-  let at = await tab.append({ t: "update", e: epoch, u: base64(rewriteLive(page, one)) });
+  let at = await tab.append({
+    t: "update",
+    e: epoch,
+    u: base64(rewriteLive(page, one)),
+  });
   await save(ana.jar, doc.id, one, 1);
   await tab.append({ t: "fold", e: epoch, cv: 2, s: at });
   await expect.poll(async () => (await changesOf(doc.id)).length, { timeout: 10_000 }).toBe(1);
-  at = await tab.append({ t: "update", e: epoch, u: base64(rewriteLive(page, two)) });
+  at = await tab.append({
+    t: "update",
+    e: epoch,
+    u: base64(rewriteLive(page, two)),
+  });
   await save(ana.jar, doc.id, two, 2);
   await tab.append({ t: "fold", e: epoch, cv: 3, s: at });
   await expect.poll(async () => (await changesOf(doc.id)).length, { timeout: 10_000 }).toBe(2);
@@ -284,12 +312,19 @@ test("a session's diff is rebuilt from the journal: from before its first save, 
     { kind: "same", text: "One" },
     { kind: "added", text: "Two" },
   ]);
-  expect((await diffOf(late[1]!.id)).counts).toEqual({ added: 1, removed: 0, changed: 0 });
+  expect((await diffOf(late[1]!.id)).counts).toEqual({
+    added: 1,
+    removed: 0,
+    changed: 0,
+  });
 
   await stack.db
     .delete(schema.storageDocBaselines)
     .where(eq(schema.storageDocBaselines.nodeId, doc.id));
-  expect(await diffOf(late[1]!.id)).toMatchObject({ available: false, blocks: [] });
+  expect(await diffOf(late[1]!.id)).toMatchObject({
+    available: false,
+    blocks: [],
+  });
   tab.socket.close();
 });
 
@@ -328,9 +363,13 @@ test("typing left in each of several epochs is journaled, epoch by epoch, before
   const tab = await editor(stack, ana.jar, doc.id);
   const a = new Y.Doc();
   const epochA = await tab.append({ t: "seed", cv: 1, u: base64(rewriteLive(a, first)) }, 0);
-  await tab.append({ t: "update", e: epochA, u: base64(rewriteLive(a, `${first}\n\nA1`)) });
+  await tab.append({
+    t: "update",
+    e: epochA,
+    u: base64(rewriteLive(a, `${first}\n\nA1`)),
+  });
   await save(ana.jar, doc.id, `${first}\n\nA1`, 1);
-  await expect.poll(async () => (await changesOf(doc.id)).length, { timeout: 10_000 }).toBe(1);
+  await expect.poll(async () => (await liveChangesOf(doc.id)).length, { timeout: 10_000 }).toBe(1);
 
   const leftA = await tab.append({
     t: "update",
@@ -338,14 +377,22 @@ test("typing left in each of several epochs is journaled, epoch by epoch, before
     u: base64(rewriteLive(a, `${first}\n\nA2`)),
   });
   const b = new Y.Doc();
-  const epochB = await tab.append({ t: "seed", cv: 2, u: base64(rewriteLive(b, "# Log\n\nB")) });
+  const epochB = await tab.append({
+    t: "seed",
+    cv: 2,
+    u: base64(rewriteLive(b, "# Log\n\nB")),
+  });
   const leftB = await tab.append({
     t: "update",
     e: epochB,
     u: base64(rewriteLive(b, "# Log\n\nB1")),
   });
   const c = new Y.Doc();
-  const epochC = await tab.append({ t: "seed", cv: 2, u: base64(rewriteLive(c, "# Log\n\nC")) });
+  const epochC = await tab.append({
+    t: "seed",
+    cv: 2,
+    u: base64(rewriteLive(c, "# Log\n\nC")),
+  });
   await save(ana.jar, doc.id, "# Log\n\nC1", 2);
 
   await expect
@@ -370,5 +417,41 @@ test("typing left in each of several epochs is journaled, epoch by epoch, before
       { timeout: 10_000 },
     )
     .toBe(epochC);
+  tab.socket.close();
+});
+
+test("saves made outside the live document are journaled with typing still pending in it, each at its own version", async () => {
+  const org = await stack.company(`pending-${randomUUID().slice(0, 8)}`);
+  const ana = await stack.member(org.id);
+  const doc = await stack.upload(ana.jar, { space: "shared" }, "brief.md", bytes("# Brief"));
+  const agent = await connectAgent(stack.worker.url, ana.jar, { scope: WRITE });
+  const written = "# Brief\n\nFrom the agent";
+  expect(await call(agent, "drive_edit_doc", { id: doc.id, markdown: written })).not.toHaveProperty(
+    "error",
+  );
+  await expect
+    .poll(async () => (await changesOf(doc.id)).length, { timeout: 10_000 })
+    .toBeGreaterThan(0);
+  for (const table of [schema.storageDocChanges, schema.storageDocJournals]) {
+    await stack.db.delete(table).where(eq(table.nodeId, doc.id));
+  }
+
+  const tab = await editor(stack, ana.jar, doc.id);
+  const page = new Y.Doc();
+  const epoch = await tab.append({ t: "seed", cv: 2, u: base64(rewriteLive(page, written)) }, 0);
+  await tab.append({
+    t: "update",
+    e: epoch,
+    u: base64(rewriteLive(page, `${written}\n\nAna`)),
+  });
+  expect(await stack.cron("* * * * *")).toBe("ok");
+  const rows = await changesOf(doc.id);
+  expect(
+    rows.map((row) => [row.firstSeq < 0 ? row.firstSeq : "live", row.by, row.contentVersion]),
+  ).toEqual([
+    [-2, `a:${ana.id}:Drive agent`, 2],
+    [-1, `m:${ana.id}`, 1],
+    ["live", `m:${ana.id}`, 2],
+  ]);
   tab.socket.close();
 });

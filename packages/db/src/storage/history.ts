@@ -20,6 +20,8 @@ export interface DocRun {
   startedAt: Date;
   endedAt: Date;
   update: string;
+  /** The content version this run is of, when it is not the journal run's (a recovered save). */
+  contentVersion?: number;
 }
 
 /** Where a doc's journal stands; null when it has none yet. */
@@ -145,7 +147,7 @@ export async function writeDocJournal(
             orgId,
             nodeId,
             epoch,
-            contentVersion: input.contentVersion,
+            contentVersion: run.contentVersion ?? input.contentVersion,
           })),
         )
         .onConflictDoNothing();
