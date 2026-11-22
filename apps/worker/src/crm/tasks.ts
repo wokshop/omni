@@ -9,7 +9,7 @@ import {
 import type { CrmRecordRef, CrmTask, TaskPatch } from "@omni/db";
 import { Hono, type Context } from "hono";
 import { z } from "zod";
-import type { AppEnv } from "../context.ts";
+import type { AppEnv, LinkedTaskChange } from "../context.ts";
 import { zValidator } from "../validator.ts";
 import { announce, decodeCursor, encodeCursor, memberCrm, refused, wireTask } from "./http.ts";
 
@@ -46,6 +46,13 @@ async function announceTask(c: Context<AppEnv>, ...tasks: CrmTask[]) {
       tasks.map((task) => task[key]),
     );
   }
+}
+
+/** A linked task the calendar's routes changed or deleted: the task's and its record's viewers hear it. */
+export async function announceLinkedTask(c: Context<AppEnv>, task: LinkedTaskChange) {
+  if (!task.record) return;
+  await announce(c, "task", [task.id]);
+  await announce(c, task.record.kind, [task.record.id]);
 }
 
 export const tasks = new Hono<AppEnv>()

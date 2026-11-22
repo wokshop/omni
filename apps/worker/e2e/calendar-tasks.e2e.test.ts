@@ -145,3 +145,30 @@ test("a private task cannot be assigned; a linked one only to someone who can op
   expect(moved.status).toBe(400);
   expect(titles((await calendar(fran.jar, "GET", "/tasks")).body)).toEqual(["Website task"]);
 });
+
+test("a linked task changed or deleted through the calendar's routes reaches teammates' sockets", async () => {
+  const { owner, ben } = await team();
+  const deal = (await stack.api(owner.jar, "POST", "/deals", { name: "Launch" })).body.deal.id;
+  const made = await stack.api(owner.jar, "POST", "/tasks", {
+    title: "Book the hall",
+    dealId: deal,
+    assigneeMemberId: ben.id,
+  });
+  const id = made.body.task.id;
+  const socket = await stack.socket(owner.jar);
+  const heard = (kind: string, of: string) =>
+    socket.waitFor(
+      (e) => e.type === "crm.changed" && e.kind === kind && (e.ids as string[]).includes(of),
+    );
+
+  const done = heard("task", id);
+  expect((await calendar(ben.jar, "PATCH", `/tasks/${id}`, { done: true })).status).toBe(200);
+  await done;
+  await heard("deal", deal);
+  socket.received.length = 0;
+
+  const gone = heard("task", id);
+  expect((await calendar(ben.jar, "DELETE", `/tasks/${id}`)).status).toBe(204);
+  await gone;
+  socket.close();
+});

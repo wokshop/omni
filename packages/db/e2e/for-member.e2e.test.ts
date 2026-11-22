@@ -15,6 +15,7 @@ import { applyAgentReply, applyConversationChange } from "../src/mail/conversati
 import { forMember, forUser } from "../src/for-member.ts";
 import {
   attachments as attachmentsTable,
+  calendarTasks,
   drafts as schemaDrafts,
   mailboxes as schemaMailboxes,
   mailboxFolders,
@@ -478,6 +479,34 @@ describe("forMember isolation", () => {
     });
     expect(await forMember(db, bob).getAction(action.id)).toBeNull();
     expect(await forMember(db, carol).getAction(action.id)).toBeNull();
+  });
+
+  test("a member's tasks are never another workspace's, by id or by list, even one naming them", async () => {
+    const theirs = await forMember(db, carol).calendar.createTask({ title: "Carol's errand" });
+    if (theirs.status !== "ok") throw new Error("seed");
+    const [forged] = await db
+      .insert(calendarTasks)
+      .values({
+        orgId: orgBId,
+        title: "Assigned across",
+        ownerMemberId: alice,
+        assigneeMemberId: alice,
+      })
+      .returning();
+    const asAlice = forMember(db, alice).calendar;
+    for (const status of ["open", "done"] as const) {
+      const listed = await asAlice.tasks({ status });
+      expect(listed.status === "ok" && listed.tasks).toEqual([]);
+    }
+    for (const id of [theirs.task.id, forged!.id]) {
+      expect((await asAlice.task(id)).status).toBe("not_found");
+      expect((await asAlice.updateTask(id, { done: true })).status).toBe("not_found");
+      expect((await asAlice.deleteTask(id)).status).toBe("not_found");
+    }
+    const carolSees = await forMember(db, carol).calendar.tasks();
+    expect(carolSees.status === "ok" && carolSees.tasks.map((t) => t.title)).toEqual([
+      "Carol's errand",
+    ]);
   });
 });
 

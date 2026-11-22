@@ -119,11 +119,13 @@ export const tasks = new Hono<AppEnv>()
       done: body.done,
     });
     if (changed.status !== "ok") return refusedTask(c, changed);
+    await c.var.announceLinkedTask?.(c, changed.task);
     return c.json({ task: wireTask(changed.task) } satisfies CalendarTaskResponse);
   })
 
   .delete("/tasks/:id", async (c) => {
     const deleted = await memberCalendar(c).deleteTask(c.req.param("id"));
     if (deleted.status !== "ok") return refusedTask(c, deleted);
+    await c.var.announceLinkedTask?.(c, deleted.task);
     return c.body(null, 204);
   });

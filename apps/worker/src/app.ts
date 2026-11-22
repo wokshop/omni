@@ -22,6 +22,7 @@ import type { Config } from "./env.ts";
 import { portal } from "./crm/portal.ts";
 import { calendar } from "./calendar/routes.ts";
 import { crm } from "./crm/routes.ts";
+import { announceLinkedTask } from "./crm/tasks.ts";
 import { talk } from "./talk/routes.ts";
 import { answerThrown, apiError } from "./errors.ts";
 import { createLogger, REQUEST_ID_HEADER, requestIdFrom } from "./log.ts";
@@ -158,6 +159,10 @@ const api = new Hono<AppEnv>()
   .route("/", billingCards)
   .route("/storage", storage)
   .route("/crm", crm)
+  .use("/calendar/*", async (c, next) => {
+    c.set("announceLinkedTask", announceLinkedTask);
+    await next();
+  })
   .route("/calendar", calendar)
   .route("/talk", talk);
 

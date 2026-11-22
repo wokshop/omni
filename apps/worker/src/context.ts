@@ -1,3 +1,4 @@
+import type { Context } from "hono";
 import {
   createAuth,
   usesOAuthProvider,
@@ -41,6 +42,12 @@ export interface SyncCaller {
   workspace: string | null;
 }
 
+/** A task changed on its CRM record, as the calendar's routes report it. */
+export interface LinkedTaskChange {
+  id: string;
+  record: { kind: "company" | "person" | "deal"; id: string } | null;
+}
+
 export interface AppEnv {
   Bindings: Env;
   Variables: {
@@ -60,6 +67,11 @@ export interface AppEnv {
     uploadingLink?: Extract<OpenUploadLinkResult, { status: "open" }>;
     /** Set under `/api/storage/sync` only: who a desktop sync token acts for. */
     syncCaller?: SyncCaller;
+    /**
+     * Set under `/api/calendar`: tells the people who can open a task's CRM record that it changed.
+     * The CRM's, handed over in `app.ts`, since the calendar never imports the CRM.
+     */
+    announceLinkedTask?: (c: Context<AppEnv>, task: LinkedTaskChange) => Promise<void>;
   };
 }
 
