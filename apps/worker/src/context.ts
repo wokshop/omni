@@ -12,6 +12,7 @@ import {
   isCompany,
   schema,
   sessionAccess,
+  talkRole,
   type Db,
   type OpenUploadLinkResult,
   type SharedAccess,
@@ -67,6 +68,10 @@ const leavesRealtime = (env: Env) =>
     name: "realtime",
     memberRemoved: (_db, { orgId, memberId }) =>
       env.REALTIME.get(env.REALTIME.idFromName(orgId)).disconnect(memberId),
+    memberRoleChanged: async (_db, { orgId, memberId, role, previousRole }) => {
+      if (talkRole(role) === talkRole(previousRole)) return;
+      await env.REALTIME.get(env.REALTIME.idFromName(orgId)).disconnect(memberId);
+    },
   }) satisfies ModuleLifecycle;
 
 /** Per-request config, database (`openDb`) and Better Auth, closed after the response. */
