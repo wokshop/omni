@@ -58,7 +58,7 @@ export function textLines(text: string, count = LINES + 4) {
  * quoted field that spans lines stays one cell.
  */
 export function csvGrid(text: string, name: string) {
-  const delimiter = /\.tsv$/i.test(name) ? "\t" : ",";
+  const delimiter = /\.tsv$/i.test(name) ? "\t" : "";
   const parsed = Papa.parse<string[]>(text, { delimiter, preview: ROWS, skipEmptyLines: true });
   return grid(parsed.data);
 }
