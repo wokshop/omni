@@ -796,6 +796,35 @@ test("the morning piece of an event that crossed a clock change moves by what it
     .toEqual([["2026-03-29T00:30:00.000Z", "2026-03-30T00:00:00.000Z"]]);
 });
 
+test("an all-day event moved twice before the first save lands where it was dropped last", async () => {
+  const { org, page, origin } = await invited();
+  await madeEvent(
+    org.id,
+    page,
+    origin,
+    "Holiday",
+    ["2026-11-23T00:00:00.000Z", "2026-11-24T00:00:00.000Z"],
+    true,
+  );
+  await openWeek(page, origin, org.slug);
+  await page.route("**/api/calendar/events/*", async (route) => {
+    if (route.request().method() === "PATCH") await new Promise((r) => setTimeout(r, 1500));
+    await route.continue();
+  });
+  const chip = (day: string) =>
+    page.locator(`[data-all-day="${day}"]`).getByRole("button", { name: "Holiday" });
+  await chip("2026-11-23").dragTo(page.locator('[data-all-day="2026-11-24"]'), {
+    sourcePosition: { x: 10, y: 4 },
+  });
+  await chip("2026-11-24").dragTo(page.locator('[data-all-day="2026-11-25"]'), {
+    sourcePosition: { x: 10, y: 4 },
+    timeout: 1000,
+  });
+  await expect
+    .poll(() => spanOf(org.id, "Holiday"), { timeout: 10_000 })
+    .toEqual([["2026-11-25T00:00:00.000Z", "2026-11-26T00:00:00.000Z"]]);
+});
+
 test("Delete pressed in an open to-do leaves the selected event alone", async () => {
   const { org, member, page, origin } = await invited();
   await madeEvent(org.id, page, origin, "Focus time", [
