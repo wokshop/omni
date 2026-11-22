@@ -64,7 +64,8 @@ edit (#706). A **draft** is a version someone named.
   it. Renaming and unnaming are free; unnaming lets it age like any other version.
 - Drafts are one line. Restoring a draft makes it the current content as the next version, as
   restoring any version does, and the drafts after it stay in history. Two parallel drafts (ours
-  and the client's) are two contracts: **Make a copy** (new with the type, step 2) makes the second.
+  and the client's) are two contracts: **Make a copy** (new with the type, step 3) makes the
+  second.
 - **Compare** takes any two versions, drafts or not, and the current content: blocks added,
   removed and changed, and inside a changed block the words. Each change is colored by who made
   it (Attribution, below). It reads the two bodies from the bucket and diffs them in the browser
@@ -190,22 +191,28 @@ the record's folder by name.
 ## Expand, then contract
 
 Every contract record already references a Drive file, so nothing existing has to move. Each
-step deploys on its own, in any order against the others:
+step is its own deploy, in this order; step 3 waits until step 2 is live in production:
 
 1. **Reference any workspace file** (no migration). A contract's document and signed copy may be
    any file the member opens outside My files, in place; the check becomes "not in My files" (not
    "in Shared"), so teamspace files (`docs/spec/teamspaces.md`) work the day they ship. The web's
    picker gains From Drive. Old clients keep sending `documentNodeId` as before.
-2. **The type** (no migration): `CONTRACT_TYPE`, New → Contract, Convert, Make a copy, the
-   editor in contract mode. Clients that do not know the type open it as a doc, since it is Markdown.
-3. **Drafts and Compare:** `storage_version_names`, numbered after the teamspaces stack's 0067
+2. **Readers first** (no migration): `CONTRACT_TYPE` and `isOmniContract` in `@omni/docs`,
+   `isDocFile` answering true for it, and every gate that asks it (the web's `file-kind.ts`, the
+   Worker's doc routes and tools in `storage/docs.ts`) opening a contract as a doc. Nothing makes
+   a contract yet. Today a client or Worker that does not know the type shows it as plain text
+   and refuses agent edits (`not_a_doc`): being Markdown inside does not get past those gates.
+3. **Then the type is made** (no migration), once production's Worker and web app hold step 2:
+   New → Contract, Convert, Make a copy, the editor in contract mode. Desktop and iOS, which
+   update on their own schedule, read it as a plain file until they ship step 2's check.
+4. **Drafts and Compare:** `storage_version_names`, numbered after the teamspaces stack's 0067
    and 0068. The purge skips named versions from the same deploy as the table.
-4. **Attribution:** the optional `by` stamp, then the authors file. Readers that do not know the
+5. **Attribution:** the optional `by` stamp, then the authors file. Readers that do not know the
    stamp ignore it; versions without an authors file read as their writer's.
-5. **Send:** `storage_contract_sends`, the PDF render and the contract's send routes; then the
+6. **Send:** `storage_contract_sends`, the PDF render and the contract's send routes; then the
    CRM's send delegates for Omni contracts and its minute job settles every record referencing a
    completed send.
-6. **The CRM's ways in:** New Omni contract, and `document` on `CrmContract`.
+7. **The CRM's ways in:** New Omni contract, and `document` on `CrmContract`.
 
 Contract, once no client needs it: the web's folder-only select goes (From Drive covers it), and
 the Shared-only wording leaves `crm.md`. No column is dropped: PDF and Word contracts keep using
