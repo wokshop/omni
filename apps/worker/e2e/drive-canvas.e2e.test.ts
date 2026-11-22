@@ -518,3 +518,28 @@ test("a whole scene with a connector joined to itself is refused and changes not
   expect(replaced.error).toContain('The connector "c" is joined to a connector');
   expect((await body(ana, made.canvas.id)).text).toBe(before);
 });
+
+test("moving a group and ungrouping it in one call frees its lines where the group ended up", async () => {
+  const { ana, agent } = await person();
+  const made = (await call(agent, "drive_create_canvas", {
+    name: "Move then ungroup",
+    ops: [
+      { op: "add", kind: "sticky", text: "A", at: { x: 0, y: 0 }, ref: "a" },
+      { op: "add", kind: "sticky", text: "B", at: { x: 300, y: 0 }, ref: "b" },
+      { op: "group", ids: ["a", "b"], ref: "pair" },
+      { op: "add", kind: "sticky", text: "C", at: { x: 1000, y: 0 }, ref: "c" },
+      { op: "connect", from: "pair", to: "c" },
+    ],
+  })) as Answer & { canvas: { id: string }; created: Record<string, string> };
+  const edited = await call(agent, "drive_edit_canvas", {
+    id: made.canvas.id,
+    ops: [
+      { op: "move", ids: [made.created.pair], by: { dx: 200, dy: 0 } },
+      { op: "ungroup", id: made.created.pair },
+    ],
+  });
+  expect(edited).not.toHaveProperty("error");
+  const line = (await body(ana, made.canvas.id)).scene.elements.find((e) => e.kind === "connector");
+  expect(line).toMatchObject({ from: { at: [700, 100] }, to: { id: made.created.c } });
+  expect(line!.from).not.toHaveProperty("id");
+});
