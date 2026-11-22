@@ -74,7 +74,8 @@ export interface RealtimeOptions {
    * A doc opened through a share link by someone outside the workspace
    * (`docs/spec/live-sharing.md`): the socket is `/api/storage/shared/:shareId/realtime?node=`
    * instead, and carries that doc's events alone. It stops for good when the Worker closes it
-   * because the link no longer opens the doc to them (`4403`) or they sent too much (`4429`).
+   * because the link no longer opens the doc to them (`4403`); closed for sending too much
+   * (`4429`), it reconnects with backoff like any dropped socket.
    */
   shared?: { shareId: string; nodeId: string; onEnded?: (code: number) => void };
   onEvent: (event: RealtimeEvent) => void;
@@ -192,7 +193,7 @@ export function connectRealtime(options: RealtimeOptions) {
       if (event) options.onEvent(event);
     });
     current.addEventListener("close", (event) => {
-      if (shared && (event.code === 4403 || event.code === 4429)) {
+      if (shared && event.code === 4403) {
         stopped = true;
         shared.onEnded?.(event.code);
       }

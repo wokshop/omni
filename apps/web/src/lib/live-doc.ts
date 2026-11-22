@@ -274,6 +274,11 @@ export class LiveDoc {
     return this.last.mine && this.last.seqNum > this.lastFold && this.pending.size === 0;
   }
 
+  /** Changes this tab made that the stream has not taken yet. */
+  get unsent() {
+    return this.batch.length > 0 || this.pendingUpdates();
+  }
+
   /** Opened through a share link: the Worker saves what this tab types. */
   get outsider() {
     return !!this.options.shared;

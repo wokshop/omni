@@ -314,7 +314,7 @@ export function useEditSession(
               },
               onFolded: (contentVersion: number) => {
                 base.current = contentVersion;
-                if (!live.current?.needsFold) setDirty(false);
+                if (!live.current?.needsFold && !live.current?.unsent) setDirty(false);
               },
             } satisfies LiveSetup)
           : undefined,
