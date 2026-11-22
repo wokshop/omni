@@ -537,17 +537,18 @@ test("a to-do shows in its section the moment Enter is pressed, before the Worke
   expect(await row.count()).toBe(1);
 });
 
-test("a to-do checked off stays in its section, crossed out", async () => {
+test("a to-do checked off leaves the sidebar but stays on its day, crossed out", async () => {
   const { org, member, page, origin } = await invited();
   await db.insert(schema.crmTasks).values({
     orgId: org.id,
     title: "Call the printer",
     assigneeMemberId: member.id,
+    dueAt: new Date("2026-11-25T22:59:59Z"),
   });
   await openWeek(page, origin, org.slug);
-  const section = page.getByRole("region", { name: "No date" });
-  await section.getByText("Call the printer").waitFor();
-  await section.locator('[data-slot="indicator"]').first().click();
+  const inSidebar = page.getByRole("region").filter({ hasText: "Call the printer" });
+  await inSidebar.waitFor();
+  await inSidebar.locator('[data-slot="indicator"]').first().click();
   await expect
     .poll(async () =>
       (
@@ -558,14 +559,13 @@ test("a to-do checked off stays in its section, crossed out", async () => {
       ).map((t) => t.done !== null),
     )
     .toEqual([true]);
-  await page.waitForLoadState("networkidle");
-  const title = section.getByRole("link", { name: "Call the printer" });
   await expect
-    .poll(() => title.evaluate((el) => getComputedStyle(el).textDecorationLine))
+    .poll(() => page.getByRole("region").filter({ hasText: "Call the printer" }).count())
+    .toBe(0);
+  const onDay = page.locator('[data-all-day="2026-11-25"]').getByText("Call the printer");
+  await expect
+    .poll(() => onDay.evaluate((el) => getComputedStyle(el).textDecorationLine))
     .toBe("line-through");
-  expect(await section.getByRole("checkbox", { name: "Reopen Call the printer" }).isChecked()).toBe(
-    true,
-  );
 
   await page.locator('[data-day="2026-11-24"]').click({ position: { x: 20, y: 10 * 48 + 6 } });
   await page.keyboard.press("c");
@@ -573,8 +573,8 @@ test("a to-do checked off stays in its section, crossed out", async () => {
   await page.keyboard.press("Enter");
   await page.getByRole("button", { name: /Planning/ }).waitFor();
   await page.waitForLoadState("networkidle");
-  expect(await section.getByRole("checkbox", { name: "Reopen Call the printer" }).isChecked()).toBe(
-    true,
+  expect(await onDay.evaluate((el) => getComputedStyle(el).textDecorationLine)).toBe(
+    "line-through",
   );
 });
 
@@ -860,17 +860,43 @@ async function gesture(page: Page, dx: number, dy: number) {
 
 const shownDate = (page: Page) => new URL(page.url()).searchParams.get("date");
 
-test("one scroll steps the month, one sideways swipe steps the week, and each gesture steps once", async () => {
+test("the month scrolls as one long page past many months, the title following the month in view", async () => {
   const { org, page, origin } = await invited();
   await page.goto(new URL(`/${org.slug}/calendar?date=2026-11-24&view=month`, origin).toString());
-  const grid = await page.locator('[data-month-day="2026-11-24"]').boundingBox();
-  await page.mouse.move((grid?.x ?? 0) + 20, (grid?.y ?? 0) + 20);
-  await gesture(page, 0, 30);
+  const day = await page.locator('[data-month-day="2026-11-24"]').boundingBox();
+  await page.mouse.move((day?.x ?? 0) + 20, (day?.y ?? 0) + 20);
+  const row = day?.height ?? 100;
+  for (let i = 0; i < 5; i++) await page.mouse.wheel(0, row);
+  await page.getByRole("heading", { name: "December 2026" }).first().waitFor();
   await expect.poll(() => shownDate(page)).toBe("2026-12-01");
-  await gesture(page, 0, -30);
-  await gesture(page, 0, -30);
-  await expect.poll(() => shownDate(page)).toBe("2026-10-01");
+  for (let i = 0; i < 26; i++) {
+    await page.mouse.wheel(0, row);
+    await page.waitForTimeout(16);
+  }
+  await page.getByRole("heading", { name: "June 2027" }).first().waitFor();
+  await expect.poll(() => shownDate(page)).toBe("2027-06-01");
+  await page.keyboard.press("ArrowLeft");
+  await page.getByRole("heading", { name: "May 2027" }).first().waitFor();
+  await expect.poll(() => shownDate(page)).toBe("2027-05-01");
+  await expect
+    .poll(() =>
+      page
+        .locator('[data-week="2027-04-26"]')
+        .evaluate(
+          (row) =>
+            row.getBoundingClientRect().top - (row.parentElement?.getBoundingClientRect().top ?? 0),
+        ),
+    )
+    .toBeCloseTo(0, 0);
+  expect(shownDate(page)).toBe("2027-05-01");
+  await page.keyboard.press("w");
+  await expect.poll(() => new URL(page.url()).searchParams.get("view")).toBe("week");
+  await page.keyboard.press("m");
+  await expect.poll(() => new URL(page.url()).searchParams.get("view")).toBe("month");
+});
 
+test("one sideways swipe steps the week, and each gesture steps once", async () => {
+  const { org, page, origin } = await invited();
   await page.goto(new URL(`/${org.slug}/calendar?date=2026-11-24&view=week`, origin).toString());
   const top = await page.locator('[data-all-day="2026-11-24"]').boundingBox();
   await page.mouse.move((top?.x ?? 0) + 20, (top?.y ?? 0) + 200);

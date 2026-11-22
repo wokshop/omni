@@ -6,7 +6,7 @@ import { StorageFrame } from "@/components/storage/storage-frame";
 import { TaskPanel, useOpenTask } from "@/components/crm/task-panel.tsx";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipTrigger } from "@/components/ui/tooltip";
-import { useCalendarEvents, useCalendars } from "@/hooks/use-calendar.ts";
+import { useCalendars, useCalendarWindows } from "@/hooks/use-calendar.ts";
 import { useWheelStep } from "@/hooks/use-wheel-step.ts";
 import { useWorkspaceSlug } from "@/hooks/use-workspaces.ts";
 import { warmCalendarWindow, type CalendarEvent } from "@/lib/calendar.ts";
@@ -26,6 +26,7 @@ import { CalendarCrumbs } from "./calendar-crumbs.tsx";
 import { useCalendarMenu } from "./calendar-menu.tsx";
 import { EventPanel } from "./event-panel.tsx";
 import { useCalendarDrop } from "./use-calendar-drop.ts";
+import { useMonthSpan } from "./month-span.ts";
 import { MonthGrid } from "./month-grid.tsx";
 import { useMyTodos, useToggleTodo } from "./todo-list.tsx";
 import { useCalendarKeys } from "./use-calendar-keys.ts";
@@ -45,7 +46,7 @@ function useNow() {
 function useNeighbors(view: CalendarView, at: number, loaded: boolean) {
   const client = useQueryClient();
   useEffect(() => {
-    if (!loaded) return;
+    if (!loaded || view === "month") return;
     for (const delta of [1, -1]) {
       const { from, to } = windowOf(view, shiftView(view, new Date(at), delta));
       void warmCalendarWindow(client, from, to);
@@ -79,10 +80,16 @@ export function CalendarPage(props: {
   const view = props.view ?? "week";
   const anchor = parseDayKey(props.date);
   const at = anchor.getTime();
-  const { days, from, to } = useMemo(() => windowOf(view, new Date(at)), [view, at]);
+  const span = useMonthSpan(anchor);
+  const week = useMemo(() => windowOf(view, new Date(at)), [view, at]);
+  const { days } = view === "month" ? span : week;
+  const windows = useMemo(
+    () => (view === "month" ? span.windows : [week]),
+    [view, span.windows, week],
+  );
   const now = useNow();
   const calendars = useCalendars().data ?? [];
-  const shown = useCalendarEvents(from, to);
+  const shown = useCalendarWindows(windows);
   const all = shown.data;
   const events = useMemo(
     () =>
@@ -97,13 +104,14 @@ export function CalendarPage(props: {
   const [editing, setEditing] = useState<Editing>(null);
   const navigate = useNavigate();
   const workspace = useWorkspaceSlug();
-  const go = (next: { date?: Date; view?: CalendarView }) =>
-    void navigate({
+  const go = (next: { date?: Date; view?: CalendarView }) => {
+    return void navigate({
       to: "/$workspace/calendar",
       params: { workspace },
       search: (prev) => ({ ...prev, date: dayKey(next.date ?? anchor), view: next.view ?? view }),
       replace: true,
     });
+  };
   const openTask = useOpenTask();
   const router = useRouter();
   const openTodo = (task: CrmTask) => void router.history.push(openTask.href(task.id));
@@ -144,8 +152,11 @@ export function CalendarPage(props: {
     onTodo: toggleTodo,
   });
   const grid = useRef<HTMLDivElement>(null);
-  useWheelStep(grid, view === "month" ? "y" : "x", (delta) =>
-    go({ date: shiftView(view, anchor, delta) }),
+  useWheelStep(
+    grid,
+    "x",
+    (delta) => go({ date: shiftView(view, anchor, delta) }),
+    view !== "month",
   );
 
   return (
@@ -161,7 +172,7 @@ export function CalendarPage(props: {
                 <Hinted label={`Previous ${UNITS[view]}`} keyName="←">
                   <Button
                     size="sq-sm"
-                    intent="plain"
+                    intent="outline"
                     aria-label={`Previous ${UNITS[view]}`}
                     onPress={() => go({ date: shiftView(view, anchor, -1) })}
                   >
@@ -176,7 +187,7 @@ export function CalendarPage(props: {
                 <Hinted label={`Next ${UNITS[view]}`} keyName="→">
                   <Button
                     size="sq-sm"
-                    intent="plain"
+                    intent="outline"
                     aria-label={`Next ${UNITS[view]}`}
                     onPress={() => go({ date: shiftView(view, anchor, 1) })}
                   >
@@ -191,7 +202,9 @@ export function CalendarPage(props: {
             {view === "month" ? (
               <MonthGrid
                 days={days}
-                month={anchor.getMonth()}
+                anchor={anchor}
+                onMonth={(first) => go({ date: first })}
+                onExtend={span.extend}
                 events={events}
                 calendars={calendars}
                 selection={selection}
