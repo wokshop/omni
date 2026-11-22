@@ -21,6 +21,9 @@ async function company(slug: string) {
   return { crm: door.crm, storage: door.storage };
 }
 
+const names = async (storage: ReturnType<typeof forMember>["storage"], parentId: string) =>
+  ok(await storage.list({ parentId })).nodes.map((node) => node.name);
+
 const statusEvents = (dealId: string) =>
   db
     .select()
