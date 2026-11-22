@@ -157,7 +157,7 @@ test("the daily cron deletes only accounts with no workspace, no way into one, a
   expect(await remaining(everyone)).toEqual(left);
 });
 
-test("an abandoned account's empty Personal space goes with it; one holding mail or a file keeps its owner", async () => {
+test("an abandoned account's empty Personal space goes with it; one holding mail, a file or another member keeps its owner", async () => {
   const { db } = database;
   const gone = await signUp("personal-gone", 45);
   const goneSpace = await ensurePersonalSpace(db, gone.id);
@@ -172,13 +172,20 @@ test("an abandoned account's empty Personal space goes with it; one holding mail
     .where(eq(schema.members.organizationId, filesSpace));
   const folder = await forMember(db, member!.id).storage.createFolder({ space: "personal" }, "Tax");
   expect(folder.status).toBe("ok");
+  const shared = await signUp("personal-shared", 45);
+  const sharedSpace = await ensurePersonalSpace(db, shared.id);
+  await createMember(db, sharedSpace, `hire-${shared.id}@omni.test`);
 
   await runDaily();
 
-  expect(await remaining([gone.id, kept.id, files.id])).toEqual(new Set([kept.id, files.id]));
+  expect(await remaining([gone.id, kept.id, files.id, shared.id])).toEqual(
+    new Set([kept.id, files.id, shared.id]),
+  );
   const spaces = await db
     .select({ id: schema.organizations.id })
     .from(schema.organizations)
-    .where(inArray(schema.organizations.id, [goneSpace, keptSpace, filesSpace]));
-  expect(spaces.map((space) => space.id).toSorted()).toEqual([keptSpace, filesSpace].toSorted());
+    .where(inArray(schema.organizations.id, [goneSpace, keptSpace, filesSpace, sharedSpace]));
+  expect(spaces.map((space) => space.id).toSorted()).toEqual(
+    [keptSpace, filesSpace, sharedSpace].toSorted(),
+  );
 });

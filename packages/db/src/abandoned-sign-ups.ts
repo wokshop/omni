@@ -1,4 +1,5 @@
-import { and, asc, eq, gt, gte, inArray, lt, notExists, or, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
+import { and, asc, eq, exists, gt, gte, inArray, lt, ne, notExists, or, sql } from "drizzle-orm";
 import type { Db } from "./client.ts";
 import { orgHasMailbox } from "./mail.ts";
 import { isCompany } from "./personal-space.ts";
@@ -16,7 +17,8 @@ export const ABANDONED_SIGN_UP_BATCH = 500;
  * Deletes accounts that have no workspace and nothing that would give them one, created and last
  * signed in to before `idleSince`, oldest first, at most `limit`. Answers what it deleted.
  *
- * Kept: anyone in a company, or whose Personal space holds a mailbox or a file; anyone with a
+ * Kept: anyone in a company, or whose Personal space holds a mailbox or a file or has another
+ * member (deleting it would take their workspace); anyone with a
  * live invitation to their primary or any extra sign-in email (they may still accept it); anyone
  * who ever invited someone (they were a member, and deleting them would cascade to those
  * invitations); anyone something in Storage is shared with, at an address they verified (the
@@ -28,6 +30,7 @@ export async function deleteAbandonedSignUps(
   { idleSince, limit = ABANDONED_SIGN_UP_BATCH }: { idleSince: Date; limit?: number },
 ) {
   const invitedAddress = sql`lower(${invitations.email})`;
+  const others = alias(members, "others");
   const abandoned = db
     .select({ id: users.id })
     .from(users)
@@ -45,6 +48,17 @@ export async function deleteAbandonedSignUps(
                   isCompany(db, members.organizationId),
                   orgHasMailbox(sql`${members.organizationId}`),
                   orgHoldsFiles(sql`${members.organizationId}`),
+                  exists(
+                    db
+                      .select({ one: sql`1` })
+                      .from(others)
+                      .where(
+                        and(
+                          eq(others.organizationId, members.organizationId),
+                          ne(others.userId, users.id),
+                        ),
+                      ),
+                  ),
                 ),
               ),
             ),
