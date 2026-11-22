@@ -938,6 +938,29 @@ test("stepping back months past the laid-out weeks lands on the month asked for"
   expect(shownDate(page)).toBe("2026-08-01");
 });
 
+test("Today pressed while the month is still gliding lands on today's month", async () => {
+  const { org, page, origin } = await invited();
+  await page.goto(new URL(`/${org.slug}/calendar?date=2024-03-01&view=month`, origin).toString());
+  await page.locator('[data-month-day="2024-03-01"]').waitFor();
+  const now = new Date();
+  const first = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("t");
+  await expect.poll(() => shownDate(page)?.slice(0, 7)).toBe(first.slice(0, 7));
+  await expect
+    .poll(() =>
+      page
+        .locator(`[data-month-day="${first}"]`)
+        .evaluate(
+          (day) =>
+            day.getBoundingClientRect().top -
+            (day.closest("[data-week]")?.parentElement?.getBoundingClientRect().top ?? 0),
+        ),
+    )
+    .toBeCloseTo(0, 0);
+  expect(shownDate(page)?.slice(0, 7)).toBe(first.slice(0, 7));
+});
+
 test("one sideways swipe steps the week, and each gesture steps once", async () => {
   const { org, page, origin } = await invited();
   await page.goto(new URL(`/${org.slug}/calendar?date=2026-11-24&view=week`, origin).toString());

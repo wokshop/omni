@@ -45,20 +45,25 @@ const rowHeight = (scroller: HTMLElement) =>
 
 const GLIDE_MS = 320;
 const EDGE_ROWS = 8;
-const gliding = new WeakMap<HTMLElement, number>();
+const glides = new WeakMap<HTMLElement, number>();
+
+const stopGlide = (element: HTMLElement) => glides.set(element, (glides.get(element) ?? 0) + 1);
 
 function glide(element: HTMLElement, top: number, done: () => void) {
-  cancelAnimationFrame(gliding.get(element) ?? 0);
+  stopGlide(element);
+  const run = glides.get(element);
   const start = element.scrollTop;
-  const began = performance.now();
   const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let began: number | null = null;
   const tick = (now: number) => {
+    if (glides.get(element) !== run) return;
+    began ??= now;
     const t = still ? 1 : Math.min(1, (now - began) / GLIDE_MS);
     element.scrollTop = start + (top - start) * (1 - (1 - t) ** 3);
-    if (t < 1) gliding.set(element, requestAnimationFrame(tick));
+    if (t < 1) requestAnimationFrame(tick);
     else done();
   };
-  gliding.set(element, requestAnimationFrame(tick));
+  requestAnimationFrame(tick);
 }
 
 function monthInView(scroller: HTMLElement, weeks: readonly (readonly Date[])[]) {
@@ -105,6 +110,8 @@ function useMonthScroll(props: MonthGridProps, weeks: readonly (readonly Date[])
     );
     if (!row) return;
     if (from === null || Math.abs(month - from) > 2) {
+      stopGlide(element);
+      guided.current = false;
       element.scrollTop = row.offsetTop;
       return;
     }
