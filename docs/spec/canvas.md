@@ -143,8 +143,8 @@ Y.Doc
   every time: an element whose `parent` is gone moves to the top level. When two concurrent
   regroupings form a cycle, the element with the lowest id leaves it. A group with fewer than
   two children dissolves, and a connector end bound to a missing element uses its `at`. The fix
-  is written to the file at the next save; the Yjs document is not rewritten behind people's
-  backs.
+  is written to the file at the next save, and into the live document only with the next change
+  made through `rewriteCanvas` (an agent's edit, a restore); nothing rewrites it on its own.
 - **Undo is your own.** Each tab's `Y.UndoManager` tracks only its own origin, so undo never
   takes back someone else's work or an agent's.
 - **Presence.** Each person's awareness holds their name, colour, cursor in board coordinates,
@@ -384,13 +384,13 @@ Canvas "Roof repair" · 24 elements · 2 frames · board 0,0 to 3200,900
 
 ## Code
 
-| Where                                     | What                                                                                                                                                                                                                                  |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `packages/canvas` (`@omni/canvas`)        | No I/O, no DOM. `CANVAS_TYPE`, `isOmniCanvas`, the scene schema (zod), `sceneToJson`/`sceneFromJson`, `seedCanvas`, `liveScene`, `rewriteCanvas`, `applyCanvasOps`, `canvasText`, `canvasOutline`, geometry, text layout, `renderSvg` |
-| `apps/worker/src/storage/`                | The `canvas` text reader, the canvas thumbnail, `createCanvas` and `editCanvas` beside `createDoc` and `editDoc`; `LiveFile` takes the type's reader                                                                                  |
-| `apps/worker/src/mcp/`                    | The two tools; `drive_fetch` reads a canvas's outline                                                                                                                                                                                 |
-| `packages/db`                             | Images upload into a canvas as they do into a doc                                                                                                                                                                                     |
-| `apps/web/src/components/storage/canvas/` | The editor (Rodrigo, from Figma)                                                                                                                                                                                                      |
+| Where                                     | What                                                                                                                                                                                                                                              |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/canvas` (`@omni/canvas`)        | No I/O, no DOM. `CANVAS_TYPE`, `isOmniCanvas`, the scene schema (zod), `sceneToJson`/`sceneFromJson`, `seedCanvas`, `liveScene`, `rewriteCanvas`, `applyCanvasOps`, `canvasText`, `canvasOutline`; with K4, geometry, text layout and `renderSvg` |
+| `apps/worker/src/storage/`                | The `canvas` text reader, the canvas thumbnail, `createCanvas` and `editCanvas` beside `createDoc` and `editDoc`; `LiveFile` takes the type's reader                                                                                              |
+| `apps/worker/src/mcp/`                    | The two tools; `drive_fetch` reads a canvas's outline                                                                                                                                                                                             |
+| `packages/db`                             | Images upload into a canvas as they do into a doc                                                                                                                                                                                                 |
+| `apps/web/src/components/storage/canvas/` | The editor (Rodrigo, from Figma)                                                                                                                                                                                                                  |
 
 `@omni/canvas` is pure logic, like `@omni/docs`, and is proven the same way: through the
 Worker's e2e tests on the real stack, which run it end to end. It gets no unit tests of its own.
@@ -431,13 +431,13 @@ A change that would pass a limit is refused whole, in the editor and for agents 
 
 One stack, rooted on `main` once #705 to #707 merge. Each layer is one PR, through `gh stack`.
 
-| #   | Layer                                                                                                            | Depends on   |
-| --- | ---------------------------------------------------------------------------------------------------------------- | ------------ |
-| 0   | This spec                                                                                                        |              |
-| K1  | `@omni/canvas`: type, scene, JSON, the Yjs model, rewrite, ops, text, outline, geometry, `renderSvg`, proven by K2 and K3's e2e | 0            |
-| K2  | Storage: the type in Drive, the text reader, image uploads, thumbnails, the live layer taking the type's reader  | K1, #705–707 |
-| K3  | Agents: `drive_create_canvas`, `drive_edit_canvas`, `drive_fetch` outline                                        | K2           |
-| K4  | Web: the editor, file tiles, export (Rodrigo, from the Figma frames)                                             | K2           |
+| #   | Layer                                                                                                                                                     | Depends on   |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| 0   | This spec                                                                                                                                                 |              |
+| K1  | `@omni/canvas`: type, scene, JSON, the Yjs model, rewrite, ops, text, outline, proven by K2 and K3's e2e                                                  | 0            |
+| K2  | Storage: the type in Drive, the text reader, image uploads, link pages                                                                                    | K1, #705–707 |
+| K3  | Agents: the live layer taking the type's reader, `drive_create_canvas`, `drive_edit_canvas`, `drive_fetch` outline                                        | K2           |
+| K4  | Web: the editor, file tiles, export; geometry, text layout, `renderSvg` and thumbnails, which share the editor's drawing (Rodrigo, from the Figma frames) | K2           |
 
 K3 and K4 are independent of each other. K4 waits for Figma; K1 to K3 do not.
 
