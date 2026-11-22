@@ -1,7 +1,7 @@
 import { GridLayout, Size, type GridLayoutOptions } from "react-aria-components/Virtualizer";
 import type { LayoutInfo } from "react-aria-components/Virtualizer";
 
-const CARD = 184;
+const CARD = 140;
 const GAP_X = 12;
 const GAP_Y = 16;
 const INSET = 14;

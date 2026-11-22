@@ -9,8 +9,7 @@ import {
 import { EmptyState } from "@/components/empty/empty-state";
 import { Button } from "@/components/ui/button";
 import { useMember } from "@/hooks/use-session.ts";
-import { IconSearch, IconTrash } from "@/components/icons/sidebar";
-import { openSearch } from "@/components/search/command-menu.tsx";
+import { IconTrash } from "@/components/icons/sidebar";
 import { SidebarItem, SidebarLabel, SidebarSection } from "@/components/ui/sidebar";
 import { useHasSharedFiles, useStorageList, useTeamspaces } from "@/hooks/use-storage.ts";
 import type { DriveRoot, StorageSpace } from "@/lib/storage.ts";
@@ -98,15 +97,9 @@ export function NoTeamspaces() {
   );
 }
 
-type Row = { label: string; path: string; icon: ReactNode; company?: boolean; action?: () => void };
+type Row = { label: string; path: string; icon: ReactNode; company?: boolean };
 
 const PLACES: Row[] = [
-  {
-    label: "Search",
-    path: "search",
-    icon: <IconSearch />,
-    action: () => openSearch({ q: "", scope: "files" }),
-  },
   {
     label: "Recents",
     path: "/files/recents",
@@ -159,12 +152,8 @@ function Rows(props: { rows: Row[]; mailbox: string | undefined }) {
     .map((row) => (
       <SidebarItem
         key={row.path}
-        {...(row.action
-          ? { onPress: row.action }
-          : {
-              href: href(row.path + search),
-              isCurrent: pathname === row.path || pathname.startsWith(`${row.path}/`),
-            })}
+        href={href(row.path + search)}
+        isCurrent={pathname === row.path || pathname.startsWith(`${row.path}/`)}
         tooltip={row.label}
       >
         {row.icon}
