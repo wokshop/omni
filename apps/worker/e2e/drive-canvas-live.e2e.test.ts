@@ -108,12 +108,10 @@ async function tab(jar: CookieJar, nodeId: string) {
       const update = rewriteCanvas(doc, changed.scene);
       return { send: () => live.append({ t: "update", e: epoch, u: base64(update) }) };
     },
-    hear() {
-      for (const event of live.received) {
-        const record = event.record as Event | undefined;
-        if (event.type === "doc.record" && record?.t === "update") {
-          Y.applyUpdate(doc, fromBase64(record.u as string));
-        }
+    async hear() {
+      const read = await stack.api(jar, "GET", `/files/${nodeId}/live?from=latest`);
+      for (const { record } of read.body.entries as { record: Event }[]) {
+        if (record.t !== "fold") Y.applyUpdate(doc, fromBase64(record.u as string));
       }
     },
     scene: () => liveScene(doc),
@@ -205,7 +203,7 @@ test("an agent's edit merges into what a tab is doing on the canvas, saved or no
     from: { id: a },
     to: { id: b },
   });
-  open.hear();
+  await open.hear();
   expect(sceneToJson(open.scene())).toBe(sceneToJson(after));
 
   const versions = (await call(agent, "drive_versions", { id: node.id })) as {
@@ -230,7 +228,7 @@ test("a tab and an agent moving the same sticky at once settle on one of the two
   await tabMove.send();
 
   const merged = await stream(ana, node.id);
-  open.hear();
+  await open.hear();
   expect(sceneToJson(open.scene())).toBe(sceneToJson(merged));
   expect([
     [900, 10, 200, 200],
@@ -255,9 +253,54 @@ test("a tab and an agent reordering different stickies at once both keep their m
 
   const merged = await stream(ana, node.id);
   expect(merged.elements.map((e) => e.text)).toEqual(["C", "B", "A"]);
-  open.hear();
+  await open.hear();
   expect(open.scene().elements.map((e) => e.text)).toEqual(["C", "B", "A"]);
   open.ws.close();
+});
+
+test("two tabs that take a board past its element limit together leave it readable, and an agent can still edit it", async () => {
+  const full = Array.from({ length: 1_999 }, (_, i) => ({
+    id: `s${i}`,
+    kind: "sticky" as const,
+    box: [(i % 100) * 10, Math.floor(i / 100) * 10, 10, 10] as [number, number, number, number],
+  }));
+  const org = await stack.company(`canvas-full-${randomUUID().slice(0, 8)}`);
+  const ana = await stack.member(org.id);
+  const scene: Scene = { elements: full };
+  const node = await stack.upload(
+    ana.jar,
+    { space: "shared" },
+    "Full",
+    new TextEncoder().encode(sceneToJson(scene)),
+    CANVAS_TYPE,
+  );
+  const agent = await connectAgent(stack.worker.url, ana.jar, { scope: WRITE });
+  const one = await tab(ana.jar, node.id);
+  const epoch = await one.seed(scene, 1);
+  const two = await tab(ana.jar, node.id);
+  await two.join(epoch);
+  const first = one.change([{ op: "add", kind: "sticky", text: "One", at: { x: 0, y: 600 } }]);
+  const second = two.change([{ op: "add", kind: "sticky", text: "Two", at: { x: 300, y: 600 } }]);
+  await first.send();
+  await second.send();
+
+  const edited = await call(agent, "drive_edit_canvas", {
+    id: node.id,
+    ops: [{ op: "update", id: "s0", color: "pink" }],
+  });
+  expect(edited).not.toHaveProperty("error");
+  const file = await saved(ana, node.id);
+  expect(file.elements).toHaveLength(2_001);
+  expect(find(file, "One")).toBeDefined();
+  expect(file.elements.find((e) => e.id === "s0")).toMatchObject({ color: "pink" });
+
+  const grown = await call(agent, "drive_edit_canvas", {
+    id: node.id,
+    ops: [{ op: "add", kind: "sticky", text: "Three" }],
+  });
+  expect(grown).toMatchObject({ error: expect.stringContaining("this would make 2002") });
+  one.ws.close();
+  two.ws.close();
 });
 
 test("a whole-board rewrite leaves alone what it does not change, so a tab's move made meanwhile stays", async () => {
@@ -311,8 +354,8 @@ test("two tabs that put two groups inside each other at once still read, and sav
   const second = nest(two.doc, right!, left!);
   await one.append({ t: "update", e: epoch, u: first });
   await two.append({ t: "update", e: epoch, u: second });
-  one.hear();
-  two.hear();
+  await one.hear();
+  await two.hear();
   expect(sceneToJson(one.scene())).toBe(sceneToJson(two.scene()));
 
   const touched = await call(agent, "drive_edit_canvas", {

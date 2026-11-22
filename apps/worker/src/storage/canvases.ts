@@ -1,4 +1,5 @@
 import {
+  CANVAS_MAX_BYTES,
   CANVAS_TYPE,
   isOmniCanvas,
   liveScene,
@@ -13,9 +14,6 @@ import { s2Basin } from "../s2.ts";
 import { LiveFile } from "./doc-live.ts";
 import { refusalFor, writeText, type WriteDeps, type WriteResult } from "./doc-write.ts";
 import { passOn, saveLive } from "./docs.ts";
-
-/** The largest canvas body: 5,000 elements with room to spare. */
-export const CANVAS_MAX_BYTES = 2_000_000;
 
 const sizeOf = (text: string) => new TextEncoder().encode(text).byteLength;
 

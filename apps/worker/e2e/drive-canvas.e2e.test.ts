@@ -151,14 +151,14 @@ test("a canvas past its limits is refused whole", async () => {
   const tooMany = await call(agent, "drive_edit_canvas", { id: made.canvas.id, ops: many });
   expect(tooMany.error).toBeDefined();
 
-  const elements = Array.from({ length: 5_001 }, (_, i) => ({
+  const elements = Array.from({ length: 2_001 }, (_, i) => ({
     id: `s${i}`,
     kind: "sticky",
     box: [i * 10, 0, 10, 10],
   }));
   const huge = JSON.stringify({ omni: "canvas", v: 1, elements });
   const tooBig = await call(agent, "drive_edit_canvas", { id: made.canvas.id, scene: huge });
-  expect(tooBig.error).toContain("does not read as a scene at elements");
+  expect(tooBig.error).toContain("A canvas holds at most 2000 elements; this would make 2001.");
   expect((await body(ana, made.canvas.id)).text).toBe(before.text);
 });
 
