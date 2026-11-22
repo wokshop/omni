@@ -3,7 +3,7 @@ import { ensurePersonalSpace, schema } from "@omni/db";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { startStorageStack, type Person, type StorageStack } from "./storage-support.ts";
-import { WEB_ORIGIN } from "./support.ts";
+import { pushFrame, WEB_ORIGIN } from "./support.ts";
 
 let stack: StorageStack;
 
@@ -255,7 +255,7 @@ async function listen(token: string, orgId: string) {
   const received: { type: string; space: string; parentIds?: (string | null)[] }[] = [];
   const waiters = new Set<() => void>();
   socket.addEventListener("message", (e) => {
-    received.push(JSON.parse(String(e.data)));
+    pushFrame(received, e.data);
     for (const waiter of waiters) waiter();
   });
   await new Promise<void>((resolve, reject) => {

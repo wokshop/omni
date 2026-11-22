@@ -244,9 +244,9 @@ export function startRealtime(client: QueryClient, activeOrgId: string) {
       orgId,
       talk: orgId === activeOrgId && wide.matches,
       onEvent: (event) => onEvent(orgId, event),
-      onStatus: (next, { reconnected }) => onStatus(orgId, next, reconnected),
+      onStatus: (next, { reconnected, resumed }) => onStatus(orgId, next, reconnected && !resumed),
     });
-  const onStatus = (orgId: string, next: RealtimeStatus, reconnected: boolean) => {
+  const onStatus = (orgId: string, next: RealtimeStatus, missed: boolean) => {
     if (orgId === activeOrgId) setStatus(next);
     if (next === "closed") {
       clearPresence(orgId);
@@ -256,7 +256,7 @@ export function startRealtime(client: QueryClient, activeOrgId: string) {
     for (const listener of openListeners) listener(orgId);
     void recheckOutstanding(client, orgId);
     reportAnswer();
-    if (reconnected) {
+    if (missed) {
       void client.invalidateQueries({ queryKey: keys.mail() }, { cancelRefetch: false });
       void client.invalidateQueries({ queryKey: keys.crm() }, { cancelRefetch: false });
       if (orgId === activeOrgId) {
