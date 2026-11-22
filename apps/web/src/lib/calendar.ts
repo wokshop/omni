@@ -85,11 +85,15 @@ const windows = () => [...calendarKeys.all(), "events"] as const;
 
 /** Where a one-off event is now, as the grid shows it, counting moves still on their way. */
 export const eventTimesNow = (client: QueryClient, id: string) => {
-  for (const [, data] of client.getQueriesData<EventWindow>({ queryKey: windows() })) {
+  let newest: { start: string; end: string; at: number } | null = null;
+  for (const query of client.getQueryCache().findAll({ queryKey: windows() })) {
+    const data = query.state.data as EventWindow | undefined;
     const found = data?.events.find((event) => event.id === id && !event.recurrenceId);
-    if (found) return { start: found.start, end: found.end };
+    if (found && (!newest || query.state.dataUpdatedAt > newest.at)) {
+      newest = { start: found.start, end: found.end, at: query.state.dataUpdatedAt };
+    }
   }
-  return null;
+  return newest && { start: newest.start, end: newest.end };
 };
 
 /** Shows a one-off event at its new time at once, before the write lands. */

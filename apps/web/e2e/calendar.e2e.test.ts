@@ -363,6 +363,59 @@ test("the switcher at the sidebar's foot shows one inbox's calendar alone", asyn
     .toBe(1);
 });
 
+test("double-clicking a slot opens the new event at the slot a click there selects", async () => {
+  const { org, page, origin } = await invited();
+  await openWeek(page, origin, org.slug);
+  await page.locator('[data-day="2026-11-24"]').dblclick({ position: { x: 20, y: 10 * 48 + 2 } });
+  const start = page.getByRole("textbox", { name: "Start" });
+  await start.waitFor();
+  expect(await start.inputValue()).toBe("10:00");
+});
+
+test("a move after an edit in another view builds on the edit", async () => {
+  const { org, page, origin } = await invited();
+  const [calendar] = await db
+    .select({ id: schema.calendarCalendars.id })
+    .from(schema.calendarCalendars)
+    .where(eq(schema.calendarCalendars.orgId, org.id));
+  await page.goto(origin);
+  const made = await page.request.post(new URL("/api/calendar/events", origin).toString(), {
+    data: {
+      calendarId: calendar?.id,
+      title: "Planning",
+      start: "2026-11-24T09:00:00.000Z",
+      end: "2026-11-24T10:00:00.000Z",
+      allDay: false,
+      timeZone: "Europe/Madrid",
+      guests: [],
+    },
+  });
+  expect(made.status()).toBe(201);
+  await openWeek(page, origin, org.slug);
+  await page.getByRole("button", { name: /Planning/ }).waitFor();
+  await page.keyboard.press("d");
+  await page.getByRole("button", { name: /Planning/ }).click();
+  await page.keyboard.press("Enter");
+  await page.getByRole("button", { name: "Edit" }).click();
+  await page.getByRole("textbox", { name: "Start" }).fill("12:00");
+  await page.getByRole("textbox", { name: "End" }).fill("13:00");
+  await page.keyboard.press("Enter");
+  const startOf = async () =>
+    (
+      await db
+        .select({ startsAt: schema.calendarEvents.startsAt })
+        .from(schema.calendarEvents)
+        .where(
+          and(eq(schema.calendarEvents.orgId, org.id), eq(schema.calendarEvents.title, "Planning")),
+        )
+    )[0]?.startsAt.toISOString();
+  await expect.poll(startOf).toBe("2026-11-24T11:00:00.000Z");
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: /Planning/ }).click();
+  await page.keyboard.press("ArrowDown");
+  await expect.poll(startOf).toBe("2026-11-24T11:15:00.000Z");
+});
+
 async function freePort() {
   const server = createServer();
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));

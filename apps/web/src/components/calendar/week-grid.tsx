@@ -1,5 +1,5 @@
 import { cn } from "cn";
-import { useEffect, useRef, useState, type CSSProperties, type PointerEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type MouseEvent } from "react";
 import { IconPlus } from "@/components/icons/central";
 import { Button } from "@/components/ui/button";
 import { CanvasButton } from "@/components/ui/canvas-button";
@@ -148,7 +148,7 @@ function DayHeading({ day, today }: { day: Date; today: boolean }) {
 
 function DayColumn(props: WeekGridProps & { day: Date }) {
   const [sweep, setSweep] = useState<{ from: number; to: number } | null>(null);
-  const minutesAt = (event: PointerEvent<HTMLDivElement>) => {
+  const minutesAt = (event: MouseEvent<HTMLDivElement>) => {
     const box = event.currentTarget.getBoundingClientRect();
     return ((event.clientY - box.top) / HOUR_PX) * 60;
   };
@@ -181,8 +181,7 @@ function DayColumn(props: WeekGridProps & { day: Date }) {
       }}
       onDoubleClick={(event) => {
         if (event.target !== event.currentTarget) return;
-        const box = event.currentTarget.getBoundingClientRect();
-        props.onCreate(slotAt(props.day, snap(((event.clientY - box.top) / HOUR_PX) * 60 - 15)));
+        props.onCreate(slotAt(props.day, snap(minutesAt(event) - SLOT_MINUTES / 2)));
       }}
     >
       {HOURS.map((hour) => (
