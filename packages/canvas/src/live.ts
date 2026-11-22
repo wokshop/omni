@@ -1,5 +1,5 @@
 import * as Y from "yjs";
-import { keyBetween, keysAfter } from "./order.ts";
+import { keyBetween } from "./order.ts";
 import { copy, elementSchema, FIELDS, type CanvasElement, type Scene } from "./scene.ts";
 import { paintOrder, type Keyed } from "./tree.ts";
 
@@ -92,6 +92,26 @@ function updateFields(fields: YElement, before: CanvasElement, after: CanvasElem
   }
 }
 
+function longestRising(keys: (string | null)[]) {
+  const tails: number[] = [];
+  const before = keys.map(() => -1);
+  keys.forEach((key, i) => {
+    if (key === null) return;
+    let low = 0;
+    let high = tails.length;
+    while (low < high) {
+      const middle = (low + high) >> 1;
+      if (keys[tails[middle]!]! < key) low = middle + 1;
+      else high = middle;
+    }
+    if (low > 0) before[i] = tails[low - 1]!;
+    tails[low] = i;
+  });
+  const keep = new Set<number>();
+  for (let at = tails.at(-1) ?? -1; at !== -1; at = before[at]!) keep.add(at);
+  return keep;
+}
+
 function keysFor(scene: Scene, current: Map<string, Keyed>) {
   const siblings = new Map<string | undefined, CanvasElement[]>();
   for (const element of scene.elements) {
@@ -99,31 +119,20 @@ function keysFor(scene: Scene, current: Map<string, Keyed>) {
   }
   const keys = new Map<string, string>();
   for (const [parent, list] of siblings) {
-    const kept = (element: CanvasElement) => {
+    const owned = list.map((element) => {
       const now = current.get(element.id);
       return now && now.element.parent === parent && now.z ? now.z : null;
-    };
-    const keptKeys = list.map(kept).filter((key) => key !== null);
-    const inOrder = keptKeys.every((key, i) => i === 0 || keptKeys[i - 1]! < key);
-    if (!inOrder) {
-      const fresh = keysAfter(null, list.length);
-      list.forEach((element, i) => keys.set(element.id, fresh[i]!));
-      continue;
+    });
+    const keep = longestRising(owned);
+    const kept = owned.map((key, i) => (keep.has(i) ? key : null));
+    const next: (string | null)[] = [];
+    for (let i = list.length - 1, after: string | null = null; i >= 0; i--) {
+      next[i] = after;
+      after = kept[i] ?? after;
     }
     let previous: string | null = null;
     list.forEach((element, i) => {
-      const own = kept(element);
-      if (own) {
-        keys.set(element.id, own);
-        previous = own;
-        return;
-      }
-      const next =
-        list
-          .slice(i + 1)
-          .map(kept)
-          .find((key) => key !== null) ?? null;
-      previous = keyBetween(previous, next);
+      previous = kept[i] ?? keyBetween(previous, next[i]!);
       keys.set(element.id, previous);
     });
   }

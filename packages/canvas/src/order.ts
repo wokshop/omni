@@ -26,17 +26,6 @@ export function keyBetween(before: string | null, after: string | null) {
   }
 }
 
-/** `count` keys in order, after `before`. */
-export function keysAfter(before: string | null, count: number) {
-  const keys: string[] = [];
-  let last = before;
-  for (let i = 0; i < count; i++) {
-    last = keyBetween(last, null);
-    keys.push(last);
-  }
-  return keys;
-}
-
 /** Orders by key, then by id, so equal keys made at once still sort the same everywhere. */
 export const byKey = (a: { z: string; id: string }, b: { z: string; id: string }) =>
   a.z < b.z ? -1 : a.z > b.z ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;

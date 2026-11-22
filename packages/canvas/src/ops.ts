@@ -378,10 +378,14 @@ function remove(board: Board, op: Op<"delete">) {
     for (const below of board.under(element.id)) gone.add(below);
   }
   for (const element of board.elements) {
-    if (gone.has(element.id)) continue;
-    for (const end of [element.from, element.to]) {
-      if (end?.id === undefined || !gone.has(end.id)) continue;
-      end.at = board.pointOf(end);
+    if (gone.has(element.id) || !element.from || !element.to) continue;
+    for (const [end, other] of [
+      [element.from, element.to],
+      [element.to, element.from],
+    ] as const) {
+      if (end.id === undefined || !gone.has(end.id)) continue;
+      const box = board.changed.has(end.id) ? board.boundsOf(board.byId.get(end.id)!) : null;
+      if (box) end.at = anchor(box, board.pointOf(other));
       delete end.id;
       board.touch(element);
     }

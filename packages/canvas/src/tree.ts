@@ -39,25 +39,27 @@ function breakCycles(byId: Map<string, Keyed>) {
   }
 }
 
+function childrenOf(byId: Map<string, Keyed>) {
+  const children = new Map<string, CanvasElement[]>();
+  for (const { element } of byId.values()) {
+    if (element.parent === undefined) continue;
+    children.set(element.parent, [...(children.get(element.parent) ?? []), element]);
+  }
+  return children;
+}
+
 function dissolveThinGroups(byId: Map<string, Keyed>) {
-  for (let changed = true; changed;) {
-    changed = false;
-    const children = new Map<string, CanvasElement[]>();
-    for (const { element } of byId.values()) {
-      if (element.parent === undefined) continue;
-      children.set(element.parent, [...(children.get(element.parent) ?? []), element]);
+  for (;;) {
+    const children = childrenOf(byId);
+    const thin = [...byId.values()].find(
+      ({ element }) => element.kind === "group" && (children.get(element.id)?.length ?? 0) < 2,
+    )?.element;
+    if (!thin) return;
+    for (const child of children.get(thin.id) ?? []) {
+      if (thin.parent === undefined) delete child.parent;
+      else child.parent = thin.parent;
     }
-    for (const { element } of byId.values()) {
-      if (element.kind !== "group") continue;
-      const held = children.get(element.id) ?? [];
-      if (held.length >= 2) continue;
-      for (const child of held) {
-        if (element.parent === undefined) delete child.parent;
-        else child.parent = element.parent;
-      }
-      byId.delete(element.id);
-      changed = true;
-    }
+    byId.delete(thin.id);
   }
 }
 
