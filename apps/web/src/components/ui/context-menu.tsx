@@ -124,7 +124,8 @@ export function isEditable(target: EventTarget | null) {
 
 /**
  * Gives an element a context menu: spread the result on it. `menu` reads the element that was
- * right-clicked (inside this one) and returns its rows; none leaves the event to the areas
+ * right-clicked (inside this one) and returns its rows, after Open link and Copy link when that
+ * was a link out of the app; no rows leaves the event to the areas
  * around it, and the app's fallback after them. A menu an inner area opened wins, and a
  * right-click in a portal (a dialog the element opened) is not the element's.
  */
@@ -137,8 +138,13 @@ export function contextMenuProps(
       if (event.defaultPrevented || isEditable(event.target)) return;
       const target = event.target as Element;
       if (!event.currentTarget.contains(target)) return;
-      const entries = menu(target);
-      if (!entries || !hasItems(entries)) return;
+      const own = menu(target);
+      if (!own || !hasItems(own)) return;
+      const entries = [
+        ...linkEntries(target, window),
+        "separator",
+        ...own,
+      ] satisfies ContextMenuEntry[];
       event.preventDefault();
       openContextMenu(pointOf(event, target), entries, {
         label: typeof label === "function" ? label(target) : label,
@@ -171,8 +177,7 @@ function openLink(url: URL) {
   else window.open(url.href, "_blank", "noopener,noreferrer");
 }
 
-function fallbackEntries(target: Element, view: Window) {
-  const selected = view.getSelection()?.toString() ?? "";
+function linkEntries(target: Element, view: Window) {
   const anchor = target.closest("a[href]");
   let link: URL | null = null;
   if (anchor) {
@@ -185,17 +190,24 @@ function fallbackEntries(target: Element, view: Window) {
   const outside = link && link.origin !== window.location.origin ? link : null;
   const mail = outside?.protocol === "mailto:" ? outside.pathname : null;
   return [
-    !!selected.trim() && {
-      icon: IconCopy,
-      label: "Copy",
-      onAction: () => copy(selected, "Text"),
-    },
-    outside && "separator",
     outside && { icon: IconArrowUpRight, label: "Open link", onAction: () => openLink(outside) },
     outside &&
       (mail
         ? { icon: IconCopy, label: "Copy address", onAction: () => copy(mail, "Address") }
         : { icon: IconLink, label: "Copy link", onAction: () => copy(outside.href, "Link") }),
+  ] satisfies ContextMenuEntry[];
+}
+
+function fallbackEntries(target: Element, view: Window) {
+  const selected = view.getSelection()?.toString() ?? "";
+  return [
+    !!selected.trim() && {
+      icon: IconCopy,
+      label: "Copy",
+      onAction: () => copy(selected, "Text"),
+    },
+    "separator",
+    ...linkEntries(target, view),
   ] satisfies ContextMenuEntry[];
 }
 
