@@ -402,3 +402,26 @@ test("a file an agent creates is named for the agent, and its first content stay
   const versions = await listed(storage, done.node.id);
   expect(versions.versions.map((v) => [v.size, v.writtenByAgent])).toEqual([[10, "Claude"]]);
 });
+
+test("a save that changes the file's type ends the session, so the content before it stays a version", async () => {
+  const { storage } = await workspace("versions-session-type");
+  const file = await addFile(storage, { space: "personal" }, "notes.md", 10);
+  const save = async (size: number, mimeType: string) => {
+    const opened = await storage.openVersionUpload(file.id, { size, mimeType, limitBytes: null });
+    if (opened.status !== "ok") throw new Error(opened.status);
+    await storage.recordUploadPart(opened.upload.id, { partNumber: 1, etag: "etag-1", size });
+    expect(await storage.completeUpload(opened.upload.id, { limitBytes: null })).toMatchObject({
+      status: "ok",
+    });
+  };
+  await save(11, "text/markdown");
+  await save(12, "text/markdown");
+  await save(13, "text/vnd.omni.doc");
+
+  const versions = await listed(storage, file.id);
+  expect(versions.current).toMatchObject({ size: 13, mimeType: "text/vnd.omni.doc" });
+  expect(versions.versions.map((v) => [v.size, v.mimeType])).toEqual([
+    [12, "text/markdown"],
+    [10, null],
+  ]);
+});

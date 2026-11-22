@@ -92,10 +92,11 @@ async function continuesSession(
   ex: Db,
   node: NodeRow,
   current: Awaited<ReturnType<typeof currentWriter>>,
-  save: { memberId: string; agent: string | null; at: Date },
+  save: { memberId: string; agent: string | null; at: Date; mimeType: string | null },
 ) {
   const { writer } = current;
   if (!current.replaced || save.agent || writer.writtenByAgent) return false;
+  if (save.mimeType !== node.mimeType) return false;
   if (writer.writtenByMemberId !== save.memberId) return false;
   if (save.at.getTime() - writer.writtenAt.getTime() > STORAGE_SESSION_IDLE_MS) return false;
   const [kept] = await ex
@@ -215,7 +216,7 @@ export const replaceContent: (
   const at = new Date();
   const agent = content.agent ?? null;
   const current = await currentWriter(tx, found.node);
-  const save = { memberId: content.memberId, agent, at };
+  const save = { memberId: content.memberId, agent, at, mimeType: content.mimeType };
   const superseded = (await continuesSession(tx, found.node, current, save)) ? at : null;
   await keepCurrent(tx, found.node, found.r2Key, current, superseded);
   return setContent(tx, found.node, {
