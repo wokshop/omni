@@ -5,8 +5,10 @@ import {
   type SettingsRowMenuItem,
 } from "@/components/settings/kit/settings-row-menu";
 import { GridListItem } from "@/components/ui/grid-list";
-import { fileType } from "@/lib/file-kind.ts";
+import { fileType, type FileType } from "@/lib/file-kind.ts";
 import { formatBytes, type StorageNode } from "@/lib/storage.ts";
+import { AudioArt, VideoArt } from "./card-art/media.tsx";
+import { FilePage, hasPage } from "./card-art/page.tsx";
 import { FileGlyph } from "./file-glyph.tsx";
 import { FolderArt } from "./folder-art.tsx";
 import { CARD_DROP_TARGET, LIFTED, useSurfaceDrag, type NodeDrag } from "./node-drag.tsx";
@@ -61,13 +63,7 @@ export function FileCard(props: {
         <FolderArt node={node} peek={props.peek} fileUrl={props.fileUrl} />
       ) : (
         <div className="relative flex aspect-square items-center justify-center overflow-hidden rounded-lg border bg-surface">
-          {hasThumbnail(node) ? (
-            <Thumbnail node={node} url={props.url} />
-          ) : type?.preview === "pdf" ? (
-            <PdfStack node={node} url={props.url} />
-          ) : (
-            <FileGlyph kind={type?.kind ?? "folder"} className="size-8 text-muted-foreground" />
-          )}
+          {type && <FileArt node={node} type={type} url={props.url} />}
         </div>
       )}
       <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-1 gap-y-1 ps-0.5">
@@ -81,6 +77,16 @@ export function FileCard(props: {
       </div>
     </GridListItem>
   );
+}
+
+function FileArt(props: { node: StorageNode; type: FileType; url: string }) {
+  const { node, type, url } = props;
+  if (hasThumbnail(node)) return <Thumbnail node={node} url={url} />;
+  if (type.preview === "pdf") return <PdfStack node={node} url={url} />;
+  if (node.size > 0 && type.preview === "video") return <VideoArt node={node} url={url} />;
+  if (node.size > 0 && type.preview === "audio") return <AudioArt node={node} url={url} />;
+  if (hasPage(node, type)) return <FilePage node={node} type={type} url={url} />;
+  return <FileGlyph kind={type.kind} className="size-8 text-muted-foreground" />;
 }
 
 function Thumbnail(props: { node: StorageNode; url: string }) {
