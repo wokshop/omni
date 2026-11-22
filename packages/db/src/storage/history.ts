@@ -204,3 +204,93 @@ export async function purgeDocHistory(db: Db, before: Date) {
       )`);
   return gone.length;
 }
+
+/** Someone who wrote in a session: a member (by name), an agent for them, or unknown. */
+export interface DocAuthor {
+  by: string;
+  name: string | null;
+  agent: string | null;
+}
+
+/** An editing session of a doc's history, newest first in `docHistory`. */
+export interface DocSession {
+  id: string;
+  startedAt: Date;
+  endedAt: Date;
+  authors: DocAuthor[];
+  /** The file's content version once the session was saved. */
+  contentVersion: number;
+}
+
+const IDLE_MS = 5 * 60_000;
+const SPAN_MS = 15 * 60_000;
+
+/**
+ * A doc's journal as editing sessions: runs at most 5 minutes apart, for 15 minutes at most, by
+ * whoever wrote in them; an agent's runs are always a session of their own. Newest first.
+ */
+export async function docSessions(db: Db, nodeId: string, limit = 200) {
+  const runs = await db
+    .select()
+    .from(storageDocChanges)
+    .where(eq(storageDocChanges.nodeId, nodeId))
+    .orderBy(asc(storageDocChanges.startedAt), asc(storageDocChanges.firstSeq));
+  const sessions: (DocSession & { agentRun: boolean })[] = [];
+  for (const run of runs) {
+    const agentRun = run.agent !== null;
+    const open = sessions.at(-1);
+    const continues =
+      open &&
+      !agentRun &&
+      !open.agentRun &&
+      run.startedAt.getTime() - open.endedAt.getTime() <= IDLE_MS &&
+      run.endedAt.getTime() - open.startedAt.getTime() <= SPAN_MS;
+    const author = { by: run.by, name: run.authorName, agent: run.agent };
+    if (continues) {
+      open.endedAt = run.endedAt;
+      open.contentVersion = Math.max(open.contentVersion, run.contentVersion);
+      if (!open.authors.some((a) => a.by === run.by)) open.authors.push(author);
+      continue;
+    }
+    sessions.push({
+      id: `${run.epoch}:${run.firstSeq}`,
+      startedAt: run.startedAt,
+      endedAt: run.endedAt,
+      authors: [author],
+      contentVersion: run.contentVersion,
+      agentRun,
+    });
+  }
+  return sessions
+    .reverse()
+    .slice(0, limit)
+    .map((session) => {
+      const shown: DocSession = {
+        id: session.id,
+        startedAt: session.startedAt,
+        endedAt: session.endedAt,
+        authors: session.authors,
+        contentVersion: session.contentVersion,
+      };
+      return shown;
+    });
+}
+
+/** Who wrote the file's content now, as a live record would name them, and when. */
+export async function contentWriterOf(db: Db, nodeId: string) {
+  const [row] = await db
+    .select({
+      memberId: storageContents.writtenByMemberId,
+      agent: storageContents.writtenByAgent,
+      at: storageContents.writtenAt,
+    })
+    .from(storageContents)
+    .where(eq(storageContents.nodeId, nodeId));
+  if (!row) return null;
+  const by = !row.memberId
+    ? "unknown"
+    : row.agent
+      ? `a:${row.memberId}:${row.agent}`
+      : `m:${row.memberId}`;
+  return { by, memberId: row.memberId, agent: row.agent, at: row.at };
+}

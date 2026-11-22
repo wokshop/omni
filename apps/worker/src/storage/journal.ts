@@ -1,6 +1,7 @@
 import { latestEpochStart, type StorageLiveEntry } from "@omni/contracts";
 import { isDocFile } from "@omni/docs";
 import {
+  contentWriterOf,
   docJournalOf,
   docReplayFrom,
   docsOwedJournal,
@@ -82,12 +83,32 @@ async function namedRuns(db: Db, updates: Timed[]) {
   });
 }
 
+async function writeRun(db: Db, doc: Doc, journaled: number) {
+  if (doc.contentVersion <= journaled) return [];
+  const writer = await contentWriterOf(db, doc.id);
+  if (!writer) return [];
+  const names = await memberNames(db, writer.memberId ? [writer.memberId] : []);
+  const run: DocRun = {
+    firstSeq: -doc.contentVersion,
+    lastSeq: -doc.contentVersion,
+    by: writer.by,
+    authorName: writer.memberId ? (names.get(writer.memberId) ?? null) : null,
+    agent: writer.agent,
+    startedAt: writer.at,
+    endedAt: writer.at,
+    update: "",
+  };
+  return [run];
+}
+
 async function checkpoint(db: Db, doc: Doc, epoch: number, through: number, runs: DocRun[]) {
   const replay = await docReplayFrom(db, doc.id, epoch, through);
   if (!replay) return null;
   const state = new Y.Doc();
   Y.applyUpdate(state, fromBase64(replay.baseline.state));
-  for (const run of [...replay.runs, ...runs]) Y.applyUpdate(state, fromBase64(run.update));
+  for (const run of [...replay.runs, ...runs]) {
+    if (run.update) Y.applyUpdate(state, fromBase64(run.update));
+  }
   const last = runs.at(-1);
   if (!last) return null;
   const baseline: { seq: number; state: string } = {
@@ -129,7 +150,7 @@ async function journalOnce(deps: Deps, doc: Doc) {
       expected: cursor ? { epoch: cursor.epoch, lastSeq: cursor.lastSeq } : null,
       ...input,
     });
-  if (!first) return mark({});
+  if (!first) return mark({ runs: await writeRun(deps.db, doc, cursor?.contentVersion ?? 0) });
   const epoch = first.record.t === "snap" ? first.record.e : first.seqNum;
   if (cursor && cursor.epoch >= 0 && cursor.epoch !== epoch) {
     const left = (await readLiveTimed(basin, doc.id, cursor.lastSeq + 1)).filter(
@@ -160,6 +181,7 @@ async function journalOnce(deps: Deps, doc: Doc) {
     (e) => e.seqNum > after && e.record.t === "update" && e.record.e === epoch,
   );
   const runs = await namedRuns(deps.db, updates);
+  if (runs.length === 0) runs.push(...(await writeRun(deps.db, doc, cursor?.contentVersion ?? 0)));
   let since = (continuing ? cursor.sinceBaseline : 0) + runs.length;
   let baseline = base;
   if (!baseline && since >= BASELINE_EVERY) {

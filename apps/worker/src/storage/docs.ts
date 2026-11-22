@@ -71,7 +71,7 @@ export async function editDoc(
     return { status: "too_large_after" } as const;
   }
   if (!live) {
-    return writeText(
+    const written = await writeText(
       deps,
       files,
       node.orgId,
@@ -79,6 +79,8 @@ export async function editDoc(
       changed.markdown,
       node.mimeType,
     );
+    if (written.status === "ok") journalLater(deps, written.node);
+    return written;
   }
   const target = { nodeId, ifContentVersion: node.contentVersion };
   const refused = await refusalFor(
