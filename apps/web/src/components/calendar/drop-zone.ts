@@ -1,4 +1,4 @@
-import { useState, type DragEvent } from "react";
+import { useEffect, useState, type DragEvent } from "react";
 import {
   carriesCalendarDrag,
   dragging,
@@ -21,6 +21,18 @@ export function useDropZone(
 ) {
   const [hover, setHover] = useState<{ from: number; length: number } | null>(null);
   const [over, setOver] = useState(false);
+  useEffect(() => {
+    const clear = () => {
+      setOver(false);
+      setHover(null);
+    };
+    window.addEventListener("dragend", clear, true);
+    window.addEventListener("drop", clear, true);
+    return () => {
+      window.removeEventListener("dragend", clear, true);
+      window.removeEventListener("drop", clear, true);
+    };
+  }, []);
   const minutesAt = (event: DragEvent<HTMLElement>) => {
     const box = event.currentTarget.getBoundingClientRect();
     const grab = dragging()?.grabMinutes ?? 0;

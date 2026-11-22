@@ -219,7 +219,11 @@ test("a to-do added from a section's + is the member's, and checking a dated one
     )
     .toEqual([member.id]);
 
-  await page.locator('[data-all-day="2026-11-25"]').getByText("Send the brief").click();
+  await page
+    .locator('[data-all-day="2026-11-25"]')
+    .locator('[data-slot="indicator"]')
+    .first()
+    .click();
   await expect
     .poll(async () =>
       (
@@ -544,6 +548,90 @@ test("a to-do checked off stays in its section, crossed out", async () => {
   expect(await section.getByRole("checkbox", { name: "Reopen Call the printer" }).isChecked()).toBe(
     true,
   );
+});
+
+const dueOf = async (orgId: string, title: string) =>
+  (
+    await db
+      .select({ dueAt: schema.crmTasks.dueAt })
+      .from(schema.crmTasks)
+      .where(and(eq(schema.crmTasks.orgId, orgId), eq(schema.crmTasks.title, title)))
+  )[0]?.dueAt?.toISOString();
+
+test("an event dragged to another day and hour moves there, keeping its length", async () => {
+  const { org, page, origin } = await invited();
+  const [calendar] = await db
+    .select({ id: schema.calendarCalendars.id })
+    .from(schema.calendarCalendars)
+    .where(eq(schema.calendarCalendars.orgId, org.id));
+  await page.goto(origin);
+  const made = await page.request.post(new URL("/api/calendar/events", origin).toString(), {
+    data: {
+      calendarId: calendar?.id,
+      title: "Planning",
+      start: "2026-11-24T09:00:00.000Z",
+      end: "2026-11-24T10:00:00.000Z",
+      allDay: false,
+      timeZone: "Europe/Madrid",
+      guests: [],
+    },
+  });
+  expect(made.status()).toBe(201);
+  await openWeek(page, origin, org.slug);
+  await page
+    .getByRole("button", { name: /Planning/ })
+    .dragTo(page.locator('[data-day="2026-11-25"]'), {
+      sourcePosition: { x: 10, y: 4 },
+      targetPosition: { x: 20, y: 14 * 48 + 4 },
+    });
+  const times = async () =>
+    (
+      await db
+        .select({ startsAt: schema.calendarEvents.startsAt, endsAt: schema.calendarEvents.endsAt })
+        .from(schema.calendarEvents)
+        .where(
+          and(eq(schema.calendarEvents.orgId, org.id), eq(schema.calendarEvents.title, "Planning")),
+        )
+    ).map((e) => [e.startsAt.toISOString(), e.endsAt.toISOString()]);
+  await expect.poll(times).toEqual([["2026-11-25T13:00:00.000Z", "2026-11-25T14:00:00.000Z"]]);
+});
+
+test("a to-do dragged onto an hour is due then and sits there; dragged to a day, it's due that day", async () => {
+  const { org, member, page, origin } = await invited();
+  await db
+    .insert(schema.crmTasks)
+    .values({ orgId: org.id, title: "Call the printer", assigneeMemberId: member.id });
+  await openWeek(page, origin, org.slug);
+  const row = page.getByRole("region", { name: "No date" }).locator("[data-todo]").first();
+  await row.waitFor();
+  await row.dragTo(page.locator('[data-day="2026-11-26"]'), {
+    sourcePosition: { x: 40, y: 4 },
+    targetPosition: { x: 20, y: 11 * 48 + 4 },
+  });
+  await expect.poll(() => dueOf(org.id, "Call the printer")).toBe("2026-11-26T10:00:00.000Z");
+  const block = page.locator('[data-day="2026-11-26"] [data-todo]');
+  await block.waitFor();
+
+  await block.dragTo(page.locator('[data-all-day="2026-11-27"]'), {
+    sourcePosition: { x: 60, y: 10 },
+  });
+  await expect.poll(() => dueOf(org.id, "Call the printer")).toBe("2026-11-27T22:59:59.999Z");
+  await expect.poll(() => page.locator('[data-all-day="2026-11-27"] [data-todo]').count()).toBe(1);
+});
+
+test("a to-do opens beside the calendar, not in the CRM", async () => {
+  const { org, member, page, origin } = await invited();
+  await db
+    .insert(schema.crmTasks)
+    .values({ orgId: org.id, title: "Draft Q1 plan", assigneeMemberId: member.id });
+  await openWeek(page, origin, org.slug);
+  await page
+    .getByRole("region", { name: "No date" })
+    .getByRole("link", { name: "Draft Q1 plan" })
+    .click();
+  await page.getByRole("region", { name: "Task" }).waitFor();
+  expect(new URL(page.url()).pathname).toBe(`/${org.slug}/calendar`);
+  expect(new URL(page.url()).searchParams.get("task")).not.toBeNull();
 });
 
 async function freePort() {
