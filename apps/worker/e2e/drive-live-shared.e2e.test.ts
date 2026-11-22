@@ -149,11 +149,10 @@ test("a guest on an Editor link types with a member live, and the server says wh
       reason: "read_only",
     });
   }
-  const huge = { t: "update", e: guest.epoch, u: base64(new Uint8Array(70_000)) };
-  guest.socket.send(JSON.stringify({ type: "doc.append", nodeId: doc.id, ref: 99, record: huge }));
-  const after = await guest.send({ t: "update", e: guest.epoch, u: base64(typed) }, doc.id);
-  expect(after.type).toBe("doc.appended");
-  expect(guest.received.some((e) => e.ref === 99)).toBe(false);
+  const pasted = rewriteLive(guest.doc, `# Plan\n\n${"A long pasted paragraph. ".repeat(3000)}`);
+  expect(pasted.length).toBeGreaterThan(64 * 1024);
+  const big = await guest.send({ t: "update", e: guest.epoch, u: base64(pasted) }, doc.id);
+  expect(big.type).toBe("doc.appended");
   guest.socket.close();
   tab.socket.close();
 });

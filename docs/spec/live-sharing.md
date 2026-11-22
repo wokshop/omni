@@ -189,7 +189,7 @@ Each check runs in the object's memory, in this order, before any I/O. A refused
 | Outsider sockets per org      | 200                                         | Object                        |
 | `doc.append` per socket       | 30/s, bursts of 60                          | Object, token bucket          |
 | `doc.presence` per socket     | 10/s                                        | Object, token bucket          |
-| One outsider record           | 64 KiB (`MAX_OUTSIDE_RECORD`), not 900 KB   | Object                        |
+| One outsider record           | 900 KB, as a member's (a paste fits)        | Object                        |
 | Outsider bytes per doc        | 20 MB an hour                               | Object storage, by the hour   |
 
 The record kinds are a limit too: an outsider appends `update` records to the current epoch and
@@ -416,7 +416,7 @@ E2e against the local stack (`pnpm stack:up`, s2-lite), no mocks. Each names the
   socket stamped `Guest <Animal>`, `kind: "guest"`; an update for another socket's client id is
   dropped. A guest's second socket whose first update claims a member's client id, or the guest's
   own first socket's, binds nothing, and the member's cursor stays where it was.
-- A guest's `seed`, `snap` or `fold` is refused `read_only`; a 65 KiB update is refused; 100
+- A guest's `seed`, `snap` or `fold` is refused `read_only`; a 70 KB paste is taken whole; 100
   appends in one second are cut to the bucket and the socket closes after sustained refusals.
 - A guest types and leaves; with no member on the doc, the file's content holds their text
   within a few seconds, its version has `written_by_guest` set, the stream has the fold, and a

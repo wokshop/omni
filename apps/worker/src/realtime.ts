@@ -43,7 +43,6 @@ import {
   acceptOutside,
   allOutsiders,
   isOutsider,
-  MAX_OUTSIDE_MESSAGE,
   OUTSIDE_HEADER,
   outsideOpening,
   recheckOutsiders,
@@ -296,7 +295,7 @@ export class Realtime extends DurableObject<Env> {
   }
 
   private async fromOutsider(socket: WebSocket, raw: string) {
-    if (raw.length > MAX_OUTSIDE_MESSAGE) return;
+    if (raw.length > messageLimit(raw)) return;
     let message;
     try {
       message = clientMessage.parse(JSON.parse(raw));

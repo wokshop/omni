@@ -23,8 +23,6 @@ const whoTag = (by: string) => `who:${by}`;
 export const OUTSIDE_CHECK_MS = 2000;
 /** Every outsider is checked again this often while connected, whatever they send. */
 export const OUTSIDE_SWEEP_MS = 10_000;
-/** An outsider's record, envelope and all: an update of a few keystrokes, never a whole state. */
-export const MAX_OUTSIDE_MESSAGE = 64 * 1024 + 512;
 
 const CAPS = { perDoc: 50, perOrg: 200, perPerson: 5 } as const;
 
