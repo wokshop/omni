@@ -52,7 +52,12 @@ function Header(props: { person: TalkPerson }) {
   );
 }
 
-function Composer(props: { person: TalkPerson; threadId: string | undefined; pinned: boolean }) {
+function Composer(props: {
+  person: TalkPerson;
+  threadId: string | undefined;
+  pinned: boolean;
+  meId: string;
+}) {
   const [text, setText] = useState("");
   const field = useRef<HTMLTextAreaElement>(null);
   const note = useSendNote(props.threadId);
@@ -65,7 +70,7 @@ function Composer(props: { person: TalkPerson; threadId: string | undefined; pin
     const body = text.trim();
     if (!body || !props.threadId) return;
     setText("");
-    note.mutateAsync(noteToSend(body)).catch(() => {
+    note.mutateAsync(noteToSend(body, props.meId)).catch(() => {
       setText((now) => (now.trim() ? now : body));
       appToast.error("The note was not sent. Try again.");
     });
@@ -133,6 +138,26 @@ function useReadWhileOpen(threadId: string | undefined, newest: string | undefin
   }, [read, threadId, newest]);
 }
 
+function useEarlierAhead(
+  earlier: { current: HTMLElement | null },
+  more: boolean,
+  pages: number,
+  load: () => void,
+) {
+  const latest = useRef(load);
+  latest.current = load;
+  useEffect(() => {
+    const button = earlier.current;
+    if (!more || !button) return;
+    const seen = new IntersectionObserver(
+      (entries) => entries.some((e) => e.isIntersecting) && latest.current(),
+      { root: button.closest("[data-talk-scroll]"), rootMargin: "320px 0px" },
+    );
+    seen.observe(button);
+    return () => seen.disconnect();
+  }, [earlier, more, pages]);
+}
+
 function NoteBones() {
   return (
     <div className="flex flex-col items-end gap-1.5 px-3 py-2">
@@ -147,7 +172,11 @@ function Conversation(props: { person: TalkPerson; pinned: boolean }) {
   const threadId = useTalkThreadId(props.person, props.pinned);
   const messages = useTalkMessages(threadId);
   const list = messages.data?.pages.flatMap((page) => page.messages) ?? [];
-  useReadWhileOpen(threadId, list[0]?.id);
+  useReadWhileOpen(threadId, list.find((m) => m.authorMemberId !== member.id)?.id);
+  const earlier = useRef<HTMLButtonElement>(null);
+  useEarlierAhead(earlier, messages.hasNextPage, messages.data?.pages.length ?? 0, () => {
+    if (!messages.isFetchingNextPage) void messages.fetchNextPage();
+  });
   const files = useSendFiles(threadId);
   const [dragging, setDragging] = useState(false);
   const onDrop = (event: DragEvent) => {
@@ -175,16 +204,20 @@ function Conversation(props: { person: TalkPerson; pinned: boolean }) {
       onDrop={onDrop}
     >
       <Header person={props.person} />
-      <div className="flex h-80 max-h-[calc(100svh-12rem)] shrink-0 flex-col-reverse overflow-y-auto [mask-image:linear-gradient(to_bottom,transparent,black_12px)]">
+      <div
+        data-talk-scroll
+        className="flex h-80 max-h-[calc(100svh-12rem)] shrink-0 flex-col-reverse overflow-y-auto [mask-image:linear-gradient(to_bottom,transparent,black_12px)]"
+      >
         {threadId && messages.isPending ? (
           <Skeleton loading label="Loading notes" skeleton={<NoteBones />}>
             {null}
           </Skeleton>
         ) : (
-          <TalkMessages messages={list} meId={member.id} />
+          <TalkMessages messages={list} meId={member.id} threadId={threadId ?? ""} />
         )}
         {messages.hasNextPage && (
           <Button
+            ref={earlier}
             intent="plain"
             size="text"
             className="mx-auto mt-1 text-muted-foreground"
@@ -195,7 +228,7 @@ function Conversation(props: { person: TalkPerson; pinned: boolean }) {
           </Button>
         )}
       </div>
-      <Composer person={props.person} threadId={threadId} pinned={props.pinned} />
+      <Composer person={props.person} threadId={threadId} pinned={props.pinned} meId={member.id} />
     </div>
   );
 }

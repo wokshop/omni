@@ -297,3 +297,51 @@ test("the stack shows who is online, and a note and a file reach the teammate's 
   await kofi.setViewportSize(wide);
   await kofiStack.getByRole("button", { name: "Ana Lima, 1 unread" }).waitFor();
 });
+
+test("a note reaches an open window with older notes loaded without refetching it, and shows once to its sender", async () => {
+  const people = await team("talk-arrive");
+  const cookie = await signIn({ url: new URL(origin()) }, db, people.ana.email);
+  const post = (path: string, body?: unknown) =>
+    fetch(new URL(`/api/talk${path}`, origin()), {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json", origin: WEB_ORIGIN },
+      body: JSON.stringify(body),
+    }).then((r) => r.json());
+  const { thread } = await post("/threads", { memberId: people.ben.memberId });
+  for (let i = 0; i < 70; i++) await post(`/threads/${thread.id}/messages`, { body: `Old ${i}` });
+
+  const ana = await open(people.ana.email);
+  const kofi = await open(people.ben.email);
+  await kofi.getByRole("button", { name: /^Ana Lima/ }).click();
+  const kofiWindow = kofi.getByRole("region", { name: "Conversation with Ana Lima" });
+  await kofiWindow.getByText("Old 69", { exact: true }).waitFor();
+  await kofiWindow.getByRole("button", { name: "Earlier" }).click();
+  await kofiWindow.getByText("Old 0", { exact: true }).waitFor();
+  const fetched: string[] = [];
+  kofi.on("request", (request) => {
+    if (
+      request.method() === "GET" &&
+      /\/api\/talk\/(people|threads\/[^/]+\/messages)/.test(request.url())
+    ) {
+      fetched.push(request.url());
+    }
+  });
+
+  await ana.getByRole("button", { name: /^Kofi Mensah/ }).click();
+  const anaWindow = ana.getByRole("region", { name: "Conversation with Kofi Mensah" });
+  const composer = anaWindow.getByRole("textbox", { name: "Note to Kofi Mensah" });
+  await composer.fill("Fresh one");
+  await composer.press("Enter");
+  await kofiWindow.getByText("Fresh one", { exact: true }).waitFor();
+  await anaWindow.getByText("Fresh one", { exact: true }).waitFor();
+  await kofi.waitForTimeout(1_000);
+  expect(fetched).toEqual([]);
+  expect(await anaWindow.getByText("Fresh one", { exact: true }).count()).toBe(1);
+  expect(await kofiWindow.getByText("Old 0", { exact: true }).count()).toBe(1);
+
+  const fresh = kofiWindow.getByText("Fresh one", { exact: true });
+  await fresh.hover();
+  await fresh.locator("..").getByRole("button", { name: "React 👍" }).click();
+  await anaWindow.getByRole("button", { name: "👍 1" }).waitFor();
+  expect(fetched).toEqual([]);
+});

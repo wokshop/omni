@@ -1,6 +1,6 @@
-import { and, desc, eq, inArray, lt, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, lt, sql, type SQLWrapper } from "drizzle-orm";
 import { talkMessages, talkReactions, talkThreads } from "../schema/talk.ts";
-import { NOT_FOUND, threadOf, type Ex, type TalkMember, type TalkThreadRow } from "./core.ts";
+import { NOT_FOUND, threadOf, type Ex, type TalkMember } from "./core.ts";
 
 export const TALK_BODY_MAX = 4_000;
 export const TALK_PAGE_MAX = 100;
@@ -61,32 +61,43 @@ export const previewOf = (message: Pick<TalkMessage, "body" | "file">) => {
   return preview.length > TALK_PREVIEW_MAX ? `${preview.slice(0, TALK_PREVIEW_MAX - 1)}…` : preview;
 };
 
-/** The thread's notes, newest first, `before` a message id when paging back. */
+/**
+ * The thread's notes, newest first, `before` a message id when paging back. The thread check, the
+ * page and its reactions go out together (one round trip on a pipelining client); the page is
+ * dropped unread when `me` is not one of the two.
+ */
 export async function listMessages(
   ex: Ex,
   me: TalkMember,
   threadId: string,
   page: { before?: string | null; limit?: number } = {},
 ) {
-  const thread = await threadOf(ex, me, threadId);
-  if (!thread) return NOT_FOUND;
   const limit = Math.min(Math.max(page.limit ?? 50, 1), TALK_PAGE_MAX);
-  const rows = await ex
-    .select()
-    .from(talkMessages)
-    .where(
-      and(
-        eq(talkMessages.threadId, thread.id),
-        page.before ? lt(talkMessages.id, page.before) : undefined,
-      ),
-    )
-    .orderBy(desc(talkMessages.id))
-    .limit(limit + 1);
-  const shown = rows.slice(0, limit);
-  const reactions = await reactionsOf(
-    ex,
-    shown.map((row) => row.id),
+  const inPage = and(
+    eq(talkMessages.threadId, threadId),
+    eq(talkMessages.orgId, me.orgId),
+    page.before ? lt(talkMessages.id, page.before) : undefined,
   );
+  const [thread, rows, reactions] = await Promise.all([
+    threadOf(ex, me, threadId),
+    ex
+      .select()
+      .from(talkMessages)
+      .where(inPage)
+      .orderBy(desc(talkMessages.id))
+      .limit(limit + 1),
+    reactionsOf(
+      ex,
+      ex
+        .select({ id: talkMessages.id })
+        .from(talkMessages)
+        .where(inPage)
+        .orderBy(desc(talkMessages.id))
+        .limit(limit),
+    ),
+  ]);
+  if (!thread) return NOT_FOUND;
+  const shown = rows.slice(0, limit);
   return {
     status: "ok",
     thread: { id: thread.id, otherMemberId: thread.otherMemberId },
@@ -95,9 +106,9 @@ export async function listMessages(
   } as const;
 }
 
-async function reactionsOf(ex: Ex, messageIds: string[]) {
+async function reactionsOf(ex: Ex, messageIds: string[] | SQLWrapper) {
   const byMessage = new Map<string, TalkReaction[]>();
-  if (messageIds.length === 0) return byMessage;
+  if (Array.isArray(messageIds) && messageIds.length === 0) return byMessage;
   const rows = await ex
     .select({
       messageId: talkReactions.messageId,
@@ -127,29 +138,34 @@ export type SendResult =
 async function insertMessage(
   ex: Ex,
   me: TalkMember,
-  thread: TalkThreadRow,
+  threadId: string,
   values: Partial<Pick<MessageRow, "body" | "fileNodeId" | "fileName" | "fileSize" | "fileMime">>,
 ) {
   // WARNING: stamp the note from the thread row, locked till commit, so a reader never passes it.
   const [stamp] = await ex
     .update(talkThreads)
     .set({ lastMessageAt: sql`greatest(clock_timestamp(), ${talkThreads.lastMessageAt})` })
-    .where(eq(talkThreads.id, thread.id))
-    .returning({ at: talkThreads.lastMessageAt });
+    .where(
+      and(
+        eq(talkThreads.id, threadId),
+        eq(talkThreads.orgId, me.orgId),
+        sql`${me.id} in (${talkThreads.memberAId}, ${talkThreads.memberBId})`,
+      ),
+    )
+    .returning({
+      at: talkThreads.lastMessageAt,
+      a: talkThreads.memberAId,
+      b: talkThreads.memberBId,
+    });
+  if (!stamp) return NOT_FOUND;
   const [row] = await ex
     .insert(talkMessages)
-    .values({
-      orgId: me.orgId,
-      threadId: thread.id,
-      authorMemberId: me.id,
-      createdAt: stamp!.at!,
-      ...values,
-    })
+    .values({ orgId: me.orgId, threadId, authorMemberId: me.id, createdAt: stamp.at!, ...values })
     .returning();
   return {
     status: "ok",
     message: toMessage(row!),
-    thread: { id: thread.id, otherMemberId: thread.otherMemberId },
+    thread: { id: threadId, otherMemberId: stamp.a === me.id ? stamp.b : stamp.a },
   } satisfies SendResult;
 }
 
@@ -157,9 +173,7 @@ async function insertMessage(
 export async function sendNote(ex: Ex, me: TalkMember, threadId: string, body: string) {
   const text = body.trim();
   if (!text || text.length > TALK_BODY_MAX) return { status: "invalid_body" } as const;
-  const thread = await threadOf(ex, me, threadId);
-  if (!thread) return NOT_FOUND;
-  return insertMessage(ex, me, thread, { body: text });
+  return insertMessage(ex, me, threadId, { body: text });
 }
 
 /**
@@ -172,9 +186,7 @@ export async function recordFile(
   threadId: string,
   file: { nodeId: string; name: string; size: number; mimeType: string | null },
 ) {
-  const thread = await threadOf(ex, me, threadId);
-  if (!thread) return NOT_FOUND;
-  return insertMessage(ex, me, thread, {
+  return insertMessage(ex, me, threadId, {
     fileNodeId: file.nodeId,
     fileName: file.name,
     fileSize: file.size,
@@ -192,7 +204,12 @@ export const isEmoji = (value: string) => {
 };
 
 export type ReactResult =
-  | { status: "ok"; thread: { id: string; otherMemberId: string } }
+  | {
+      status: "ok";
+      thread: { id: string; otherMemberId: string };
+      /** The note's reactions as they now are. */
+      reactions: TalkReaction[];
+    }
   | typeof NOT_FOUND
   | { status: "invalid_emoji" }
   | { status: "too_many_reactions" };
@@ -229,9 +246,11 @@ export async function react(ex: Ex, me: TalkMember, messageId: string, emoji: st
       .values({ orgId: me.orgId, messageId, memberId: me.id, emoji })
       .onConflictDoNothing();
   }
+  const now = await reactionsOf(ex, [messageId]);
   return {
     status: "ok",
     thread: { id: thread.id, otherMemberId: thread.otherMemberId },
+    reactions: now.get(messageId) ?? [],
   } satisfies ReactResult;
 }
 

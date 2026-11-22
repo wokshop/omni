@@ -4,12 +4,20 @@ import {
   infiniteQueryOptions,
   mutationOptions,
   queryOptions,
-  type InfiniteData,
   type QueryClient,
 } from "@tanstack/react-query";
 import { api, ApiError, call } from "./api.ts";
 import { currentWorkspaceId, withWorkspace, workspaceHeaders } from "./current-workspace.ts";
 import { keys } from "./query-keys.ts";
+import {
+  addMessage,
+  messageOf,
+  pendingId,
+  setReactions,
+  settlePending,
+  threadRead,
+  toggledReactions,
+} from "./talk-cache.ts";
 
 type Talk = Api["talk"];
 export type TalkPerson = InferResponseType<Talk["people"]["$get"], 200>["people"][number];
@@ -31,14 +39,27 @@ export const talkPeopleQuery = () =>
     retry: (count, error) => !(error instanceof ApiError && error.status === 404) && count < 2,
   });
 
+const OLDER_PAGE = "100";
+
+/**
+ * A thread's notes, newest page first. Realtime keeps a loaded thread current (notes and reactions
+ * arrive in their events, and a reconnect refetches Talk), so it is fresh for minutes: reopening
+ * the window shows it at once, and never refetches every page it has.
+ */
 export const talkMessagesQuery = (threadId: string) =>
   infiniteQueryOptions({
     queryKey: keys.talkMessages(threadId),
     initialPageParam: undefined as string | undefined,
+    staleTime: 5 * 60_000,
+    // WARNING: sharing matches notes by index, so a note on top would copy every other one.
+    structuralSharing: false,
     queryFn: ({ pageParam, signal }) =>
       call(
         api.talk.threads[":id"].messages.$get(
-          { param: { id: threadId }, query: pageParam ? { before: pageParam } : {} },
+          {
+            param: { id: threadId },
+            query: pageParam ? { before: pageParam, limit: OLDER_PAGE } : {},
+          },
           { init: { signal } },
         ),
       ),
@@ -78,14 +99,24 @@ export const talkThreadQuery = (memberId: string) =>
     staleTime: Infinity,
   });
 
-/** A note and the workspace it was written in, fixed when it was sent rather than when it goes. */
+/**
+ * A note and the workspace it was written in, fixed when it was sent rather than when it goes,
+ * with who wrote it and the id it shows under until the server stores it.
+ */
 export interface NoteToSend {
   body: string;
   workspaceId: string | undefined;
+  authorMemberId: string;
+  pendingId: string;
 }
 
-export const noteToSend = (body: string) =>
-  ({ body, workspaceId: currentWorkspaceId() }) satisfies NoteToSend;
+export const noteToSend = (body: string, authorMemberId: string) =>
+  ({
+    body,
+    workspaceId: currentWorkspaceId(),
+    authorMemberId,
+    pendingId: pendingId(),
+  }) satisfies NoteToSend;
 
 const inWorkspace = (workspaceId: string | undefined) =>
   workspaceId ? { headers: { [WORKSPACE_HEADER]: workspaceId } } : {};
@@ -132,19 +163,6 @@ export const fileUrl = (messageId: string) =>
 
 export const isImage = (mimeType: string | null) => Boolean(mimeType?.startsWith("image/"));
 
-/** Puts a note the server just answered at the top of its thread's first page. */
-export function addMessage(client: QueryClient, message: TalkMessage) {
-  client.setQueryData<InfiniteData<TalkMessagesResponse>>(
-    keys.talkMessages(message.threadId),
-    (data) => {
-      if (!data) return data;
-      const [first, ...rest] = data.pages;
-      if (!first || first.messages.some((m) => m.id === message.id)) return data;
-      return { ...data, pages: [{ ...first, messages: [message, ...first.messages] }, ...rest] };
-    },
-  );
-}
-
 /** A teammate came online or left: their dot follows, with no refetch. */
 export function setOnline(client: QueryClient, memberId: string, online: boolean) {
   client.setQueryData<TalkPerson[]>(keys.talkPeople(), (people) =>
@@ -152,21 +170,28 @@ export function setOnline(client: QueryClient, memberId: string, online: boolean
   );
 }
 
-const peopleChanged = (client: QueryClient) =>
-  client.invalidateQueries({ queryKey: keys.talkPeople() });
-
 /**
- * `mutate(noteToSend(body))`: notes to one thread go one after another, in the order they were
- * sent, each to the workspace it was written in.
+ * `mutate(noteToSend(body, meId))`: the note shows at once, then notes to one thread go one after
+ * another, in the order they were sent, each to the workspace it was written in.
  */
 export const sendNoteMutation = (client: QueryClient, threadId: string | undefined) =>
   mutationOptions({
     mutationFn: (note: NoteToSend) => sendNote(threadId!, note),
     scope: { id: `talk-notes:${threadId}` },
-    onSuccess: (message) => {
-      addMessage(client, message);
-      void peopleChanged(client);
+    onMutate: (note) => {
+      if (!threadId) return;
+      addMessage(client, {
+        id: note.pendingId,
+        threadId,
+        authorMemberId: note.authorMemberId,
+        body: note.body,
+        file: null,
+        reactions: [],
+        createdAt: new Date().toISOString(),
+      });
     },
+    onSuccess: (message, note) => settlePending(client, message.threadId, note.pendingId, message),
+    onError: (_error, note) => threadId && settlePending(client, threadId, note.pendingId, null),
   });
 
 /** `mutate(files)`: each file into your Drive, shared with the other one, then into the thread. */
@@ -176,19 +201,34 @@ export const sendFilesMutation = (client: QueryClient, threadId: string | undefi
       const workspaceId = currentWorkspaceId();
       for (const file of files) addMessage(client, await sendFile(threadId!, file, workspaceId));
     },
-    onSettled: () => peopleChanged(client),
   });
 
-/** `mutate({ messageId, emoji, on })`: adds or takes away your reaction. */
+export interface Reacting {
+  messageId: string;
+  emoji: string;
+  on: boolean;
+  meId: string;
+}
+
+/** `mutate({ messageId, emoji, on, meId })`: your reaction shows at once, then goes. */
 export const reactMutation = (client: QueryClient, threadId: string) =>
   mutationOptions({
-    mutationFn: ({ messageId, emoji, on }: { messageId: string; emoji: string; on: boolean }) =>
-      react(messageId, emoji, on),
-    onSettled: () => client.invalidateQueries({ queryKey: keys.talkMessages(threadId) }),
+    mutationFn: ({ messageId, emoji, on }: Reacting) => react(messageId, emoji, on),
+    onMutate: ({ messageId, emoji, on, meId }) => {
+      const message = messageOf(client, threadId, messageId);
+      if (!message) return;
+      setReactions(
+        client,
+        threadId,
+        messageId,
+        toggledReactions(message.reactions, meId, emoji, on),
+      );
+    },
+    onError: () => client.invalidateQueries({ queryKey: keys.talkMessages(threadId) }),
   });
 
 /** Reads the thread up to now. */
 export async function readThread(client: QueryClient, threadId: string) {
   await markRead(threadId);
-  await peopleChanged(client);
+  threadRead(client, threadId);
 }
