@@ -17,7 +17,7 @@ const FAILURES = {
   invalid_name: ["bad_request", "a name is 1 to 200 characters"],
   recording_elsewhere: ["conflict", "someone in your workspace is already recording this meeting"],
   decided: ["conflict", "that action was already decided"],
-  not_a_recording: ["bad_request", "the recording must be a file in your My files"],
+  not_a_recording: ["bad_request", "the recording must be an audio file in your My files"],
   not_stoppable: ["conflict", "the meeting is not recording"],
   not_retryable: ["conflict", "the meeting has not failed"],
 } as const satisfies Record<string, readonly [ErrorCode, string]>;
