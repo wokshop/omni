@@ -4,24 +4,52 @@ type Test = (value: Value) => boolean;
 
 const OPERATOR = /^(<=|>=|<>|<|>|=)?(.*)$/s;
 
-const wildcard = (pattern: string) =>
-  new RegExp(
-    `^${pattern
-      .replaceAll(/[.+^${}()|[\]\\]/g, "\\$&")
-      .replaceAll(/~\*/g, "\u0000")
-      .replaceAll(/~\?/g, "\u0001")
-      .replaceAll("*", ".*")
-      .replaceAll("?", ".")
-      .replaceAll("\u0000", "\\*")
-      .replaceAll("\u0001", "\\?")}$`,
-    "is",
-  );
+type Glob = { c: string; wild: "" | "*" | "?" }[];
+
+function glob(pattern: string) {
+  const out: Glob = [];
+  for (let i = 0; i < pattern.length; i++) {
+    const c = pattern[i]!;
+    if (c === "~" && (pattern[i + 1] === "*" || pattern[i + 1] === "?")) {
+      out.push({ c: pattern[++i]!, wild: "" });
+    } else {
+      out.push({ c: c.toLowerCase(), wild: c === "*" || c === "?" ? c : "" });
+    }
+  }
+  return out;
+}
+
+function globMatch(parts: Glob, text: string) {
+  const t = text.toLowerCase();
+  let p = 0;
+  let i = 0;
+  let star = -1;
+  let resume = 0;
+  while (i < t.length) {
+    const part = parts[p];
+    if (part && (part.wild === "?" || (part.wild === "" && part.c === t[i]))) {
+      p++;
+      i++;
+    } else if (part?.wild === "*") {
+      star = p++;
+      resume = i;
+    } else if (star >= 0) {
+      p = star + 1;
+      i = ++resume;
+    } else {
+      return false;
+    }
+  }
+  while (parts[p]?.wild === "*") p++;
+  return p === parts.length;
+}
 
 /** A test for `SUMIF`-style criteria: `5`, `">5"`, `"<>x"`, `"a*"`. */
 export function criterion(arg: Arg) {
   const raw = arg instanceof Range ? (arg.rows[0]?.[0] ?? null) : arg;
+  if (isError(raw)) return raw;
   if (typeof raw === "number" || typeof raw === "boolean") return ((v) => v === raw) satisfies Test;
-  if (raw === null || isError(raw)) return ((v) => v === raw) satisfies Test;
+  if (raw === null) return ((v) => v === raw) satisfies Test;
   const [, op = "", rest = ""] = OPERATOR.exec(raw)!;
   const number = parseNumber(rest);
   const target: Value =
@@ -33,9 +61,9 @@ export function criterion(arg: Arg) {
         ? target === ""
           ? (v: Value) => v === null || v === ""
           : (
-              (re) => (v: Value) =>
-                typeof v === "string" && re.test(v)
-            )(wildcard(target))
+              (parts) => (v: Value) =>
+                typeof v === "string" && globMatch(parts, v)
+            )(glob(target))
         : (v: Value) => v === target;
     return op === "<>" ? (((v) => !equal(v)) satisfies Test) : equal;
   }

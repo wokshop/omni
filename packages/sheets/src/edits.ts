@@ -1,6 +1,6 @@
 import * as Y from "yjs";
 import { columnIndex, columnLetters, type Area } from "./a1.ts";
-import { gridLayout, gridToFile, readGrid, type GridTab, type LiveCell } from "./doc.ts";
+import { gridLayout, type GridTab, type LiveCell } from "./doc.ts";
 import { EditError, EditSession, fail, type InputValue } from "./edit-session.ts";
 import {
   isFormula,
@@ -16,6 +16,7 @@ import { shiftA1, toA1, toLive } from "./formula/translate.ts";
 import { compare, isError } from "./formula/values.ts";
 import { newId, positionBetween } from "./ids.ts";
 import { structureEdit } from "./edits-structure.ts";
+import { saveSheet } from "./save.ts";
 
 type OnTab = { tab?: string };
 
@@ -150,6 +151,7 @@ function column(session: EditSession, edit: Extract<SheetEdit, { column: string 
   for (const field of ["type", "format", "options", "width", "time"] as const) {
     if (edit[field] !== undefined) map.set(field, edit[field]);
   }
+  session.relayout();
 }
 
 function sortRows(session: EditSession, edit: Extract<SheetEdit, { sort: unknown }>, now: number) {
@@ -262,7 +264,7 @@ export function applySheetEdits(doc: Y.Doc, edits: SheetEdit[], now: number) {
       throw error;
     }
   }
-  const problem = limitProblem(gridToFile(readGrid(copy)));
+  const problem = limitProblem(saveSheet(copy, now).file);
   if (problem) return { ok: false, error: `The sheet would have ${problem}.` };
   const update = Y.encodeStateAsUpdate(copy, before);
   Y.applyUpdate(doc, update);

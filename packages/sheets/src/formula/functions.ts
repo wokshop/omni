@@ -94,6 +94,7 @@ function matching(pairs: Arg[]) {
     const range = pairs[i];
     if (!(range instanceof Range) || range.flat.length !== size) return errors.value;
     const test = criterion(pairs[i + 1] ?? null);
+    if (isError(test)) return test;
     range.flat.forEach((v, j) => {
       if (!test(v)) ok[j] = false;
     });
@@ -101,9 +102,17 @@ function matching(pairs: Arg[]) {
   return ok;
 }
 
-function conditional(kind: "sum" | "count" | "average", values: Arg | undefined, pairs: Arg[]) {
+function conditional(
+  kind: "sum" | "count" | "average",
+  values: Arg | undefined,
+  pairs: Arg[],
+  sameSize = false,
+) {
   const ok = matching(pairs);
   if (isError(ok)) return ok;
+  if (sameSize && (!(values instanceof Range) || values.flat.length !== ok.length)) {
+    return errors.value;
+  }
   const source = values instanceof Range ? values.flat : null;
   let total = 0;
   let count = 0;
@@ -132,7 +141,7 @@ const mathFunctions: Record<string, SheetFunction> = {
   MAX: over((ns) => (ns.length ? Math.max(...ns) : 0)),
   PRODUCT: over((ns) => ns.reduce((a, b) => a * b, 1)),
   COUNT: (args) => flatAll(args).filter((v) => typeof v === "number").length,
-  COUNTA: (args) => flatAll(args).filter((v) => v !== null && v !== "").length,
+  COUNTA: (args) => flatAll(args).filter((v) => v !== null).length,
   COUNTBLANK: (args) => flatAll(args).filter((v) => v === null || v === "").length,
   ROUND: num((n, d = 0) => roundTo(n, d, "round"), 1),
   ROUNDUP: num((n, d = 0) => roundTo(n, d, "up"), 1),
@@ -150,12 +159,12 @@ const mathFunctions: Record<string, SheetFunction> = {
   FLOOR: num((n, s = 1) => (s === 0 ? errors.div0 : Math.floor(n / s) * s), 1),
   PI: () => Math.PI,
   SUMIF: (args) => conditional("sum", args[2] ?? args[0], [args[0] ?? null, args[1] ?? null]),
-  SUMIFS: (args) => conditional("sum", args[0], args.slice(1)),
+  SUMIFS: (args) => conditional("sum", args[0], args.slice(1), true),
   COUNTIF: (args) => conditional("count", undefined, [args[0] ?? null, args[1] ?? null]),
   COUNTIFS: (args) => conditional("count", undefined, args),
   AVERAGEIF: (args) =>
     conditional("average", args[2] ?? args[0], [args[0] ?? null, args[1] ?? null]),
-  AVERAGEIFS: (args) => conditional("average", args[0], args.slice(1)),
+  AVERAGEIFS: (args) => conditional("average", args[0], args.slice(1), true),
 };
 
 const logicalFunctions: Record<string, SheetFunction> = {

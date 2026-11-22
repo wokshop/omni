@@ -48,6 +48,44 @@ describe("formulas that could break the evaluator or a total", () => {
   });
 });
 
+describe("lookups and counts as a spreadsheet gives them", () => {
+  test("a wildcard criterion that would backtrack a regex matches in bounded time", () => {
+    const started = Date.now();
+    const pattern = `${"a*".repeat(20)}b`;
+    expect(result(`=COUNTIF(A1,"${pattern}")`, [["a".repeat(100)]])).toBe(0);
+    expect(Date.now() - started).toBeLessThan(500);
+    expect(result('=COUNTIF(A1:A3,"a*c")', [["abc"], ["AXC"], ["ab"]])).toBe(2);
+    expect(result('=COUNTIF(A1:A2,"a?c")', [["abc"], ["abbc"]])).toBe(1);
+    expect(result('=COUNTIF(A1:A2,"5~*")', [["5*"], ["55"]])).toBe(1);
+  });
+
+  test("an error given as a criterion is the total's error", () => {
+    expect(result("=COUNTIF(A1:A2,1/0)", [[1], [2]])).toBe("#DIV/0!");
+    expect(result("=IFERROR(SUMIF(A1:A2,1/0),-1)", [[1], [2]])).toBe(-1);
+  });
+
+  test("SUMIFS and AVERAGEIFS refuse a value range of another size", () => {
+    const rows = [
+      [1, 10],
+      [2, null],
+    ];
+    expect(result('=SUMIFS(B1:B1,A1:A2,">0")', rows)).toBe("#VALUE!");
+    expect(result('=AVERAGEIFS(B1:B1,A1:A2,">0")', rows)).toBe("#VALUE!");
+    expect(result('=SUMIFS(B1:B2,A1:A2,">0")', rows)).toBe(10);
+  });
+
+  test("MATCH with -1 finds the smallest value at least the target in a descending list", () => {
+    expect(result("=MATCH(6,A1:A3,-1)", [[9], [7], [5]])).toBe(2);
+    expect(result("=MATCH(10,A1:A3,-1)", [[9], [7], [5]])).toBe("#N/A");
+    expect(result("=MATCH(6,A1:A3,1)", [[5], [7], [9]])).toBe(1);
+  });
+
+  test("COUNTA counts a formula that answers empty text", () => {
+    expect(result("=COUNTA(A1:A2)", [['=""'], [null]])).toBe(1);
+    expect(result("=COUNTBLANK(A1:A2)", [['=""'], [null]])).toBe(2);
+  });
+});
+
 describe("references by id", () => {
   test("a reference past the last row follows its cell once the row exists", () => {
     const doc = docOf({ name: "T", rows: [[1, "=A2"]] });

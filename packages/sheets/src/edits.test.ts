@@ -60,6 +60,27 @@ describe("edits", () => {
     expect(outcome).toMatchObject({ ok: true, changed: ["T!A1"] });
   });
 
+  test("a sort after a column's type changed sorts by the new type", () => {
+    const doc = docOf({
+      name: "T",
+      rows: [
+        ["2026-11-23", "=A1+1"],
+        ["2026-11-22", "=A2+1"],
+      ],
+    });
+    edit(doc, { column: "A", type: "date" }, { sort: { range: "A1:B2", by: [{ column: "B" }] } });
+    expect(saved(doc).text.indexOf("2026-11-22")).toBeLessThan(
+      saved(doc).text.indexOf("2026-11-23"),
+    );
+  });
+
+  test("an edit whose computed values would pass 5 MB is refused", () => {
+    const doc = docOf({ name: "T", rows: [] });
+    const big = Array.from({ length: 200 }, () => '=REPT("x",32767)');
+    const outcome = applySheetEdits(doc, [{ set: "A1", values: [big] }], NOW);
+    expect(outcome).toEqual({ ok: false, error: "The sheet would have a file larger than 5 MB." });
+  });
+
   test("a range of the wrong shape is refused", () => {
     const doc = docOf({ name: "T", rows: [] });
     const outcome = applySheetEdits(doc, [{ set: "A1:B1", values: [[1], [2]] }], NOW);

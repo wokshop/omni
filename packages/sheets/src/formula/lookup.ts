@@ -4,12 +4,13 @@ import { compare, errors, isError, Range, single, toBool, toNumber, type Value }
 const sameValue = (a: Value, b: Value) =>
   typeof a === "string" && typeof b === "string" ? a.toLowerCase() === b.toLowerCase() : a === b;
 
-function find(list: Value[], target: Value, exact: boolean) {
+function find(list: Value[], target: Value, exact: boolean, descending = false) {
   if (exact) return list.findIndex((v) => sameValue(v, target));
+  const past = descending ? -1 : 1;
   let found = -1;
   for (const [i, v] of list.entries()) {
     if (v === null) continue;
-    if (compare(v, target) > 0) break;
+    if (Math.sign(compare(v, target)) === past) break;
     found = i;
   }
   return found;
@@ -52,7 +53,7 @@ export const lookupFunctions: Record<string, SheetFunction> = {
     if (!(look instanceof Range)) return errors.na;
     const k = toNumber(kind);
     if (isError(k)) return k;
-    const at = find(look.flat, single(target), k === 0);
+    const at = find(look.flat, single(target), k === 0, k < 0);
     return at < 0 ? errors.na : at + 1;
   },
   INDEX: ([table, row = null, column = null]) => {
