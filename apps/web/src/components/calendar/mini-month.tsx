@@ -71,7 +71,10 @@ export function MiniMonth() {
           </Button>
         </div>
       </header>
-      <CalendarGrid weekdayStyle="narrow" className="w-full border-collapse">
+      <CalendarGrid
+        weekdayStyle="narrow"
+        className="-mx-2.5 w-[calc(100%+--spacing(5))] border-collapse"
+      >
         <CalendarGridHeader>
           {(day) => (
             <CalendarHeaderCell className="h-7 text-xs font-normal text-muted-foreground">

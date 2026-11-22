@@ -76,7 +76,10 @@ export function WeekGrid(props: WeekGridProps) {
           <div
             key={day.getTime()}
             data-all-day={dayKey(day)}
-            className={cn("flex min-h-8 flex-col gap-0.5 border-l p-1", weekend(day) && "bg-hover")}
+            className={cn(
+              "flex min-h-8 flex-col gap-0.5 border-l border-calendar-line p-1",
+              weekend(day) && "bg-hover",
+            )}
           >
             {allDayOn(day, props.events).map((event) => (
               <EventChip key={eventKey(event)} event={event} {...props} />
@@ -157,7 +160,7 @@ function DayColumn(props: WeekGridProps & { day: Date }) {
     <div
       role="presentation"
       data-day={dayKey(props.day)}
-      className={cn("relative border-l", weekend(props.day) && "bg-hover")}
+      className={cn("relative border-l border-calendar-line", weekend(props.day) && "bg-hover")}
       onPointerDown={(event) => {
         if (event.button !== 0 || event.target !== event.currentTarget) return;
         event.currentTarget.setPointerCapture(event.pointerId);
@@ -185,7 +188,7 @@ function DayColumn(props: WeekGridProps & { day: Date }) {
       {HOURS.map((hour) => (
         <div
           key={hour}
-          className="pointer-events-none absolute inset-x-0 border-t"
+          className="pointer-events-none absolute inset-x-0 border-t border-calendar-line"
           style={{ top: hour * HOUR_PX }}
         />
       ))}
@@ -339,7 +342,7 @@ function TodoChip({ task, onTodo }: { task: CrmTask; onTodo?: WeekGridProps["onT
       aria-label={done ? `Reopen ${task.title}` : `Complete ${task.title}`}
       isSelected={done}
       onChange={(next: boolean) => onTodo?.(task, next)}
-      className="min-w-0 overflow-hidden rounded-md px-1.5 py-0.5 hover:bg-hover"
+      className="min-w-0 overflow-hidden rounded-md px-1.5 py-0.5 hover:bg-hover **:data-[slot=indicator]:rounded-full"
     >
       <Checkbox>
         <span

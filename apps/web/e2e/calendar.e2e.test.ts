@@ -154,7 +154,7 @@ test("an invitation on the week is answered by key, and its answer goes to the o
     .toBe("true");
 });
 
-test("c makes an event at the selected slot, and an arrow moves it a quarter hour", async () => {
+test("c makes an event at the selected slot, and two quick arrows move it half an hour", async () => {
   const { org, page, origin } = await invited();
   await openWeek(page, origin, org.slug);
   await page.locator('[data-day="2026-11-24"]').click({ position: { x: 20, y: 10 * 48 + 6 } });
@@ -172,9 +172,10 @@ test("c makes an event at the selected slot, and an arrow moves it a quarter hou
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: /Focus block/ }).click();
   await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowDown");
   await expect
     .poll(async () => (await ownEvents(org.id))[0]?.startsAt.getTime())
-    .toBe((made?.startsAt.getTime() ?? 0) + 15 * 60_000);
+    .toBe((made?.startsAt.getTime() ?? 0) + 30 * 60_000);
 });
 
 test("the thread shows the invitation with Yes, No and Maybe, and No answers it", async () => {
@@ -193,7 +194,7 @@ test("the thread shows the invitation with Yes, No and Maybe, and No answers it"
     .toEqual(["Declined: Acme × Studio: kickoff"]);
 });
 
-test("a to-do typed beside the calendar is the member's, and checking a dated one on its day completes it", async () => {
+test("a to-do added from a section's + is the member's, and checking a dated one on its day completes it", async () => {
   const { org, member, page, origin } = await invited();
   await db.insert(schema.crmTasks).values({
     orgId: org.id,
@@ -203,6 +204,8 @@ test("a to-do typed beside the calendar is the member's, and checking a dated on
   });
   await openWeek(page, origin, org.slug);
 
+  await page.getByRole("region", { name: "No date" }).hover();
+  await page.getByRole("button", { name: "New to-do in No date" }).click();
   const field = page.getByRole("textbox", { name: "New to-do" });
   await field.fill("Book the room");
   await field.press("Enter");
@@ -280,6 +283,28 @@ test("editing an overnight event keeps its end on the next day", async () => {
       ),
     );
   expect(row?.endsAt).toEqual(new Date("2026-11-25T00:00:00.000Z"));
+});
+
+test("a to-do past the first hundred still sits on its day", async () => {
+  const { org, member, page, origin } = await invited();
+  await db.insert(schema.crmTasks).values([
+    ...Array.from({ length: 101 }, (_, i) => ({
+      orgId: org.id,
+      title: `Old ${i}`,
+      assigneeMemberId: member.id,
+      dueAt: new Date(Date.UTC(2026, 9, 1, 12, i)),
+    })),
+    {
+      orgId: org.id,
+      title: "Send the brief",
+      assigneeMemberId: member.id,
+      dueAt: new Date("2026-11-25T22:59:59Z"),
+    },
+  ]);
+  await openWeek(page, origin, org.slug);
+  await expect
+    .poll(() => page.locator('[data-all-day="2026-11-25"]').getByText("Send the brief").count())
+    .toBe(1);
 });
 
 async function freePort() {

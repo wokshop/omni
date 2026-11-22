@@ -80,6 +80,31 @@ export const createEventMutation = (client: QueryClient) =>
     onSettled: () => calendarChanged(client),
   });
 
+type EventWindow = { events: CalendarEvent[] };
+const windows = () => [...calendarKeys.all(), "events"] as const;
+
+/** Where a one-off event is now, as the grid shows it, counting moves still on their way. */
+export const eventTimesNow = (client: QueryClient, id: string) => {
+  for (const [, data] of client.getQueriesData<EventWindow>({ queryKey: windows() })) {
+    const found = data?.events.find((event) => event.id === id && !event.recurrenceId);
+    if (found) return { start: found.start, end: found.end };
+  }
+  return null;
+};
+
+/** Shows a one-off event at its new time at once, before the write lands. */
+export function placeEvent(client: QueryClient, id: string, start: string, end: string) {
+  client.setQueriesData<EventWindow>({ queryKey: windows() }, (data) =>
+    data
+      ? {
+          events: data.events.map((event) =>
+            event.id === id && !event.recurrenceId ? { ...event, start, end } : event,
+          ),
+        }
+      : data,
+  );
+}
+
 export const updateEventMutation = (client: QueryClient) =>
   mutationOptions({
     mutationFn: (input: { id: string; change: CalendarEventChange }) =>

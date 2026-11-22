@@ -6,8 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Heading } from "@/components/ui/heading";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { useCalendarEvents, useCalendars } from "@/hooks/use-calendar.ts";
-import { useHasCrm } from "@/hooks/use-crm.ts";
-import { useCrmTasks } from "@/hooks/use-crm-tasks.ts";
 import { useWorkspaceSlug } from "@/hooks/use-workspaces.ts";
 import type { CalendarEvent } from "@/lib/calendar.ts";
 import {
@@ -22,7 +20,7 @@ import {
 } from "@/lib/calendar-grid.ts";
 import { EventDialog } from "./event-dialog.tsx";
 import { EventPanel } from "./event-panel.tsx";
-import { MY_TODOS, useToggleTodo } from "./todo-list.tsx";
+import { useMyTodos, useToggleTodo } from "./todo-list.tsx";
 import { useCalendarKeys } from "./use-calendar-keys.ts";
 import { WeekGrid, type Selection } from "./week-grid.tsx";
 
@@ -38,12 +36,6 @@ function isoWeek(date: Date) {
   day.setUTCDate(day.getUTCDate() + 4 - (day.getUTCDay() || 7));
   const yearStart = Date.UTC(day.getUTCFullYear(), 0, 1);
   return Math.ceil(((day.getTime() - yearStart) / 86_400_000 + 1) / 7);
-}
-
-function useTodos() {
-  const hasCrm = useHasCrm();
-  const { tasks } = useCrmTasks(MY_TODOS);
-  return hasCrm ? tasks : [];
 }
 
 function useNow() {
@@ -67,7 +59,7 @@ export function CalendarPage(props: { date?: string; view?: CalendarView }) {
   const now = useNow();
   const calendars = useCalendars().data ?? [];
   const events = useCalendarEvents(from, to).data ?? [];
-  const todos = useTodos();
+  const todos = useMyTodos();
   const toggleTodo = useToggleTodo();
   const [selection, setSelection] = useState<Selection>(null);
   const [panel, setPanel] = useState<string | null>(null);

@@ -1,7 +1,13 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import { appToast } from "@/components/ui/toast";
 import { useCalendarWrites } from "@/hooks/use-calendar.ts";
-import type { CalendarAnswer, CalendarEvent } from "@/lib/calendar.ts";
+import {
+  eventTimesNow,
+  placeEvent,
+  type CalendarAnswer,
+  type CalendarEvent,
+} from "@/lib/calendar.ts";
 import { eventKey, SLOT_MINUTES, type CalendarView, type Slot } from "@/lib/calendar-grid.ts";
 import { answerable } from "./event-panel.tsx";
 import { ownEvent, type Selection } from "./week-grid.tsx";
@@ -41,17 +47,19 @@ const shifted = (slot: Slot, start: number, end: number) =>
  */
 export function useCalendarKeys(keys: Keys) {
   const { answer, update, remove } = useCalendarWrites();
-  const move = (event: CalendarEvent, start: number, end = start) =>
+  const client = useQueryClient();
+  const move = (event: CalendarEvent, start: number, end = start) => {
+    const now = eventTimesNow(client, event.id) ?? event;
+    const change = {
+      start: new Date(Date.parse(now.start) + start * MINUTE).toISOString(),
+      end: new Date(Date.parse(now.end) + end * MINUTE).toISOString(),
+    };
+    placeEvent(client, event.id, change.start, change.end);
     update.mutate(
-      {
-        id: event.id,
-        change: {
-          start: new Date(Date.parse(event.start) + start * MINUTE).toISOString(),
-          end: new Date(Date.parse(event.end) + end * MINUTE).toISOString(),
-        },
-      },
+      { id: event.id, change },
       { onError: () => appToast.error("The event was not moved") },
     );
+  };
   const latest = useRef({ keys, move, answer, remove });
   latest.current = { keys, move, answer, remove };
 

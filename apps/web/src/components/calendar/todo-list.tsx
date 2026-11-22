@@ -1,25 +1,46 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { crmErrorToast } from "@/components/crm/crm-errors.ts";
+import { IconPlus } from "@/components/icons/central";
+import { Button } from "@/components/ui/button";
 import { Checkbox, CheckboxField } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Link } from "@/components/ui/link";
-import { SidebarSection } from "@/components/ui/sidebar";
 import { TextField } from "@/components/ui/text-field";
 import { useHasCrm } from "@/hooks/use-crm.ts";
 import { useCreateTask, useCrmTasks, useUpdateTask } from "@/hooks/use-crm-tasks.ts";
 import { useMember } from "@/hooks/use-session.ts";
 import { useWorkspacePaths } from "@/hooks/use-workspaces.ts";
 import {
-  DUE_GROUPS,
+  dayOf,
+  dueAtOf,
   dueGroup,
   dueLabel,
   taskPath,
   type CrmTask,
+  type DueGroup,
   type TaskFilter,
 } from "@/lib/crm-tasks.ts";
 
 /** The member's open to-dos: the workspace's tasks assigned to them. */
 export const MY_TODOS = { status: "open", assignee: "me" } satisfies TaskFilter;
+
+const SECTIONS: { id: DueGroup; label: string; fixed: boolean }[] = [
+  { id: "overdue", label: "Overdue", fixed: false },
+  { id: "today", label: "Today", fixed: true },
+  { id: "upcoming", label: "Upcoming", fixed: true },
+  { id: "none", label: "No date", fixed: true },
+];
+
+/** Every open to-do of the member's, all pages loaded; none where the workspace has no tasks. */
+export function useMyTodos() {
+  const hasCrm = useHasCrm();
+  const query = useCrmTasks(MY_TODOS);
+  const { hasNextPage, isFetchingNextPage, fetchNextPage } = query;
+  useEffect(() => {
+    if (hasCrm && hasNextPage && !isFetchingNextPage) void fetchNextPage();
+  }, [hasCrm, hasNextPage, isFetchingNextPage, fetchNextPage]);
+  return hasCrm ? query.tasks : [];
+}
 
 /** Checks a to-do off, or opens it again. */
 export function useToggleTodo() {
@@ -31,56 +52,102 @@ export function useToggleTodo() {
     );
 }
 
-/** The to-dos beside the calendar: a field that adds one, then each due group in turn. */
+function dueFor(section: DueGroup) {
+  if (section === "none" || section === "overdue") return null;
+  const now = new Date();
+  const day = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate() + (section === "today" ? 0 : 1),
+    12,
+  );
+  return dueAtOf(dayOf(day.toISOString()));
+}
+
+/** The to-dos beside the calendar, in fixed sections by when they're due. */
 export function TodoList() {
   if (!useHasCrm()) return null;
   return <Todos />;
 }
 
 function Todos() {
-  const { tasks } = useCrmTasks(MY_TODOS);
-  const [draft, setDraft] = useState("");
+  const tasks = useMyTodos();
+  const [adding, setAdding] = useState<DueGroup | null>(null);
+  const now = new Date();
+  return (
+    <div className="flex flex-col">
+      {SECTIONS.map((section) => {
+        const inSection = tasks.filter((task) => dueGroup(task, now) === section.id);
+        if (!section.fixed && inSection.length === 0) return null;
+        return (
+          <section key={section.id} aria-label={section.label} className="flex flex-col pb-1">
+            <div className="group/section flex h-8 items-center gap-1.5 px-2.25">
+              <span className="text-label text-subtle-foreground">{section.label}</span>
+              {inSection.length > 0 && (
+                <span className="text-xs text-subtle-foreground tabular-nums">
+                  {inSection.length}
+                </span>
+              )}
+              {section.fixed && (
+                <Button
+                  size="sq-xs"
+                  intent="plain"
+                  aria-label={`New to-do in ${section.label}`}
+                  className="ms-auto opacity-0 group-hover/section:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100"
+                  onPress={() => setAdding(section.id)}
+                >
+                  <IconPlus />
+                </Button>
+              )}
+            </div>
+            {inSection.map((task) => (
+              <TodoRow key={task.id} task={task} overdue={section.id === "overdue"} />
+            ))}
+            {adding === section.id && (
+              <NewTodo section={section.id} onDone={() => setAdding(null)} />
+            )}
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
+const ROW = "mx-0.5 flex h-8 min-w-0 items-center gap-2.5 rounded-md px-1.75";
+const ROUND = "**:data-[slot=indicator]:rounded-full";
+
+function NewTodo({ section, onDone }: { section: DueGroup; onDone: () => void }) {
+  const [title, setTitle] = useState("");
   const create = useCreateTask();
   const { member } = useMember();
-  const add = () => {
-    const title = draft.trim();
-    if (!title) return;
-    setDraft("");
+  const save = () => {
+    const trimmed = title.trim();
+    if (!trimmed) return onDone();
+    setTitle("");
     create.mutate(
-      { title, assigneeMemberId: member.id },
+      { title: trimmed, assigneeMemberId: member.id, dueAt: dueFor(section) },
       { onError: (error) => crmErrorToast(error, "The to-do was not added") },
     );
   };
-  const now = new Date();
   return (
-    <SidebarSection label="To-dos">
-      <form
-        className="px-2 pb-1"
-        onSubmit={(event) => {
-          event.preventDefault();
-          add();
-        }}
-      >
-        <TextField aria-label="New to-do" maxLength={500} value={draft} onChange={setDraft}>
-          <Input placeholder="New to-do" autoComplete="off" />
-        </TextField>
-      </form>
-      {DUE_GROUPS.map((group) => {
-        const inGroup = tasks.filter((task) => dueGroup(task, now) === group.id);
-        if (inGroup.length === 0) return null;
-        return (
-          <div key={group.id} className="flex flex-col">
-            <span className="flex h-7 items-center gap-1.5 px-2.25 text-xs text-muted-foreground">
-              {group.label}
-              <span className="text-subtle-foreground tabular-nums">{inGroup.length}</span>
-            </span>
-            {inGroup.map((task) => (
-              <TodoRow key={task.id} task={task} overdue={group.id === "overdue"} />
-            ))}
-          </div>
-        );
-      })}
-    </SidebarSection>
+    <div className={ROW}>
+      <CheckboxField aria-hidden isDisabled className={ROUND}>
+        <Checkbox />
+      </CheckboxField>
+      <TextField aria-label="New to-do" maxLength={500} value={title} onChange={setTitle}>
+        <Input
+          plain
+          autoFocus
+          autoComplete="off"
+          className="h-8 px-0 text-sm"
+          onKeyDown={(event) => {
+            if (event.key === "Enter") save();
+            if (event.key === "Escape") onDone();
+          }}
+          onBlur={() => !title.trim() && onDone()}
+        />
+      </TextField>
+    </div>
   );
 }
 
@@ -89,11 +156,12 @@ function TodoRow({ task, overdue }: { task: CrmTask; overdue: boolean }) {
   const { href } = useWorkspacePaths();
   const done = !!task.completedAt;
   return (
-    <div className="mx-0.5 flex h-8 min-w-0 items-center gap-2.5 rounded-md px-1.75 hover:bg-hover">
+    <div className={`${ROW} hover:bg-hover`}>
       <CheckboxField
         aria-label={done ? `Reopen ${task.title}` : `Complete ${task.title}`}
         isSelected={done}
         onChange={(next: boolean) => toggle(task, next)}
+        className={ROUND}
       >
         <Checkbox />
       </CheckboxField>
@@ -105,7 +173,7 @@ function TodoRow({ task, overdue }: { task: CrmTask; overdue: boolean }) {
       </Link>
       {task.dueAt && (
         <span
-          className={`shrink-0 text-xs tabular-nums ${overdue ? "text-danger" : "text-muted-foreground"}`}
+          className={`shrink-0 rounded-md bg-secondary px-1.5 py-0.5 text-xs tabular-nums ${overdue ? "text-danger" : "text-muted-foreground"}`}
         >
           {dueLabel(task.dueAt)}
         </span>
