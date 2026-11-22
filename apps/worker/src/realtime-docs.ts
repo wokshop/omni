@@ -100,10 +100,7 @@ export async function onDocAppend(
   }
   if (at.locked) return refuse("locked");
   const sent = message.record;
-  const record =
-    sent.t === "update"
-      ? { t: "update" as const, e: sent.e, u: sent.u, by: `m:${memberId}` }
-      : sent;
+  const record = sent.t === "update" ? { ...sent, by: `m:${memberId}` } : sent;
   let seqNum: number | null;
   try {
     seqNum = await basin.append(docStream(nodeId), JSON.stringify(record), message.matchSeqNum);
