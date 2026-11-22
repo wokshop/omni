@@ -263,3 +263,43 @@ test("a connector whose elements are gone moves by itself, and one still joined 
   const line = (await body(ana, id)).scene.elements.find((e) => e.id === made.created.loose);
   expect(line).toMatchObject({ from: { at: [250, 180] }, to: { at: [450, 180] } });
 });
+
+test("a connector bound to a group follows the group when one of its children moves", async () => {
+  const { ana, agent } = await person();
+  const made = (await call(agent, "drive_create_canvas", {
+    name: "Grouped",
+    ops: [
+      { op: "add", kind: "sticky", text: "One", at: { x: 0, y: 0 }, ref: "one" },
+      { op: "add", kind: "sticky", text: "Two", at: { x: 300, y: 0 }, ref: "two" },
+      { op: "group", ids: ["one", "two"], ref: "pair" },
+      { op: "add", kind: "sticky", text: "Far", at: { x: 1200, y: 0 }, ref: "far" },
+      { op: "connect", from: "pair", to: "far", ref: "line" },
+    ],
+  })) as Answer & { canvas: { id: string }; created: Record<string, string> };
+  const before = (await body(ana, made.canvas.id)).scene.elements.find(
+    (e) => e.kind === "connector",
+  );
+  expect(before).toMatchObject({ from: { at: [500, 100] } });
+  const moved = await call(agent, "drive_edit_canvas", {
+    id: made.canvas.id,
+    ops: [{ op: "move", ids: [made.created.two], by: { dx: 300, dy: 0 } }],
+  });
+  expect(moved).not.toHaveProperty("error");
+  const line = (await body(ana, made.canvas.id)).scene.elements.find((e) => e.kind === "connector");
+  expect(line).toMatchObject({ from: { id: made.created.pair, at: [800, 100] } });
+});
+
+test("drive_fetch gives a long sticky's whole text", async () => {
+  const { agent } = await person();
+  const long = `${"Measure the roof, then the gutters. ".repeat(20)}End of note.`;
+  const made = (await call(agent, "drive_create_canvas", {
+    name: "Long note",
+    ops: [{ op: "add", kind: "sticky", text: long }],
+  })) as Answer & { canvas: { id: string } };
+  const fetched = (await call(agent, "drive_fetch", { id: made.canvas.id })) as {
+    text: string;
+    metadata: { truncated: boolean };
+  };
+  expect(fetched.text).toContain(JSON.stringify(long));
+  expect(fetched.metadata.truncated).toBe(false);
+});
