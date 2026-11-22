@@ -303,6 +303,26 @@ test("two tabs that take a board past its element limit together leave it readab
   two.ws.close();
 });
 
+test("an agent's text change and a tab's typing in the same sticky both stay, even in the words between", async () => {
+  const { ana, agent, node, scene } = await board([
+    { op: "add", kind: "sticky", text: "A unchanged Z", at: { x: 0, y: 0 } },
+  ]);
+  const sticky = find(scene, "A unchanged Z").id;
+  const open = await tab(ana.jar, node.id);
+  await open.seed(scene, 1);
+  const typing = open.change([{ op: "update", id: sticky, text: "A changed Z" }]);
+
+  const edited = await call(agent, "drive_edit_canvas", {
+    id: node.id,
+    ops: [{ op: "update", id: sticky, text: "B unchanged Y" }],
+  });
+  expect(edited).not.toHaveProperty("error");
+  await typing.send();
+
+  expect((await stream(ana, node.id)).elements[0]!.text).toBe("B changed Y");
+  open.ws.close();
+});
+
 test("a whole-board rewrite leaves alone what it does not change, so a tab's move made meanwhile stays", async () => {
   const { ana, agent, node, scene } = await board(STICKIES);
   const a = find(scene, "A").id;

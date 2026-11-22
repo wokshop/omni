@@ -212,3 +212,22 @@ test("an edit to a canvas whose nested groups thinned out keeps what was inside 
     { id: "kept", kind: "sticky", box: [0, 0, 200, 200], color: "pink", text: "Inside" },
   ]);
 });
+
+test("moving one end of a connector across the other redraws both ends", async () => {
+  const { ana, agent } = await person();
+  const made = (await call(agent, "drive_create_canvas", {
+    name: "Swap",
+    ops: [
+      { op: "add", kind: "sticky", text: "A", at: { x: 0, y: 0 }, ref: "a" },
+      { op: "add", kind: "sticky", text: "B", at: { x: 400, y: 0 }, ref: "b" },
+      { op: "connect", from: "a", to: "b" },
+    ],
+  })) as Answer & { canvas: { id: string }; created: Record<string, string> };
+  const moved = await call(agent, "drive_edit_canvas", {
+    id: made.canvas.id,
+    ops: [{ op: "move", ids: [made.created.b], to: { x: -400, y: 0 } }],
+  });
+  expect(moved).not.toHaveProperty("error");
+  const line = (await body(ana, made.canvas.id)).scene.elements.find((e) => e.kind === "connector");
+  expect(line).toMatchObject({ from: { at: [0, 100] }, to: { at: [-200, 100] } });
+});
