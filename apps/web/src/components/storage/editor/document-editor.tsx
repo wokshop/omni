@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useReportEditing } from "@/hooks/use-file-presence.ts";
 import { ApiError } from "@/lib/api.ts";
-import type { LiveDoc } from "@/lib/live-doc.ts";
+import type { LiveDoc, SharedLive } from "@/lib/live-doc.ts";
+import { keys } from "@/lib/query-keys.ts";
 import { fileType, TEXT_PREVIEW_BYTES } from "@/lib/file-kind.ts";
 import { storageChanged, type StorageNode } from "@/lib/storage.ts";
 import { placeOf } from "@/lib/storage-cache.ts";
@@ -57,6 +58,8 @@ export function canEditFile(node: StorageNode) {
 /** How a page joins its file's live document, and hears what happens to it. */
 export interface LiveSetup {
   orgId: string;
+  /** Opened through its share link by someone outside the workspace. */
+  shared?: SharedLive | undefined;
   contentVersion: number;
   /** The live document, once joined; null when the live layer is off, or on close. */
   onLive: (doc: LiveDoc | null) => void;
@@ -93,6 +96,7 @@ export function useEditSession(
   url: string,
   shareId: string | undefined,
   writable = true,
+  sharedLive = false,
 ) {
   const client = useQueryClient();
   const [mode, setMode] = useState<DocMode>("editing");
@@ -146,8 +150,14 @@ export function useEditSession(
 
   const save = () => {
     if (inFlight.current) return Promise.resolve(false);
-    running.current = saveNow();
+    running.current = live.current?.outsider ? settleOutside(live.current) : saveNow();
     return running.current;
+  };
+
+  const settleOutside = async (doc: LiveDoc) => {
+    await doc.settle();
+    setDirty(false);
+    return true;
   };
 
   const saveNow = async () => {
@@ -279,9 +289,18 @@ export function useEditSession(
         if (live.current || autosaves) fold();
       },
       live:
-        isMarkdown(node) && !shareId && base.current !== undefined
+        isMarkdown(node) && (!shareId || sharedLive) && base.current !== undefined
           ? ({
               orgId: node.orgId,
+              shared: shareId
+                ? {
+                    shareId,
+                    onAccess: () =>
+                      void client.invalidateQueries({
+                        queryKey: keys.storageLink(shareId, undefined).slice(0, -1),
+                      }),
+                  }
+                : undefined,
               contentVersion: base.current,
               onLive: (doc: LiveDoc | null) => {
                 live.current = doc;

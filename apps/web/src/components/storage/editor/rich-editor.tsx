@@ -159,6 +159,7 @@ function LivePage(props: EditorProps) {
     let gone = false;
     void openLiveDoc({
       orgId: live.orgId,
+      shared: live.shared,
       nodeId,
       contentVersion: live.contentVersion,
       seed: seedFrom(props.text),
