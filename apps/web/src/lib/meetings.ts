@@ -1,3 +1,4 @@
+import { withWorkspace } from "./current-workspace.ts";
 import { mutationOptions, queryOptions, type QueryClient } from "@tanstack/react-query";
 import type { Api } from "@omni/client";
 import type { InferRequestType, InferResponseType } from "hono/client";
@@ -24,6 +25,7 @@ export const meetingKeys = {
   enabled: () => [...meetingKeys.all(), "enabled"] as const,
   groups: () => [...meetingKeys.all(), "groups"] as const,
   group: (key: string) => [...meetingKeys.all(), "group", key] as const,
+  list: (group: string) => [...meetingKeys.all(), "list", group] as const,
   meeting: (id: string) => [...meetingKeys.all(), "meeting", id] as const,
   transcript: (id: string) => [...meetingKeys.all(), "transcript", id] as const,
   writes: () => [...meetingKeys.all(), "write"] as const,
@@ -63,6 +65,15 @@ export const meetingGroupQuery = (key: string) =>
       call(api.meetings.groups[":key"].$get({ param: { key } }, { init: { signal } })),
   });
 
+/** Every meeting in a group, newest first, whatever its status: failed and working ones too. */
+export const meetingListQuery = (group: string) =>
+  queryOptions({
+    queryKey: meetingKeys.list(group),
+    queryFn: ({ signal }) =>
+      call(api.meetings.$get({ query: { group, limit: "100" } }, { init: { signal } })),
+    select: (body) => body.meetings,
+  });
+
 export const meetingQuery = (id: string) =>
   queryOptions({
     queryKey: meetingKeys.meeting(id),
@@ -80,7 +91,7 @@ export const meetingTranscriptQuery = (id: string) =>
 
 /** Where the meeting's recording plays from; the Worker checks the meeting's grants. */
 export const meetingAudioUrl = (id: string) =>
-  api.meetings[":id"].audio.$url({ param: { id } }).toString();
+  withWorkspace(api.meetings[":id"].audio.$url({ param: { id } }).toString());
 
 /** Every meetings read is stale after a write or a `meetings.changed`. */
 export const meetingsChanged = (client: QueryClient) =>

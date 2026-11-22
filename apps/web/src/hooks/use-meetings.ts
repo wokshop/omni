@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { createDraft } from "@/lib/compose.ts";
+import { keys } from "@/lib/query-keys.ts";
 import { useAllMailboxes } from "./use-mail.ts";
-import { useWorkspaceSlug } from "./use-workspaces.ts";
+import { useCurrentWorkspace, useWorkspaceSlug } from "./use-workspaces.ts";
 import {
   changeMeetingMutation,
   decideActionMutation,
@@ -10,6 +11,7 @@ import {
   grantMeetingMutation,
   meetingGroupQuery,
   meetingGroupsQuery,
+  meetingListQuery,
   meetingQuery,
   meetingsEnabledQuery,
   meetingTranscriptQuery,
@@ -21,6 +23,7 @@ import {
 export const useMeetingsEnabled = () => useQuery(meetingsEnabledQuery()).data === true;
 export const useMeetingGroups = () => useQuery(meetingGroupsQuery());
 export const useMeetingGroup = (key: string) => useQuery(meetingGroupQuery(key));
+export const useMeetingList = (group: string) => useQuery(meetingListQuery(group));
 export const useMeeting = (id: string) => useQuery(meetingQuery(id));
 export const useMeetingTranscript = (id: string) => useQuery(meetingTranscriptQuery(id));
 
@@ -39,24 +42,34 @@ export function useMeetingWrites() {
 }
 
 /**
- * A meeting's follow-up email, as a draft in the person's own mailbox, opened in Drafts to read,
- * change and send. Nothing is sent from here.
+ * A meeting's follow-up email, as a draft in the person's own mailbox in this workspace, opened in
+ * Drafts to read, change and send. The action is accepted before the page leaves, so it is not
+ * offered again. Nothing is sent from here.
  */
 export function useMeetingDraft() {
+  const client = useQueryClient();
   const { data: mailboxes } = useAllMailboxes();
+  const orgId = useCurrentWorkspace()?.id;
   const navigate = useNavigate();
   const workspace = useWorkspaceSlug();
+  const decide = useMutation(decideActionMutation(client));
   return useMutation({
-    mutationFn: async (email: { to: string[]; subject: string; body: string }) => {
-      const mailbox = mailboxes?.[0];
+    mutationFn: async (input: {
+      actionId: string;
+      email: { to: string[]; subject: string; body: string };
+    }) => {
+      const usable = (mailboxes ?? []).filter((m) => m.orgId === orgId && m.status === "active");
+      const mailbox = usable.find((m) => m.kind === "personal" && m.role === "owner") ?? usable[0];
       if (!mailbox) throw new Error("no mailbox to write from");
       const draft = await createDraft({
         mailboxId: mailbox.id,
         kind: "new",
-        to: email.to.map((address) => ({ name: null, address })),
-        subject: email.subject,
-        bodyText: email.body,
+        to: input.email.to.map((address) => ({ name: null, address })),
+        subject: input.email.subject,
+        bodyText: input.email.body,
       });
+      await decide.mutateAsync({ id: input.actionId, accept: true });
+      await client.invalidateQueries({ queryKey: keys.draftLists() });
       await navigate({
         to: "/$workspace/mail/drafts",
         params: { workspace },

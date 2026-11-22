@@ -55,14 +55,14 @@ export function ActionItem({ action, canDecide }: { action: MeetingAction; canDe
               onPress={() =>
                 draft.mutate(
                   {
-                    to: payload.to ?? [],
-                    subject: payload.subject ?? "",
-                    body: payload.body ?? "",
+                    actionId: action.id,
+                    email: {
+                      to: payload.to ?? [],
+                      subject: payload.subject ?? "",
+                      body: payload.body ?? "",
+                    },
                   },
-                  {
-                    onSuccess: () => decide(true),
-                    onError: () => appToast.error("The draft could not be made"),
-                  },
+                  { onError: () => appToast.error("The draft could not be made") },
                 )
               }
             >

@@ -127,6 +127,14 @@ test("a recorded meeting reads as its client's group, its notes, actions and nam
   const origin = String(worker.url);
   const cookie = await signIn({ url: new URL(origin) }, db, address);
   const meetingId = await recordedCall(member.id, org.id, address);
+  const unfinished = await forMember(db, member.id).meetings.start({
+    title: "Llamada sin notas",
+    event: null,
+    attendees: [{ address, name: "Dana Ruiz" }],
+    groupKey: "domain:client.test",
+    consent: true,
+  });
+  if (unfinished.status !== "ok") throw new Error(unfinished.status);
   const context = await browser.newContext({
     viewport: { width: 1440, height: 900 },
     deviceScaleFactor: shots ? 2 : 1,
@@ -143,6 +151,7 @@ test("a recorded meeting reads as its client's group, its notes, actions and nam
   const sidebar = page.getByRole("link", { name: /client\.test/ });
   await sidebar.waitFor();
   await page.getByText("Diseño final listo el viernes").waitFor();
+  await page.getByRole("link", { name: /Llamada sin notas/ }).waitFor();
   if (shots) await page.screenshot({ path: join(shots, "group.png") });
 
   await page.getByRole("link", { name: /Entregas sitio web/ }).click();
@@ -184,6 +193,20 @@ test("a recorded meeting reads as its client's group, its notes, actions and nam
     "marta@client.test": "viewer",
     "ben@studio.example": "viewer",
   });
+
+  await dialog.getByRole("textbox", { name: "Email" }).press("Escape");
+  await dialog.waitFor({ state: "hidden" });
+  await page.getByRole("button", { name: "Open draft" }).click();
+  await expect.poll(() => page.url()).toContain("/mail/drafts");
+  await page.getByRole("textbox", { name: /Subject/ }).waitFor();
+  expect(await page.getByRole("textbox", { name: /Subject/ }).inputValue()).toBe(
+    "Acuerdos de la reunión",
+  );
+  const [email] = await db
+    .select()
+    .from(schema.meetingsActions)
+    .where(eq(schema.meetingsActions.kind, "email"));
+  expect(email?.state).toBe("done");
 
   const [task] = await db
     .select()

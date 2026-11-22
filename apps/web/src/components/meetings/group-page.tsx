@@ -2,7 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { Skeleton } from "skullet/react";
 import { EmptyState } from "@/components/empty/empty-state";
 import { StorageFrame } from "@/components/storage/storage-frame";
-import { useMeetingGroup, useMeetingGroups } from "@/hooks/use-meetings.ts";
+import { useMeetingGroup, useMeetingGroups, useMeetingList } from "@/hooks/use-meetings.ts";
 import { useWorkspaceSlug } from "@/hooks/use-workspaces.ts";
 import { groupTitle } from "@/lib/meetings.ts";
 
@@ -11,6 +11,8 @@ const DAY = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" 
 /** A series or a client's meetings as one page: where things stand, and what was decided when. */
 export function GroupPage({ groupKey }: { groupKey: string }) {
   const page = useMeetingGroup(groupKey);
+  const list = useMeetingList(groupKey);
+  const summaries = new Map(page.data?.meetings.map((m) => [m.id, m.summary]) ?? []);
   const groups = useMeetingGroups();
   const workspace = useWorkspaceSlug();
   const group = groups.data?.find((g) => g.groupKey === groupKey);
@@ -18,9 +20,9 @@ export function GroupPage({ groupKey }: { groupKey: string }) {
   return (
     <StorageFrame title={<h1 className="truncate text-md">{title}</h1>}>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <Skeleton loading={page.isPending} label="Loading">
-          {page.data && page.data.meetings.length === 0 ? (
-            <EmptyState figure="cabinet" title="No meetings with notes yet" />
+        <Skeleton loading={page.isPending || list.isPending} label="Loading">
+          {list.data && list.data.length === 0 ? (
+            <EmptyState figure="cabinet" title="No meetings yet" />
           ) : (
             <div className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-5 py-6">
               {page.data?.summary && <p className="text-sm">{page.data.summary}</p>}
@@ -42,7 +44,7 @@ export function GroupPage({ groupKey }: { groupKey: string }) {
               )}
               <section className="flex flex-col gap-2">
                 <h2 className="text-xs text-muted-foreground">Meetings</h2>
-                {page.data?.meetings.map((meeting) => (
+                {list.data?.map((meeting) => (
                   <Link
                     key={meeting.id}
                     to="/$workspace/meetings/$id"
@@ -57,9 +59,9 @@ export function GroupPage({ groupKey }: { groupKey: string }) {
                         {DAY.format(new Date(meeting.startedAt))}
                       </span>
                     </span>
-                    {meeting.summary && (
+                    {summaries.get(meeting.id) && (
                       <span className="line-clamp-2 text-xs text-muted-foreground">
-                        {meeting.summary}
+                        {summaries.get(meeting.id)}
                       </span>
                     )}
                   </Link>
