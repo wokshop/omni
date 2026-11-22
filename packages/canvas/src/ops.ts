@@ -206,6 +206,7 @@ function update(board: Board, op: Op<"update">) {
 function moveInto(board: Board, moving: CanvasElement[], into: string) {
   const frame = into === "board" ? undefined : board.get(into);
   if (frame && frame.kind !== "frame") throw new OpError(`"${into}" is not a frame.`);
+  touchAncestors(board, new Set(moving.map((element) => element.id)));
   for (const element of moving) {
     if (element.kind === "frame") throw new OpError("A frame cannot go inside another frame.");
     if (frame) element.parent = frame.id;
@@ -276,6 +277,8 @@ function connect(board: Board, op: Op<"connect">) {
 function arrange(board: Board, op: Op<"arrange">) {
   const items = op.ids.map((id) => board.get(id));
   refuseTied(items);
+  const inside = items.find((item) => items.some((other) => board.under(other.id).has(item.id)));
+  if (inside) throw new OpError(`"${inside.id}" is inside another element being arranged.`);
   const boxes = items.map((element) => board.boundsOf(element));
   if (boxes.some((box) => !box)) throw new OpError("Only elements with a place can be arranged.");
   const [x0, y0] = board.boundsOfAll(items)!;
