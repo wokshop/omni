@@ -8,8 +8,9 @@ name: iOS release
 #
 # xcode-27: App Store Connect takes only builds made with a recent iOS SDK; from April 2027 that is
 # the iOS 27 SDK (Xcode 27). macos-26 carries only Xcode 26, so the job runs on GitHub's Xcode 27
-# image (macOS 27, in preview) and fails before building if its Xcode is older. When GitHub ships a
-# `macos-27` label, move to it.
+# image and fails before building if its Xcode is older. `xcode-27` is a preview label: when GitHub
+# ships the GA label for Xcode 27 (likely `macos-27`), move to it. If this runner fails a release,
+# go back to `macos-26` and rerun this workflow by hand with the tag (fine until April 2027).
 # Settings come from Doppler `prd_github`, which syncs to the GitHub environment `production`
 # (docs/operations/releases.md lists them).
 on:
