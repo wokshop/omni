@@ -1,7 +1,7 @@
 import { crmErrorToast } from "@/components/crm/crm-errors.ts";
 import { useUpdateTask } from "@/hooks/use-crm-tasks.ts";
 import type { CalendarEvent } from "@/lib/calendar.ts";
-import { atMinutes, type Dragged, type Drop } from "@/lib/calendar-drag.ts";
+import { atMinutes, dropStart, type Dragged, type Drop } from "@/lib/calendar-drag.ts";
 import { dayKey, parseDayKey } from "@/lib/calendar-grid.ts";
 import { dueAtOf } from "@/lib/crm-tasks.ts";
 import { ownEvent } from "./week-grid.tsx";
@@ -22,7 +22,7 @@ function shiftOf(event: CalendarEvent, drop: Drop, shownOn?: Date) {
           new Date(start.getFullYear(), start.getMonth(), start.getDate() + days),
           start.getHours() * 60 + start.getMinutes(),
         )
-      : atMinutes(drop.day, drop.minutes);
+      : dropStart({ ...drop, minutes: drop.minutes });
   return Math.round((target.getTime() - start.getTime()) / 60_000);
 }
 
@@ -38,7 +38,7 @@ export function useCalendarDrop(move: (event: CalendarEvent, minutes: number) =>
       const dueAt =
         drop.minutes === undefined
           ? dueAtOf(dayKey(drop.day))
-          : atMinutes(drop.day, drop.minutes).toISOString();
+          : dropStart({ ...drop, minutes: drop.minutes }).toISOString();
       if (dueAt === item.task.dueAt) return;
       update.mutate(
         { id: item.task.id, dueAt },

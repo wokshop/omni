@@ -12,10 +12,14 @@ export type Dragged =
   | { kind: "event"; event: CalendarEvent; /** The day the dragged piece showed on. */ day?: Date }
   | { kind: "todo"; task: CrmTask };
 
-/** Where it was let go: a day, and on the hours, the minute its start lands on (below 0: the day before). */
+/**
+ * Where it was let go: a day, and on the hours, the wall-clock minute the dragged piece's top
+ * lands on and how long the item ran before that top (`lead`, elapsed minutes).
+ */
 export interface Drop {
   day: Date;
   minutes?: number;
+  lead?: number;
 }
 
 let current: { item: Dragged; grabMinutes: number; lead: number } | null = null;
@@ -74,3 +78,7 @@ export function timedTodo(task: CrmTask) {
 /** The moment `minutes` past local midnight of `day`. */
 export const atMinutes = (day: Date, minutes: number) =>
   new Date(day.getFullYear(), day.getMonth(), day.getDate(), 0, minutes);
+
+/** The instant a drop on the hours puts the item's start at: the slot, less the elapsed lead. */
+export const dropStart = (drop: Drop & { minutes: number }) =>
+  new Date(atMinutes(drop.day, drop.minutes).getTime() - (drop.lead ?? 0) * 60_000);

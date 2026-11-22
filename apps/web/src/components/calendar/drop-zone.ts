@@ -63,7 +63,10 @@ export function useDropZone(
       setHover(null);
       if (!onDrop || !current) return;
       event.preventDefault();
-      onDrop(current.item, timed ? { day, minutes: minutesAt(event) - current.lead } : { day });
+      onDrop(
+        current.item,
+        timed ? { day, minutes: minutesAt(event), lead: current.lead } : { day },
+      );
     },
   };
   return { handlers, hover, over };

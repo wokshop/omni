@@ -777,6 +777,25 @@ test("the morning piece of an overnight event dropped on the next day's row move
     .toEqual([["2026-11-25T22:00:00.000Z", "2026-11-26T00:00:00.000Z"]]);
 });
 
+test("the morning piece of an event that crossed a clock change moves by what it was dragged", async () => {
+  const { org, page, origin } = await invited();
+  await madeEvent(org.id, page, origin, "Spring retreat", [
+    "2026-03-28T23:30:00.000Z",
+    "2026-03-29T23:00:00.000Z",
+  ]);
+  await page.goto(new URL(`/${org.slug}/calendar?date=2026-03-30&view=week`, origin).toString());
+  await page
+    .locator('[data-day="2026-03-30"]')
+    .getByRole("button", { name: /Spring retreat/ })
+    .dragTo(page.locator('[data-day="2026-03-30"]'), {
+      sourcePosition: { x: 10, y: 4 },
+      targetPosition: { x: 20, y: 48 + 4 },
+    });
+  await expect
+    .poll(() => spanOf(org.id, "Spring retreat"))
+    .toEqual([["2026-03-29T00:30:00.000Z", "2026-03-30T00:00:00.000Z"]]);
+});
+
 test("Delete pressed in an open to-do leaves the selected event alone", async () => {
   const { org, member, page, origin } = await invited();
   await madeEvent(org.id, page, origin, "Focus time", [
