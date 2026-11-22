@@ -156,7 +156,8 @@ know. Then:
   with no `team` socket open gets an Expo push when push is on. The Worker sends it after
   answering the sender, so a send never waits on the realtime object.
 - `talk.changed` `{ threadId, reactions?, read? }`: a reaction changed, to both members, with
-  `reactions: { messageId, reactions }` as the note now has them; a read, to the reader's own
+  `reactions: { messageId, reactions, at }` as the note now has them, read at `at` (reactions
+  to one note are serialized, so a client skips a snapshot older than one it applied); a read, to the reader's own
   devices only, with `read: true`.
 
 A client applies what an event carries to the thread it has loaded: a note goes on top (once,
