@@ -382,7 +382,12 @@ function remove(board: Board, op: Op<"delete">) {
     const element = board.get(id);
     if (element.locked) throw new OpError(`"${id}" is locked: unlock it with \`update\` first.`);
     gone.add(element.id);
-    for (const below of board.under(element.id)) gone.add(below);
+    for (const below of board.under(element.id)) {
+      if (board.byId.get(below)?.locked) {
+        throw new OpError(`"${below}" inside "${id}" is locked: unlock it with \`update\` first.`);
+      }
+      gone.add(below);
+    }
   }
   for (const element of board.elements) {
     if (gone.has(element.id) || !element.from || !element.to) continue;

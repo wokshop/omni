@@ -65,9 +65,15 @@ export class Board {
       return union(points.map(([x, y]) => [x, y, 0, 0] satisfies Box));
     }
     if (element.kind !== "group") return null;
-    return union(
-      [...this.under(element.id)].map((id) => this.byId.get(id)?.box).filter((box) => !!box),
-    );
+    const boxes: Box[] = [];
+    for (const id of this.under(element.id)) {
+      const inside = this.byId.get(id);
+      if (inside?.box) boxes.push(inside.box);
+      for (const end of [inside?.from, inside?.to]) {
+        if (end) boxes.push([end.at[0], end.at[1], 0, 0]);
+      }
+    }
+    return union(boxes);
   }
 
   /** What the elements cover together. */
