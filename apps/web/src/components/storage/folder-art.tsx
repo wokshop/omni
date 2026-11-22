@@ -28,7 +28,7 @@ const PEEK: readonly (readonly Spot[])[] = [
 /**
  * A folder drawn as a pocket, tinted blue: a back panel, its first few items standing in it as
  * cards, and a front flap over their lower half. Without `node` (a folder being named), or with
- * `peek` off, the pocket is empty.
+ * `peek` off, the pocket is empty; a folder with nothing in it, or one being named, is grey.
  */
 export function FolderArt(props: {
   node?: StorageNode;
@@ -42,6 +42,13 @@ export function FolderArt(props: {
   const contents = useStorageList({ parentId: node?.id ?? "" }, { enabled });
   const cards = enabled ? pick(contents.nodes) : [];
   const spots = PEEK[cards.length - 1] ?? [];
+  const empty = !node || (contents.isSuccess && contents.nodes.length === 0);
+  const back = empty
+    ? "border-folder-empty-edge/40 bg-(image:--folder-empty-back)"
+    : "border-folder-edge/40 bg-(image:--folder-back)";
+  const front = empty
+    ? "border-folder-empty-edge/40 bg-(image:--folder-empty-front)"
+    : "border-folder-edge/40 bg-(image:--folder-front)";
   return (
     <div
       aria-hidden
@@ -49,12 +56,16 @@ export function FolderArt(props: {
       className="relative aspect-square overflow-hidden rounded-lg"
     >
       <span ref={anchor} className="absolute inset-0" />
-      <span className="absolute inset-0 rounded-lg border border-folder-edge/40 bg-(image:--folder-back) inset-shadow-[0_1px_0] inset-shadow-folder-shine" />
+      <span
+        className={`absolute inset-0 rounded-lg border ${back} inset-shadow-[0_1px_0] inset-shadow-folder-shine`}
+      />
       {fileUrl &&
         cards.map((card, i) => (
           <Card key={card.id} node={card} url={fileUrl(card)} style={place(spots[i] ?? ONE)} />
         ))}
-      <span className="absolute inset-x-0 top-[40%] bottom-0 rounded-lg border border-folder-edge/40 bg-(image:--folder-front) inset-shadow-[0_1px_0] inset-shadow-folder-shine backdrop-blur-sm" />
+      <span
+        className={`absolute inset-x-0 top-[40%] bottom-0 rounded-lg border ${front} inset-shadow-[0_1px_0] inset-shadow-folder-shine backdrop-blur-sm`}
+      />
     </div>
   );
 }
