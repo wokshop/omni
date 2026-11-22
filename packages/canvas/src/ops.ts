@@ -214,18 +214,22 @@ function moveInto(board: Board, moving: CanvasElement[], into: string) {
   }
 }
 
+function refuseTied(elements: CanvasElement[]) {
+  const tied = elements.find(
+    (element) => element.kind === "connector" && (element.from?.id ?? element.to?.id) !== undefined,
+  );
+  if (tied) {
+    throw new OpError(`"${tied.id}" moves with the elements it joins: move those instead.`);
+  }
+}
+
 function move(board: Board, op: Op<"move">) {
   const moving = op.ids.map((id) => board.get(id));
   const given = [op.to, op.by, op.place].filter((way) => way !== undefined).length;
   if (given > 1) throw new OpError("Give one of `to`, `by` or `place`.");
   if (!given && op.into === undefined)
     throw new OpError("Say where: `to`, `by`, `place` or `into`.");
-  const tied = moving.find(
-    (element) => element.kind === "connector" && (element.from?.id ?? element.to?.id) !== undefined,
-  );
-  if (given && tied) {
-    throw new OpError(`"${tied.id}" moves with the elements it joins: move those instead.`);
-  }
+  if (given) refuseTied(moving);
   const bounds = board.boundsOfAll(moving);
   if (given && !bounds) throw new OpError("Nothing in `ids` has a place on the board to move.");
   if (given && bounds) {
@@ -271,6 +275,7 @@ function connect(board: Board, op: Op<"connect">) {
 
 function arrange(board: Board, op: Op<"arrange">) {
   const items = op.ids.map((id) => board.get(id));
+  refuseTied(items);
   const boxes = items.map((element) => board.boundsOf(element));
   if (boxes.some((box) => !box)) throw new OpError("Only elements with a place can be arranged.");
   const [x0, y0] = board.boundsOfAll(items)!;
