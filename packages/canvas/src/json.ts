@@ -1,5 +1,6 @@
 import {
   CANVAS_MAX_ELEMENTS,
+  CANVAS_MAX_TEXT,
   CANVAS_MAX_FILES,
   FIELDS,
   sceneFileSchema,
@@ -51,7 +52,8 @@ export function sceneProblem(scene: Scene) {
 
 /**
  * Why changing `before` into `after` is refused for the canvas's size (more than
- * `CANVAS_MAX_ELEMENTS` elements or `CANVAS_MAX_FILES` tiles), or null. Only growth past a limit
+ * `CANVAS_MAX_ELEMENTS` elements, `CANVAS_MAX_FILES` tiles, or `CANVAS_MAX_TEXT` characters in
+ * one element), or null. Only growth past a limit
  * is refused: a board people took past one by editing at once stays readable and editable, and
  * can shrink.
  */
@@ -65,6 +67,13 @@ export function limitProblem(before: Scene, after: Scene) {
   if (tiles(after) > CANVAS_MAX_FILES && tiles(after) > tiles(before)) {
     return `A canvas shows at most ${CANVAS_MAX_FILES} Drive files.`;
   }
+  const was = new Map(before.elements.map((element) => [element.id, element.text?.length ?? 0]));
+  const long = after.elements.find(
+    (element) =>
+      (element.text?.length ?? 0) > CANVAS_MAX_TEXT &&
+      (element.text?.length ?? 0) > (was.get(element.id) ?? 0),
+  );
+  if (long) return `An element's text holds at most ${CANVAS_MAX_TEXT} characters ("${long.id}").`;
   return null;
 }
 

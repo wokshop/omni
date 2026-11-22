@@ -85,7 +85,7 @@ export const elementSchema = z
     /** An image that belongs to the canvas: its Drive file. */
     node: z.string().min(1).max(64).optional(),
     locked: z.boolean().optional(),
-    text: z.string().max(CANVAS_MAX_TEXT).optional(),
+    text: z.string().optional(),
   })
   .superRefine((element, context) => {
     const missing = (field: string) =>
