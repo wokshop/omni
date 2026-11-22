@@ -115,6 +115,7 @@ test("an event's recording, its summary and its notes show in the calendar's pan
   });
   if (started.status !== "ok") throw new Error(started.status);
   const pipeline = meetingsPipeline(db);
+  await pipeline.advance(started.meetingId, ["recording"], "writing");
   await pipeline.saveNotes(started.meetingId, s.org.id, {
     title: null,
     summary: "We moved the launch to Friday.",
