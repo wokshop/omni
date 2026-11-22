@@ -399,3 +399,46 @@ test("arranging a connector that still joins elements is refused and changes not
   expect(arranged.error).toContain("moves with the elements it joins");
   expect((await body(ana, made.canvas.id)).text).toBe(before);
 });
+
+test("moving a child out of a group redraws connectors bound to the group", async () => {
+  const { ana, agent } = await person();
+  const made = (await call(agent, "drive_create_canvas", {
+    name: "Leaving group",
+    ops: [
+      { op: "frame", title: "Elsewhere", ref: "frame" },
+      { op: "add", kind: "sticky", text: "1", at: { x: 0, y: 1000 }, ref: "one" },
+      { op: "add", kind: "sticky", text: "2", at: { x: 300, y: 1000 }, ref: "two" },
+      { op: "add", kind: "sticky", text: "3", at: { x: 600, y: 1000 }, ref: "three" },
+      { op: "group", ids: ["one", "two", "three"], ref: "row" },
+      { op: "add", kind: "sticky", text: "Far", at: { x: 1400, y: 1000 }, ref: "far" },
+      { op: "connect", from: "row", to: "far" },
+    ],
+  })) as Answer & { canvas: { id: string }; created: Record<string, string> };
+  const moved = await call(agent, "drive_edit_canvas", {
+    id: made.canvas.id,
+    ops: [{ op: "move", ids: [made.created.three], into: made.created.frame }],
+  });
+  expect(moved).not.toHaveProperty("error");
+  const line = (await body(ana, made.canvas.id)).scene.elements.find((e) => e.kind === "connector");
+  expect(line).toMatchObject({ from: { id: made.created.row, at: [500, 1100] } });
+});
+
+test("arranging a group together with something inside it is refused and changes nothing", async () => {
+  const { ana, agent } = await person();
+  const made = (await call(agent, "drive_create_canvas", {
+    name: "Nested arrange",
+    ops: [
+      { op: "add", kind: "sticky", text: "C", at: { x: 0, y: 0 }, ref: "c" },
+      { op: "add", kind: "sticky", text: "A", at: { x: 300, y: 0 }, ref: "a" },
+      { op: "add", kind: "sticky", text: "B", at: { x: 600, y: 0 }, ref: "b" },
+      { op: "group", ids: ["a", "b"], ref: "pair" },
+    ],
+  })) as Answer & { canvas: { id: string }; created: Record<string, string> };
+  const before = (await body(ana, made.canvas.id)).text;
+  const arranged = await call(agent, "drive_edit_canvas", {
+    id: made.canvas.id,
+    ops: [{ op: "arrange", ids: [made.created.c, made.created.pair, made.created.b], as: "row" }],
+  });
+  expect(arranged.error).toContain(`"${made.created.b}" is inside another element being arranged`);
+  expect((await body(ana, made.canvas.id)).text).toBe(before);
+});
