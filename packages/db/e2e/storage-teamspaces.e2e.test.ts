@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, expect, test } from "vitest";
 import { forMember } from "../src/for-member.ts";
 import { members, notifications, storageNodes } from "../src/schema/index.ts";
-import { handOverMemberStorage } from "../src/storage.ts";
+import { handOverMemberStorage, teamspaceAudience } from "../src/storage.ts";
 import { addFile, addFolder, setRole } from "./storage-support.ts";
 import { createMember, createOrg, createTestDatabase } from "./support.ts";
 
@@ -49,6 +49,7 @@ test("a private teamspace is reached by its members alone, and nobody else sees 
   expect(await cyStorage.search("nda")).toEqual([]);
   expect((await benStorage.search("nda")).map((node) => node.id)).toEqual([contract.id]);
   expect(await cyStorage.recent()).toEqual([]);
+  expect((await teamspaceAudience(db, legal.id)).toSorted()).toEqual([ana.id, ben.id].toSorted());
   expect((await benStorage.recent()).map((node) => node.id)).toEqual([contract.id]);
 });
 

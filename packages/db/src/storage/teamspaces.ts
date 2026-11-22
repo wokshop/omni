@@ -7,7 +7,7 @@ import {
   storageTeamspaces,
   storageUploads,
 } from "../schema/storage.ts";
-import { loadMember, type StorageMember } from "./access.ts";
+import type { StorageMember } from "./access.ts";
 import { cleanName, deleteSubtree, lockTree, teamspaceDrive, type Drive } from "./core.ts";
 
 export type StorageTeamspaceRole = (typeof storageTeamspaceMembers.role.enumValues)[number];
@@ -379,21 +379,19 @@ export function teamspaceOperations(db: Db, load: () => Promise<StorageMember | 
  * it (who is editing a file, a live document's changes). Empty when there is no such teamspace.
  */
 export async function teamspaceAudience(ex: Db, teamspaceId: string) {
-  const [teamspace] = await ex
-    .select({ orgId: storageTeamspaces.orgId })
-    .from(storageTeamspaces)
-    .where(eq(storageTeamspaces.id, teamspaceId));
-  if (!teamspace) return [];
-  const everyone = await ex
-    .select({ id: members.id, role: members.role })
-    .from(members)
-    .where(eq(members.organizationId, teamspace.orgId));
-  const reached: string[] = [];
-  for (const { id } of everyone) {
-    const member = await loadMember(ex, id);
-    if (member && (await teamspaceReach(ex, member, teamspaceId))) reached.push(id);
-  }
-  return reached;
+  const rows = (await ex.execute(sql`
+    select m.id from ${storageTeamspaces} t
+      join ${members} m on m.organization_id = t.org_id
+      left join ${storageTeamspaceMembers} tm
+        on tm.teamspace_id = t.id and tm.member_id = m.id
+    where t.id = ${teamspaceId} and (
+      tm.member_id is not null
+      or 'owner' = any(string_to_array(replace(m.role, ' ', ''), ','))
+      or 'admin' = any(string_to_array(replace(m.role, ' ', ''), ','))
+      or (not t.private
+        and not 'freelancer' = any(string_to_array(replace(m.role, ' ', ''), ',')))
+    )`)) as unknown as { id: string }[];
+  return rows.map((row) => row.id);
 }
 
 /**

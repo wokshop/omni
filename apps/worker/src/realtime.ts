@@ -12,6 +12,7 @@ import {
   mailboxAudience,
   membersAccepting,
   pushTokensFor,
+  teamspaceAudience,
   type Db,
   type NotificationKind,
 } from "@omni/db";
@@ -141,17 +142,28 @@ export class Realtime extends DurableObject<Env> {
     passOnRecords(this.ctx, nodeId, events);
   }
 
+  private async teamspaceAudience(teamspaceId: string | null | undefined) {
+    if (!teamspaceId) return new Set<string>();
+    const { db, close } = openDb(this.env, 1);
+    try {
+      return new Set(await teamspaceAudience(db, teamspaceId));
+    } finally {
+      await close({ timeout: 0 });
+    }
+  }
+
   async storageChanged(
     space: StorageNodeSpace,
     ownerMemberId: string | null,
     parentIds: (string | null)[] = [],
     teamspaceId?: string | null,
   ) {
+    const reaching = space === "teamspace" ? await this.teamspaceAudience(teamspaceId) : null;
     const sockets =
       space === "teamspace"
         ? this.ctx.getWebSockets().filter((socket) => {
             const tag = this.ctx.getTags(socket)[0];
-            return !tag?.startsWith("sync:") && !tag?.startsWith("watch:");
+            return !!tag && !!reaching?.has(tag);
           })
         : ownerMemberId === null
           ? this.ctx.getWebSockets()

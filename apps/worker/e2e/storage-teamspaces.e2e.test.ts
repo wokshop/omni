@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { startStorageStack, type StorageStack } from "./storage-support.ts";
+import { WEB_ORIGIN, type CookieJar } from "./support.ts";
 
 let stack: StorageStack;
 beforeAll(async () => {
@@ -89,4 +90,40 @@ test("members are managed by owners, and a teamspace keeps one", async () => {
   expect((await stack.api(ben.jar, "DELETE", `/teamspaces/${id}/members/${ben.id}`)).status).toBe(
     409,
   );
+});
+
+async function listen(jar: CookieJar) {
+  const url = new URL("/api/realtime", stack.worker.url);
+  url.protocol = "ws:";
+  const socket = new WebSocket(url, {
+    headers: { cookie: jar.header, origin: WEB_ORIGIN },
+  } as unknown as string[]);
+  const received: Record<string, unknown>[] = [];
+  socket.addEventListener("message", (e) => received.push(JSON.parse(String(e.data))));
+  await new Promise<void>((resolve, reject) => {
+    socket.addEventListener("open", () => resolve());
+    socket.addEventListener("error", () => reject(new Error("websocket failed to open")));
+  });
+  return { socket, received };
+}
+
+test("a change in a private teamspace is announced to who reaches it, never to the rest", async () => {
+  const org = await stack.company(`ts-${randomUUID().slice(0, 8)}`);
+  const ana = await stack.member(org.id);
+  const cy = await stack.member(org.id);
+  const { id } = (await stack.api(ana.jar, "POST", "/teamspaces", { name: "Board", private: true }))
+    .body.teamspace as { id: string };
+  const [anaHears, cyHears] = [await listen(ana.jar), await listen(cy.jar)];
+
+  await stack.upload(ana.jar, { teamspaceId: id }, "minutes.txt", bytes("quiet"));
+  await expect
+    .poll(() => anaHears.received.some((e) => e.type === "storage.changed" && e.teamspaceId === id))
+    .toBe(true);
+  await stack.upload(ana.jar, { space: "shared" }, "notice.txt", bytes("for all"));
+  await expect
+    .poll(() => cyHears.received.some((e) => e.type === "storage.changed" && e.space === "shared"))
+    .toBe(true);
+  expect(cyHears.received.filter((e) => e.teamspaceId === id)).toEqual([]);
+  anaHears.socket.close();
+  cyHears.socket.close();
 });
