@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { createOrgWithOwner } from "@omni/db";
+import { createOrgWithOwner, schema } from "@omni/db";
+import { and, eq } from "drizzle-orm";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright-core";
 import { afterAll, afterEach, beforeAll, expect, test } from "vitest";
 import {
@@ -74,7 +75,15 @@ async function inbox(slug: string, subjects: string[]) {
   const page = await context.newPage();
   await page.goto(new URL("/inbox", origin).toString());
   for (const subject of subjects) await page.getByRole("row", { name: subject }).waitFor();
-  return page;
+  const access = and(
+    eq(schema.mailboxAccess.mailboxId, own.id),
+    eq(schema.mailboxAccess.memberId, acme.memberId),
+  );
+  return {
+    page,
+    revoke: () => db.delete(schema.mailboxAccess).where(access),
+    regrant: () => grant(db, acme.orgId, own.id, acme.memberId),
+  };
 }
 
 const DONE = /\/api\/threads\/[^/]+\/done(\?|$)/;
@@ -98,7 +107,7 @@ async function seenWithin(page: Page, subjects: string[], ms: number) {
 }
 
 test("a thread marked done while the one before is still settling never comes back", async () => {
-  const page = await inbox("done-race", ["Quarterly numbers", "Board deck"]);
+  const { page } = await inbox("done-race", ["Quarterly numbers", "Board deck"]);
   let posts = 0;
   await page.route(DONE, async (route) => {
     posts += 1;
@@ -112,12 +121,18 @@ test("a thread marked done while the one before is still settling never comes ba
 });
 
 test("a Done the server refuses brings the thread back with an error", async () => {
-  const page = await inbox("done-refused", ["Quarterly numbers"]);
-  await page.route(DONE, (route) =>
-    route.fulfill({ status: 500, contentType: "application/json", body: "{}" }),
-  );
+  const { page, revoke, regrant } = await inbox("done-refused", ["Quarterly numbers"]);
+  const statuses: number[] = [];
+  await page.route(DONE, async (route) => {
+    await revoke();
+    const response = await route.fetch();
+    statuses.push(response.status());
+    await regrant();
+    await route.fulfill({ response });
+  });
   await markDone(page, "Quarterly numbers");
-  await page.getByText("Something went wrong. Try again.").waitFor();
+  await page.getByText("That's no longer here.").waitFor();
+  expect(statuses).toEqual([404]);
   expect(await page.getByRole("row", { name: "Quarterly numbers" }).isVisible()).toBe(true);
 });
 

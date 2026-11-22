@@ -91,15 +91,17 @@ export function threadWithPendingEffects(client: QueryClient, thread: Thread) {
 
 /**
  * Undoes a failed action: puts back the cache as it was before it, then re-applies the actions
- * still pending since, so their threads don't come back with it.
+ * still pending since, so their threads don't come back with it. Lists first fetched while it
+ * was pending are not in the snapshot, so the thread and every list refetch too.
  */
 export function restoreFailed(
   client: QueryClient,
   snapshot: Snapshot | undefined,
-  variables: unknown,
+  variables: { threadId: string },
 ) {
   restore(client, snapshot);
   for (const effect of pendingEffects(client, variables)) applyEffect(client, effect);
+  void invalidateThread(client, variables.threadId);
 }
 
 /**
