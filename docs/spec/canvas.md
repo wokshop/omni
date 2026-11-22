@@ -392,9 +392,8 @@ Canvas "Roof repair" · 24 elements · 2 frames · board 0,0 to 3200,900
 | `packages/db`                             | Images upload into a canvas as they do into a doc                                                                                                                                                                                     |
 | `apps/web/src/components/storage/canvas/` | The editor (Rodrigo, from Figma)                                                                                                                                                                                                      |
 
-`@omni/canvas` is pure logic, like `@omni/docs`, and earns unit tests of its own. This means
-adding it to `UNIT_TEST_ROOTS` in `scripts/check-tests.mjs`, a policy change for the owner to
-approve (below).
+`@omni/canvas` is pure logic, like `@omni/docs`, and is proven the same way: through the
+Worker's e2e tests on the real stack, which run it end to end. It gets no unit tests of its own.
 
 ## Limits
 
@@ -422,7 +421,7 @@ A change that would pass a limit is refused whole, in the editor and for agents 
 - **A canvas inside a doc,** as a block. The reverse of file tiles, and next once both exist.
 - **Live co-editing for people outside the workspace,** as for docs.
 - **Desktop sync names** a canvas as Drive does, with no extension, and syncs its JSON body. Next:
-  the File Provider shows `<name>.omnicanvas`, as docs will gain `.md`.
+  the File Provider shows `<name>.ocv`, as docs will gain `.md`.
 - **iOS.** The iOS app shows a canvas's thumbnail and opens nothing more until Rodrigo plans it.
   `@omni/canvas` has no DOM, so an iOS viewer can reuse its geometry.
 - **Pinning a tile to a version** of its file. Tiles show the file as it is now.
@@ -435,7 +434,7 @@ One stack, rooted on `main` once #705 to #707 merge. Each layer is one PR, throu
 | #   | Layer                                                                                                            | Depends on   |
 | --- | ---------------------------------------------------------------------------------------------------------------- | ------------ |
 | 0   | This spec                                                                                                        |              |
-| K1  | `@omni/canvas`: type, scene, JSON, the Yjs model, rewrite, ops, text, outline, geometry, `renderSvg`, unit tests | 0            |
+| K1  | `@omni/canvas`: type, scene, JSON, the Yjs model, rewrite, ops, text, outline, geometry, `renderSvg`, proven by K2 and K3's e2e | 0            |
 | K2  | Storage: the type in Drive, the text reader, image uploads, thumbnails, the live layer taking the type's reader  | K1, #705–707 |
 | K3  | Agents: `drive_create_canvas`, `drive_edit_canvas`, `drive_fetch` outline                                        | K2           |
 | K4  | Web: the editor, file tiles, export (Rodrigo, from the Figma frames)                                             | K2           |
@@ -444,21 +443,11 @@ K3 and K4 are independent of each other. K4 waits for Figma; K1 to K3 do not.
 
 ## Open questions
 
-- [ ] Allow unit tests in `packages/canvas` (`scripts/check-tests.mjs`). The alternative is
-      proving its logic only through Worker e2e tests, as `@omni/docs` does today.
 - [ ] Frames inside frames. Left out to keep PDF pages and the outline simple; ask again once
       people use frames.
-- [ ] The desktop name for a canvas (`.omnicanvas` above), decided with the doc's `.md` mapping.
 
 ## Verify
 
-- `packages/canvas` unit tests (if approved): `sceneToJson(sceneFromJson(x))` gives back `x`
-  byte for byte, one element per line. `rewriteCanvas` to a scene that changes one sticky
-  produces an update that touches only that sticky. Two documents that each set the same
-  element's `box` and exchange updates converge on one of the two boxes whole. A parent cycle,
-  a missing parent and a dangling connector read as a valid scene. `canvasText` lists frame
-  titles first and holds no ids or keys. `renderSvg` escapes `<script>` in text. Text layout
-  wraps the same lines as a recorded browser layout of the app font.
 - `apps/worker/e2e/drive-canvas.e2e.test.ts`:
   - An agent's canvas is named without an extension, has the canvas type, and keeps it after an
     edit. Its body parses as a scene, one element per line.
@@ -474,6 +463,10 @@ K3 and K4 are independent of each other. K4 waits for Figma; K1 to K3 do not.
     records, the file's next version holds the tab's move, both texts and the agent's changes,
     and the version is the agent's.
   - The tab and the agent both move sticky C at once: both settle on one box, whole.
+  - The agent replaces the whole board with `scene` while the tab drags sticky D, which the new
+    scene leaves as it was. The tab's drag survives, and only the elements that differ changed.
+  - Two tabs regroup the same two elements into each other at once. Both tabs and the saved body
+    read a valid scene with no cycle, and the same one.
   - A canvas edited past 200 records opens from its snap after the stream before it is trimmed
     (as `drive-live` proves for docs).
 - `apps/worker/e2e/drive-canvas-access.e2e.test.ts`:
