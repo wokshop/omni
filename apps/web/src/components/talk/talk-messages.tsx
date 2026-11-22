@@ -1,20 +1,18 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { cn } from "cn";
+import { Fragment } from "react";
 import { FileGlyph } from "@/components/storage/file-glyph";
 import { Button } from "@/components/ui/button";
 import { Link } from "@/components/ui/link";
+import { useReact } from "@/hooks/use-talk.ts";
 import { fileType } from "@/lib/file-kind.ts";
-import { keys } from "@/lib/query-keys.ts";
-import { fileUrl, isImage, react, type TalkMessage, type TalkPerson } from "@/lib/talk.ts";
-import { TalkFace } from "./presence-stack";
+import { fileUrl, isImage, type TalkMessage } from "@/lib/talk.ts";
 
 const GAP_MS = 60 * 60_000;
 const QUICK = ["👍", "❤️", "😂", "🎉"];
-const ROW = "flex min-w-0 items-start gap-2.5 px-3.5";
 
 const timeLine = (at: Date, now = new Date()) => {
   const time = at.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-  if (at.toDateString() === now.toDateString()) return `Today ${time}`;
+  if (at.toDateString() === now.toDateString()) return time;
   const day = at.toLocaleDateString(undefined, { month: "short", day: "numeric" });
   return `${day}, ${time}`;
 };
@@ -28,154 +26,155 @@ const bytes = (size: number) =>
 
 const typeOf = (name: string) => name.split(".").at(-1)?.toUpperCase() ?? "File";
 
-function Reactions(props: { message: TalkMessage; meId: string }) {
-  const client = useQueryClient();
-  const toggle = useMutation({
-    mutationFn: ({ emoji, on }: { emoji: string; on: boolean }) =>
-      react(props.message.id, emoji, on),
-    onSettled: () =>
-      client.invalidateQueries({ queryKey: keys.talkMessages(props.message.threadId) }),
-  });
-  const reactions = props.message.reactions;
+function useToggle(message: TalkMessage, meId: string) {
+  const toggle = useReact(message.threadId);
   const has = (emoji: string) =>
-    reactions.some((r) => r.emoji === emoji && r.memberIds.includes(props.meId));
+    message.reactions.some((r) => r.emoji === emoji && r.memberIds.includes(meId));
+  const set = (emoji: string, on: boolean) => toggle.mutate({ messageId: message.id, emoji, on });
+  return { has, set };
+}
+
+function Reactions(props: { message: TalkMessage; meId: string; mine: boolean }) {
+  const { has, set } = useToggle(props.message, props.meId);
+  if (props.message.reactions.length === 0) return null;
   return (
-    <span className="ms-auto flex shrink-0 items-center gap-0.5 self-center">
-      {reactions.map((r) => (
+    <div className={cn("flex items-center gap-0.5", props.mine && "flex-row-reverse")}>
+      {props.message.reactions.map((r) => (
         <Button
           key={r.emoji}
-          intent="ink"
+          intent="outline"
           size="text"
           isCircle
           aria-pressed={has(r.emoji)}
           aria-label={`${r.emoji} ${r.memberIds.length}`}
-          onPress={() => toggle.mutate({ emoji: r.emoji, on: !has(r.emoji) })}
-          className={cn(
-            "h-5 px-1.5 text-ink-muted tabular-nums",
-            has(r.emoji) && "bg-ink-hover text-ink-foreground",
-          )}
+          onPress={() => set(r.emoji, !has(r.emoji))}
+          className={cn("h-5 px-1.5 tabular-nums shadow-none", has(r.emoji) && "bg-accent")}
         >
           {r.emoji}
           {r.memberIds.length > 1 && <span>{r.memberIds.length}</span>}
         </Button>
       ))}
-      <span className="flex opacity-0 transition-opacity duration-150 group-hover/note:opacity-100 group-focus-within/note:opacity-100 pointer-coarse:opacity-100">
-        {QUICK.filter((emoji) => !has(emoji)).map((emoji) => (
-          <Button
-            key={emoji}
-            intent="ink"
-            size="sq-2xs"
-            aria-label={`React ${emoji}`}
-            onPress={() => toggle.mutate({ emoji, on: true })}
-            className="text-xs"
-          >
-            {emoji}
-          </Button>
-        ))}
-      </span>
+    </div>
+  );
+}
+
+function QuickReactions(props: { message: TalkMessage; meId: string; mine: boolean }) {
+  const { has, set } = useToggle(props.message, props.meId);
+  return (
+    <span
+      className={cn(
+        "absolute top-0 flex opacity-0 transition-opacity duration-150 group-hover/note:opacity-100 group-focus-within/note:opacity-100 pointer-coarse:opacity-100",
+        props.mine ? "start-0" : "end-0",
+      )}
+    >
+      {QUICK.filter((emoji) => !has(emoji)).map((emoji) => (
+        <Button
+          key={emoji}
+          intent="ghost"
+          size="sq-2xs"
+          aria-label={`React ${emoji}`}
+          onPress={() => set(emoji, true)}
+          className="text-xs"
+        >
+          {emoji}
+        </Button>
+      ))}
     </span>
   );
 }
 
-function Attachment(props: { message: TalkMessage }) {
+function Attachment(props: { message: TalkMessage; mine: boolean }) {
   const file = props.message.file!;
   const href = file.nodeId ? fileUrl(props.message.id) : undefined;
-  const mark =
-    href && isImage(file.mimeType) ? (
-      <img
-        src={href}
-        alt={file.name}
-        loading="lazy"
-        className="size-8 shrink-0 rounded-md bg-ink-hover object-cover"
-      />
-    ) : (
-      <span className="grid size-8 shrink-0 place-items-center text-ink-muted *:size-4">
+  if (href && isImage(file.mimeType)) {
+    return (
+      <Link href={href} target="_blank" rel="noreferrer" className="block hover:opacity-90">
+        <img
+          src={href}
+          alt={file.name}
+          loading="lazy"
+          className="aspect-[4/3] w-44 rounded-2xl border border-border bg-secondary object-cover"
+        />
+      </Link>
+    );
+  }
+  const chip = (
+    <span
+      className={cn(
+        "flex max-w-56 min-w-0 items-center gap-2 rounded-2xl px-2.5 py-1.5",
+        props.mine ? "bg-primary text-primary-foreground" : "bg-secondary text-foreground",
+      )}
+    >
+      <span className="shrink-0 opacity-70 *:size-4">
         <FileGlyph kind={fileType(file.name, file.mimeType).kind} />
       </span>
-    );
-  const body = (
-    <span className="flex min-w-0 items-center gap-2.5">
-      {mark}
-      <span className="flex min-w-0 flex-col gap-0.5">
-        <span className="truncate text-sm/5 text-ink-foreground">{file.name}</span>
-        <span className="truncate text-xs/4 text-ink-muted tabular-nums">
+      <span className="flex min-w-0 flex-col">
+        <span className="truncate text-sm/5">{file.name}</span>
+        <span className="truncate text-xs/4 opacity-70 tabular-nums">
           {typeOf(file.name)} • {bytes(file.size)}
         </span>
       </span>
     </span>
   );
   return href ? (
-    <Link href={href} target="_blank" rel="noreferrer" className="min-w-0 hover:opacity-85">
-      {body}
+    <Link href={href} target="_blank" rel="noreferrer" className="block min-w-0 hover:opacity-90">
+      {chip}
     </Link>
   ) : (
-    <span className="min-w-0 opacity-50">{body}</span>
+    <span className="block min-w-0 opacity-50">{chip}</span>
   );
 }
 
-function Note(props: {
-  message: TalkMessage;
-  meId: string;
-  face: Pick<TalkPerson, "name" | "image">;
-  showFace: boolean;
-}) {
+function Note(props: { message: TalkMessage; meId: string; tail: boolean }) {
   const { message } = props;
+  const mine = message.authorMemberId === props.meId;
   return (
-    <div className={cn("group/note py-1", ROW)}>
-      <span className="mt-0.5 w-4 shrink-0">
-        {props.showFace && <TalkFace person={props.face} size={16} />}
-      </span>
-      <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-        {message.body && (
-          <p className="text-sm/5 break-words whitespace-pre-wrap text-ink-foreground">
-            {message.body}
-          </p>
-        )}
-        {message.file && <Attachment message={message} />}
-      </div>
-      <Reactions message={message} meId={props.meId} />
+    <div
+      className={cn(
+        "group/note relative flex flex-col gap-1",
+        mine ? "items-end ps-20" : "items-start pe-20",
+        props.tail && "mb-1.5",
+      )}
+    >
+      {message.body && (
+        <p
+          className={cn(
+            "max-w-full rounded-2xl px-3 py-1.5 text-sm/5 break-words whitespace-pre-wrap",
+            mine ? "bg-primary text-primary-foreground" : "bg-secondary text-foreground",
+          )}
+        >
+          {message.body}
+        </p>
+      )}
+      {message.file && <Attachment message={message} mine={mine} />}
+      <Reactions message={message} meId={props.meId} mine={mine} />
+      <QuickReactions message={message} meId={props.meId} mine={mine} />
     </div>
   );
 }
 
-/** A thread's notes, oldest first, in sections that each open on a time line. */
-export function TalkMessages(props: {
-  messages: TalkMessage[];
-  meId: string;
-  me: Pick<TalkPerson, "name" | "image">;
-  them: Pick<TalkPerson, "name" | "image">;
-}) {
-  const sections: TalkMessage[][] = [];
-  for (const message of props.messages.toReversed()) {
-    const last = sections.at(-1)?.at(-1);
-    const apart = !last || Date.parse(message.createdAt) - Date.parse(last.createdAt) > GAP_MS;
-    if (apart) sections.push([message]);
-    else sections.at(-1)!.push(message);
-  }
+/** A thread's notes as bubbles, oldest first, a time line wherever an hour passes. */
+export function TalkMessages(props: { messages: TalkMessage[]; meId: string }) {
+  const ordered = props.messages.toReversed();
   return (
-    <div className="flex flex-col">
-      {sections.map((section) => (
-        <section
-          key={section[0]!.id}
-          className="border-t border-ink-rule py-2 first:border-t-0 first:pt-1"
-        >
-          <h3 className="px-3.5 pb-1 text-xs/5 text-ink-muted tabular-nums">
-            {timeLine(new Date(section[0]!.createdAt))}
-          </h3>
-          {section.map((message, i) => {
-            const mine = message.authorMemberId === props.meId;
-            return (
-              <Note
-                key={message.id}
-                message={message}
-                meId={props.meId}
-                face={mine ? props.me : props.them}
-                showFace={section[i - 1]?.authorMemberId !== message.authorMemberId}
-              />
-            );
-          })}
-        </section>
-      ))}
+    <div className="flex flex-col gap-0.5 px-3 py-2">
+      {ordered.map((message, i) => {
+        const before = ordered[i - 1];
+        const after = ordered[i + 1];
+        const at = Date.parse(message.createdAt);
+        const newHour = !before || at - Date.parse(before.createdAt) > GAP_MS;
+        const tail = !!after && after.authorMemberId !== message.authorMemberId;
+        return (
+          <Fragment key={message.id}>
+            {newHour && (
+              <p className="py-1.5 text-center text-xs text-muted-foreground tabular-nums">
+                {timeLine(new Date(at))}
+              </p>
+            )}
+            <Note message={message} meId={props.meId} tail={tail} />
+          </Fragment>
+        );
+      })}
     </div>
   );
 }

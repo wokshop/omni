@@ -22,18 +22,17 @@ and rules (`docs/spec/modules.md`), because it owns tables and reads Storage thr
   else is online, there is no stack.
 - **Everyone.** `+n` opens the full list: online teammates first, then the others, each with
   their unread count. Any of them opens a conversation; an offline teammate reads it next time.
-- **The window.** Opens just under the face it came from (or `+n`), kept on screen. A solid
-  black panel (the `ink` tokens, the same in either theme), compact like a command menu:
-  - a one-line header: their picture, name, a green dot and `Active now` while they are online,
-    expand and close;
-  - the notes in sections, each opening on a muted time line wherever an hour passes, with a
-    rule between sections; a row is a small face (on the first of a run) and the text, and a file
-    is a row of its own: an image's thumbnail or the file's glyph, its name, and `PNG • 5 KB`;
-    reactions sit at the row's end, with a quick four on hover;
-  - under the panel, the composer as its own black pill: `Note to <first name>…`, attach (+) and
-    a white square send button with an up arrow. Dropping files on either sends them.
-  - Expand makes it wider and taller, still floating under the face. One window is open at a
-    time; opening another teammate replaces it.
+- **The window.** A small island just under the face it was opened from (or `+n`), kept on
+  screen: the overlay surface, a touch translucent over a blur of the page, 288px wide.
+  - A one-line header: their name and a green dot while they are online; close shows on hover.
+  - The notes as bubbles: yours on the right in primary, theirs on the left in secondary. A time
+    line wherever an hour passes. An image is a rounded picture; any other file a chip with its
+    glyph, name and `PNG • 5 KB`. Reactions are chips under a note; four quick ones appear beside
+    a bubble on hover.
+  - The composer inside the island at its foot: `Note to <first name>…`, attach (+) and a round
+    send button with an up arrow. Dropping files on the island sends them.
+  - No expanded mode: it stays small. One window is open at a time; opening another teammate
+    replaces it.
 - **Unread and notifying.** A teammate's picture carries a dot while you have unread notes from
   them. A note that arrives while its window is not open (or Omni is in the background) shows a
   system notification, when desktop notifications are on for this device, and opens the window
@@ -99,6 +98,10 @@ Opening a file is `GET /api/talk/messages/:id/file`: Talk checks the note is in 
 threads, then Storage's own doors decide. The sender is sent to the file's content through the
 member door, the recipient through the share link their grant opens (read fresh each time, since
 a link can be reset).
+
+The folder drops go into is shared with nobody else: if the sender shares their `Talk` folder in
+Drive, the next drop makes a new one, so a later file is never visible to that folder's
+grantees. Each drop also tells the sender's open Drive listings that the folder changed.
 
 Upload is one request: `POST /api/talk/threads/:id/files?name=…` with the bytes as the body and
 its `content-length`, up to `STORAGE_MAX_FILE_BYTES` and the workspace's storage limit, like

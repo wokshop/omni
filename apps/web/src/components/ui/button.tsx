@@ -39,11 +39,6 @@ export const buttonStyles = tv({
         "border-0 [--btn-bg:transparent] [--btn-foreground:var(--color-foreground)] [--btn-icon:var(--color-muted-foreground)] [--btn-outline:var(--color-ring)] [--btn-overlay:var(--color-accent)] aria-expanded:[--btn-bg:var(--color-accent)] aria-pressed:[--btn-bg:var(--color-accent)] aria-pressed:[--btn-icon:var(--color-foreground)]",
       plain:
         "border-0 [--btn-bg:transparent] [--btn-foreground:var(--color-foreground)] [--btn-icon:var(--color-muted-foreground)] [--btn-outline:var(--color-ring)] [--btn-overlay:transparent]",
-      /** A quiet control on the ink panel (Talk): muted icon, a lifted fill on hover. */
-      ink: "border-0 [--btn-bg:transparent] [--btn-foreground:var(--color-ink-foreground)] [--btn-icon:var(--color-ink-muted)] [--btn-icon-active:var(--color-ink-foreground)] [--btn-outline:var(--color-ink-foreground)] [--btn-overlay:var(--color-ink-hover)]",
-      /** The one solid action on the ink panel: a white square with a black glyph. */
-      "ink-solid":
-        "border-0 [--btn-bg:var(--color-ink-foreground)] [--btn-foreground:var(--color-ink)] [--btn-icon:var(--color-ink)] [--btn-icon-active:var(--color-ink)] [--btn-outline:var(--color-ink-foreground)] [--btn-overlay:white] disabled:opacity-40",
     },
     size: {
       sm: ["h-7 gap-x-2 px-2.5 text-sm", "*:[svg]:size-3.5", "*:data-[slot=loader]:size-3.5"],

@@ -1,25 +1,19 @@
 import { useSyncExternalStore } from "react";
 
-/** The one Talk window: whose conversation it shows, and whether it is expanded. */
-export interface TalkWindowState {
-  memberId: string | null;
-  expanded: boolean;
-}
-
-let state: TalkWindowState = { memberId: null, expanded: false };
+let open: string | null = null;
 const listeners = new Set<() => void>();
-const set = (next: TalkWindowState) => {
-  state = next;
+const set = (memberId: string | null) => {
+  open = memberId;
   for (const listener of listeners) listener();
 };
 
 export const talkWindow = {
-  get: () => state,
-  open: (memberId: string) => set({ memberId, expanded: state.expanded }),
-  close: () => set({ memberId: null, expanded: false }),
-  toggleExpanded: () => set({ ...state, expanded: !state.expanded }),
+  get: () => open,
+  open: (memberId: string) => set(memberId),
+  close: () => set(null),
 };
 
+/** The member whose conversation is open, or null. */
 export function useTalkWindow() {
   return useSyncExternalStore((listener) => {
     listeners.add(listener);

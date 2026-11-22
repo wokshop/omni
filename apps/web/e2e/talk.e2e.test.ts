@@ -180,7 +180,7 @@ test("the stack shows who is online, and a note and a file reach the teammate's 
   await shoot(ana, "1b-everyone");
   await ana.getByRole("menuitem", { name: "Kofi Mensah" }).click();
   const window = ana.getByRole("region", { name: "Conversation with Kofi Mensah" });
-  await window.getByText("Active now").waitFor();
+  await window.getByLabel("Active now").waitFor();
   const composer = window.getByRole("textbox", { name: "Note to Kofi Mensah" });
   expect(await composer.getAttribute("placeholder")).toBe("Note to Kofi…");
   await composer.fill("Dropping the brand board now");
@@ -228,6 +228,5 @@ test("the stack shows who is online, and a note and a file reach the teammate's 
   const received = kofiWindow.getByRole("img", { name: "board.png" });
   await expect.poll(() => received.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(480);
   await kofiStack.getByRole("button", { name: "Ana Lima", exact: true }).waitFor();
-  await kofiWindow.getByRole("button", { name: "Expand" }).click();
-  await shoot(kofi, "4-expanded");
+  await shoot(kofi, "4-kofi-window");
 });

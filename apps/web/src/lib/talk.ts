@@ -2,6 +2,7 @@ import type { Api } from "@omni/client";
 import type { InferResponseType } from "hono/client";
 import {
   infiniteQueryOptions,
+  mutationOptions,
   queryOptions,
   type InfiniteData,
   type QueryClient,
@@ -17,6 +18,7 @@ export type TalkMessagesResponse = InferResponseType<
   200
 >;
 export type TalkMessage = TalkMessagesResponse["messages"][number];
+type FileSent = InferResponseType<Talk["threads"][":id"]["files"]["$post"], 201>;
 
 /** At most this many teammates show in the stack; the rest are `+n`. */
 export const STACK_MAX = 3;
@@ -63,18 +65,25 @@ export const everyoneOf = (people: readonly TalkPerson[]) =>
 
 export const firstName = (name: string) => name.trim().split(/\s+/)[0] || name;
 
-export async function openThread(memberId: string) {
+async function openThread(memberId: string) {
   return (await call(api.talk.threads.$post({ json: { memberId } }))).thread;
 }
 
-export async function sendNote(threadId: string, body: string) {
+/** The thread with a teammate, made on first use; the same thread every time after. */
+export const talkThreadQuery = (memberId: string) =>
+  queryOptions({
+    queryKey: keys.talkThread(memberId),
+    queryFn: () => openThread(memberId),
+    staleTime: Infinity,
+  });
+
+async function sendNote(threadId: string, body: string) {
   return (
     await call(api.talk.threads[":id"].messages.$post({ param: { id: threadId }, json: { body } }))
   ).message;
 }
 
-/** Sends a file as the request's body: the Worker puts it in your Drive and shares it. */
-export async function sendFile(threadId: string, file: File) {
+async function sendFile(threadId: string, file: File) {
   const url = api.talk.threads[":id"].files.$url({
     param: { id: threadId },
     query: { name: file.name },
@@ -85,14 +94,14 @@ export async function sendFile(threadId: string, file: File) {
     body: file,
   });
   if (!response.ok) throw new ApiError(response.status, `sending ${file.name} failed`);
-  return ((await response.json()) as { message: TalkMessage }).message;
+  return ((await response.json()) as FileSent).message;
 }
 
-export async function markRead(threadId: string) {
+async function markRead(threadId: string) {
   await call(api.talk.threads[":id"].read.$put({ param: { id: threadId } }));
 }
 
-export async function react(messageId: string, emoji: string, on: boolean) {
+async function react(messageId: string, emoji: string, on: boolean) {
   const route = api.talk.messages[":id"].reactions[":emoji"];
   const args = { param: { id: messageId, emoji } };
   await call(on ? route.$put(args) : route.$delete(args));
@@ -122,4 +131,41 @@ export function setOnline(client: QueryClient, memberId: string, online: boolean
   client.setQueryData<TalkPerson[]>(keys.talkPeople(), (people) =>
     people?.map((p) => (p.memberId === memberId ? { ...p, online } : p)),
   );
+}
+
+const peopleChanged = (client: QueryClient) =>
+  client.invalidateQueries({ queryKey: keys.talkPeople() });
+
+/** `mutate(body)`: notes to one thread go one after another, in the order they were sent. */
+export const sendNoteMutation = (client: QueryClient, threadId: string | undefined) =>
+  mutationOptions({
+    mutationFn: (body: string) => sendNote(threadId!, body),
+    scope: { id: `talk-notes:${threadId}` },
+    onSuccess: (message) => {
+      addMessage(client, message);
+      void peopleChanged(client);
+    },
+  });
+
+/** `mutate(files)`: each file into your Drive, shared with the other one, then into the thread. */
+export const sendFilesMutation = (client: QueryClient, threadId: string | undefined) =>
+  mutationOptions({
+    mutationFn: async (files: File[]) => {
+      for (const file of files) addMessage(client, await sendFile(threadId!, file));
+    },
+    onSettled: () => peopleChanged(client),
+  });
+
+/** `mutate({ messageId, emoji, on })`: adds or takes away your reaction. */
+export const reactMutation = (client: QueryClient, threadId: string) =>
+  mutationOptions({
+    mutationFn: ({ messageId, emoji, on }: { messageId: string; emoji: string; on: boolean }) =>
+      react(messageId, emoji, on),
+    onSettled: () => client.invalidateQueries({ queryKey: keys.talkMessages(threadId) }),
+  });
+
+/** Reads the thread up to now. */
+export async function readThread(client: QueryClient, threadId: string) {
+  await markRead(threadId);
+  await peopleChanged(client);
 }

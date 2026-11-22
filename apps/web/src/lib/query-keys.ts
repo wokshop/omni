@@ -50,6 +50,7 @@ export const keys = {
   talk: () => talk(),
   talkPeople: () => [...talk(), "people"] as const,
   talkMessages: (threadId: string) => [...talk(), "messages", threadId] as const,
+  talkThread: (memberId: string) => [...talk(), "thread", memberId] as const,
 
   org: () => org(),
   organizations: () => [...org(), "organizations"] as const,

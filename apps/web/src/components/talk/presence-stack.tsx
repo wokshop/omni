@@ -1,11 +1,11 @@
-import { useQuery } from "@tanstack/react-query";
 import { cn } from "cn";
 import type { CSSProperties } from "react";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Menu, MenuItem, MenuTrigger } from "@/components/ui/menu";
 import { Tooltip, TooltipTrigger } from "@/components/ui/tooltip";
-import { everyoneOf, stackOf, talkPeopleQuery, type TalkPerson } from "@/lib/talk.ts";
+import { useTalkPeople } from "@/hooks/use-talk.ts";
+import { everyoneOf, stackOf, type TalkPerson } from "@/lib/talk.ts";
 import { talkWindow, useTalkWindow } from "@/lib/talk-window.ts";
 import { pictureUrl } from "@/lib/urls.ts";
 
@@ -139,8 +139,8 @@ function Everyone(props: { people: TalkPerson[]; more: number; openId: string | 
  * `+n` for everyone. Nothing when nobody else is here, or the workspace has no Talk.
  */
 export function PresenceStack() {
-  const { data: people } = useQuery(talkPeopleQuery());
-  const { memberId: openId } = useTalkWindow();
+  const { data: people } = useTalkPeople();
+  const openId = useTalkWindow();
   if (!people?.length) return null;
   const { shown, more } = stackOf(people);
   if (shown.length === 0) return null;
