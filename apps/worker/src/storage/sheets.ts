@@ -85,7 +85,7 @@ export async function createSheet(
 function savedWithin(doc: Y.Doc, now: number) {
   const saved = saveSheet(doc, now);
   const problem =
-    limitProblem(parseSheet(saved.text)) ??
+    limitProblem(saved.file) ??
     (new TextEncoder().encode(saved.text).byteLength > SHEET_LIMITS.bytes
       ? "a file larger than 5 MB"
       : null);
