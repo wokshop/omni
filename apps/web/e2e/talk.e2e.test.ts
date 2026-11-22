@@ -186,6 +186,26 @@ test("the stack shows who is online, and a note and a file reach the teammate's 
   await composer.fill("Dropping the brand board now");
   await composer.press("Enter");
   await window.getByText("Dropping the brand board now").waitFor();
+  const bubble = (text: string) => window.locator("p", { hasText: text });
+  const held = Promise.withResolvers<void>();
+  await ana.route("**/api/talk/threads/*/messages", async (route) => {
+    if (route.request().method() === "POST") await held.promise;
+    await route.fallback();
+  });
+  await composer.fill("Second one");
+  await composer.press("Enter");
+  expect(await composer.inputValue()).toBe("");
+  await composer.fill("Third, right away");
+  await composer.press("Enter");
+  await composer.fill("Still typing this");
+  held.resolve();
+  await bubble("Third, right away").waitFor();
+  await bubble("Second one").waitFor();
+  expect(await composer.inputValue()).toBe("Still typing this");
+  const shown = await window.locator("p").allInnerTexts();
+  expect(shown.indexOf("Second one")).toBeLessThan(shown.indexOf("Third, right away"));
+  await ana.unroute("**/api/talk/threads/*/messages");
+  await composer.fill("");
   await window.locator('input[type="file"]').setInputFiles({
     name: "board.png",
     mimeType: "image/png",
@@ -199,7 +219,7 @@ test("the stack shows who is online, and a note and a file reach the teammate's 
   await shoot(ana, "2-window");
 
   const kofiStack = kofi.getByRole("group", { name: "Online now" });
-  const fromAna = kofiStack.getByRole("button", { name: "Ana Lima, 2 unread" });
+  const fromAna = kofiStack.getByRole("button", { name: "Ana Lima, 4 unread" });
   await fromAna.waitFor();
   await shoot(kofi, "3-unread");
   await fromAna.click();

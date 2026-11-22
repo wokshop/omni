@@ -68,19 +68,24 @@ function Composer(props: { person: TalkPerson; threadId: string | undefined }) {
   const settle = () => client.invalidateQueries({ queryKey: keys.talkPeople() });
   const note = useMutation({
     mutationFn: (body: string) => sendNote(props.threadId!, body),
+    scope: { id: `talk-notes:${props.threadId}` },
     onSuccess: (message) => {
       addMessage(client, message);
-      setText("");
       void settle();
     },
-    onError: () => appToast.error("The note was not sent. Try again."),
+    onError: (_error, body) => {
+      setText((now) => (now.trim() ? now : body));
+      appToast.error("The note was not sent. Try again.");
+    },
   });
   const files = useFileDrop(props.threadId);
   useEffect(() => field.current?.focus(), [props.person.memberId]);
 
   const send = () => {
     const body = text.trim();
-    if (body && props.threadId && !note.isPending) note.mutate(body);
+    if (!body || !props.threadId) return;
+    setText("");
+    note.mutate(body);
   };
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
@@ -108,7 +113,6 @@ function Composer(props: { person: TalkPerson; threadId: string | undefined }) {
         intent="primary"
         size="sm"
         isDisabled={!text.trim() || !props.threadId}
-        isPending={note.isPending}
         onPress={send}
       >
         Drop ↵
@@ -135,8 +139,18 @@ function useFileDrop(threadId: string | undefined) {
 function useReadWhileOpen(threadId: string | undefined, newest: string | undefined) {
   const client = useQueryClient();
   useEffect(() => {
-    if (!threadId || inBackground()) return;
-    void markRead(threadId).then(() => client.invalidateQueries({ queryKey: keys.talkPeople() }));
+    if (!threadId) return;
+    const read = () => {
+      if (inBackground()) return;
+      void markRead(threadId).then(() => client.invalidateQueries({ queryKey: keys.talkPeople() }));
+    };
+    read();
+    window.addEventListener("focus", read);
+    document.addEventListener("visibilitychange", read);
+    return () => {
+      window.removeEventListener("focus", read);
+      document.removeEventListener("visibilitychange", read);
+    };
   }, [client, threadId, newest]);
 }
 

@@ -7,7 +7,7 @@ import {
   type QueryClient,
 } from "@tanstack/react-query";
 import { api, ApiError, call } from "./api.ts";
-import { workspaceHeaders } from "./current-workspace.ts";
+import { withWorkspace, workspaceHeaders } from "./current-workspace.ts";
 import { keys } from "./query-keys.ts";
 
 type Talk = Api["talk"];
@@ -100,7 +100,7 @@ export async function react(messageId: string, emoji: string, on: boolean) {
 
 /** Where a note's file opens: Storage's own doors decide, after Talk checks the note is yours. */
 export const fileUrl = (messageId: string) =>
-  api.talk.messages[":id"].file.$url({ param: { id: messageId } }).toString();
+  withWorkspace(api.talk.messages[":id"].file.$url({ param: { id: messageId } }).toString());
 
 export const isImage = (mimeType: string | null) => Boolean(mimeType?.startsWith("image/"));
 
