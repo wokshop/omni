@@ -10,7 +10,8 @@ export const desktopRecordingStateSchema = z.enum(["recording", "paused", "stopp
  * One recording in the desktop recorder's spool (docs/spec/meetings.md, "The desktop recorder"):
  * the one capturing, or one left to upload. The shell captures, encodes and keeps the spool; the
  * page, which holds the session, starts the meeting, uploads the spool through Drive's resumable
- * upload and stops it (`finishRecording` in `@omni/client`).
+ * upload and stops it (`finishRecording` in `@omni/client`). The shell leaves out a field that
+ * has no value rather than sending `null`.
  */
 export const desktopRecordingSchema = z.object({
   /** The spool's own id, made on this computer. */
@@ -20,7 +21,7 @@ export const desktopRecordingSchema = z.object({
   memberId: z.string(),
   /** The recorder's `Recordings` folder, from `POST /api/meetings`. */
   folderId: z.string(),
-  title: z.string().nullable(),
+  title: z.string().nullish(),
   state: desktopRecordingStateSchema,
   /** When capture began, in milliseconds since the epoch. */
   startedAtMs: ms,
@@ -33,9 +34,9 @@ export const desktopRecordingSchema = z.object({
   /** Where paused time was left out: `atMs` in the audio, `droppedMs` of meeting time. */
   cuts: z.array(z.object({ atMs: ms, droppedMs: z.number().int().min(1) })),
   /** The Drive upload the spool is going up as, once opened. */
-  uploadId: z.string().nullable(),
+  uploadId: z.string().nullish(),
   /** The Drive file it became, once completed. */
-  nodeId: z.string().nullable(),
+  nodeId: z.string().nullish(),
   /** The microphone's level just now, in dBFS (-120 is silence); for the pill. */
   micDb: z.number(),
 });
