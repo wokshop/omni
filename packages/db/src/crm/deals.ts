@@ -1,4 +1,6 @@
 import { and, asc, eq, gte, inArray, isNotNull, lte, sql } from "drizzle-orm";
+import type { Db } from "../client.ts";
+import { memberStorage } from "../storage.ts";
 import {
   crmDealPeople,
   crmDeals,
@@ -250,6 +252,21 @@ async function checkReferences(ex: Ex, member: CrmMember, input: Partial<DealInp
   return (await existingPeople(ex, member.orgId, personIds)).length === personIds.length;
 }
 
+async function makeTeamspace(
+  tx: Ex,
+  member: CrmMember,
+  dealId: string,
+  name: string,
+  ownerMemberId: string | null | undefined,
+) {
+  const made = await memberStorage(tx as Db, member.id).createTeamspace({
+    name,
+    memberIds: ownerMemberId ? [ownerMemberId] : [],
+  });
+  if (made.status !== "ok") return;
+  await tx.update(crmDeals).set({ teamspaceId: made.teamspace.id }).where(eq(crmDeals.id, dealId));
+}
+
 export const createDeal: (
   tx: Ex,
   member: CrmMember,
@@ -294,6 +311,7 @@ export const createDeal: (
       .insert(crmDealPeople)
       .values(personIds.map((personId) => ({ orgId: member.orgId, dealId: deal!.id, personId })));
   }
+  await makeTeamspace(tx, member, deal!.id, name, input.ownerMemberId);
   await rememberCurrency(tx, member.orgId, value.currency);
   await appendEvent(tx, member, { dealId: deal!.id }, "created", { stageId: stage.id });
   return { status: "ok", deal: (await loadDeal(tx, member.orgId, deal!.id))! };
