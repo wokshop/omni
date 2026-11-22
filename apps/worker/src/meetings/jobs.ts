@@ -127,6 +127,9 @@ async function transcribe(run: MeetingRun, engine: Engine, found: Found) {
     await pipeline.advance(meeting.id, ["uploaded"], "transcribing");
   else if (meeting.status !== "transcribing") return outcome(null, null);
   if (job.providerJobId) return outcome({ step: "poll", delaySeconds: 0 }, "transcribing");
+  if (!(await pipeline.claimSubmission(meeting.id))) {
+    return outcome({ step: "transcribe", delaySeconds: POLL_SECONDS }, null);
+  }
   if (!meeting.audioNodeId) throw new MeetingStepFailed("the recording is missing");
   const file = await storageWorkspaceFile(run.db, meeting.orgId, meeting.audioNodeId);
   const object = file ? await run.env.STORAGE_BUCKET.get(file.r2Key) : null;

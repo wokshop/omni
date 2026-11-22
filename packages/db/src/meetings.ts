@@ -99,7 +99,8 @@ export function meetingsPipeline(db: Db) {
       ...a: Parameters<typeof pipeline.advance> extends [unknown, ...infer R] ? R : never
     ) => pipeline.advance(db, ...a),
     stopRecording: (meetingId: string, stop: pipeline.StoppedRecording) =>
-      pipeline.stopRecording(db, meetingId, stop),
+      db.transaction((tx) => pipeline.stopRecording(tx, meetingId, stop)),
+    claimSubmission: (meetingId: string) => pipeline.claimSubmission(db, meetingId),
     setUpload: (meetingId: string, uploadId: string) => pipeline.setUpload(db, meetingId, uploadId),
     setEngineJob: (meetingId: string, provider: string, jobId: string) =>
       pipeline.setEngineJob(db, meetingId, provider, jobId),

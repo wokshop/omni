@@ -314,3 +314,17 @@ test("a meeting's realtime audience is exactly the members who can open it", asy
     [s.dana.id, s.ben.id, s.cy.id].toSorted(),
   );
 });
+
+test("two deliveries racing to send a recording to the engine: exactly one may", async () => {
+  const s = await studio();
+  const pipeline = meetingsPipeline(db);
+  const { meetingId } = ok(await record(s.dana.id, { attendees: [s.dana.address] }));
+  const claims = await Promise.all([
+    pipeline.claimSubmission(meetingId),
+    pipeline.claimSubmission(meetingId),
+    pipeline.claimSubmission(meetingId),
+  ]);
+  expect(claims.filter(Boolean)).toHaveLength(1);
+  await pipeline.setEngineJob(meetingId, "assemblyai", "job-1");
+  expect(await pipeline.claimSubmission(meetingId)).toBe(false);
+});

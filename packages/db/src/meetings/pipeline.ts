@@ -67,7 +67,7 @@ export async function setEngineJob(
 ) {
   await ex
     .update(meetingsJobs)
-    .set({ provider, providerJobId, submittedAt: new Date() })
+    .set({ provider, providerJobId })
     .where(and(eq(meetingsJobs.meetingId, meetingId), sql`${meetingsJobs.providerJobId} is null`));
 }
 
@@ -378,4 +378,28 @@ export async function nudged(ex: Ex, meetingId: string) {
     .update(meetingsJobs)
     .set({ updatedAt: new Date() })
     .where(eq(meetingsJobs.meetingId, meetingId));
+}
+
+/** How long a claim to send a recording to the engine holds before another step may take it. */
+export const SUBMIT_CLAIM_MS = 10 * 60_000;
+
+/**
+ * Claims sending the meeting's recording to the engine, so two deliveries of a step never both
+ * send it (and pay twice). True for the one that may send; a claim left by a step that died
+ * expires after `SUBMIT_CLAIM_MS`.
+ */
+export async function claimSubmission(ex: Ex, meetingId: string) {
+  const expired = new Date(Date.now() - SUBMIT_CLAIM_MS).toISOString();
+  const rows = await ex
+    .update(meetingsJobs)
+    .set({ submittedAt: new Date() })
+    .where(
+      and(
+        eq(meetingsJobs.meetingId, meetingId),
+        sql`${meetingsJobs.providerJobId} is null`,
+        sql`(${meetingsJobs.submittedAt} is null or ${meetingsJobs.submittedAt} < ${expired}::timestamptz)`,
+      ),
+    )
+    .returning({ id: meetingsJobs.meetingId });
+  return rows.length > 0;
 }
