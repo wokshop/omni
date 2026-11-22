@@ -4,7 +4,9 @@ import type { Db } from "../client.ts";
 import { members } from "../schema/auth.ts";
 import { notifications } from "../schema/notifications.ts";
 import { storageComments } from "../schema/storage.ts";
+import { memberDoor } from "./access.ts";
 import type { NodeRow } from "./core.ts";
+import { reach } from "./tree.ts";
 
 /** What a comment notification carries, for the panel's line and to open the file's comments. */
 export interface CommentNotificationData {
@@ -21,6 +23,14 @@ export interface CommentNotificationData {
 }
 
 const EXCERPT = 140;
+
+async function stillReaching(tx: Db, nodeId: string, memberIds: string[]) {
+  const reaching: string[] = [];
+  for (const id of memberIds) {
+    if (await reach(tx, memberDoor(id), nodeId)) reaching.push(id);
+  }
+  return reaching;
+}
 
 /** Notifies who should hear about comment `commentId` on `node`. Returns who got one. */
 export const notifyComment: (
@@ -42,9 +52,10 @@ export const notifyComment: (
         .where(or(eq(storageComments.id, input.rootId), eq(storageComments.parentId, input.rootId)))
     : [];
   const candidates = [owner, ...(node.space === "personal" ? [] : writers.map((w) => w.id))];
-  const wanted = [
+  const named = [
     ...new Set(candidates.filter((id): id is string => !!id && id !== input.authorMemberId)),
   ];
+  const wanted = node.space === "teamspace" ? await stillReaching(tx, node.id, named) : named;
   if (wanted.length === 0) return [];
   const inWorkspace = await tx
     .select({ id: members.id })

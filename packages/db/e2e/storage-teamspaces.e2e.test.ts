@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { afterAll, expect, test } from "vitest";
 import { forMember } from "../src/for-member.ts";
-import { members, storageNodes } from "../src/schema/index.ts";
+import { members, notifications, storageNodes } from "../src/schema/index.ts";
 import { handOverMemberStorage } from "../src/storage.ts";
 import { addFile, addFolder, setRole } from "./storage-support.ts";
 import { createMember, createOrg, createTestDatabase } from "./support.ts";
@@ -217,4 +217,33 @@ test("a private teamspace's only owner leaving hands it to whoever takes their f
     ["Secret", "owner"],
   ]);
   expect((await cyStorage.file(note.id)).status).toBe("ok");
+});
+
+test("someone taken out of a private teamspace hears no more about its comments", async () => {
+  const org = await createOrg(db, "ts-comments");
+  const ana = await createMember(db, org.id, "ana");
+  const ben = await createMember(db, org.id, "ben");
+  const anaStorage = forMember(db, ana.id).storage;
+  const benStorage = forMember(db, ben.id).storage;
+
+  const legal = await teamspace(anaStorage, "Legal", { private: true, memberIds: [ben.id] });
+  const file = await addFile(benStorage, { teamspaceId: legal.id }, "draft.txt");
+  const first = await anaStorage.addComment(file.id, {
+    body: "Looks good",
+    anchor: { kind: "file" },
+  });
+  if (first.status !== "ok") throw new Error(first.status);
+  expect(
+    (await db.select().from(notifications).where(eq(notifications.memberId, ben.id))).length,
+  ).toBe(1);
+
+  expect((await anaStorage.removeTeamspaceMember(legal.id, ben.id)).status).toBe("ok");
+  const second = await anaStorage.addComment(file.id, {
+    body: "Secret terms",
+    anchor: { kind: "file" },
+  });
+  if (second.status !== "ok") throw new Error(second.status);
+  expect(
+    (await db.select().from(notifications).where(eq(notifications.memberId, ben.id))).length,
+  ).toBe(1);
 });
