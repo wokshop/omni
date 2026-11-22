@@ -445,6 +445,7 @@ test("realtime that comes late or out of order never misorders notes or hides a 
       const text = String(frame);
       const event = JSON.parse(text) as { type?: string; preview?: string; read?: boolean };
       if (event.type === "talk.message" && event.preview === "First") return void (swap = text);
+      if (event.type === "talk.message" && event.preview === "Missed") return;
       if (event.type === "talk.message" && event.preview === "Fourth" && !heldNote.length) {
         heldNote.push(text);
         return noteHeld.resolve();
@@ -523,4 +524,18 @@ test("realtime that comes late or out of order never misorders notes or hides a 
     headers: { cookie },
   }).then((r) => r.json())) as { messages: { body: string; reactions: unknown[] }[] };
   expect(page.messages.find((m) => m.body === "Hello")!.reactions).toEqual([]);
+
+  await kofi.keyboard.press("Escape");
+  await window.waitFor({ state: "detached" });
+  await kofi.mouse.move(4, 400);
+  await post(`/threads/${thread.id}/messages`, { body: "Missed" });
+  await kofi.setViewportSize({ width: 600, height: wide.height });
+  await stack.waitFor({ state: "detached" });
+  await kofi.setViewportSize(wide);
+  await stack.waitFor();
+  await post(`/threads/${thread.id}/messages`, { body: "After" });
+  await stack.getByRole("button", { name: /^Ana Lima, \d unread/ }).waitFor();
+  await stack.getByRole("button", { name: /^Ana Lima/ }).click();
+  await window.getByText("After", { exact: true }).waitFor();
+  await window.getByText("Missed", { exact: true }).waitFor();
 });

@@ -12,9 +12,11 @@ export const pendingId = () => `${PENDING}${crypto.randomUUID()}`;
 function editPages(client: QueryClient, threadId: string, edit: (data: Pages) => Pages) {
   const queryKey = keys.talkMessages(threadId);
   const settle = () => {
-    if (client.getQueryData(queryKey))
-      client.setQueryData<Pages>(queryKey, (data) => data && edit(data));
-    else void client.invalidateQueries({ queryKey });
+    if (!client.getQueryData(queryKey)) return void client.invalidateQueries({ queryKey });
+    const stale = client.getQueryCache().find({ queryKey, exact: true })?.state.isInvalidated;
+    client.setQueryData<Pages>(queryKey, (data) => data && edit(data));
+    // WARNING: an edit marks the thread fresh; one a reconnect left stale must still refetch.
+    if (stale) void client.invalidateQueries({ queryKey, refetchType: "none" });
   };
   settle();
   const cache = client.getQueryCache();
