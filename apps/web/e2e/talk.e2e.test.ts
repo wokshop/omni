@@ -462,6 +462,7 @@ test("realtime that comes late or out of order never misorders notes or hides a 
     watched.added.resolve();
     return "held";
   };
+  const dropReactions = { of: "" };
   const routed = (text: string) => {
     const event = JSON.parse(text) as {
       type?: string;
@@ -469,6 +470,7 @@ test("realtime that comes late or out of order never misorders notes or hides a 
       read?: boolean;
       reactions?: { messageId: string; reactions: unknown[] };
     };
+    if (dropReactions.of && event.reactions?.messageId === dropReactions.of) return "dropped";
     const reaction = event.type === "talk.changed" ? watchedReaction(event, text) : null;
     if (reaction) return reaction;
     if (event.type === "talk.changed" && event.read) {
@@ -709,4 +711,37 @@ test("realtime that comes late or out of order never misorders notes or hides a 
   deliver.at(-1)!(watched.frames[0]!);
   await kofi.waitForTimeout(1_000);
   expect(await fire.getByRole("button", { name: /^🔥/ }).count()).toBe(0);
+
+  watched.messageId = "";
+  dropReactions.of = eighth.id;
+  const pageAnswered = Promise.withResolvers<void>();
+  const pageGo = Promise.withResolvers<void>();
+  let holdNextPage = false;
+  await kofi.route(`**/api/talk/threads/${thread.id}/messages`, async (route) => {
+    if (!holdNextPage || route.request().method() !== "GET") return route.fallback();
+    holdNextPage = false;
+    const answer = await route.fetch();
+    pageAnswered.resolve();
+    await pageGo.promise;
+    await route.fulfill({ response: answer });
+  });
+  const thumbs = await fetch(
+    new URL(`/api/talk/messages/${eighth.id}/reactions/${encodeURIComponent("👍")}`, origin()),
+    { method: "PUT", headers: { cookie, origin: WEB_ORIGIN } },
+  );
+  expect(thumbs.status).toBe(204);
+  holdNextPage = true;
+  await kofi.setViewportSize({ width: 600, height: wide.height });
+  await stack.waitFor({ state: "detached" });
+  await kofi.setViewportSize(wide);
+  await stack.waitFor();
+  if (!(await window.isVisible())) await stack.getByRole("button", { name: /^Ana Lima/ }).click();
+  await pageAnswered.promise;
+  await fire.hover();
+  await fire.getByRole("button", { name: "React 🎉" }).click();
+  await fire.getByRole("button", { name: "🎉 1" }).waitFor();
+  pageGo.resolve();
+  await kofi.waitForTimeout(1_000);
+  await fire.getByRole("button", { name: "🎉 1" }).waitFor();
+  await fire.getByRole("button", { name: "👍 1" }).waitFor();
 });

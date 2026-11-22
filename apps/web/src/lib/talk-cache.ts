@@ -86,7 +86,8 @@ export function settlePending(
 const versionOf = (message: TalkMessage) => message.reactionsVersion ?? 0;
 
 /**
- * A note's reactions as they now are, wherever it sits in the loaded pages; a `version` lower than
+ * A note's reactions as they now are (or a change to them, which a fetch in flight replays on what
+ * it brings), wherever it sits in the loaded pages; a `version` lower than
  * the one the note already has is stale and left out. False when the thread is loaded without that
  * note (its own event has not come yet), so the caller can fetch it.
  */
@@ -94,7 +95,9 @@ export function setReactions(
   client: QueryClient,
   threadId: string,
   messageId: string,
-  reactions: TalkMessage["reactions"],
+  reactions:
+    | TalkMessage["reactions"]
+    | ((now: TalkMessage["reactions"]) => TalkMessage["reactions"]),
   version?: number,
 ) {
   const loaded = client.getQueryData<Pages>(keys.talkMessages(threadId));
@@ -102,7 +105,11 @@ export function setReactions(
   const apply = (m: TalkMessage) =>
     m.id !== messageId || (version !== undefined && versionOf(m) >= version)
       ? m
-      : { ...m, reactions, reactionsVersion: version ?? m.reactionsVersion };
+      : {
+          ...m,
+          reactions: typeof reactions === "function" ? reactions(m.reactions) : reactions,
+          reactionsVersion: version ?? m.reactionsVersion,
+        };
   editPages(client, threadId, (data) => ({
     ...data,
     pages: data.pages.map((page) =>
@@ -133,12 +140,6 @@ export function toggledReactions(
     ? [...next, { emoji, memberIds: [memberId] }]
     : next;
 }
-
-export const messageOf = (client: QueryClient, threadId: string, messageId: string) =>
-  client
-    .getQueryData<Pages>(keys.talkMessages(threadId))
-    ?.pages.flatMap((page) => page.messages)
-    .find((m) => m.id === messageId);
 
 /**
  * The thread's newest page, merged into what is loaded: new notes go on top, known ones take the

@@ -11,7 +11,6 @@ import { currentWorkspaceId, withWorkspace, workspaceHeaders } from "./current-w
 import { keys } from "./query-keys.ts";
 import {
   addMessage,
-  messageOf,
   pendingId,
   setReactions,
   settlePending,
@@ -240,11 +239,7 @@ export const reactMutation = (client: QueryClient, threadId: string) =>
     scope: { id: `talk-react:${threadId}` },
     onMutate: ({ messageId, emoji, on, meId }) => {
       const queryKey = keys.talkMessages(threadId);
-      const message = messageOf(client, threadId, messageId);
-      if (message) {
-        const next = toggledReactions(message.reactions, meId, emoji, on);
-        setReactions(client, threadId, messageId, next);
-      }
+      setReactions(client, threadId, messageId, (now) => toggledReactions(now, meId, emoji, on));
       return { queryKey };
     },
     onError: (_error, _reacting, context) =>
