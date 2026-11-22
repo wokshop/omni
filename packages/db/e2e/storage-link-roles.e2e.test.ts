@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, expect, test } from "vitest";
 import { forMember } from "../src/for-member.ts";
 import { storageVersions } from "../src/schema/index.ts";
-import { foldContent, publicStorage, type StorageGuest } from "../src/storage.ts";
+import { addCoauthors, foldContent, publicStorage, type StorageGuest } from "../src/storage.ts";
 import { addFile, setRole } from "./storage-support.ts";
 import { createMember, createOrg, createTestDatabase } from "./support.ts";
 
@@ -118,4 +118,34 @@ test("the Worker's save of a guest's typing names the guest, keeps one session, 
   if (after.status !== "ok") throw new Error(after.status);
   expect(after.versions[0]).toMatchObject({ writtenByName: "Guest Otter", writtenByGuest: true });
   expect(after.current).toMatchObject({ writtenByName: "Guest Heron" });
+});
+
+test("a member's save names the guests whose typing it holds, and an older save's names go nowhere", async () => {
+  const { org, ana, doc } = await sharedDoc("member-coauthors");
+  const author = (guest: StorageGuest) => ({
+    kind: "guest" as const,
+    id: guest.id,
+    name: guest.name,
+  });
+  const saved = await foldContent(db, {
+    orgId: org.id,
+    nodeId: doc.id,
+    base: doc.contentVersion,
+    size: 12,
+    mimeType: doc.mimeType,
+    r2Key: `orgs/${org.id}/coauthors`,
+    writer: { memberId: null, guest: heron },
+    coauthors: [author(heron)],
+    limitBytes: null,
+  });
+  if (saved.status !== "ok") throw new Error(saved.status);
+  const now = saved.node.contentVersion;
+  await addCoauthors(db, { nodeId: doc.id, contentVersion: now - 1, coauthors: [author(otter)] });
+  await addCoauthors(db, { nodeId: doc.id, contentVersion: now, coauthors: [author(otter)] });
+  await addCoauthors(db, { nodeId: doc.id, contentVersion: now, coauthors: [author(otter)] });
+  const listed = await ana.versions(doc.id);
+  expect(listed.status === "ok" && listed.current.coauthors).toEqual([
+    author(heron),
+    author(otter),
+  ]);
 });

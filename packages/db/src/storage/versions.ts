@@ -357,12 +357,14 @@ export async function addCoauthors(
 ) {
   if (input.coauthors.length === 0) return;
   await db.transaction(async (tx) => {
+    const orgId = await orgOfNode(tx, input.nodeId);
+    if (!orgId) return;
+    await lockTree(tx, orgId);
     const [row] = await tx
       .select({ coauthors: storageContents.coauthors, contentVersion: storageNodes.contentVersion })
       .from(storageContents)
       .innerJoin(storageNodes, eq(storageNodes.id, storageContents.nodeId))
-      .where(eq(storageContents.nodeId, input.nodeId))
-      .for("update", { of: storageContents });
+      .where(eq(storageContents.nodeId, input.nodeId));
     if (!row || row.contentVersion !== input.contentVersion) return;
     await tx
       .update(storageContents)
