@@ -231,3 +231,35 @@ test("moving one end of a connector across the other redraws both ends", async (
   const line = (await body(ana, made.canvas.id)).scene.elements.find((e) => e.kind === "connector");
   expect(line).toMatchObject({ from: { at: [0, 100] }, to: { at: [-200, 100] } });
 });
+
+test("a connector whose elements are gone moves by itself, and one still joined says to move what it joins", async () => {
+  const { ana, agent } = await person();
+  const made = (await call(agent, "drive_create_canvas", {
+    name: "Loose line",
+    ops: [
+      { op: "add", kind: "sticky", text: "A", at: { x: 0, y: 0 }, ref: "a" },
+      { op: "add", kind: "sticky", text: "B", at: { x: 400, y: 0 }, ref: "b" },
+      { op: "add", kind: "sticky", text: "C", at: { x: 0, y: 400 }, ref: "c" },
+      { op: "connect", from: "a", to: "b", ref: "loose" },
+      { op: "connect", from: "a", to: "c", ref: "joined" },
+      { op: "delete", ids: ["b"] },
+    ],
+  })) as Answer & { canvas: { id: string }; created: Record<string, string> };
+  const id = made.canvas.id;
+  const refused = await call(agent, "drive_edit_canvas", {
+    id,
+    ops: [{ op: "move", ids: [made.created.joined], by: { dx: 50, dy: 80 } }],
+  });
+  expect(refused.error).toContain("moves with the elements it joins");
+
+  const cut = await call(agent, "drive_edit_canvas", {
+    id,
+    ops: [
+      { op: "delete", ids: [made.created.a] },
+      { op: "move", ids: [made.created.loose], by: { dx: 50, dy: 80 } },
+    ],
+  });
+  expect(cut).not.toHaveProperty("error");
+  const line = (await body(ana, id)).scene.elements.find((e) => e.id === made.created.loose);
+  expect(line).toMatchObject({ from: { at: [250, 180] }, to: { at: [450, 180] } });
+});
