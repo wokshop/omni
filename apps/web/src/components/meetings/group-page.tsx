@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { Skeleton } from "skullet/react";
+import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/empty/empty-state";
 import { StorageFrame } from "@/components/storage/storage-frame";
 import { useMeetingGroup, useMeetingGroups, useMeetingList } from "@/hooks/use-meetings.ts";
@@ -13,10 +14,8 @@ export function GroupPage({ groupKey }: { groupKey: string }) {
   const page = useMeetingGroup(groupKey);
   const list = useMeetingList(groupKey);
   const summaries = new Map(page.data?.meetings.map((m) => [m.id, m.summary]) ?? []);
-  const groups = useMeetingGroups();
   const workspace = useWorkspaceSlug();
-  const group = groups.data?.find((g) => g.groupKey === groupKey);
-  const title = group ? groupTitle(group) : null;
+  const title = list.data ? groupTitle({ groupKey, lastTitle: list.data[0]?.title ?? null }) : null;
   return (
     <StorageFrame title={<h1 className="truncate text-md">{title}</h1>}>
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -66,6 +65,17 @@ export function GroupPage({ groupKey }: { groupKey: string }) {
                     )}
                   </Link>
                 ))}
+                {list.hasNextPage && (
+                  <Button
+                    intent="outline"
+                    size="sm"
+                    className="self-start"
+                    isPending={list.isFetchingNextPage}
+                    onPress={() => void list.fetchNextPage()}
+                  >
+                    Show older
+                  </Button>
+                )}
               </section>
             </div>
           )}
