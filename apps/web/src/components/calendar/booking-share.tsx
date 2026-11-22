@@ -73,8 +73,12 @@ export function BookingShare(props: { calendars: readonly CalendarItem[] }) {
         <Button size="sm" intent="primary" isDisabled={props.calendars.length === 0}>
           Share
         </Button>
-        <Popover placement="bottom end" className="w-88 max-w-[calc(100vw-32px)] gap-3 p-3">
-          <span className="px-2 pt-1 font-medium text-foreground">Share links</span>
+        <Popover
+          placement="bottom end"
+          collisionPadding={8}
+          className="w-88 max-w-[calc(100vw-16px)] gap-1.5 bg-background p-1.5"
+        >
+          <span className="px-2 pt-1.5 pb-0.5 font-medium text-foreground">Share links</span>
           {(links.data ?? []).length > 0 && (
             <div className="flex flex-col gap-0.5">
               {(links.data ?? []).map((link) => (
