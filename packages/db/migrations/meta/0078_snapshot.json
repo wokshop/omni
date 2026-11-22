@@ -1,5 +1,5 @@
 {
-  "id": "d9a3ae40-f2f2-426f-aa67-7968585b7248",
+  "id": "83a73297-f195-45d2-9fe3-52beb8150e59",
   "prevId": "f64ca97b-9e1a-48f2-8b67-9022049fa267",
   "version": "7",
   "dialect": "postgresql",
@@ -16176,6 +16176,13 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "waiting": {
+          "name": "waiting",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
         },
         "state": {
           "name": "state",

@@ -1,8 +1,13 @@
 import type { CalendarEvent, GoogleCalendarChange } from "@omni/mail-core/calendar";
 import { seriesEnd } from "@omni/mail-core/calendar";
-import { and, asc, eq, inArray, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, lt, lte, ne, notExists, or, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
-import { calendarCalendars, calendarEvents, calendarGoogleSync } from "../schema/index.ts";
+import {
+  calendarCalendars,
+  calendarEvents,
+  calendarGoogleSync,
+  calendarParts,
+} from "../schema/index.ts";
 import type { Ex } from "./core.ts";
 import { older, stored, syncAttendees, type Stored } from "./ingest.ts";
 
@@ -14,7 +19,23 @@ export interface GoogleSyncClaim {
   syncToken: string | null;
   pageToken: string | null;
   fullSyncStartedAt: Date | null;
+  waiting: GoogleWaiting[];
 }
+
+/** A cancelled instance of a series that is not on the calendar yet. */
+export type GoogleWaiting = Extract<GoogleCalendarChange, { kind: "cancelled" }> & {
+  instanceOf: { googleId: string; recurrenceId: Date };
+};
+
+const waitingOf = (rows: { googleId: string; seriesGoogleId: string; recurrenceId: string }[]) =>
+  rows.map(
+    (row) =>
+      ({
+        kind: "cancelled",
+        googleId: row.googleId,
+        instanceOf: { googleId: row.seriesGoogleId, recurrenceId: new Date(row.recurrenceId) },
+      }) satisfies GoogleWaiting,
+  );
 
 const CLAIM_MS = 5 * 60_000;
 
@@ -75,6 +96,7 @@ export async function claimGoogleCalendars(
       syncToken: row.syncToken,
       pageToken: row.pageToken,
       fullSyncStartedAt: row.fullSyncStartedAt,
+      waiting: waitingOf(row.waiting),
     };
     return [claim];
   });
@@ -88,6 +110,7 @@ export async function saveGoogleSync(
     syncToken: string | null;
     pageToken: string | null;
     fullSyncStartedAt: Date | null;
+    waiting?: readonly GoogleWaiting[];
     state: "ok" | "no_access";
     nextSyncAt: Date;
     synced?: boolean;
@@ -99,6 +122,11 @@ export async function saveGoogleSync(
       syncToken: state.syncToken,
       pageToken: state.pageToken,
       fullSyncStartedAt: state.fullSyncStartedAt,
+      waiting: (state.waiting ?? []).map((w) => ({
+        googleId: w.googleId,
+        seriesGoogleId: w.instanceOf.googleId,
+        recurrenceId: w.instanceOf.recurrenceId.toISOString(),
+      })),
       state: state.state,
       nextSyncAt: state.nextSyncAt,
       ...(state.synced ? { syncedAt: new Date() } : {}),
@@ -110,7 +138,7 @@ type Calendar = { id: string; orgId: string };
 
 /**
  * Applies one page of Google's changes to an inbox's calendar, in one transaction, and says how
- * many changed it. An event made in Omni is Omni's and Google never changes it. For the rest,
+ * many changed it and which cancelled instances wait for a series it does not hold yet. An event made in Omni is Omni's and Google never changes it. For the rest,
  * Google and mail's invitations write the same rows by `UID`, and the higher
  * `(SEQUENCE, updated or DTSTAMP)` wins, so either order ends the same.
  */
@@ -120,18 +148,21 @@ export async function applyGoogleChanges(
   changes: readonly GoogleCalendarChange[],
   now = new Date(),
 ) {
-  if (changes.length === 0) return 0;
+  const none = { changed: 0, waiting: [] as GoogleWaiting[] };
+  if (changes.length === 0) return none;
   return db.transaction(async (tx) => {
-    let changed = 0;
+    const result = none;
     const ordered = changes.toSorted((a, b) => rank(a) - rank(b));
     for (const change of ordered) {
       const applied =
         change.kind === "event"
           ? await applyEvent(tx, calendar, change.googleId, change.event, now)
           : await applyCancel(tx, calendar, change, now);
-      if (applied) changed++;
+      if (applied === "waiting" && change.kind === "cancelled" && change.instanceOf) {
+        result.waiting.push({ ...change, instanceOf: change.instanceOf });
+      } else if (applied === true) result.changed++;
     }
-    return changed;
+    return result;
   });
 }
 
@@ -267,10 +298,10 @@ async function cancelInstance(
         eq(calendarEvents.calendarId, calendar.id),
         eq(calendarEvents.googleId, instanceOf.googleId),
         isNull(calendarEvents.recurrenceId),
-        notOmni,
       ),
     );
-  if (!series) return false;
+  if (!series) return "waiting" as const;
+  if (series.source === "omni") return false;
   const start = instanceOf.recurrenceId;
   const length = series.endsAt.getTime() - series.startsAt.getTime();
   const end = new Date(start.getTime() + length);
@@ -321,8 +352,8 @@ async function cancelInstance(
 
 /**
  * Ends a full pass that started at `startedAt`: an event only Google gave that the pass did not
- * see is gone from Google, so it leaves the calendar. Events invitations brought stay; mail
- * still has them.
+ * see is gone from Google, so it leaves the calendar. An event mail also brought stays, whichever
+ * came first: an invitation for its `UID` was applied (or found older) on this calendar.
  */
 export async function finishGoogleFullSync(db: Db, calendarId: string, startedAt: Date) {
   const removed = await db
@@ -332,6 +363,18 @@ export async function finishGoogleFullSync(db: Db, calendarId: string, startedAt
         eq(calendarEvents.calendarId, calendarId),
         eq(calendarEvents.source, "google"),
         lt(calendarEvents.updatedAt, startedAt),
+        notExists(
+          db
+            .select({ one: sql`1` })
+            .from(calendarParts)
+            .where(
+              and(
+                eq(calendarParts.calendarId, calendarEvents.calendarId),
+                eq(calendarParts.uid, calendarEvents.uid),
+                inArray(calendarParts.outcome, ["applied", "stale"]),
+              ),
+            ),
+        ),
       ),
     )
     .returning({ id: calendarEvents.id });

@@ -88,8 +88,8 @@ export function createGoogleCalendar(deps: GoogleCalendarDeps) {
     url.searchParams.set("showDeleted", "true");
     url.searchParams.set("singleEvents", "false");
     url.searchParams.set("fields", FIELDS);
+    if (input.syncToken) url.searchParams.set("syncToken", input.syncToken);
     if (input.pageToken) url.searchParams.set("pageToken", input.pageToken);
-    else if (input.syncToken) url.searchParams.set("syncToken", input.syncToken);
     return fetchImpl(url, {
       headers: { authorization: `Bearer ${token}`, accept: "application/json" },
       signal: AbortSignal.timeout(30_000),

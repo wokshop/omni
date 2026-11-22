@@ -125,7 +125,8 @@ verified for it). The inbox's calendar then shows the account's primary Google C
   each for 5 minutes so two runs never sync one, and pages through each within 25 seconds. A pass
   with a sync token asks only for what changed; one without reads the whole calendar. A calendar
   is due again 2 minutes after a finished pass, 10 after `no_access` (a reconnect with the scope
-  fixes it), 5 after a failure, and at once when a pass stopped mid-calendar.
+  fixes it), 5 after a failure, and at once when a pass stopped mid-calendar. Every page of an
+  incremental pass carries its sync token beside the page token, as Google's sync guide asks.
 - **Reading.** `readGoogleEvent` in `@omni/mail-core` turns a Google event into the same
   `CalendarEvent` an invitation gives: keyed by its `iCalUID`, `SEQUENCE` and `updated` as the
   version, the zone from `start.timeZone` or the calendar's, `recurrence` lines parsed by the same
@@ -138,8 +139,11 @@ verified for it). The inbox's calendar then shows the account's primary Google C
   (`google_id`), because a deleted event comes back from Google as its id alone.
 - **Deleting.** A cancelled item cancels the row with its Google id (a series with all its
   instances); a cancelled instance Omni has no row for becomes a cancelled instance row, so
-  expanding the series skips it. A full pass that finishes deletes the `google` rows it did not
-  see; rows that invitations brought stay, mail still has them.
+  expanding the series skips it. Google lists events in no set order, so a cancelled instance can
+  come before its series: it waits (`calendar_google_sync.waiting`) and is applied once the series
+  is in, and what still waits when the pass ends had no series. A full pass that finishes deletes
+  the `google` rows it did not see, except a meeting mail also brought (an invitation for its
+  `UID` was applied or found older on the calendar, `calendar_parts`), whichever came first.
 - **Re-sync.** Losing `calendar_google_sync` or the calendar's rows costs one full pass, which
   converges on what Google and mail hold.
 
@@ -409,7 +413,7 @@ Every table is `calendar_*` and carries `org_id`.
 | `calendar_attendees`    | event_id, org_id, address, name, role, response, responded_at                                                                                                                                                                                                                                             | Key (event_id, address). Indexed on (org_id, address) for `meetingsWith`.                                                                                                                                                          |
 | `calendar_answers`      | org_id, calendar_id, uid, recurrence_id, address, response, answered_at                                                                                                                                                                                                                                   | Each attendee's own answer, kept apart from the event; the later one wins.                                                                                                                                                         |
 | `calendar_parts`        | attachment_id, org_id, calendar_id, method, uid, outcome, reason, processed_at                                                                                                                                                                                                                            | What each part did: `applied`, `stale`, `ignored`, `invalid`. Cascades with its attachment.                                                                                                                                        |
-| `calendar_google_sync`  | calendar_id, org_id, sync_token, page_token, full_sync_started_at, state, next_sync_at, synced_at | A Gmail inbox's calendar's place in its Google Calendar. `state`: `ok` or `no_access`. |
+| `calendar_google_sync`  | calendar_id, org_id, sync_token, page_token, full_sync_started_at, waiting, state, next_sync_at, synced_at | A Gmail inbox's calendar's place in its Google Calendar. `state`: `ok` or `no_access`. |
 | `calendar_sweep`        | name, cursor_at, cursor_id                                                                                                                                                                                                                                                                                | The sweep's place.                                                                                                                                                                                                                 |
 | `calendar_member_prefs` | member_id, calendar_id, color, hidden                                                                                                                                                                                                                                                                     | Per person.                                                                                                                                                                                                                        |
 | `calendar_availability` | id, org_id, member_id, token_hash, calendar_ids, time_zone, hours, days, enabled                                                                                                                                                                                                                          | One per member and workspace. The token is stored hashed.                                                                                                                                                                          |

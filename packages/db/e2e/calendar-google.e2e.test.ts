@@ -128,7 +128,7 @@ const rowsOf = (calendarId: string, uid: string) =>
 describe("a Gmail inbox's Google Calendar", () => {
   test("one page fills the calendar: a moved instance shows moved, cancelled and excluded ones do not, a working location never", async () => {
     const { rodrigo, calendar } = await gmailInbox("google-fill");
-    expect(await applyGoogleChanges(db, calendar, changes())).toBeGreaterThan(0);
+    expect((await applyGoogleChanges(db, calendar, changes())).changed).toBeGreaterThan(0);
     expect(await shown(rodrigo.id)).toEqual([
       "2026-11-02T09:00:00.000Z Weekly sync",
       "2026-11-16T11:00:00.000Z Weekly sync (moved)",
@@ -148,7 +148,7 @@ describe("a Gmail inbox's Google Calendar", () => {
   test("the same page applied again changes nothing", async () => {
     const { calendar } = await gmailInbox("google-twice");
     await applyGoogleChanges(db, calendar, changes());
-    expect(await applyGoogleChanges(db, calendar, changes())).toBe(0);
+    expect(await applyGoogleChanges(db, calendar, changes())).toEqual({ changed: 0, waiting: [] });
   });
 
   test("a full pass that sees the same page again keeps a cancelled instance cancelled", async () => {
@@ -160,6 +160,29 @@ describe("a Gmail inbox's Google Calendar", () => {
     await finishGoogleFullSync(db, calendar.id, startedAt);
     expect(await shown(rodrigo.id)).toEqual(before);
     expect(before).not.toContain("2026-11-23T09:00:00.000Z Weekly sync");
+  });
+
+  test("a cancelled instance listed before its series waits for it, then hides that instance", async () => {
+    const { rodrigo, calendar } = await gmailInbox("google-instance-first");
+    const cancelled = changes([itemOf("f0c5s1k2wq9series_20261123T090000Z")]);
+    const first = await applyGoogleChanges(db, calendar, cancelled);
+    expect(first.waiting).toEqual(cancelled);
+    const second = await applyGoogleChanges(db, calendar, [
+      ...changes([itemOf("f0c5s1k2wq9series")]),
+      ...first.waiting,
+    ]);
+    expect(second.waiting).toEqual([]);
+    expect(await shown(rodrigo.id)).not.toContain("2026-11-23T09:00:00.000Z Weekly sync");
+    expect(await shown(rodrigo.id)).toContain("2026-11-30T09:00:00.000Z Weekly sync");
+  });
+
+  test("a meeting Google listed first and mail then brought survives a full pass that no longer sees it", async () => {
+    const { box, rodrigo, calendar } = await gmailInbox("google-then-mail");
+    await applyGoogleChanges(db, calendar, changes([itemOf(KICKOFF)]));
+    expect(await deliverInvite(box)).toMatchObject({ status: "stale" });
+    const startedAt = new Date(Date.now() + 60_000);
+    expect(await finishGoogleFullSync(db, calendar.id, startedAt)).toBe(0);
+    expect(await shown(rodrigo.id)).toEqual(["2026-11-24T15:30:00.000Z Acme × Studio: kickoff"]);
   });
 
   test("an invitation in mail and the same meeting in Google are one event, whichever lands first", async () => {
@@ -192,7 +215,7 @@ describe("a Gmail inbox's Google Calendar", () => {
     const [own] = await db.select().from(calendarEvents).where(eq(calendarEvents.id, made.eventId));
     if (!own) throw new Error("no event");
     const google = { ...itemOf(KICKOFF), id: "omni-copy", iCalUID: own.uid, sequence: 9 };
-    expect(await applyGoogleChanges(db, calendar, changes([google]))).toBe(0);
+    expect((await applyGoogleChanges(db, calendar, changes([google]))).changed).toBe(0);
     await applyGoogleChanges(db, calendar, changes([{ id: "omni-copy", status: "cancelled" }]));
     const [after] = await db.select().from(calendarEvents).where(eq(calendarEvents.id, own.id));
     expect(after).toMatchObject({ title: "Planning", source: "omni", status: "confirmed" });

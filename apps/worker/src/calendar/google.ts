@@ -72,6 +72,7 @@ const stateOf = (claim: GoogleSyncClaim) => ({
   syncToken: claim.syncToken,
   pageToken: claim.pageToken,
   fullSyncStartedAt: claim.fullSyncStartedAt,
+  waiting: claim.waiting,
   state: "ok" as const,
 });
 
@@ -96,10 +97,21 @@ async function syncOne(pass: Pass, claim: GoogleSyncClaim) {
       return changed > 0;
     }
     if (answer.status === "reset") {
-      state = { syncToken: null, pageToken: null, fullSyncStartedAt: new Date(), state: "ok" };
+      state = {
+        syncToken: null,
+        pageToken: null,
+        fullSyncStartedAt: new Date(),
+        waiting: [],
+        state: "ok",
+      };
       continue;
     }
-    changed += await applyGoogleChanges(db, calendar, changesOf(answer));
+    const applied = await applyGoogleChanges(db, calendar, [
+      ...changesOf(answer),
+      ...state.waiting,
+    ]);
+    changed += applied.changed;
+    state = { ...state, waiting: applied.waiting };
     if (answer.nextPageToken) {
       state = { ...state, pageToken: answer.nextPageToken };
       if (Date.now() > pass.deadline) break;
@@ -112,6 +124,7 @@ async function syncOne(pass: Pass, claim: GoogleSyncClaim) {
       syncToken: answer.nextSyncToken ?? state.syncToken,
       pageToken: null,
       fullSyncStartedAt: null,
+      waiting: [],
       state: "ok",
       nextSyncAt: new Date(Date.now() + GOOGLE_SYNC_EVERY_MS),
       synced: true,
@@ -130,11 +143,8 @@ function fetchPage(pass: Pass, claim: GoogleSyncClaim, state: ReturnType<typeof 
     {
       orgId: claim.orgId,
       mailboxId: claim.mailboxId,
-      ...(state.pageToken
-        ? { pageToken: state.pageToken }
-        : state.syncToken
-          ? { syncToken: state.syncToken }
-          : {}),
+      ...(state.syncToken ? { syncToken: state.syncToken } : {}),
+      ...(state.pageToken ? { pageToken: state.pageToken } : {}),
     },
     googleCalendarEventsResultSchema,
   );

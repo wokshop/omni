@@ -478,7 +478,7 @@ export const googleCalendarEventsBodySchema = z.object({
   mailboxId: z.string().min(1),
   /** Changes since the pass that returned it. */
   syncToken: z.string().min(1).max(4096).optional(),
-  /** The next page of a pass; wins over `syncToken`. */
+  /** The next page of a pass, sent with the pass's `syncToken` when it has one, as Google asks. */
   pageToken: z.string().min(1).max(4096).optional(),
 });
 

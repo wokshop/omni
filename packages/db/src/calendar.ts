@@ -54,6 +54,7 @@ export {
   finishGoogleFullSync,
   saveGoogleSync,
   type GoogleSyncClaim,
+  type GoogleWaiting,
 } from "./calendar/google.ts";
 export {
   advanceCalendarSweep,

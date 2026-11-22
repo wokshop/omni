@@ -98,18 +98,28 @@ const makeDue = () =>
     .update(schema.calendarGoogleSync)
     .set({ nextSyncAt: sql`now() - interval '1 second'` });
 
-test("a Gmail inbox's Google Calendar shows on its calendar, page by page, then follows changes", async () => {
+test("a Gmail inbox's Google Calendar shows on its calendar, page by page, a cancelled instance before its series included, then follows changes", async () => {
   const ana = await gmailMember("ana");
-  const [first, second] = [page.items.slice(0, 4), page.items.slice(4)];
+  const series = page.items.find((item) => item.id === "f0c5s1k2wq9series");
+  const first = page.items.slice(0, 4).filter((item) => item !== series);
+  const second = [series, ...page.items.slice(4)];
   answers.set(ana.inbox.id, (body) => {
     if (body.syncToken === "sync-1") {
-      return {
-        status: "ok",
-        timeZone: page.timeZone,
-        items: [{ id: "3k9a7v1q2b5c8d0e4f6g", status: "cancelled" }],
-        nextPageToken: null,
-        nextSyncToken: "sync-2",
-      };
+      return body.pageToken === "changes-2"
+        ? {
+            status: "ok",
+            timeZone: page.timeZone,
+            items: [{ id: "3k9a7v1q2b5c8d0e4f6g", status: "cancelled" }],
+            nextPageToken: null,
+            nextSyncToken: "sync-2",
+          }
+        : {
+            status: "ok",
+            timeZone: page.timeZone,
+            items: [],
+            nextPageToken: "changes-2",
+            nextSyncToken: null,
+          };
     }
     return body.pageToken === "page-2"
       ? {
@@ -146,11 +156,10 @@ test("a Gmail inbox's Google Calendar shows on its calendar, page by page, then 
 
   await makeDue();
   await minute();
-  expect(calls(ana.inbox.id).at(-1)).toEqual({
-    orgId: ana.org.id,
-    mailboxId: ana.inbox.id,
-    syncToken: "sync-1",
-  });
+  expect(calls(ana.inbox.id).slice(2)).toEqual([
+    { orgId: ana.org.id, mailboxId: ana.inbox.id, syncToken: "sync-1" },
+    { orgId: ana.org.id, mailboxId: ana.inbox.id, syncToken: "sync-1", pageToken: "changes-2" },
+  ]);
   expect(await shown(ana.session)).not.toContain(
     "2026-11-24T15:30:00.000Z Acme × Studio: kickoff (google)",
   );

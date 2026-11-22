@@ -5,6 +5,7 @@ CREATE TABLE "calendar_google_sync" (
 	"sync_token" text,
 	"page_token" text,
 	"full_sync_started_at" timestamp with time zone,
+	"waiting" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"state" text DEFAULT 'ok' NOT NULL,
 	"next_sync_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"synced_at" timestamp with time zone,

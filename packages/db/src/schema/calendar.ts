@@ -318,6 +318,14 @@ export const calendarGoogleSync = pgTable("calendar_google_sync", {
   syncToken: text("sync_token"),
   pageToken: text("page_token"),
   fullSyncStartedAt: timestamptz("full_sync_started_at"),
+  /**
+   * Cancelled instances whose series the pass has not reached yet (Google lists events in no set
+   * order), applied once it has; what is still waiting when the pass ends had no series.
+   */
+  waiting: jsonb("waiting")
+    .$type<{ googleId: string; seriesGoogleId: string; recurrenceId: string }[]>()
+    .notNull()
+    .default(sql`'[]'::jsonb`),
   /** `ok`, or why Google would not answer: `no_access` (no calendar scope, API off, revoked). */
   state: text("state").notNull().default("ok"),
   nextSyncAt: timestamptz("next_sync_at").notNull().defaultNow(),
