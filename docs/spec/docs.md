@@ -105,8 +105,8 @@ Omni docs and Markdown files alike and keeps each one's type. Its Markdown may h
 
 ## Not in this change
 
-- Sheets and canvases. Each gets its own type (`text/vnd.omni.sheet`, ...) and spec; canvases:
-  `docs/spec/canvas.md`.
+- Sheets (`text/vnd.omni.sheet`, `docs/spec/sheets.md`) and canvases (`text/vnd.omni.canvas`,
+  `docs/spec/canvas.md`), each with its own type and spec.
 - Desktop sync names Omni docs as Drive does, with no extension, so Finder does not know to open
   them as Markdown. Next: the File Provider shows an Omni doc as `<name>.md` and maps that name
   back on rename.
