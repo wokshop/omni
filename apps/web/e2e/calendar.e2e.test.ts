@@ -825,6 +825,43 @@ test("an all-day event moved twice before the first save lands where it was drop
     .toEqual([["2026-11-25T00:00:00.000Z", "2026-11-26T00:00:00.000Z"]]);
 });
 
+async function gesture(page: Page, dx: number, dy: number) {
+  for (let i = 0; i < 12; i++) {
+    await page.mouse.wheel(dx, dy);
+    await page.waitForTimeout(16);
+  }
+  await page.waitForTimeout(500);
+}
+
+const shownDate = (page: Page) => new URL(page.url()).searchParams.get("date");
+
+test("one scroll steps the month, one sideways swipe steps the week, and each gesture steps once", async () => {
+  const { org, page, origin } = await invited();
+  await page.goto(new URL(`/${org.slug}/calendar?date=2026-11-24&view=month`, origin).toString());
+  const grid = await page.locator('[data-month-day="2026-11-24"]').boundingBox();
+  await page.mouse.move((grid?.x ?? 0) + 20, (grid?.y ?? 0) + 20);
+  await gesture(page, 0, 30);
+  await expect.poll(() => shownDate(page)).toBe("2026-12-01");
+  await gesture(page, 0, -30);
+  await gesture(page, 0, -30);
+  await expect.poll(() => shownDate(page)).toBe("2026-10-01");
+
+  await page.goto(new URL(`/${org.slug}/calendar?date=2026-11-24&view=week`, origin).toString());
+  const top = await page.locator('[data-all-day="2026-11-24"]').boundingBox();
+  await page.mouse.move((top?.x ?? 0) + 20, (top?.y ?? 0) + 200);
+  await gesture(page, 0, 30);
+  expect(shownDate(page)).toBe("2026-11-24");
+  await gesture(page, 30, 0);
+  await expect.poll(() => shownDate(page)).toBe("2026-12-01");
+
+  const month = page.getByRole("application", { name: /Month/ });
+  const box = await month.boundingBox();
+  await page.mouse.move((box?.x ?? 0) + 40, (box?.y ?? 0) + 80);
+  await gesture(page, 0, 30);
+  await month.getByRole("heading", { name: "January 2027" }).waitFor();
+  expect(shownDate(page)).toBe("2026-12-01");
+});
+
 test("Delete pressed in an open to-do leaves the selected event alone", async () => {
   const { org, member, page, origin } = await invited();
   await madeEvent(org.id, page, origin, "Focus time", [

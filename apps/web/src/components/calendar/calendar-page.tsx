@@ -1,12 +1,13 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useRouter } from "@tanstack/react-router";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { IconChevronLeft, IconChevronRight } from "@/components/icons/central";
 import { StorageFrame } from "@/components/storage/storage-frame";
 import { TaskPanel, useOpenTask } from "@/components/crm/task-panel.tsx";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipTrigger } from "@/components/ui/tooltip";
 import { useCalendarEvents, useCalendars } from "@/hooks/use-calendar.ts";
+import { useWheelStep } from "@/hooks/use-wheel-step.ts";
 import { useWorkspaceSlug } from "@/hooks/use-workspaces.ts";
 import { warmCalendarWindow, type CalendarEvent } from "@/lib/calendar.ts";
 import type { CrmTask } from "@/lib/crm-tasks.ts";
@@ -142,6 +143,10 @@ export function CalendarPage(props: {
     onDay: view === "day" ? undefined : (day) => go({ date: day, view: "day" }),
     onTodo: toggleTodo,
   });
+  const grid = useRef<HTMLDivElement>(null);
+  useWheelStep(grid, view === "month" ? "y" : "x", (delta) =>
+    go({ date: shiftView(view, anchor, delta) }),
+  );
 
   return (
     <div className="flex h-svh min-h-0 min-w-0">
@@ -182,7 +187,7 @@ export function CalendarPage(props: {
             </>
           }
         >
-          <div className="flex min-h-0 flex-1" {...menu}>
+          <div ref={grid} className="flex min-h-0 flex-1" {...menu}>
             {view === "month" ? (
               <MonthGrid
                 days={days}
