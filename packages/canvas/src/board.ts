@@ -125,7 +125,9 @@ export class Board {
         const bound = this.byId.get(end.id);
         const box = bound ? this.boundsOf(bound) : null;
         if (!box) continue;
-        end.at = anchor(box, this.pointOf(other));
+        const at = anchor(box, this.pointOf(other));
+        if (at[0] === end.at[0] && at[1] === end.at[1]) continue;
+        end.at = at;
         this.touch(element);
       }
     }
