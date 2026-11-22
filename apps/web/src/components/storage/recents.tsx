@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
 import { Skeleton } from "skullet/react";
 import { EmptyState } from "@/components/empty/empty-state";
 import { ListFailed } from "@/components/inbox/thread-list";
@@ -26,9 +27,16 @@ interface Row {
 
 const SHARED_LABEL = "Shared with you";
 
+const SHARED_PAGES = 5;
+
 function useRows() {
   const recent = useQuery(storageRecentQuery());
   const shared = useSharedWithMe();
+  const pages = shared.data?.pages.length ?? 0;
+  const { hasNextPage, isFetchingNextPage, fetchNextPage } = shared;
+  useEffect(() => {
+    if (hasNextPage && !isFetchingNextPage && pages < SHARED_PAGES) void fetchNextPage();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage, pages]);
   const { drives } = useDrives();
   const href = useStorageHref();
   const label = (node: StorageNode) =>

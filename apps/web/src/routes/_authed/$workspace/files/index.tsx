@@ -25,8 +25,10 @@ export const Route = createFileRoute("/_authed/$workspace/files/")({
     }
     const spaces = context.workspace.kind === "personal" ? ["personal"] : ["shared", "personal"];
     for (const space of spaces as ("personal" | "shared")[]) {
-      const page = await queryClient.ensureInfiniteQueryData(storageListQuery({ space }));
-      if (page.pages[0]?.nodes.length) {
+      const page = await queryClient
+        .ensureInfiniteQueryData(storageListQuery({ space }))
+        .catch(() => null);
+      if (page?.pages[0]?.nodes.length) {
         throw redirect({
           to: `/$workspace/files/${space === "personal" ? "my" : "shared"}`,
           params,
