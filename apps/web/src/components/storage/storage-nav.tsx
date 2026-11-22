@@ -136,7 +136,7 @@ export function StorageNav({ mailbox }: { mailbox: string | undefined }) {
               key={teamspace.id}
               drive={{ teamspaceId: teamspace.id }}
               label={teamspace.name}
-              icon={<SpaceIcon teamspace={teamspace} className="size-icon" />}
+              icon={<SpaceIcon teamspace={teamspace} />}
               search={search}
             />
           ))}

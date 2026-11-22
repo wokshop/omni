@@ -30,6 +30,16 @@
   --primary-foreground: #ffffff;
   /* The ivory of the sign-in tiles, deepened a step so the Omni globe holds on white. */
   --brand-cream: #dcc7a8;
+  /* Behind a Drive space's white glyph, one per space so neighbours tell apart; each holds a
+     white glyph at 3.4:1 or more. */
+  --space-1: #0a6cff;
+  --space-2: #4f46ff;
+  --space-3: #9a2cf5;
+  --space-4: #f2266f;
+  --space-5: #f5321e;
+  --space-6: #f05a00;
+  --space-7: #0e9f45;
+  --space-8: #008fa3;
 
   /* Tactility (`.claude/skills/tactile-design`): depth and press, layered on the Figma look
      without changing it. Cards take no drop, only their border; things that float take one
@@ -218,6 +228,14 @@
   --color-module-calendar: var(--module-calendar);
   --color-module-meetings: var(--module-meetings);
   --color-calendar-line: var(--calendar-line);
+  --color-space-1: var(--space-1);
+  --color-space-2: var(--space-2);
+  --color-space-3: var(--space-3);
+  --color-space-4: var(--space-4);
+  --color-space-5: var(--space-5);
+  --color-space-6: var(--space-6);
+  --color-space-7: var(--space-7);
+  --color-space-8: var(--space-8);
   --color-calendar-weekend: var(--calendar-weekend);
   --color-module-foreground: var(--module-foreground);
   --color-sidebar-foreground: var(--sidebar-foreground);
