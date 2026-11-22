@@ -1094,6 +1094,56 @@ test("the sidebar month keeps one height whether its month spans four, five or s
   expect(new Set(heights).size).toBe(1);
 });
 
+test("a day picked in the sidebar right after scrolling into another month stays picked", async () => {
+  const { org, page, origin } = await invited();
+  await page.goto(new URL(`/${org.slug}/calendar?date=2026-11-24&view=month`, origin).toString());
+  const day = page.locator('[data-month-day="2026-11-24"]');
+  await day.waitFor();
+  const box = await day.boundingBox();
+  await page.mouse.move((box?.x ?? 0) + 20, (box?.y ?? 0) + 20);
+  for (let i = 0; i < 5; i++) await page.mouse.wheel(0, box?.height ?? 100);
+  await page.getByRole("heading", { name: "December 2026" }).first().waitFor();
+  await page.getByRole("grid", { name: /Month/ }).getByText("10", { exact: true }).first().click();
+  await page.waitForTimeout(800);
+  expect(shownDate(page)).toBe("2026-11-10");
+});
+
+test("after scrolling a month and back, a month picked in the sidebar scrolls the page there", async () => {
+  const { org, page, origin } = await invited();
+  await page.goto(new URL(`/${org.slug}/calendar?date=2026-11-24&view=month`, origin).toString());
+  const day = page.locator('[data-month-day="2026-11-24"]');
+  await day.waitFor();
+  const box = await day.boundingBox();
+  const row = box?.height ?? 100;
+  await page.mouse.move((box?.x ?? 0) + 20, (box?.y ?? 0) + 20);
+  for (let i = 0; i < 10; i++) {
+    await page.mouse.wheel(0, row);
+  }
+  await page.getByRole("heading", { name: "January 2027" }).first().waitFor();
+  for (let i = 0; i < 5; i++) {
+    await page.mouse.wheel(0, -row);
+  }
+  await expect.poll(() => shownDate(page)).toBe("2026-12-01");
+  await page
+    .getByRole("application", { name: /Month/ })
+    .getByRole("button", { name: "Next month" })
+    .click();
+  await page.getByRole("grid", { name: /Month/ }).getByText("1", { exact: true }).first().click();
+  await expect.poll(() => shownDate(page)).toBe("2027-01-01");
+  await expect
+    .poll(() =>
+      page
+        .locator('[data-week="2026-12-28"]')
+        .evaluate((week) =>
+          Math.abs(
+            week.getBoundingClientRect().top -
+              (week.parentElement?.getBoundingClientRect().top ?? 0),
+          ),
+        ),
+    )
+    .toBeLessThan(1);
+});
+
 test("one sideways swipe steps the week, and each gesture steps once", async () => {
   const { org, page, origin } = await invited();
   await page.goto(new URL(`/${org.slug}/calendar?date=2026-11-24&view=week`, origin).toString());
