@@ -164,7 +164,7 @@ function CodeBody(props: { text: string; hash: boolean }) {
 function Grid(props: { rows: string[][] }) {
   return (
     <Page bare>
-      <table style={{ ...MINI.cell, width: "170cqw" }} className="table-fixed border-collapse">
+      <table style={{ ...MINI.cell, width: "200cqw" }} className="table-fixed border-collapse">
         <tbody>
           {props.rows.map((row, r) => (
             <tr key={r} className={r === 0 ? "bg-accent text-foreground" : "text-muted-foreground"}>
