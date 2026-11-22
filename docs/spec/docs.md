@@ -133,13 +133,21 @@ text.
 - **The journal is durable; the stream is not.** S2 keeps records until the basin's retention
   drops them, so history cannot be read from it. After each save of a live document (a tab's,
   the orphan save's, the Worker's), a job reads the stream from the last journaled record to the
-  save's `s`, merges each author's updates into one Yjs update per author and minute, and writes
-  them to `storage_doc_changes` (`org_id`, `node_id`, `epoch`, `first_seq`, `last_seq`, `by`, the
-  author's name and agent at the time, `started_at`, `ended_at`, `update` bytea,
-  `content_version` of the save). Unique on `(node_id, epoch, first_seq)`, so a job run twice
-  writes nothing new. A write outside the live layer (an upload of a new version, an agent edit
-  with nobody editing, a restore) journals one row for its writer, with no update: the versions
-  around it already hold both sides.
+  save's `s` and writes it to `storage_doc_changes` (`org_id`, `node_id`, `epoch`, `first_seq`,
+  `last_seq`, `by`, the author's name and agent at the time, `started_at`, `ended_at`, `update`
+  bytea, `content_version` of the save). A row is a **run**: consecutive records by one author,
+  merged into one Yjs update, cut at a minute or at the first record by anyone else. Runs keep the
+  stream's order, so when two people take turns in one block each turn is a row of its own, and a
+  replay applies them in the order they were typed. Unique on `(node_id, epoch, first_seq)`, so a
+  job run twice writes nothing new. A write outside the live layer (an upload of a new version, an
+  agent edit with nobody editing, a restore) journals one row for its writer, with no update: the
+  versions around it already hold both sides.
+- **Baselines.** A run's update refers to the Yjs identities of the epoch it was typed in, and a
+  document rebuilt from Markdown has new ones, so runs replay only onto Yjs state. The job keeps
+  that state in `storage_doc_baselines` (`org_id`, `node_id`, `epoch`, `seq`, `state` bytea): the
+  epoch's `seed` when it first journals an epoch (or the `snap` it started from, if the seed is
+  gone), and a checkpoint of the merged state every 500 rows after it. A replay starts at the
+  latest baseline at or before the runs it needs.
 - **Sessions are the journal grouped** by the rule of "Versions" (one author kind, 5 minutes idle,
   15 at most), except that a session in History may hold several people writing together: a
   member's session absorbs the minutes in which others wrote alongside them, and names them all.
@@ -153,9 +161,11 @@ text.
 - `@omni/docs` gains `diffBlocks(before, after)`: the two documents' top-level blocks matched by
   content (a block moved is one move, not a removal and an addition), then each changed block's
   text diffed by word. Pure, in the shared package, so the panel and agents read the same diff.
-- **Who changed which block.** Replaying a session's journal rows in order over the version it
-  started from, and diffing blocks after each author's update, names the author of each change.
-  Concurrent typing in one block names everyone who typed in it.
+- **Who changed which block.** Replaying runs in stream order from the latest baseline before the
+  session, and diffing blocks before and after each run of the session, names the author of each
+  change. Two people typing in one block name both. A session that crosses an epoch (the file
+  changed outside the live layer) starts again from the new epoch's seed; the write that ended the
+  epoch journaled its own row.
 
 ### Restore goes through the live document
 
@@ -188,7 +198,7 @@ edit through the live document.
 ### In order
 
 1. Restore through the live document, and `by` on every record (no migration).
-2. `storage_doc_changes` and the journal job.
+2. `storage_doc_changes`, `storage_doc_baselines` and the journal job.
 3. `diffBlocks`, the History routes and `drive_versions` sessions.
 4. The History panel in `apps/web`, from its Figma frame.
 
