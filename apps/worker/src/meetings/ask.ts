@@ -106,7 +106,7 @@ export async function answerAsk(c: Context<AppEnv>, question: string, sources: A
   await requireMeter(c.var.db, c.var.config, {
     orgId: first.orgId,
     meter: "assist",
-    key: `meetings-ask:${c.var.requestId}`,
+    key: `meetings-ask:${crypto.randomUUID()}`,
   });
   const result = await askMeetings(client, question, sources.map(asked));
   await recordAiUsage(c.var.db, first.orgId, result.usage);
