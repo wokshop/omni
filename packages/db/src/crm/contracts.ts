@@ -149,7 +149,7 @@ function datesRefusal(effectiveOn: string | null, expiresOn: string | null) {
 export async function usableDocument(tx: Ex, member: CrmMember, nodeId: string) {
   const found = await memberStorage(tx as Db, member.id).node(nodeId);
   return Boolean(
-    found && found.node.kind === "file" && found.node.space === "shared" && !found.node.trashedAt,
+    found && found.node.kind === "file" && found.node.space !== "personal" && !found.node.trashedAt,
   );
 }
 
@@ -366,7 +366,7 @@ export const updateContract: (
   await involveAndFile(tx, member, current, contract!, patch.memberIds);
   if (move.lock) {
     const locked = await memberStorage(tx as Db, member.id).lock(move.lock);
-    if (locked.status !== "ok" || locked.node.space !== "shared") {
+    if (locked.status !== "ok" || locked.node.space === "personal") {
       refuse(invalid("documentNodeId"));
     }
   }

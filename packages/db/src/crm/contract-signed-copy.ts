@@ -96,7 +96,7 @@ export const recordSignedCopy: (
   const storage = memberStorage(tx as Db, member.id);
   for (const nodeId of new Set([documentNodeId, input.nodeId])) {
     const locked = await storage.lock(nodeId);
-    if (locked.status !== "ok" || locked.node.space !== "shared") refuse(invalid("nodeId"));
+    if (locked.status !== "ok" || locked.node.space === "personal") refuse(invalid("nodeId"));
   }
   const copy = { signedNodeId: input.nodeId, signers, elsewhere: true };
   if (signing) {
