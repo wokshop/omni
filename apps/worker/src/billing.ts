@@ -96,6 +96,13 @@ export async function capRefusal(db: Db, config: Config, orgId: string, cap: Cap
   };
 }
 
+/** The most of `cap` the plan holds, or null for no limit (or billing off). */
+export async function capMax(db: Db, config: Config, orgId: string, cap: Cap) {
+  const plan = await entitlements(db, config, orgId);
+  const max: number | null = plan.enabled ? plan.limits[cap] : null;
+  return max;
+}
+
 /** Refuses (`402 plan_limit`) adding `adding` more of `cap` when the plan holds no more. */
 export async function requireCap(db: Db, config: Config, orgId: string, cap: Cap, adding = 1) {
   const refusal = await capRefusal(db, config, orgId, cap, adding);

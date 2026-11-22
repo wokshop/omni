@@ -4,6 +4,7 @@ import { crmOf, dealRow, refusalText, rowContext, type CrmWorkspace } from "../c
 import type { ToolContext } from "../server.ts";
 import { archivedSchema, changesFields, ownerId, refusal, type Written } from "./shared.ts";
 import { capRefusal } from "../../billing.ts";
+import { withinCrmRecords } from "./record-limit.ts";
 
 export const dealSchema = z
   .object({
@@ -119,10 +120,10 @@ const addDeal: (
   if (full) return { error: `${full.message[0]!.toUpperCase()}${full.message.slice(1)}.` };
   const made = await fieldsOf(context, workspace, input);
   if ("error" in made) return made;
-  const added = await crmOf(context, workspace).createDeal({
-    name: input.name,
-    ...made.fields,
-  });
+  const added = await withinCrmRecords(context, workspace, (max) =>
+    crmOf(context, workspace).createDeal({ name: input.name!, ...made.fields }, max),
+  );
+  if ("error" in added) return added;
   return added.status === "ok" ? { deal: added.deal } : refusal(added);
 };
 

@@ -167,6 +167,48 @@ test("Free holds 500 CRM records, archived ones and a person's new company inclu
   expect((await add(`ana-${tag()}@client.test`)).status).toBe(201);
 });
 
+test("adds at once cannot both take the last CRM place", async () => {
+  const owner = await stack.workspaceWithDomain();
+  await stack.database.db
+    .insert(schema.crmPeople)
+    .values(Array.from({ length: 499 }, (_, i) => ({ orgId: owner.orgId, name: `Person ${i}` })));
+  const answers = await Promise.all(
+    Array.from({ length: 6 }, (_, i) =>
+      api(owner.jar, "POST", "/crm/companies", { name: `Client ${i}` }),
+    ),
+  );
+  expect(answers.map((a) => a.status).toSorted()).toEqual([201, 402, 402, 402, 402, 402]);
+  const companies = await stack.database.db
+    .select()
+    .from(schema.crmCompanies)
+    .where(eq(schema.crmCompanies.orgId, owner.orgId));
+  expect(companies).toHaveLength(1);
+});
+
+test("a domain moved into a Free workspace that already holds one is refused", async () => {
+  const owner = await stack.workspaceWithDomain();
+  const switched = await authPost(stack.worker, owner.jar, "/organization/set-active", {
+    organizationId: owner.homeOrgId,
+  });
+  expect(switched.status).toBe(200);
+  const domain = `second-${tag()}.test`;
+  stack.dns.addZone(domain);
+  const claimed = await api(owner.jar, "POST", "/onboarding/domains", { domain });
+  expect(claimed.status).toBe(200);
+  stack.publishChallenge(claimed.body);
+  const id = claimed.body.id as string;
+  expect((await api(owner.jar, "POST", `/onboarding/domains/${id}/check`)).body).toMatchObject({
+    verified: true,
+  });
+  const moved = await api(owner.jar, "POST", `/onboarding/domains/${id}/transfer`, {
+    organizationId: owner.orgId,
+  });
+  expect(moved).toMatchObject({
+    status: 402,
+    body: { code: "PLAN_LIMIT", details: { cap: "domains", max: 1, held: 1 } },
+  });
+});
+
 test("a person owns at most 2 Free workspaces; paying for one makes room for another", async () => {
   const owner = await stack.signedInOwner();
   const create = () =>

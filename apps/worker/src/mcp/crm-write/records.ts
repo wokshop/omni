@@ -3,6 +3,7 @@ import { z } from "zod";
 import { companyRow, crmOf, personRow, rowContext, type CrmWorkspace } from "../crm.ts";
 import type { ToolContext } from "../server.ts";
 import { capRefusal } from "../../billing.ts";
+import { withinCrmRecords } from "./record-limit.ts";
 import {
   archivedSchema,
   changesFields,
@@ -75,14 +76,20 @@ async function addPerson(context: ToolContext, workspace: CrmWorkspace, input: P
   if (full) return { error: `${full.message[0]!.toUpperCase()}${full.message.slice(1)}.` };
   const owner = await ownerId(context, workspace, input.owner);
   if ("error" in owner) return owner;
-  const added = await crmOf(context, workspace).addPerson({
-    name: input.name,
-    address: input.email,
-    companyId: input.company_id,
-    jobTitle: input.job_title,
-    phone: input.phone,
-    ownerMemberId: owner.id,
-  });
+  const added = await withinCrmRecords(context, workspace, (max) =>
+    crmOf(context, workspace).addPerson(
+      {
+        name: input.name!,
+        address: input.email!,
+        companyId: input.company_id,
+        jobTitle: input.job_title,
+        phone: input.phone,
+        ownerMemberId: owner.id,
+      },
+      max,
+    ),
+  );
+  if ("error" in added) return added;
   if (added.status !== "ok") return refusal(added);
   const result: Output["result"] = added.created ? "added" : "already_there";
   return { person: added.person, result };
@@ -159,12 +166,18 @@ async function addCompany(context: ToolContext, workspace: CrmWorkspace, input: 
   if (full) return { error: `${full.message[0]!.toUpperCase()}${full.message.slice(1)}.` };
   const owner = await ownerId(context, workspace, input.owner);
   if ("error" in owner) return owner;
-  const added = await crmOf(context, workspace).createCompany({
-    name: input.name,
-    description: input.description,
-    domains: input.domains,
-    ownerMemberId: owner.id,
-  });
+  const added = await withinCrmRecords(context, workspace, (max) =>
+    crmOf(context, workspace).createCompany(
+      {
+        name: input.name!,
+        description: input.description,
+        domains: input.domains,
+        ownerMemberId: owner.id,
+      },
+      max,
+    ),
+  );
+  if ("error" in added) return added;
   return added.status === "ok" ? { company: added.company } : refusal(added);
 }
 

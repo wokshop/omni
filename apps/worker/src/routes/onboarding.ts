@@ -320,6 +320,7 @@ export const onboarding = new Hono<AppEnv>()
       }
       const setup = await memberDomain(c);
       const domain = (setup.claim?.domain ?? setup.lock?.domain)!;
+      if (!(await holdsDomain(db, to, domain))) await requireCap(db, c.var.config, to, "domains");
       const result = await transferDomain(db, { fromOrgId: member.orgId, toOrgId: to, domain });
       if (!result.ok) throw handOverRefusal(result.reason, domain);
       const [fromName, toName] = await Promise.all([orgName(db, member.orgId), orgName(db, to)]);

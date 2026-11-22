@@ -13,7 +13,7 @@ import { Hono } from "hono";
 import type { AppEnv } from "../context.ts";
 import { zValidator } from "../validator.ts";
 import { lastContactedAt, subjectOf } from "./mail.ts";
-import { requireCap } from "../billing.ts";
+import { capMax, requireCap } from "../billing.ts";
 import {
   announce,
   encodeCursor,
@@ -44,7 +44,8 @@ export const people = new Hono<AppEnv>()
     if (adding > 0) {
       await requireCap(c.var.db, c.var.config, c.var.member.orgId, "crmRecords", adding);
     }
-    const added = await memberCrm(c).addPerson(c.req.valid("json"));
+    const max = await capMax(c.var.db, c.var.config, c.var.member.orgId, "crmRecords");
+    const added = await memberCrm(c).addPerson(c.req.valid("json"), max);
     if (added.status !== "ok") return refused(c, added);
     const { person, created } = added;
     if (created) {
