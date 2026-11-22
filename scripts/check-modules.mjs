@@ -10,9 +10,10 @@ import { dirname, join, normalize } from "node:path";
 export const MODULES = {
   mail: { uses: [], workerUses: ["storage"], prefixed: false },
   storage: { uses: [], prefixed: true },
-  crm: { uses: ["mail", "storage"], prefixed: true },
+  crm: { uses: ["mail", "storage", "calendar"], prefixed: true },
   calendar: { uses: ["mail"], prefixed: true },
   talk: { uses: ["storage"], prefixed: true },
+  meetings: { uses: ["calendar", "storage"], prefixed: true },
 };
 
 const REGISTRARS = [

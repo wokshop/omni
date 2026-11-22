@@ -1,6 +1,6 @@
 import { normalizeAddress } from "@omni/mail-core/addresses";
 import type { Db } from "./client.ts";
-import { calendarsOf, type Ex, type VisibleMailbox } from "./calendar/core.ts";
+import { calendarsOf, NOT_FOUND, type Ex, type VisibleMailbox } from "./calendar/core.ts";
 import {
   hiddenCalendars,
   invitesIn,
@@ -17,6 +17,20 @@ import {
   type Writer,
 } from "./calendar/write.ts";
 import { getEvent, listEvents, windowRefused } from "./calendar/read.ts";
+import {
+  createOwnTask,
+  deleteOwnTask,
+  ownTask,
+  ownTasks,
+  releaseMemberTasks,
+  taskMember,
+  updateOwnTask,
+  type OwnTaskInput,
+  type OwnTaskPatch,
+  type TaskMember,
+  type TaskMirror,
+  type TaskQuery,
+} from "./calendar/tasks.ts";
 import { memberMail, userMail } from "./mail.ts";
 
 export type { VisibleMailbox } from "./calendar/core.ts";
@@ -76,7 +90,7 @@ function calendarDoor(db: Db, mailboxes: Mailboxes) {
  * inbox is, through mail's door, so a member sees the events of the inboxes they can open in
  * their workspace and nothing else. Writes run in one transaction with the mail they send.
  */
-export function memberCalendar(db: Db, memberId: string) {
+export function memberCalendar(db: Db, memberId: string, mirror?: TaskMirror) {
   const mail = memberMail(db, memberId);
   const mailboxes = async () =>
     (await mail.listMailboxes()).map((m) => ({ ...m, address: normalizeAddress(m.address) }));
@@ -121,7 +135,23 @@ export function memberCalendar(db: Db, memberId: string) {
       write(requestId, (tx, writer) => updateOwnEvent(tx, writer, eventId, patch)),
     deleteEvent: (eventId: string, requestId: string | null = null) =>
       write(requestId, (tx, writer) => deleteOwnEvent(tx, writer, eventId)),
+
+    tasks: (query: TaskQuery = {}) => asTaskMember(db, memberId, (m) => ownTasks(db, m, query)),
+    task: (id: string) => asTaskMember(db, memberId, (m) => ownTask(db, m, id)),
+    createTask: (input: Omit<OwnTaskInput, "id">) =>
+      asTaskMember(db, memberId, (m) => db.transaction((tx) => createOwnTask(tx, m, input))),
+    updateTask: (id: string, patch: OwnTaskPatch) =>
+      asTaskMember(db, memberId, (m) =>
+        db.transaction((tx) => updateOwnTask(tx, m, id, patch, mirror)),
+      ),
+    deleteTask: (id: string) =>
+      asTaskMember(db, memberId, (m) => db.transaction((tx) => deleteOwnTask(tx, m, id, mirror))),
   };
+}
+
+async function asTaskMember<T>(db: Db, memberId: string, fn: (member: TaskMember) => Promise<T>) {
+  const member = await taskMember(db, memberId);
+  return member ? fn(member) : NOT_FOUND;
 }
 
 type Answer = Parameters<typeof answerEvent>[3];
@@ -141,3 +171,32 @@ export {
   type OwnEventInput,
   type OwnEventPatch,
 } from "./calendar/write.ts";
+export {
+  countLinkedTasks,
+  dropTasksOn,
+  linkedTasks,
+  putTask,
+  readTask as calendarTask,
+  removeTask,
+  taskVersions,
+  tasksOnRecord,
+  TASK_BODY_MAX,
+  TASK_STEPS_MAX,
+  TASK_TITLE_MAX,
+  type CalendarTask,
+  type CalendarTaskResult,
+  type OwnTaskInput,
+  type OwnTaskPatch,
+  type LinkedTaskFilter,
+  type TaskCursor,
+  type TaskMirror,
+  type TaskQuery,
+  type TaskRecord,
+  type TaskRecordKind,
+  type TaskRow,
+  type TaskStep,
+} from "./calendar/tasks.ts";
+
+/** A member is leaving: their private tasks go, their linked ones stay unassigned. */
+export const releaseCalendarTasks = (db: Db, input: { orgId: string; memberId: string }) =>
+  db.transaction((tx) => releaseMemberTasks(tx, input.orgId, input.memberId));

@@ -19,6 +19,7 @@ import {
   setCrmFields,
   settleCrm,
 } from "./crm-cache.ts";
+import { calendarTaskKeys } from "./calendar-tasks.ts";
 import { currentId, pendingFailed, pendingMade, settledId } from "./crm-pending.ts";
 import { keys } from "./query-keys.ts";
 
@@ -101,7 +102,8 @@ export const crmTaskCountsQuery = () =>
     select: (data) => data.counts,
   });
 
-const settle = (client: QueryClient) => settleCrm(client);
+const settle = (client: QueryClient) =>
+  settleCrm(client, () => client.invalidateQueries({ queryKey: calendarTaskKeys.all() }));
 
 /** A new task, with the pending id (`pendingId()`) its row shows under until the Worker answers. */
 export type PendingTask = NewTask & { pendingId: string };
@@ -159,6 +161,7 @@ function draftTask(client: QueryClient, input: PendingTask, self: string | null)
     dealId: input.dealId ?? null,
     recordName: typeof record?.name === "string" ? record.name : null,
     recordDomain: typeof record?.domain === "string" ? record.domain : null,
+    ownerMemberId: self,
     assigneeMemberId: input.assigneeMemberId === undefined ? self : input.assigneeMemberId,
     dueAt: input.dueAt ?? null,
     completedAt: null,
@@ -325,7 +328,7 @@ export const DUE_GROUPS: { id: DueGroup; label: string }[] = [
 ];
 
 /** Where an open task falls by its due time, in this device's day. */
-export function dueGroup(task: CrmTask, now = new Date()) {
+export function dueGroup(task: Pick<CrmTask, "dueAt">, now = new Date()) {
   let group: DueGroup = "upcoming";
   if (!task.dueAt) group = "none";
   else if (new Date(task.dueAt) < now) group = "overdue";
