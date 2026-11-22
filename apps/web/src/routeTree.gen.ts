@@ -65,6 +65,8 @@ import { Route as AuthedWorkspaceMailSearchThreadIdRouteImport } from "./routes/
 import { Route as AuthedWorkspaceMailSentThreadIdRouteImport } from "./routes/_authed/$workspace/mail/sent.$threadId";
 import { Route as AuthedWorkspaceMailSpamThreadIdRouteImport } from "./routes/_authed/$workspace/mail/spam.$threadId";
 import { Route as AuthedWorkspaceMailTrashThreadIdRouteImport } from "./routes/_authed/$workspace/mail/trash.$threadId";
+import { Route as AuthedWorkspaceFilesTTeamspaceIdIndexRouteImport } from "./routes/_authed/$workspace/files/t.$teamspaceId.index";
+import { Route as AuthedWorkspaceFilesTTeamspaceIdFolderIdRouteImport } from "./routes/_authed/$workspace/files/t.$teamspaceId.$folderId";
 
 const IndexRoute = IndexRouteImport.update({
   id: "/",
@@ -382,6 +384,18 @@ const AuthedWorkspaceMailTrashThreadIdRoute =
     path: "/$threadId",
     getParentRoute: () => AuthedWorkspaceMailTrashRoute,
   } as any);
+const AuthedWorkspaceFilesTTeamspaceIdIndexRoute =
+  AuthedWorkspaceFilesTTeamspaceIdIndexRouteImport.update({
+    id: "/files/t/$teamspaceId/",
+    path: "/files/t/$teamspaceId/",
+    getParentRoute: () => AuthedWorkspaceRoute,
+  } as any);
+const AuthedWorkspaceFilesTTeamspaceIdFolderIdRoute =
+  AuthedWorkspaceFilesTTeamspaceIdFolderIdRouteImport.update({
+    id: "/files/t/$teamspaceId/$folderId",
+    path: "/files/t/$teamspaceId/$folderId",
+    getParentRoute: () => AuthedWorkspaceRoute,
+  } as any);
 
 export interface FileRoutesByFullPath {
   "/": typeof IndexRoute;
@@ -439,6 +453,8 @@ export interface FileRoutesByFullPath {
   "/$workspace/crm/tasks/": typeof AuthedWorkspaceCrmTasksIndexRoute;
   "/$workspace/files/my/": typeof AuthedWorkspaceFilesMyIndexRoute;
   "/$workspace/files/shared/": typeof AuthedWorkspaceFilesSharedIndexRoute;
+  "/$workspace/files/t/$teamspaceId/$folderId": typeof AuthedWorkspaceFilesTTeamspaceIdFolderIdRoute;
+  "/$workspace/files/t/$teamspaceId/": typeof AuthedWorkspaceFilesTTeamspaceIdIndexRoute;
 }
 export interface FileRoutesByTo {
   "/": typeof IndexRoute;
@@ -495,6 +511,8 @@ export interface FileRoutesByTo {
   "/$workspace/crm/tasks": typeof AuthedWorkspaceCrmTasksIndexRoute;
   "/$workspace/files/my": typeof AuthedWorkspaceFilesMyIndexRoute;
   "/$workspace/files/shared": typeof AuthedWorkspaceFilesSharedIndexRoute;
+  "/$workspace/files/t/$teamspaceId/$folderId": typeof AuthedWorkspaceFilesTTeamspaceIdFolderIdRoute;
+  "/$workspace/files/t/$teamspaceId": typeof AuthedWorkspaceFilesTTeamspaceIdIndexRoute;
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport;
@@ -554,6 +572,8 @@ export interface FileRoutesById {
   "/_authed/$workspace/crm/tasks/": typeof AuthedWorkspaceCrmTasksIndexRoute;
   "/_authed/$workspace/files/my/": typeof AuthedWorkspaceFilesMyIndexRoute;
   "/_authed/$workspace/files/shared/": typeof AuthedWorkspaceFilesSharedIndexRoute;
+  "/_authed/$workspace/files/t/$teamspaceId/$folderId": typeof AuthedWorkspaceFilesTTeamspaceIdFolderIdRoute;
+  "/_authed/$workspace/files/t/$teamspaceId/": typeof AuthedWorkspaceFilesTTeamspaceIdIndexRoute;
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath;
@@ -612,7 +632,9 @@ export interface FileRouteTypes {
     | "/$workspace/crm/projects/"
     | "/$workspace/crm/tasks/"
     | "/$workspace/files/my/"
-    | "/$workspace/files/shared/";
+    | "/$workspace/files/shared/"
+    | "/$workspace/files/t/$teamspaceId/$folderId"
+    | "/$workspace/files/t/$teamspaceId/";
   fileRoutesByTo: FileRoutesByTo;
   to:
     | "/"
@@ -668,7 +690,9 @@ export interface FileRouteTypes {
     | "/$workspace/crm/projects"
     | "/$workspace/crm/tasks"
     | "/$workspace/files/my"
-    | "/$workspace/files/shared";
+    | "/$workspace/files/shared"
+    | "/$workspace/files/t/$teamspaceId/$folderId"
+    | "/$workspace/files/t/$teamspaceId";
   id:
     | "__root__"
     | "/"
@@ -726,7 +750,9 @@ export interface FileRouteTypes {
     | "/_authed/$workspace/crm/projects/"
     | "/_authed/$workspace/crm/tasks/"
     | "/_authed/$workspace/files/my/"
-    | "/_authed/$workspace/files/shared/";
+    | "/_authed/$workspace/files/shared/"
+    | "/_authed/$workspace/files/t/$teamspaceId/$folderId"
+    | "/_authed/$workspace/files/t/$teamspaceId/";
   fileRoutesById: FileRoutesById;
 }
 export interface RootRouteChildren {
@@ -1131,6 +1157,20 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof AuthedWorkspaceMailTrashThreadIdRouteImport;
       parentRoute: typeof AuthedWorkspaceMailTrashRoute;
     };
+    "/_authed/$workspace/files/t/$teamspaceId/": {
+      id: "/_authed/$workspace/files/t/$teamspaceId/";
+      path: "/files/t/$teamspaceId";
+      fullPath: "/$workspace/files/t/$teamspaceId/";
+      preLoaderRoute: typeof AuthedWorkspaceFilesTTeamspaceIdIndexRouteImport;
+      parentRoute: typeof AuthedWorkspaceRoute;
+    };
+    "/_authed/$workspace/files/t/$teamspaceId/$folderId": {
+      id: "/_authed/$workspace/files/t/$teamspaceId/$folderId";
+      path: "/files/t/$teamspaceId/$folderId";
+      fullPath: "/$workspace/files/t/$teamspaceId/$folderId";
+      preLoaderRoute: typeof AuthedWorkspaceFilesTTeamspaceIdFolderIdRouteImport;
+      parentRoute: typeof AuthedWorkspaceRoute;
+    };
   }
 }
 
@@ -1332,6 +1372,8 @@ interface AuthedWorkspaceRouteChildren {
   AuthedWorkspaceFilesSharedFolderIdRoute: typeof AuthedWorkspaceFilesSharedFolderIdRoute;
   AuthedWorkspaceFilesMyIndexRoute: typeof AuthedWorkspaceFilesMyIndexRoute;
   AuthedWorkspaceFilesSharedIndexRoute: typeof AuthedWorkspaceFilesSharedIndexRoute;
+  AuthedWorkspaceFilesTTeamspaceIdFolderIdRoute: typeof AuthedWorkspaceFilesTTeamspaceIdFolderIdRoute;
+  AuthedWorkspaceFilesTTeamspaceIdIndexRoute: typeof AuthedWorkspaceFilesTTeamspaceIdIndexRoute;
 }
 
 const AuthedWorkspaceRouteChildren: AuthedWorkspaceRouteChildren = {
@@ -1358,6 +1400,10 @@ const AuthedWorkspaceRouteChildren: AuthedWorkspaceRouteChildren = {
     AuthedWorkspaceFilesSharedFolderIdRoute,
   AuthedWorkspaceFilesMyIndexRoute: AuthedWorkspaceFilesMyIndexRoute,
   AuthedWorkspaceFilesSharedIndexRoute: AuthedWorkspaceFilesSharedIndexRoute,
+  AuthedWorkspaceFilesTTeamspaceIdFolderIdRoute:
+    AuthedWorkspaceFilesTTeamspaceIdFolderIdRoute,
+  AuthedWorkspaceFilesTTeamspaceIdIndexRoute:
+    AuthedWorkspaceFilesTTeamspaceIdIndexRoute,
 };
 
 const AuthedWorkspaceRouteWithChildren = AuthedWorkspaceRoute._addFileChildren(
