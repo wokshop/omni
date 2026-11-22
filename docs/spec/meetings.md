@@ -141,6 +141,12 @@ addresses and domains, plus the ones put on them (`docs/spec/crm.md`, "The timel
 it on a record and taking it off go through the CRM's routes, which check the record first; the
 meeting's `PATCH` only takes it off (`record: null`).
 
+On the web: a project's page has a **Meetings** tab (each meeting's title, when, how long, its
+open actions and summary, opening its page; its menu takes it off the project); every record's
+timeline has a meeting line with its summary; and a meeting's page has a **Record** row that
+links the record it was put on, or else the projects and companies its attendees are from, with
+a picker for its editors to put it on a record and a control to take it off.
+
 ## Capture
 
 Where the audio comes from decides most of the quality, so it is the first thing to get right.
@@ -190,6 +196,26 @@ Tauri in it so `omni-record` drives the same code from a terminal):
   started it; one whose meeting was deleted meanwhile keeps its file in Drive and is let go.
 - **In a room**, with no call, the right channel is silent: the transcript relies on the engine's
   speaker labels and the names step alone.
+
+**The shell's part** (`apps/desktop/src-tauri/src/recording/`). The page holds the session, so it
+asks for consent, calls `POST /api/meetings` and then `recording_start`; the shell never starts
+a recording by itself. The bridge's shapes are `@omni/contracts`' `desktop-recorder.ts`.
+
+- Commands: `recording_start` `{ meetingId, memberId, folderId, title }`, `recording_pause`,
+  `recording_resume`, `recording_stop`, `recording_list` (stops what a crash left first),
+  `recording_part` (raw bytes), `recording_mark`, `recording_discard`, `recording_schedule`.
+- Events: `recording-changed` (a `DesktopRecording`, four times a second while capturing and once
+  when it stops, when the page runs `finishRecording`); `recording-requested` (tray "Record Now":
+  the page asks for consent and starts); `recording-offered` (a meeting began).
+- **The pill** is a bundled page in its own small window, on top of every window and on every
+  desktop, with no close button: it goes when the recording does. It can pause, resume and stop,
+  and nothing else. The tray's "Record Now" reads "Stop Recording" while one runs. Quitting the
+  app stops the recording and closes the file.
+- **The start notification.** The page hands the shell its upcoming meetings
+  (`recording_schedule`); when one with a video link begins (and up to five minutes after),
+  nothing is recording and the app is open, the shell shows "Record Week Kickoff?" once, and the
+  page hears `recording-offered` to show Record. Clicking the notification only brings the app
+  forward.
 
 **The browser recorder** mixes nothing: it records the tab's sound and the mic as two channels
 with `MediaRecorder` (Opus in WebM), computes the same mic intervals with an `AnalyserNode`, and
@@ -320,7 +346,9 @@ access covers the meeting page, its transcript, its notes, its actions, and its 
 
 - **Attendees get access by themselves.** When the recording starts, every attendee address on
   the event gets a `viewer` grant: teammates, freelancers and people outside the workspace alike.
-  They were in the meeting, so they can read it. The recorder is its `owner`.
+  They were in the meeting, so they can read it. The recorder is its `owner`. While the
+  workspace's Drive settings close outside sharing, an outside attendee is listed but gets no
+  grant.
 - **Anyone can be invited.** Share takes addresses, like Drive: `viewer` reads, `editor` also
   renames speakers, edits the title, moves it to a deal, accepts actions and shares it on. An
   address outside the workspace opens it by signing in with that address (`forUser`), as with a
@@ -332,6 +360,9 @@ access covers the meeting page, its transcript, its notes, its actions, and its 
   no sign-in when the workspace's Drive settings allow public links (`public_links`). The same
   workspace settings that close Drive's public links and outside sharing close these.
 - **Removing a grant**, an attendee's included, takes the access away. Owners and editors can.
+- **When the recorder leaves the workspace**, whoever receives their files (the person who
+  removed them, else the oldest owner) becomes the owner of the meetings they recorded. The
+  leaver keeps none of them, except as a `viewer` of a meeting they attended.
 - **Groups** show only the meetings the viewer can open; a group's summary and timeline are made
   from those meetings only, per viewer: a group page with a meeting you cannot open shows its
   date and title at most.
@@ -502,9 +533,7 @@ at the engine or in R2.
 
 ## API
 
-Under `/api/meetings`. Recording needs a paid plan with minutes left this month (`hasAllowance`,
-then `gateMeter` with `meetingMinutes` and `always` for the recording's minutes when it ends;
-`docs/spec/billing.md`). Member sessions reach everything below;
+Under `/api/meetings`, behind the plan's read-only gate. Recording needs minutes left in the plan's month (`hasAllowance`); stopping counts the recording's minutes once, keyed by its audio file (`docs/spec/billing.md`). Member sessions reach everything below;
 a signed-in user outside the workspace reaches `GET /:id`, its transcript, audio and Ask on
 meetings shared with them. A meeting the caller cannot see answers `404`.
 
@@ -645,6 +674,8 @@ every meeting; voiceprints with per-person consent; templates per kind of meetin
 - [x] Audio: kept as long as the meeting (founder, Nov 22, 2026).
 - [ ] Do outside attendees get their grant at once, or when the recorder first opens the notes,
       so they never get a summary nobody has read? v1: at once, as decided.
-- [ ] With Drive's outside sharing closed, do outside attendees still get their `viewer` grant at
-      the start? v1: they do; Share refuses them, as Drive does.
+- [x] With Drive's outside sharing closed, outside attendees get no grant at the start, as Share
+      refuses them (Nov 22, 2026).
+- [x] A recorder who leaves: their meetings go to whoever receives their files, who can delete
+      them; the leaver keeps only what they attended (Nov 22, 2026).
 - [ ] Figma frames for the Meetings module, the pill, the sharing panel and the deal's tab.
