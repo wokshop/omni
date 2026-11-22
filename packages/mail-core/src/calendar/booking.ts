@@ -58,7 +58,7 @@ const weekdayOf = (day: string) => new Date(`${day}T00:00:00Z`).getUTCDay();
  * they follow one another from the day's opening, so a day of 9:00–12:00 with 50 minutes offers
  * 9:00, 9:50 and 10:40. Wall clocks are the link's zone, so a slot keeps its hour across a change
  * of clocks; a slot lasts exactly `durationMinutes`, as the booked event will, and never runs
- * past closing.
+ * past closing. A start the clocks skip (spring forward) is not offered.
  */
 export function bookingSlots(rules: BookingRules, busy: readonly BusyBlock[], now: Date) {
   const length = rules.durationMinutes;
@@ -74,7 +74,10 @@ export function bookingSlots(rules: BookingRules, busy: readonly BusyBlock[], no
     if (!weekdays.has(weekdayOf(day))) continue;
     const closing = at(day, rules.endMinute, rules.timeZone).getTime();
     for (let m = rules.startMinute; m + length <= rules.endMinute; m += length) {
-      const start = at(day, m, rules.timeZone).getTime();
+      const instant = at(day, m, rules.timeZone);
+      const clock = wallClockAt(instant, rules.timeZone);
+      if (clock.hour * 60 + clock.minute !== m) continue;
+      const start = instant.getTime();
       const end = start + length * MINUTE;
       if (start < earliest || end > closing) continue;
       if (blocks.some((b) => b.start < end && b.end > start)) continue;

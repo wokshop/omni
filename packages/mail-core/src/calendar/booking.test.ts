@@ -90,6 +90,28 @@ describe("bookingSlots", () => {
     expect(iso(slots)).not.toContain("2027-03-14T06:30:00.000Z");
   });
 
+  test("a start the clocks skip is not offered, so each slot is offered once and in order", () => {
+    const rules: BookingRules = {
+      timeZone: "America/New_York",
+      weekdays: [0],
+      startMinute: 60,
+      endMinute: 300,
+      durationMinutes: 30,
+      noticeMinutes: 0,
+      horizonDays: 1,
+    };
+    const slots = iso(bookingSlots(rules, [], SUNDAY_SPRING_FORWARD));
+    expect(slots).toEqual([...new Set(slots)].toSorted());
+    expect(slots).toEqual([
+      "2027-03-14T06:00:00.000Z",
+      "2027-03-14T06:30:00.000Z",
+      "2027-03-14T07:00:00.000Z",
+      "2027-03-14T07:30:00.000Z",
+      "2027-03-14T08:00:00.000Z",
+      "2027-03-14T08:30:00.000Z",
+    ]);
+  });
+
   test("the window starts at today's midnight in the link's zone", () => {
     const window = bookingWindow({ ...MADRID, horizonDays: 2 }, MONDAY_0600_MADRID);
     expect(window.from.toISOString()).toBe("2026-11-22T23:00:00.000Z");
