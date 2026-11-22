@@ -336,3 +336,42 @@ test("a drop never lands in a Talk folder the sender shared with someone else", 
   expect(inherited).toEqual([]);
   expect(await parentOf(await drop("third.txt"))).toBe(secondFolder);
 });
+
+test("a file reaches a recipient whose session is held to the workspace by their company address", async () => {
+  const { db } = database;
+  const { org, ana, ben } = await workspace("talk-scope");
+  const company = `scoped-${org.id.slice(0, 8)}.test`;
+  const work = `ben@${company}`;
+  await db.insert(schema.mailDomains).values({ orgId: org.id, domain: company, provider: "imap" });
+  const [member] = await db.select().from(schema.members).where(eq(schema.members.id, ben.id));
+  await db
+    .insert(schema.userEmails)
+    .values({ userId: member!.userId, email: work, verifiedAt: new Date() });
+  const held = await db
+    .select({ id: schema.sessions.id })
+    .from(schema.sessions)
+    .where(eq(schema.sessions.userId, member!.userId));
+  await db
+    .insert(schema.sessionScopes)
+    .values(held.map((s) => ({ sessionId: s.id, orgId: org.id })));
+
+  const threadId = (await api(ana.cookie, "POST", "/threads", { memberId: ben.id })).body.thread.id;
+  const dropped = await fetch(
+    new URL(`/api/talk/threads/${threadId}/files?name=brief.txt`, worker.url),
+    { method: "POST", headers: { cookie: ana.cookie, "content-type": "text/plain" }, body: "go" },
+  );
+  expect(dropped.status).toBe(201);
+  const { message } = (await dropped.json()) as {
+    message: { id: string; file: { nodeId: string } };
+  };
+  const grants = await db
+    .select({ email: schema.storageGrants.email })
+    .from(schema.storageGrants)
+    .where(eq(schema.storageGrants.nodeId, message.file.nodeId));
+  expect(grants).toEqual([{ email: work }]);
+  const got = await fetch(new URL(`/api/talk/messages/${message.id}/file`, worker.url), {
+    headers: { cookie: ben.cookie },
+  });
+  expect(got.status).toBe(200);
+  expect(await got.text()).toBe("go");
+});

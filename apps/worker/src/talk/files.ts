@@ -131,7 +131,7 @@ export const talkFiles = new Hono<AppEnv>()
     const done = await storeFile(c, files, parentId, { name, size, mimeType });
     if (done.status !== "ok") return storageRefused(c, done.status);
     const { node } = done;
-    const shared = await files.putGrant(node.id, found.other.email, "viewer");
+    const shared = await files.putGrant(node.id, found.other.shareTo, "viewer");
     const sent =
       shared.status === "ok"
         ? await talk.recordFile(found.thread.id, {
