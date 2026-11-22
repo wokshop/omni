@@ -219,6 +219,7 @@ export class LiveDoc {
     for (const entry of entries) {
       if (entry.seqNum >= this.next) this.apply(entry, false);
     }
+    this.readThrough(entries);
     return true;
   }
 
@@ -492,7 +493,6 @@ export class LiveDoc {
   private apply(entry: StorageLiveEntry, mine: boolean) {
     if (entry.seqNum < this.epoch || this.known.has(entry.seqNum)) return;
     const whole = this.parts.push(entry);
-    for (const seqNum of this.parts.abandon(entry.seqNum)) this.markKnown(seqNum, false);
     if (!whole) return;
     this.use(whole, mine);
     for (const seqNum of whole.seqNums) this.markKnown(seqNum, false);
@@ -518,6 +518,12 @@ export class LiveDoc {
     }
   }
 
+  private readThrough(entries: StorageLiveEntry[]) {
+    const end = entries.at(-1)?.seqNum;
+    if (end === undefined) return;
+    for (const seqNum of this.parts.abandon(end + 1)) this.markKnown(seqNum, false);
+  }
+
   private markKnown(seqNum: number, mine: boolean) {
     this.known.add(seqNum);
     if (mine && seqNum > this.last.seqNum) this.last = { seqNum, mine };
@@ -535,6 +541,7 @@ export class LiveDoc {
         }
         this.apply(entry, false);
       }
+      this.readThrough(entries);
     } finally {
       this.catchingUp = false;
     }
