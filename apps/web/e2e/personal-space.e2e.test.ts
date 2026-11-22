@@ -118,9 +118,15 @@ test("an empty Personal space offers to connect Google or set up a company", asy
   await page.waitForURL((url) => url.pathname === "/onboarding");
 });
 
-test("a Personal space's settings leave out the company pages; a company's keep them", async () => {
+test("a Personal space's settings have every page a company's has", async () => {
   const personal = await signedIn(`me-${Date.now()}@gmail.test`, "/settings");
-  expect(await settingsPages(personal)).toEqual(["General", "Inboxes"]);
+  expect(await settingsPages(personal)).toEqual([
+    "General",
+    "People",
+    "Inboxes",
+    "Shared",
+    "Helpdesk",
+  ]);
   await context?.close();
 
   const email = `owner-${Date.now()}@company.test`;
@@ -135,7 +141,7 @@ test("a Personal space's settings leave out the company pages; a company's keep 
   ]);
 });
 
-test("switching settings from a company's People page to the Personal space falls back", async () => {
+test("switching settings from a company's People page to the Personal space keeps People", async () => {
   const email = `switch-${Date.now()}@company.test`;
   await createOrgWithOwner(db, {
     name: "Switch Co",
@@ -151,8 +157,8 @@ test("switching settings from a company's People page to the Personal space fall
   await settingsNav
     .getByRole("button", { name: /^Switch workspace, currently .*Workspace$/ })
     .waitFor();
-  await page.getByRole("heading", { name: "General" }).first().waitFor();
-  expect(await page.getByRole("heading", { name: "People" }).count()).toBe(0);
+  await page.getByRole("heading", { name: "People" }).first().waitFor();
+  expect(new URL(page.url()).pathname).toMatch(/\/settings\/people$/);
 });
 
 test("compose defaults to the active workspace's address, and still offers the others", async () => {
