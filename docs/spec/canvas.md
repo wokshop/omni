@@ -50,49 +50,16 @@ any other Omni file.
 The body is a JSON scene. JSON is easy to read back and to check with zod, it is text, and an
 agent or a developer can read it. It is written in a fixed shape:
 
-```json
+```text
 {
   "omni": "canvas",
   "v": 1,
   "elements": [
-    {
-      "id": "f8k2m4q9xa",
-      "kind": "frame",
-      "box": [0, 0, 1600, 900],
-      "text": "Q1 plan"
-    },
-    {
-      "id": "s3n7c1p5ve",
-      "kind": "sticky",
-      "parent": "f8k2m4q9xa",
-      "box": [80, 120, 200, 200],
-      "color": "yellow",
-      "text": "Call the roofer"
-    },
-    {
-      "id": "s9d2w6h4tb",
-      "kind": "sticky",
-      "parent": "f8k2m4q9xa",
-      "box": [400, 120, 200, 200],
-      "color": "blue",
-      "text": "Order tiles"
-    },
-    {
-      "id": "c5j8r3y7ku",
-      "kind": "connector",
-      "from": { "id": "s3n7c1p5ve", "at": [700, 220] },
-      "to": { "id": "s9d2w6h4tb", "at": [900, 220] },
-      "route": "elbow",
-      "end": "arrow",
-      "text": "then"
-    },
-    {
-      "id": "e2v6b9m1zq",
-      "kind": "file",
-      "box": [1800, 0, 600, 800],
-      "file": "0193f2…",
-      "page": 3
-    }
+    { "id": "f8k2m4q9xa", "kind": "frame", "box": [0, 0, 1600, 900], "text": "Q1 plan" },
+    { "id": "s3n7c1p5ve", "kind": "sticky", "parent": "f8k2m4q9xa", "box": [80, 120, 200, 200], "color": "yellow", "text": "Call the roofer" },
+    { "id": "s9d2w6h4tb", "kind": "sticky", "parent": "f8k2m4q9xa", "box": [400, 120, 200, 200], "color": "blue", "text": "Order tiles" },
+    { "id": "c5j8r3y7ku", "kind": "connector", "from": { "id": "s3n7c1p5ve", "at": [700, 220] }, "to": { "id": "s9d2w6h4tb", "at": [900, 220] }, "route": "elbow", "end": "arrow", "text": "then" },
+    { "id": "e2v6b9m1zq", "kind": "file", "box": [1800, 0, 600, 800], "file": "0193f2…", "page": 3 }
   ]
 }
 ```
