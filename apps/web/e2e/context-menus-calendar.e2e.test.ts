@@ -130,6 +130,14 @@ test("a right-click on a settings row opens the items its ⋯ shows", async () =
   await page.getByRole("menuitem").first().waitFor();
   expect(await menuItems(page)).toEqual(fromDots);
   expect(await nativeMenu()).toBe(false);
+  await page.keyboard.press("Escape");
+  await page.getByRole("menuitem").first().waitFor({ state: "hidden" });
+
+  const address = page.getByText(teammate, { exact: true });
+  await address.selectText();
+  await address.click({ button: "right" });
+  await page.getByRole("menuitem").first().waitFor();
+  expect(await menuItems(page)).toEqual(["Copy", ...fromDots]);
 });
 
 function freePort() {

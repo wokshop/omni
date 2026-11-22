@@ -124,8 +124,9 @@ export function isEditable(target: EventTarget | null) {
 
 /**
  * Gives an element a context menu: spread the result on it. `menu` reads the element that was
- * right-clicked (inside this one) and returns its rows, after Open link and Copy link when that
- * was a link out of the app; no rows leaves the event to the areas
+ * right-clicked (inside this one) and returns its rows, after Copy for text selected in it and
+ * Open link and Copy link on a link out of the app (unless the rows have their own); no rows
+ * leaves the event to the areas
  * around it, and the app's fallback after them. A menu an inner area opened wins, and a
  * right-click in a portal (a dialog the element opened) is not the element's.
  */
@@ -140,11 +141,7 @@ export function contextMenuProps(
       if (!event.currentTarget.contains(target)) return;
       const own = menu(target);
       if (!own || !hasItems(own)) return;
-      const entries = [
-        ...linkEntries(target, window),
-        "separator",
-        ...own,
-      ] satisfies ContextMenuEntry[];
+      const entries = withShared(own, target, event.currentTarget);
       event.preventDefault();
       openContextMenu(pointOf(event, target), entries, {
         label: typeof label === "function" ? label(target) : label,
@@ -198,17 +195,28 @@ function linkEntries(target: Element, view: Window) {
   ] satisfies ContextMenuEntry[];
 }
 
+function selectionCopy(view: Window, within?: Element) {
+  const selection = view.getSelection();
+  const text = selection?.toString() ?? "";
+  if (!selection?.rangeCount || !text.trim()) return null;
+  if (within && !within.contains(selection.getRangeAt(0).commonAncestorContainer)) return null;
+  return { icon: IconCopy, label: "Copy", onAction: () => copy(text, "Text") };
+}
+
 function fallbackEntries(target: Element, view: Window) {
-  const selected = view.getSelection()?.toString() ?? "";
   return [
-    !!selected.trim() && {
-      icon: IconCopy,
-      label: "Copy",
-      onAction: () => copy(selected, "Text"),
-    },
+    selectionCopy(view),
     "separator",
     ...linkEntries(target, view),
   ] satisfies ContextMenuEntry[];
+}
+
+function withShared(own: ContextMenuEntry[], target: Element, area: Element) {
+  const taken = new Set(tidy(own).map((entry) => (entry === "separator" ? "" : entry.label)));
+  const shared = [selectionCopy(window, area), ...linkEntries(target, window)].filter(
+    (entry) => entry && !taken.has(entry.label),
+  );
+  return [...shared, "separator", ...own] satisfies ContextMenuEntry[];
 }
 
 function onFallback(event: MouseEvent, offset?: { x: number; y: number }) {
