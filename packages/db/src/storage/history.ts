@@ -293,11 +293,16 @@ export async function docSessions(db: Db, nodeId: string, limit = 200) {
 
 /**
  * Who wrote the file's content at `contentVersion`, as a live record would name them, and when:
- * from its current content, or the version (superseded or not) that held it. Null once gone.
+ * from its current content (its creator, when nobody has written it since), or the version
+ * (superseded or not) that held it. Null once gone.
  */
 export async function contentWriterOf(db: Db, nodeId: string, contentVersion: number) {
   const [node] = await db
-    .select({ contentVersion: storageNodes.contentVersion })
+    .select({
+      contentVersion: storageNodes.contentVersion,
+      createdBy: storageNodes.createdByMemberId,
+      createdAt: storageNodes.createdAt,
+    })
     .from(storageNodes)
     .where(eq(storageNodes.id, nodeId));
   const [row] =
@@ -310,6 +315,9 @@ export async function contentWriterOf(db: Db, nodeId: string, contentVersion: nu
           })
           .from(storageContents)
           .where(eq(storageContents.nodeId, nodeId))
+          .then((rows) =>
+            rows.length ? rows : [{ memberId: node.createdBy, agent: null, at: node.createdAt }],
+          )
       : await db
           .select({
             memberId: storageVersions.writtenByMemberId,

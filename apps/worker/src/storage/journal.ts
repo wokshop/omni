@@ -23,6 +23,7 @@ import { latestLiveStart, readLiveTimed } from "./live-read.ts";
 
 const RUN_MS = 60_000;
 const BASELINE_EVERY = 500;
+const FOLD_GRACE_MS = 2 * 60_000;
 
 type Timed = StorageLiveEntry & { at: number };
 type Deps = { db: Db; config: Config; log: Logger };
@@ -138,13 +139,25 @@ async function runsAfter(
   db: Db,
   doc: Doc,
   entries: Timed[],
-  at: { epoch: number; after: number },
+  at: { epoch: number; after: number; startCv: number },
   cursor: Cursor | null,
 ) {
   const updates = entries.filter(
     (e) => e.seqNum > at.after && e.record.t === "update" && e.record.e === at.epoch,
   );
   const runs = await namedRuns(db, updates);
+  const { writes, held } = await outsideSaves(db, doc, entries, cursor, at.startCv);
+  const live = held ? runs.map((run) => ({ ...run, contentVersion: doc.contentVersion })) : runs;
+  return { runs: [...writes, ...live], contentVersion: doc.contentVersion - (held ? 1 : 0) };
+}
+
+async function outsideSaves(
+  db: Db,
+  doc: Doc,
+  entries: Timed[],
+  cursor: Cursor | null,
+  startCv: number,
+) {
   const folded = new Set(
     entries.flatMap((e) =>
       e.record.t === "fold" || (e.record.t === "snap" && e.record.f > e.record.e)
@@ -152,7 +165,18 @@ async function runsAfter(
         : [],
     ),
   );
-  return [...(await writeRun(db, doc, cursor?.contentVersion ?? 0, folded)), ...runs];
+  const held =
+    entries.length > 0 &&
+    doc.contentVersion > startCv &&
+    !folded.has(doc.contentVersion) &&
+    (await recentlyWritten(db, doc));
+  if (held) folded.add(doc.contentVersion);
+  return { writes: await writeRun(db, doc, cursor?.contentVersion ?? 0, folded), held };
+}
+
+async function recentlyWritten(db: Db, doc: Doc) {
+  const writer = await contentWriterOf(db, doc.id, doc.contentVersion);
+  return !!writer && Date.now() - writer.at.getTime() < FOLD_GRACE_MS;
 }
 
 async function nextBaseline(
@@ -221,7 +245,10 @@ async function journalOnce(deps: Deps, doc: Doc) {
       expected: cursor ? { epoch: cursor.epoch, lastSeq: cursor.lastSeq } : null,
       ...input,
     });
-  if (!first) return mark({ runs: await writeRun(deps.db, doc, cursor?.contentVersion ?? 0) });
+  if (!first) {
+    const { writes, held } = await outsideSaves(deps.db, doc, entries, cursor, 0);
+    return mark({ runs: writes, contentVersion: doc.contentVersion - (held ? 1 : 0) });
+  }
   const epoch = first.record.t === "snap" ? first.record.e : first.seqNum;
   if (cursor && cursor.epoch >= 0 && cursor.epoch !== epoch) {
     const drained = await drain(deps.db, basin, doc.id, cursor, epoch);
@@ -236,13 +263,20 @@ async function journalOnce(deps: Deps, doc: Doc) {
   }
   const base = continuing ? null : baselineOf(first);
   const after = base ? base.seq : cursor!.lastSeq;
-  const runs = await runsAfter(deps.db, doc, entries, { epoch, after }, cursor);
+  const startCv = first.record.cv;
+  const { runs, contentVersion } = await runsAfter(
+    deps.db,
+    doc,
+    entries,
+    { epoch, after, startCv },
+    cursor,
+  );
   const since = (continuing ? cursor.sinceBaseline : 0) + runs.length;
   const next = base
     ? { baseline: base, sinceBaseline: since }
     : await nextBaseline(deps.db, doc, { epoch, after }, runs, since);
   const lastSeq = Math.max(after, ...entries.map((e) => e.seqNum));
-  return mark({ epoch, lastSeq, runs, ...next });
+  return mark({ epoch, lastSeq, contentVersion, runs, ...next });
 }
 
 /** The minute job's part: journals docs saved since their journal, a few at a time. */
