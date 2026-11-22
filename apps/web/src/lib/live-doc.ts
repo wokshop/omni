@@ -157,13 +157,16 @@ export class LiveDoc {
    * epoch was saved as when that is newer than the file this tab read.
    */
   join(entries: StorageLiveEntry[]) {
-    const start = entries.findLastIndex(
-      (entry) => entry.record.t === "seed" || entry.record.t === "snap",
+    let epoch = -1;
+    for (const { seqNum, record: each } of entries) {
+      epoch = Math.max(epoch, each.t === "seed" ? seqNum : each.e);
+    }
+    const first = entries.findLast(
+      ({ seqNum, record: each }) =>
+        (each.t === "seed" && seqNum === epoch) || (each.t === "snap" && each.e === epoch),
     );
-    const first = entries[start];
     if (!first || (first.record.t !== "seed" && first.record.t !== "snap")) return false;
     const { record } = first;
-    const epoch = record.t === "snap" ? record.e : first.seqNum;
     let cv = record.cv;
     for (const { record: each } of entries) {
       if (each.t === "fold" && each.e === epoch) cv = Math.max(cv, each.cv);

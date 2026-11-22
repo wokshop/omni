@@ -154,3 +154,46 @@ test("a doc edited past its stream's retention opens from its snap, and an agent
   expect(fold.record).toMatchObject({ t: "fold", e: epoch, cv: 2 });
   tab.socket.close();
 });
+
+test("a snap of an older epoch that lands after a newer seed does not hide the newer epoch's typing", async () => {
+  const org = await stack.company(`late-snap-${randomUUID().slice(0, 8)}`);
+  const ana = await stack.member(org.id);
+  const agent = await connectAgent(stack.worker.url, ana.jar, { scope: WRITE });
+  const doc = await stack.upload(ana.jar, { space: "shared" }, "plan.md", bytes("# Plan\n\nOld"));
+  const saved = await call(agent, "drive_edit_doc", { id: doc.id, markdown: "# Plan\n\nNew" });
+  expect(saved).not.toHaveProperty("error");
+  const tab = await editor(ana.jar, doc.id);
+
+  const stale = new Y.Doc();
+  const old = await tab.append(
+    { t: "seed", cv: 1, u: base64(rewriteLive(stale, "# Plan\n\nOld")) },
+    0,
+  );
+  const typing = new Y.Doc();
+  const epoch = await tab.append({
+    t: "seed",
+    cv: 2,
+    u: base64(rewriteLive(typing, "# Plan\n\nNew")),
+  });
+  const late = {
+    t: "snap",
+    e: old,
+    s: old,
+    cv: 1,
+    f: old,
+    u: base64(Y.encodeStateAsUpdate(stale)),
+  };
+  await tab.append(late);
+  const typed = "# Plan\n\nNew, typed live";
+  await tab.append({ t: "update", e: epoch, u: base64(rewriteLive(typing, typed)) });
+
+  const opened = await stack.api(ana.jar, "GET", `/files/${doc.id}/live?from=latest`);
+  expect(opened.body.entries[0]).toMatchObject({ seqNum: epoch, record: { t: "seed", cv: 2 } });
+  const edited = await call(agent, "drive_edit_doc", {
+    id: doc.id,
+    edits: [{ find: "typed live", replace: "typed live, kept" }],
+  });
+  expect(edited).not.toHaveProperty("error");
+  expect(await (await stack.download(ana.jar, doc.id)).text()).toBe(`${typed}, kept`);
+  tab.socket.close();
+});

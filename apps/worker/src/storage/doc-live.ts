@@ -1,4 +1,9 @@
-import type { StorageDocEvent, StorageLiveEntry, StorageLiveRecord } from "@omni/contracts";
+import {
+  latestEpochStart,
+  type StorageDocEvent,
+  type StorageLiveEntry,
+  type StorageLiveRecord,
+} from "@omni/contracts";
 import { liveMarkdown, rewriteLive } from "@omni/docs";
 import * as Y from "yjs";
 import { docStream } from "../realtime-docs.ts";
@@ -12,8 +17,6 @@ const toBase64 = (bytes: Uint8Array) => {
   }
   return btoa(text);
 };
-type EpochStart = Extract<StorageLiveRecord, { t: "seed" | "snap" }>;
-
 const fromBase64 = (text: string) => Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
 
 /**
@@ -45,10 +48,7 @@ export class LiveFile {
   /** The live document of `nodeId` at `contentVersion`; null when nobody is editing it live. */
   static async open(basin: S2Basin, nodeId: string, contentVersion: number) {
     const entries = await readLive(basin, nodeId, await latestLiveStart(basin, nodeId));
-    let first: { seqNum: number; record: EpochStart } | undefined;
-    for (const { seqNum, record } of entries) {
-      if (record.t === "seed" || record.t === "snap") first = { seqNum, record };
-    }
+    const first = latestEpochStart(entries);
     if (!first) return null;
     const { record } = first;
     const epoch = record.t === "snap" ? record.e : first.seqNum;

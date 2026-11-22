@@ -1,4 +1,9 @@
-import { liveStartOf, storageLiveRecordSchema, type StorageLiveEntry } from "@omni/contracts";
+import {
+  latestEpochStart,
+  liveStartOf,
+  storageLiveRecordSchema,
+  type StorageLiveEntry,
+} from "@omni/contracts";
 import { docStream } from "../realtime-docs.ts";
 import type { S2Basin, S2Record } from "../s2.ts";
 
@@ -36,8 +41,6 @@ export async function readLive(basin: S2Basin, nodeId: string, from: number) {
   }
 }
 
-const isStart = (entry: StorageLiveEntry) => entry.record.t === "seed" || entry.record.t === "snap";
-
 /**
  * The first record a reader of the latest epoch needs: its latest `seed`, or the records after
  * those its latest `snap` holds. Looks at the stream's tail first, so it costs one read however
@@ -45,16 +48,9 @@ const isStart = (entry: StorageLiveEntry) => entry.record.t === "seed" || entry.
  */
 export async function latestLiveStart(basin: S2Basin, nodeId: string) {
   const tail = liveEntries(await basin.readTail(docStream(nodeId), TAIL_WINDOW));
-  const found = tail.findLast(isStart);
+  const found = latestEpochStart(tail);
   if (found) return liveStartOf(found);
-  const first = tail[0]?.seqNum ?? 0;
-  if (first === 0) return 0;
-  let start: StorageLiveEntry | undefined;
-  for (let at = 0; at < first;) {
-    const page = await readLivePage(basin, nodeId, at);
-    start = page.entries.findLast(isStart) ?? start;
-    if (!page.more || !page.last) break;
-    at = page.last.seqNum + 1;
-  }
-  return start ? liveStartOf(start) : 0;
+  if ((tail[0]?.seqNum ?? 0) === 0) return 0;
+  const all = latestEpochStart(await readLive(basin, nodeId, 0));
+  return all ? liveStartOf(all) : 0;
 }

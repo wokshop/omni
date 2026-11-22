@@ -46,6 +46,27 @@ export const STORAGE_LIVE_SNAP_EVERY = 200;
 export const liveStartOf = (entry: { seqNum: number; record: StorageLiveRecord }) =>
   entry.record.t === "snap" ? entry.record.s + 1 : entry.seqNum;
 
+type EpochStart = Extract<StorageLiveRecord, { t: "seed" | "snap" }>;
+
+/**
+ * Where the latest epoch among `entries` starts: its seed, or its latest snap. The latest epoch is
+ * the newest any record names, so a snap of an older epoch that landed after a newer seed (a tab
+ * slow to send it) is skipped. Undefined when no start of that epoch is among them.
+ */
+export function latestEpochStart(entries: { seqNum: number; record: StorageLiveRecord }[]) {
+  let epoch = -1;
+  for (const { seqNum, record } of entries) {
+    epoch = Math.max(epoch, record.t === "seed" ? seqNum : record.e);
+  }
+  let start: { seqNum: number; record: EpochStart } | undefined;
+  for (const { seqNum, record } of entries) {
+    const starts =
+      record.t === "seed" ? seqNum === epoch : record.t === "snap" && record.e === epoch;
+    if (starts && (record.t === "seed" || record.t === "snap")) start = { seqNum, record };
+  }
+  return start;
+}
+
 /** One record of the stream, at its sequence number. */
 export const storageLiveEntrySchema = z.object({
   seqNum: z.number().int().nonnegative(),
