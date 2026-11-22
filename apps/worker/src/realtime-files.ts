@@ -1,5 +1,5 @@
 import type { StorageFilePresenceEvent, StorageNodeSpace } from "@omni/contracts";
-import { forMember, teamspaceAudience } from "@omni/db";
+import { forMember, teamspaceFileAudience } from "@omni/db";
 import { z } from "zod";
 import { openDb } from "./db.ts";
 
@@ -123,7 +123,7 @@ export const checkEditing: (
     found = await forMember(db, memberId).storage.file(nodeId);
     teamspace =
       found.status === "ok" && found.file.teamspaceId
-        ? await teamspaceAudience(db, found.file.teamspaceId)
+        ? await teamspaceFileAudience(db, found.file.id)
         : undefined;
   } finally {
     await close({ timeout: 0 });

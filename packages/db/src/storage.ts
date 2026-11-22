@@ -201,6 +201,7 @@ export {
   type StorageTextStatus,
 } from "./storage/texts.ts";
 export { handOverMemberStorage, type StorageHandOverResult } from "./storage/handover.ts";
+export { teamspaceFileAudience } from "./storage/audience.ts";
 export {
   teamspaceAudience,
   type DeleteTeamspaceResult,

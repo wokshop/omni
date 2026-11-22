@@ -1,8 +1,8 @@
 import { eq } from "drizzle-orm";
 import { afterAll, expect, test } from "vitest";
 import { forMember } from "../src/for-member.ts";
-import { members, notifications, storageNodes } from "../src/schema/index.ts";
-import { handOverMemberStorage, teamspaceAudience } from "../src/storage.ts";
+import { members, notifications, storageNodes, users } from "../src/schema/index.ts";
+import { handOverMemberStorage, teamspaceAudience, teamspaceFileAudience } from "../src/storage.ts";
 import { addFile, addFolder, setRole } from "./storage-support.ts";
 import { createMember, createOrg, createTestDatabase } from "./support.ts";
 
@@ -247,4 +247,25 @@ test("someone taken out of a private teamspace hears no more about its comments"
   expect(
     (await db.select().from(notifications).where(eq(notifications.memberId, ben.id))).length,
   ).toBe(1);
+});
+
+test("whoever a teamspace file is shared with hears its live edits, and nobody else outside it", async () => {
+  const org = await createOrg(db, "ts-live");
+  const ana = await createMember(db, org.id, "ana");
+  const gil = await createMember(db, org.id, "gil");
+  const cy = await createMember(db, org.id, "cy");
+  const anaStorage = forMember(db, ana.id).storage;
+  const board = await teamspace(anaStorage, "Board", { private: true });
+  const doc = await addFile(anaStorage, { teamspaceId: board.id }, "plan.md");
+  const [gilUser] = await db
+    .select({ email: users.email })
+    .from(users)
+    .innerJoin(members, eq(members.userId, users.id))
+    .where(eq(members.id, gil.id));
+  await db.update(users).set({ emailVerified: true }).where(eq(users.email, gilUser!.email));
+
+  expect(await teamspaceFileAudience(db, doc.id)).toEqual([ana.id]);
+  expect((await anaStorage.putGrant(doc.id, gilUser!.email, "editor")).status).toBe("ok");
+  expect((await teamspaceFileAudience(db, doc.id)).toSorted()).toEqual([ana.id, gil.id].toSorted());
+  expect((await teamspaceFileAudience(db, doc.id)).includes(cy.id)).toBe(false);
 });
