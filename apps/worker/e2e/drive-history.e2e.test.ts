@@ -4,14 +4,21 @@ import { schema } from "@omni/db";
 import { asc, eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import * as Y from "yjs";
-import { base64, bytes, editor, S2, trim } from "./live-support.ts";
+import { base64, bytes, call, editor, S2, trim, WRITE } from "./live-support.ts";
+import { connectAgent } from "./mcp-support.ts";
 import { startStorageStack, type StorageStack } from "./storage-support.ts";
 import { WEB_ORIGIN, type CookieJar } from "./support.ts";
 
 let stack: StorageStack;
 beforeAll(async () => {
   stack = await startStorageStack({
-    vars: { WEB_APP_URL: WEB_ORIGIN, S2_BASIN_URL: S2.url, S2_BASIN: S2.basin },
+    vars: {
+      WEB_APP_URL: WEB_ORIGIN,
+      RATE_LIMIT_AUTH: "off",
+      RATE_LIMIT_ACTIONS: "off",
+      S2_BASIN_URL: S2.url,
+      S2_BASIN: S2.basin,
+    },
   });
 }, 120_000);
 afterAll(() => stack?.stop());
@@ -122,4 +129,104 @@ test("typing left in an epoch when a new one starts is journaled before the jour
     )[0]?.epoch;
   await expect.poll(journalEpoch, { timeout: 10_000 }).toBe(newer);
   tab.socket.close();
+});
+
+test("History lists sessions newest first with who wrote in them, and an agent's edit as its own session, diffed by block", async () => {
+  const org = await stack.company(`sessions-${randomUUID().slice(0, 8)}`);
+  const ana = await stack.member(org.id);
+  const bo = await stack.member(org.id);
+  const outsider = await stack.member(
+    (await stack.company(`other-${randomUUID().slice(0, 8)}`)).id,
+  );
+  const first = "# Launch\n\nBook the venue";
+  const doc = await stack.upload(ana.jar, { space: "shared" }, "launch.md", bytes(first));
+  const [anaTab, boTab] = [
+    await editor(stack, ana.jar, doc.id),
+    await editor(stack, bo.jar, doc.id),
+  ];
+  const page = new Y.Doc();
+  const epoch = await anaTab.append({ t: "seed", cv: 1, u: base64(rewriteLive(page, first)) }, 0);
+  const people = `${first}\n\nSend invites\n\nOrder food`;
+  await anaTab.append({
+    t: "update",
+    e: epoch,
+    u: base64(rewriteLive(page, `${first}\n\nSend invites`)),
+  });
+  const typedTo = await boTab.append({
+    t: "update",
+    e: epoch,
+    u: base64(rewriteLive(page, people)),
+  });
+  await save(ana.jar, doc.id, people, 1);
+  await anaTab.append({ t: "fold", e: epoch, cv: 2, s: typedTo });
+  await expect.poll(async () => (await changesOf(doc.id)).length, { timeout: 10_000 }).toBe(2);
+
+  const agent = await connectAgent(stack.worker.url, ana.jar, { scope: WRITE });
+  const edited = await call(agent, "drive_edit_doc", {
+    id: doc.id,
+    edits: [{ find: "Order food", replace: "Order food for forty" }],
+  });
+  expect(edited).not.toHaveProperty("error");
+  await expect.poll(async () => (await changesOf(doc.id)).length, { timeout: 10_000 }).toBe(3);
+
+  const listed = await stack.api(ana.jar, "GET", `/files/${doc.id}/history`);
+  expect(listed.status).toBe(200);
+  expect(listed.body).toMatchObject({
+    keepDays: 30,
+    sessions: [
+      {
+        authors: [{ kind: "agent", name: ana.email, agent: "Drive agent" }],
+        contentVersion: 3,
+        restorable: true,
+      },
+      {
+        authors: [
+          { kind: "member", name: ana.email, agent: null },
+          { kind: "member", name: bo.email, agent: null },
+        ],
+        contentVersion: 2,
+        restorable: true,
+      },
+    ],
+  });
+  const [byAgent, byPeople] = listed.body.sessions as { id: string }[];
+
+  const agentDiff = await stack.api(ana.jar, "GET", `/files/${doc.id}/history/${byAgent!.id}`);
+  expect(agentDiff.body.counts).toEqual({ added: 0, removed: 0, changed: 1 });
+  expect(agentDiff.body.blocks).toContainEqual(
+    expect.objectContaining({
+      kind: "changed",
+      before: "Order food",
+      after: "Order food for forty",
+    }),
+  );
+  const peopleDiff = await stack.api(ana.jar, "GET", `/files/${doc.id}/history/${byPeople!.id}`);
+  expect(peopleDiff.body.counts).toEqual({ added: 2, removed: 0, changed: 0 });
+
+  expect((await stack.api(outsider.jar, "GET", `/files/${doc.id}/history`)).status).toBe(404);
+  for (const tab of [anaTab, boTab]) tab.socket.close();
+});
+
+test("an agent's edit of a doc nobody has open is in its History too, named for the agent", async () => {
+  const org = await stack.company(`quiet-${randomUUID().slice(0, 8)}`);
+  const ana = await stack.member(org.id);
+  const doc = await stack.upload(ana.jar, { space: "shared" }, "notes.md", bytes("# Notes\n\nOne"));
+  const agent = await connectAgent(stack.worker.url, ana.jar, { scope: WRITE });
+  const edited = await call(agent, "drive_edit_doc", {
+    id: doc.id,
+    markdown: "# Notes\n\nOne\n\nTwo",
+  });
+  expect(edited).not.toHaveProperty("error");
+  await expect.poll(async () => (await changesOf(doc.id)).length, { timeout: 10_000 }).toBe(1);
+
+  const listed = await stack.api(ana.jar, "GET", `/files/${doc.id}/history`);
+  expect(listed.body.sessions).toMatchObject([
+    { authors: [{ kind: "agent", name: ana.email, agent: "Drive agent" }], contentVersion: 2 },
+  ]);
+  const [only] = listed.body.sessions as { id: string }[];
+  const diff = await stack.api(ana.jar, "GET", `/files/${doc.id}/history/${only!.id}`);
+  expect(diff.body.counts).toEqual({ added: 1, removed: 0, changed: 0 });
+  expect(await call(agent, "drive_versions", { id: doc.id })).toMatchObject({
+    sessions: [{ id: only!.id, authors: [{ name: ana.email, agent: "Drive agent" }] }],
+  });
 });
