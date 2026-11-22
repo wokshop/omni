@@ -209,6 +209,8 @@ export type ReactResult =
       thread: { id: string; otherMemberId: string };
       /** The note's reactions as they now are. */
       reactions: TalkReaction[];
+      /** When they were read, ISO to the microsecond: a later snapshot sorts after. */
+      reactionsAt: string;
     }
   | typeof NOT_FOUND
   | { status: "invalid_emoji" }
@@ -227,9 +229,8 @@ export async function react(ex: Ex, me: TalkMember, messageId: string, emoji: st
   if (!isEmoji(emoji)) return { status: "invalid_emoji" } satisfies ReactResult;
   const thread = await messageThread(ex, me, messageId);
   if (!thread) return NOT_FOUND satisfies ReactResult;
-  await ex.execute(
-    sql`select pg_advisory_xact_lock(hashtext(${`talk-react:${messageId}:${me.id}`}))`,
-  );
+  // WARNING: one lock per note, not per person, so each snapshot below has every committed reaction.
+  await ex.execute(sql`select pg_advisory_xact_lock(hashtext(${`talk-react:${messageId}`}))`);
   const mine = and(eq(talkReactions.messageId, messageId), eq(talkReactions.memberId, me.id));
   if (!on) {
     await ex.delete(talkReactions).where(and(mine, eq(talkReactions.emoji, emoji)));
@@ -246,11 +247,20 @@ export async function react(ex: Ex, me: TalkMember, messageId: string, emoji: st
       .values({ orgId: me.orgId, messageId, memberId: me.id, emoji })
       .onConflictDoNothing();
   }
-  const now = await reactionsOf(ex, [messageId]);
+  const [now, [read]] = await Promise.all([
+    reactionsOf(ex, [messageId]),
+    ex
+      .select({
+        at: sql<string>`to_char(clock_timestamp() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
+      })
+      .from(talkMessages)
+      .where(eq(talkMessages.id, messageId)),
+  ]);
   return {
     status: "ok",
     thread: { id: thread.id, otherMemberId: thread.otherMemberId },
     reactions: now.get(messageId) ?? [],
+    reactionsAt: read!.at,
   } satisfies ReactResult;
 }
 

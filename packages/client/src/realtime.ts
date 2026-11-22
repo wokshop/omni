@@ -389,7 +389,8 @@ const parseTalkChanged = (threadId: string, event: Record<string, unknown>) => {
   const changed: Extract<TalkEvent, { type: "talk.changed" }> = { type: "talk.changed", threadId };
   if (read === true) changed.read = true;
   if (isObject(reactions) && isId(reactions.messageId) && isTalkReactions(reactions.reactions)) {
-    changed.reactions = { messageId: reactions.messageId, reactions: reactions.reactions };
+    const at = isText(reactions.at) ? { at: reactions.at } : {};
+    changed.reactions = { messageId: reactions.messageId, reactions: reactions.reactions, ...at };
   }
   return changed;
 };

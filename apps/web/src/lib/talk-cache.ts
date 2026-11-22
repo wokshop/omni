@@ -93,6 +93,20 @@ export function setReactions(
   }));
 }
 
+const reactionsSeen = new Map<string, string>();
+
+/**
+ * Whether a note's reactions snapshot is older than one already applied: two people reacting at
+ * once can have their events arrive out of order. A snapshot without a time is always applied.
+ */
+export function staleReactions(messageId: string, at: string | undefined) {
+  if (!at) return false;
+  const seen = reactionsSeen.get(messageId);
+  if (seen && seen > at) return true;
+  reactionsSeen.set(messageId, at);
+  return false;
+}
+
 /** `memberId`'s `emoji` on a note, on or off, as the server will have it. */
 export function toggledReactions(
   reactions: TalkMessage["reactions"],

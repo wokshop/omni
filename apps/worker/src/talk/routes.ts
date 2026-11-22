@@ -81,7 +81,11 @@ async function reaction(c: Context<AppEnv>, on: boolean) {
     announce(c, [c.var.member.id, done.thread.otherMemberId], {
       type: "talk.changed",
       threadId: done.thread.id,
-      reactions: { messageId: c.req.param("id") ?? "", reactions: done.reactions },
+      reactions: {
+        messageId: c.req.param("id") ?? "",
+        reactions: done.reactions,
+        at: done.reactionsAt,
+      },
     }),
   );
   return c.body(null, 204);

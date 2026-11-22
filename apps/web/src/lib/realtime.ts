@@ -24,7 +24,14 @@ import { crmChangedElsewhere } from "./crm-cache.ts";
 import { conversationFilterOf, filterOf, keys } from "./query-keys.ts";
 import { storageDrivesChanged, type StorageDriveChange } from "./storage-cache.ts";
 import { setOnline } from "./talk.ts";
-import { addMessage, fetchNewest, noteWentBy, setReactions, threadRead } from "./talk-cache.ts";
+import {
+  addMessage,
+  fetchNewest,
+  noteWentBy,
+  setReactions,
+  staleReactions,
+  threadRead,
+} from "./talk-cache.ts";
 import { talkWindow } from "./talk-window.ts";
 import { inBackground } from "./desktop-notifications.ts";
 
@@ -75,6 +82,7 @@ function talkChanged(client: QueryClient, event: Extract<TalkEvent, { type: "tal
   if (event.read) return threadRead(client, event.threadId);
   const { reactions } = event;
   if (reactions) {
+    if (staleReactions(reactions.messageId, reactions.at)) return;
     return setReactions(client, event.threadId, reactions.messageId, reactions.reactions);
   }
   void client.invalidateQueries({ queryKey: keys.talkPeople() });

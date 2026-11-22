@@ -85,7 +85,7 @@ export const talkMessageResponseSchema = z.object({ message: talkMessageSchema }
  * another device included; it carries the note, so an open window shows it without a fetch (an
  * older Worker sends no `message`: refetch the thread's newest page). `talk.changed`: a thread's
  * reactions, or your own read, changed; `read` marks the latter, and `reactions` carries a note's
- * reactions as they now are. Refetch what an event names when it carries nothing.
+ * reactions as they now are, read at `at` (an older snapshot of the same note is stale). Refetch what an event names when it carries nothing.
  */
 export const talkOnlineEventSchema = z.object({
   type: z.literal("talk.online"),
@@ -104,7 +104,9 @@ export const talkChangedEventSchema = z.object({
   type: z.literal("talk.changed"),
   threadId: id,
   read: z.literal(true).optional(),
-  reactions: z.object({ messageId: id, reactions: z.array(talkReactionSchema) }).optional(),
+  reactions: z
+    .object({ messageId: id, reactions: z.array(talkReactionSchema), at: isoDate.optional() })
+    .optional(),
 });
 export const talkEventSchema = z.discriminatedUnion("type", [
   talkOnlineEventSchema,
