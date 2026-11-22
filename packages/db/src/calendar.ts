@@ -35,6 +35,13 @@ export {
   type WindowTooLarge,
 } from "./calendar/read.ts";
 export {
+  applyGoogleChanges,
+  claimGoogleCalendars,
+  finishGoogleFullSync,
+  saveGoogleSync,
+  type GoogleSyncClaim,
+} from "./calendar/google.ts";
+export {
   advanceCalendarSweep,
   CALENDAR_SETTLE_MS,
   CALENDAR_SWEEP_BATCH,
