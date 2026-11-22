@@ -281,6 +281,11 @@ export const storageContents = pgTable(
     writtenAt: timestamptz("written_at").notNull(),
     /** The agent that wrote it for `written_by_member_id`; null when they wrote it in the app. */
     writtenByAgent: text("written_by_agent"),
+    /**
+     * Set when an agent changes the file's live document: the next save, whoever makes it, keeps
+     * this content as a version instead of continuing the editing session that wrote it.
+     */
+    sessionEnded: boolean("session_ended").notNull().default(false),
   },
   (t) => [
     foreignKey({

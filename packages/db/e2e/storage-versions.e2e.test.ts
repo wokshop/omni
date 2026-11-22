@@ -425,3 +425,15 @@ test("a save that changes the file's type ends the session, so the content befor
     [10, null],
   ]);
 });
+
+test("an agent ending the session keeps the content before its change, whoever saves next", async () => {
+  const { storage } = await workspace("versions-session-ended");
+  const file = await addFile(storage, { space: "personal" }, "plan.md", 10);
+  await addVersion(storage, file.id, 11);
+  await addVersion(storage, file.id, 12);
+  expect(await storage.endSession(file.id)).toBe("ok");
+  await addVersion(storage, file.id, 13);
+  await addVersion(storage, file.id, 14);
+
+  expect((await listed(storage, file.id)).versions.map((v) => v.size)).toEqual([12, 10]);
+});

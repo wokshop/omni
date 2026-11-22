@@ -1,5 +1,5 @@
 {
-  "id": "44e07372-c43a-4df6-8fc8-3e789ff9832f",
+  "id": "7b19d7ba-ba1a-48f9-ac12-05f52ffefeca",
   "prevId": "e99cd8e1-9931-48cd-a1c4-5980d0391a48",
   "version": "7",
   "dialect": "postgresql",
@@ -8394,6 +8394,13 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "session_ended": {
+          "name": "session_ended",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {

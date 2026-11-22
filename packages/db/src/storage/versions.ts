@@ -75,15 +75,23 @@ async function currentWriter(ex: Db, node: NodeRow) {
       writtenByMemberId: storageContents.writtenByMemberId,
       writtenAt: storageContents.writtenAt,
       writtenByAgent: storageContents.writtenByAgent,
+      sessionEnded: storageContents.sessionEnded,
     })
     .from(storageContents)
     .where(eq(storageContents.nodeId, node.id));
   return {
-    writer: row ?? {
-      writtenByMemberId: node.createdByMemberId,
-      writtenAt: node.createdAt,
-      writtenByAgent: null,
-    },
+    sessionEnded: row?.sessionEnded ?? false,
+    writer: row
+      ? {
+          writtenByMemberId: row.writtenByMemberId,
+          writtenAt: row.writtenAt,
+          writtenByAgent: row.writtenByAgent,
+        }
+      : {
+          writtenByMemberId: node.createdByMemberId,
+          writtenAt: node.createdAt,
+          writtenByAgent: null,
+        },
     replaced: !!row,
   };
 }
@@ -95,7 +103,8 @@ async function continuesSession(
   save: { memberId: string; agent: string | null; at: Date; mimeType: string | null },
 ) {
   const { writer } = current;
-  if (!current.replaced || save.agent || writer.writtenByAgent) return false;
+  if (!current.replaced || current.sessionEnded || save.agent || writer.writtenByAgent)
+    return false;
   if (save.mimeType !== node.mimeType) return false;
   if (writer.writtenByMemberId !== save.memberId) return false;
   if (save.at.getTime() - writer.writtenAt.getTime() > STORAGE_SESSION_IDLE_MS) return false;
@@ -127,7 +136,7 @@ async function setContent(
     .values({ nodeId: node.id, orgId: node.orgId, writtenByMemberId, writtenAt, writtenByAgent })
     .onConflictDoUpdate({
       target: storageContents.nodeId,
-      set: { writtenByMemberId, writtenAt, writtenByAgent },
+      set: { writtenByMemberId, writtenAt, writtenByAgent, sessionEnded: false },
     });
   const revision = await nextRevision(tx, node.orgId);
   const [row] = await tx
@@ -238,6 +247,15 @@ export function versionOperations(db: Db, door: Door) {
   return {
     async mayWrite(nodeId: string) {
       return (await mayReplace(db, door, nodeId)).status;
+    },
+    async endSession(nodeId: string) {
+      const found = await editable(db, door, nodeId);
+      if (found.status !== "ok") return found.status;
+      await db
+        .update(storageContents)
+        .set({ sessionEnded: true })
+        .where(eq(storageContents.nodeId, nodeId));
+      return "ok" as const;
     },
     async versions(nodeId: string) {
       const found = await editable(db, door, nodeId);
