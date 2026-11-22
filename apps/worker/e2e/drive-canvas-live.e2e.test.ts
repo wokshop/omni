@@ -323,6 +323,35 @@ test("an agent's text change and a tab's typing in the same sticky both stay, ev
   open.ws.close();
 });
 
+test("a sticky whose text concurrent edits take past the limit stays on the board", async () => {
+  const long = "x".repeat(4_999);
+  const { ana, agent, node, scene } = await board([
+    { op: "add", kind: "sticky", text: long, at: { x: 0, y: 0 } },
+  ]);
+  const sticky = scene.elements[0]!.id;
+  const open = await tab(ana.jar, node.id);
+  await open.seed(scene, 1);
+  const typing = open.change([{ op: "update", id: sticky, text: `A${long}` }]);
+
+  const edited = await call(agent, "drive_edit_canvas", {
+    id: node.id,
+    ops: [{ op: "update", id: sticky, text: `${long}Z` }],
+  });
+  expect(edited).not.toHaveProperty("error");
+  await typing.send();
+
+  expect((await stream(ana, node.id)).elements[0]?.text).toBe(`A${long}Z`);
+  const recolored = await call(agent, "drive_edit_canvas", {
+    id: node.id,
+    ops: [{ op: "update", id: sticky, color: "blue" }],
+  });
+  expect(recolored).not.toHaveProperty("error");
+  const file = await saved(ana, node.id);
+  expect(file.elements).toHaveLength(1);
+  expect(file.elements[0]).toMatchObject({ id: sticky, color: "blue", text: `A${long}Z` });
+  open.ws.close();
+});
+
 test("a whole-board rewrite leaves alone what it does not change, so a tab's move made meanwhile stays", async () => {
   const { ana, agent, node, scene } = await board(STICKIES);
   const a = find(scene, "A").id;
