@@ -111,6 +111,7 @@ async function targetOf(ex: Db, uploadId: string) {
   const [row] = await ex
     .select({
       nodeId: storageUploadTargets.nodeId,
+      agent: storageUploadTargets.agent,
     })
     .from(storageUploadTargets)
     .where(eq(storageUploadTargets.uploadId, uploadId));
@@ -231,6 +232,7 @@ export function uploadOperations(db: Db, door: Door) {
         sha256?: string | null;
         ifContentVersion?: number | null;
         caps?: UploadCaps;
+        agent?: string | null;
       },
     ) {
       return db.transaction<OpenVersionUploadResult>(async (tx) => {
@@ -265,7 +267,7 @@ export function uploadOperations(db: Db, door: Door) {
           .returning();
         await tx
           .insert(storageUploadTargets)
-          .values({ uploadId: id, orgId: node.orgId, nodeId: node.id });
+          .values({ uploadId: id, orgId: node.orgId, nodeId: node.id, agent: file.agent ?? null });
         return { status: "ok", upload: upload! } satisfies OpenVersionUploadResult;
       });
     },
@@ -412,7 +414,13 @@ export function uploadOperations(db: Db, door: Door) {
           if (!target.nodeId) return NOT_FOUND satisfies CompleteUploadResult;
           const replaced =
             (await full()) ??
-            (await replaceContent(tx, door, target.nodeId, upload, options.ifContentVersion));
+            (await replaceContent(
+              tx,
+              door,
+              target.nodeId,
+              { ...upload, agent: target.agent },
+              options.ifContentVersion,
+            ));
           if (replaced.status !== "ok") return replaced satisfies CompleteUploadResult;
           await addUsage(tx, upload.orgId, upload.size);
           await tx

@@ -12,6 +12,8 @@ export interface WriteDeps {
   config: Config;
   log: Logger;
   waitUntil: (work: Promise<unknown>) => void;
+  /** The agent writing for the member (an MCP client's name): its versions say so. */
+  agent?: string;
 }
 
 const MARKDOWN = "text/markdown";
@@ -58,6 +60,7 @@ export async function writeText(
           limitBytes,
           ifContentVersion: target.ifContentVersion,
           caps,
+          agent: deps.agent ?? null,
         });
   if (opened.status !== "ok") return failed(opened) as WriteResult;
   const { upload } = opened;
@@ -99,6 +102,7 @@ export async function refusalFor(
     limitBytes,
     ifContentVersion: target.ifContentVersion,
     caps: uploadCaps(deps.config),
+    agent: deps.agent ?? null,
   });
   if (opened.status !== "ok") return failed(opened) as WriteResult;
   await dropUpload(deps, files, opened.upload.id);
