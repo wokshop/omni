@@ -121,6 +121,7 @@ function useMonthScroll(props: MonthGridProps, weeks: readonly (readonly Date[])
     let frame = 0;
     const report = () => {
       frame = 0;
+      if (guided.current) return;
       const now = latest.current;
       const height = rowHeight(element);
       const below = element.scrollHeight - element.scrollTop - element.clientHeight;
@@ -132,7 +133,6 @@ function useMonthScroll(props: MonthGridProps, weeks: readonly (readonly Date[])
         asked.current.after = now.last;
         now.props.onExtend(1);
       }
-      if (guided.current) return;
       const month = monthInView(element, now.weeks);
       if (month === null || month === monthOf(parseDayKey(shown.current ?? ""))) return;
       shown.current = dayKey(firstOf(month));

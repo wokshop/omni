@@ -917,6 +917,27 @@ test("the month scrolls as one long page past many months, the title following t
   await expect.poll(() => new URL(page.url()).searchParams.get("view")).toBe("month");
 });
 
+test("stepping back months past the laid-out weeks lands on the month asked for", async () => {
+  const { org, page, origin } = await invited();
+  await page.goto(new URL(`/${org.slug}/calendar?date=2026-11-24&view=month`, origin).toString());
+  await page.locator('[data-month-day="2026-11-24"]').waitFor();
+  for (const month of ["2026-10-01", "2026-09-01", "2026-08-01"]) {
+    await page.keyboard.press("ArrowLeft");
+    await expect.poll(() => shownDate(page)).toBe(month);
+  }
+  await expect
+    .poll(() =>
+      page
+        .locator('[data-week="2026-07-27"]')
+        .evaluate(
+          (row) =>
+            row.getBoundingClientRect().top - (row.parentElement?.getBoundingClientRect().top ?? 0),
+        ),
+    )
+    .toBeCloseTo(0, 0);
+  expect(shownDate(page)).toBe("2026-08-01");
+});
+
 test("one sideways swipe steps the week, and each gesture steps once", async () => {
   const { org, page, origin } = await invited();
   await page.goto(new URL(`/${org.slug}/calendar?date=2026-11-24&view=week`, origin).toString());
