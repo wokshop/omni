@@ -46,6 +46,7 @@ const LOCAL_SECRETS = {
   MAIL_SERVICE_HMAC_SECRET: randomBytes(32).toString("hex"),
   MAIL_CREDENTIALS_KEY: `k1:${randomBytes(32).toString("base64")}`,
   BETTER_AUTH_SECRET: randomBytes(32).toString("base64"),
+  SYSTEM_MAIL_FROM: "omni@example.com",
 };
 function existingValue(name) {
   for (const [file] of ENV_FILES) {
