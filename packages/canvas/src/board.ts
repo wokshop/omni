@@ -145,6 +145,26 @@ export class Board {
     }
   }
 
+  /** Frees a connector's ends bound to `gone`, drawing both ends first if either element changed. */
+  unbind(element: CanvasElement, gone: Set<string>) {
+    if (!element.from || !element.to) return;
+    const ends = [
+      [element.from, element.to],
+      [element.to, element.from],
+    ] as const;
+    if (!ends.some(([end]) => end.id !== undefined && gone.has(end.id))) return;
+    if (ends.some(([end]) => end.id !== undefined && this.reshaped(end.id))) {
+      const at = ends.map(([end, other]) => {
+        const bound = end.id === undefined ? undefined : this.byId.get(end.id);
+        const box = bound ? this.boundsOf(bound) : null;
+        return box ? anchor(box, this.pointOf(other)) : end.at;
+      });
+      ends.forEach(([end], i) => (end.at = at[i]!));
+    }
+    for (const [end] of ends) if (end.id !== undefined && gone.has(end.id)) delete end.id;
+    this.touch(element);
+  }
+
   /** Whether an element's bounds may have changed: it, or anything inside it, changed. */
   reshaped(id: string) {
     return this.changed.has(id) || [...this.under(id)].some((below) => this.changed.has(below));

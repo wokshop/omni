@@ -215,12 +215,19 @@ function moveInto(board: Board, moving: CanvasElement[], into: string) {
   }
 }
 
-function refuseTied(elements: CanvasElement[]) {
-  const tied = elements.find(
-    (element) => element.kind === "connector" && (element.from?.id ?? element.to?.id) !== undefined,
-  );
-  if (tied) {
-    throw new OpError(`"${tied.id}" moves with the elements it joins: move those instead.`);
+function refuseTied(board: Board, elements: CanvasElement[]) {
+  const moving = new Set(elements.flatMap((element) => [element.id, ...board.under(element.id)]));
+  for (const element of elements) {
+    if (element.kind === "connector" && (element.from?.id ?? element.to?.id) !== undefined) {
+      throw new OpError(`"${element.id}" moves with the elements it joins: move those instead.`);
+    }
+    for (const id of board.under(element.id)) {
+      const inside = board.byId.get(id);
+      const outside = [inside?.from?.id, inside?.to?.id].find((end) => end && !moving.has(end));
+      if (outside) {
+        throw new OpError(`"${id}" in "${element.id}" joins "${outside}": move "${outside}" too.`);
+      }
+    }
   }
 }
 
@@ -230,7 +237,7 @@ function move(board: Board, op: Op<"move">) {
   if (given > 1) throw new OpError("Give one of `to`, `by` or `place`.");
   if (!given && op.into === undefined)
     throw new OpError("Say where: `to`, `by`, `place` or `into`.");
-  if (given) refuseTied(moving);
+  if (given) refuseTied(board, moving);
   const bounds = board.boundsOfAll(moving);
   if (given && !bounds) throw new OpError("Nothing in `ids` has a place on the board to move.");
   if (given && bounds) {
@@ -276,7 +283,7 @@ function connect(board: Board, op: Op<"connect">) {
 
 function arrange(board: Board, op: Op<"arrange">) {
   const items = op.ids.map((id) => board.get(id));
-  refuseTied(items);
+  refuseTied(board, items);
   const inside = items.find((item) => items.some((other) => board.under(other.id).has(item.id)));
   if (inside) throw new OpError(`"${inside.id}" is inside another element being arranged.`);
   const boxes = items.map((element) => board.boundsOf(element));
@@ -409,17 +416,7 @@ function remove(board: Board, op: Op<"delete">) {
     }
   }
   for (const element of board.elements) {
-    if (gone.has(element.id) || !element.from || !element.to) continue;
-    for (const [end, other] of [
-      [element.from, element.to],
-      [element.to, element.from],
-    ] as const) {
-      if (end.id === undefined || !gone.has(end.id)) continue;
-      const box = board.reshaped(end.id) ? board.boundsOf(board.byId.get(end.id)!) : null;
-      if (box) end.at = anchor(box, board.pointOf(other));
-      delete end.id;
-      board.touch(element);
-    }
+    if (!gone.has(element.id)) board.unbind(element, gone);
   }
   touchAncestors(board, gone);
   board.remove(gone);
