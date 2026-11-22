@@ -96,7 +96,10 @@ export function AppSidebar() {
   };
   if (!isMobile) {
     return (
-      <RailSidebar title={module === "calendar" ? undefined : MODULE_LABELS[module]}>
+      <RailSidebar
+        title={module === "calendar" ? undefined : MODULE_LABELS[module]}
+        wide={module === "calendar"}
+      >
         <ModulePager pages={pages} />
       </RailSidebar>
     );

@@ -50,7 +50,7 @@ function useNow() {
 export type Editing = { event?: CalendarEvent; slot?: Slot } | null;
 
 /** The calendar: a week or a day of every shown calendar, driven by keys or the pointer. */
-export function CalendarPage(props: { date?: string; view?: CalendarView }) {
+export function CalendarPage(props: { date?: string; view?: CalendarView; calendar?: string }) {
   const view = props.view ?? "week";
   const anchor = parseDayKey(props.date);
   const days = daysOf(view, anchor);
@@ -58,7 +58,8 @@ export function CalendarPage(props: { date?: string; view?: CalendarView }) {
   const to = addDays(days.at(-1) ?? anchor, 1);
   const now = useNow();
   const calendars = useCalendars().data ?? [];
-  const events = useCalendarEvents(from, to).data ?? [];
+  const all = useCalendarEvents(from, to).data ?? [];
+  const events = props.calendar ? all.filter((e) => e.calendarId === props.calendar) : all;
   const todos = useMyTodos();
   const toggleTodo = useToggleTodo();
   const [selection, setSelection] = useState<Selection>(null);
@@ -70,7 +71,7 @@ export function CalendarPage(props: { date?: string; view?: CalendarView }) {
     void navigate({
       to: "/$workspace/calendar",
       params: { workspace },
-      search: { date: dayKey(next.date ?? anchor), view: next.view ?? view },
+      search: (prev) => ({ ...prev, date: dayKey(next.date ?? anchor), view: next.view ?? view }),
       replace: true,
     });
   const step = view === "week" ? 7 : 1;

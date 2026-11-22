@@ -54,22 +54,32 @@ export function MiniMonth() {
         void navigate({
           to: "/$workspace/calendar",
           params: { workspace },
-          search: { date: dayKey(toDate(value)), view },
+          search: (prev) => ({ ...prev, date: dayKey(toDate(value)), view }),
           replace: true,
         })
       }
       className="px-2 pb-2"
     >
-      <header className="flex h-11 items-center justify-between">
-        <Heading className="text-md" />
-        <div className="flex">
-          <Button slot="previous" size="sq-xs" intent="plain" aria-label="Previous month">
-            <IconChevronLeft />
-          </Button>
-          <Button slot="next" size="sq-xs" intent="plain" aria-label="Next month">
-            <IconChevronRight />
-          </Button>
-        </div>
+      <header className="-mx-2.5 grid h-11 grid-cols-7 items-center">
+        <Heading className="col-span-5 ps-2.5 text-md" />
+        <Button
+          slot="previous"
+          size="sq-xs"
+          intent="plain"
+          aria-label="Previous month"
+          className="justify-self-center"
+        >
+          <IconChevronLeft />
+        </Button>
+        <Button
+          slot="next"
+          size="sq-xs"
+          intent="plain"
+          aria-label="Next month"
+          className="justify-self-center"
+        >
+          <IconChevronRight />
+        </Button>
       </header>
       <CalendarGrid
         weekdayStyle="narrow"

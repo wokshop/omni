@@ -136,7 +136,7 @@ function nudge(direction: 1 | -1, shift: boolean, latest: Latest) {
     return true;
   }
   const event = selectedEvent(keys);
-  if (!event || !ownEvent(event)) return false;
+  if (!event || !ownEvent(event) || event.allDay) return false;
   if (shift) {
     if (Date.parse(event.end) + by * MINUTE - Date.parse(event.start) < SLOT_MINUTES * MINUTE)
       return true;

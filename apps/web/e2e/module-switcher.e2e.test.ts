@@ -110,6 +110,10 @@ test("the chevrons step to the neighbouring module, the pages glide along, and s
   await page.waitForURL((url) => place(url) === "/files");
   await shows(page, "files");
   await expect.poll(() => pageAt(page)).toBe(1);
+  const positions = await page.evaluate(
+    () => (window as unknown as { positions: number[] }).positions,
+  );
+  expect(positions.some((at) => at > 0.1 && at < 0.9)).toBe(true);
 
   await page.getByRole("button", { name: "Go to CRM" }).click();
   await page.waitForURL((url) => place(url) === "/crm/companies");
@@ -122,47 +126,19 @@ test("the chevrons step to the neighbouring module, the pages glide along, and s
   await expect.poll(() => pageAt(page)).toBe(1);
 });
 
-test("a sideways swipe moves the pages under the fingers and opens the page it lets go on", async () => {
+test("a sideways swipe leaves the module where it is; only the rail moves between modules", async () => {
   const page = await openInbox("swipe");
   const width = await pager(page).evaluate((el) => el.clientWidth);
   await swipe(page, [
-    [width * 0.2, 0],
-    [width * 0.2, 0],
-    [width * 0.2, 0],
+    [width * 0.4, 0],
+    [width * 0.4, 0],
   ]);
-  await page.waitForURL((url) => place(url) === "/files");
-  await shows(page, "files");
-  await expect.poll(() => pageAt(page)).toBe(1);
-  const positions = await page.evaluate(
-    () => (window as unknown as { positions: number[] }).positions,
-  );
-  expect(positions.some((at) => at > 0.1 && at < 0.9)).toBe(true);
-
-  await swipe(page, [[width * 0.7, 0]]);
-  await page.waitForURL((url) => place(url) === "/crm/companies");
-  await expect.poll(() => pageAt(page)).toBe(2);
-
   await swipe(page, [[-width * 0.7, 0]]);
-  await page.waitForURL((url) => place(url) === "/files");
-  await expect.poll(() => pageAt(page)).toBe(1);
-});
-
-test("a short swipe springs back to the module it started on", async () => {
-  const page = await openInbox("short");
-  await swipe(page, [[30, 0]]);
-  await expect.poll(() => pageAt(page)).toBe(0);
-  await page.waitForTimeout(400);
-  expect(place(page.url())).toBe("/mail/inbox");
-  await shows(page, "mail");
-});
-
-test("a vertical scroll and a swipe past the first page stay on Mail", async () => {
-  const page = await openInbox("vertical");
   await swipe(page, [[0, 120]]);
-  await swipe(page, [[-200, 0]]);
   await page.waitForTimeout(400);
   expect(await pageAt(page)).toBe(0);
   expect(place(page.url())).toBe("/mail/inbox");
+  await shows(page, "mail");
 });
 
 test("Tab never lands in a module's page that isn't shown", async () => {
@@ -176,7 +152,7 @@ test("Tab never lands in a module's page that isn't shown", async () => {
   expect(await drive.evaluate((link) => document.activeElement === link)).toBe(true);
 });
 
-test("leaving a document with unsaved edits asks first; Cancel swipes the pages back", async () => {
+test("leaving a document with unsaved edits asks first; Cancel glides the pages back", async () => {
   const page = await openInbox("blocked");
   await page.getByRole("button", { name: "Go to Drive" }).click();
   await shows(page, "files");
@@ -191,8 +167,7 @@ test("leaving a document with unsaved edits asks first; Cancel swipes the pages 
   await page.keyboard.press("End");
   await page.keyboard.type(" B");
 
-  const width = await pager(page).evaluate((el) => el.clientWidth);
-  await swipe(page, [[width * 0.7, 0]]);
+  await page.getByRole("button", { name: "Go to CRM" }).click();
   const leaving = page.getByRole("alertdialog", { name: "Save your changes?" });
   await leaving.waitFor({ timeout: 2000 });
   await leaving.getByRole("button", { name: "Cancel" }).click();

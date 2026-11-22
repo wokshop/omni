@@ -307,6 +307,43 @@ test("a to-do past the first hundred still sits on its day", async () => {
     .toBe(1);
 });
 
+test("arrows leave an all-day event's days alone", async () => {
+  const { org, page, origin } = await invited();
+  const [calendar] = await db
+    .select({ id: schema.calendarCalendars.id })
+    .from(schema.calendarCalendars)
+    .where(eq(schema.calendarCalendars.orgId, org.id));
+  await page.goto(origin);
+  const made = await page.request.post(new URL("/api/calendar/events", origin).toString(), {
+    data: {
+      calendarId: calendar?.id,
+      title: "Offsite",
+      start: "2026-11-23T00:00:00.000Z",
+      end: "2026-11-24T00:00:00.000Z",
+      allDay: true,
+      timeZone: "Europe/Madrid",
+      guests: [],
+    },
+  });
+  expect(made.status()).toBe(201);
+  await openWeek(page, origin, org.slug);
+  await page.getByRole("button", { name: "Offsite" }).click();
+  await page.keyboard.press("Shift+ArrowUp");
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("t");
+  await page.waitForLoadState("networkidle");
+  const [row] = await db
+    .select({ startsAt: schema.calendarEvents.startsAt, endsAt: schema.calendarEvents.endsAt })
+    .from(schema.calendarEvents)
+    .where(
+      and(eq(schema.calendarEvents.orgId, org.id), eq(schema.calendarEvents.title, "Offsite")),
+    );
+  expect([row?.startsAt.toISOString(), row?.endsAt.toISOString()]).toEqual([
+    "2026-11-23T00:00:00.000Z",
+    "2026-11-24T00:00:00.000Z",
+  ]);
+});
+
 async function freePort() {
   const server = createServer();
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));

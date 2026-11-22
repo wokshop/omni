@@ -113,8 +113,8 @@ function Todos() {
   );
 }
 
-const ROW = "mx-0.5 flex h-8 min-w-0 items-center gap-2.5 rounded-md px-1.75";
-const ROUND = "**:data-[slot=indicator]:rounded-full";
+const ROW = "mx-0.5 flex h-8 min-w-0 items-center gap-2 rounded-md px-1.75";
+const ROUND = "gap-x-0 **:data-[slot=indicator]:rounded-full";
 
 function NewTodo({ section, onDone }: { section: DueGroup; onDone: () => void }) {
   const [title, setTitle] = useState("");
