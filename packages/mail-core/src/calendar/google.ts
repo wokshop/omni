@@ -1,3 +1,4 @@
+import { convert } from "html-to-text";
 import { normalizeAddress } from "../addresses.ts";
 import {
   CALENDAR_ATTENDEES_MAX,
@@ -136,43 +137,27 @@ function conferenceOf(item: Json, texts: (string | null)[]) {
 }
 
 function descriptionOf(value: unknown) {
-  const raw = stringOf(value);
+  const raw = stringOf(value)?.slice(0, DESCRIPTION_HTML_MAX);
   if (!raw) return null;
-  const text = /<[a-z][^>]*>/i.test(raw) ? descriptionText(raw) : raw;
+  const text = raw.includes("<") ? descriptionText(raw) : raw;
   return calendarText(text, CALENDAR_DESCRIPTION_MAX);
 }
 
-const ENTITIES: Record<string, string> = {
-  amp: "&",
-  lt: "<",
-  gt: ">",
-  quot: '"',
-  apos: "'",
-  nbsp: " ",
-};
+const DESCRIPTION_HTML_MAX = CALENDAR_DESCRIPTION_MAX * 4;
 
 /**
- * The text of the small HTML Google Calendar writes in a description (`<br>`, `<b>`, `<a>`,
- * lists). Its output is shown as text, never as HTML, so tags only need to go, not be sanitized.
+ * The text of the HTML Google Calendar writes in a description (`<br>`, `<b>`, `<a>`, lists),
+ * through a real HTML parser: no link targets, no images, entities decoded. Shown as text.
  */
 export function descriptionText(html: string) {
-  return html
-    .slice(0, CALENDAR_DESCRIPTION_MAX * 4)
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<li[^>]*>/gi, "\n- ")
-    .replace(/<\/(p|div|ul|ol|h[1-6])>/gi, "\n")
-    .replace(/<[^>]*>/g, "")
-    .replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (entity, name: string) => {
-      if (name.startsWith("#")) {
-        const code =
-          name[1] === "x" || name[1] === "X" ? parseInt(name.slice(2), 16) : Number(name.slice(1));
-        return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : "";
-      }
-      return ENTITIES[name.toLowerCase()] ?? entity;
-    })
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+  return convert(html.slice(0, DESCRIPTION_HTML_MAX), {
+    wordwrap: false,
+    selectors: [
+      { selector: "a", options: { ignoreHref: true } },
+      { selector: "img", format: "skip" },
+      { selector: "ul", options: { itemPrefix: "- " } },
+    ],
+  }).trim();
 }
 
 function endOf(item: Json, start: GoogleTime, calendarZone: string | null) {

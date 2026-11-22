@@ -58,8 +58,12 @@ describe("readGoogleEvent", () => {
     const { event } = eventOf("3k9a7v1q2b5c8d0e4f6g");
     expect(event.description).toBe("Agenda\n\n1. Scope\n2. Timeline\nBrief");
     expect(descriptionText("<ul><li>Q&amp;A</li><li>5 &lt; 6&nbsp;&#8212; ok</li></ul>")).toBe(
-      "- Q&A\n- 5 < 6 — ok",
+      "- Q&A\n- 5 < 6\u00a0— ok",
     );
+    const started = performance.now();
+    const hostile = readGoogleEvent({ ...item("4n1allday"), description: "<a".repeat(200_000) });
+    expect(performance.now() - started).toBeLessThan(1_000);
+    expect(hostile?.kind).toBe("event");
   });
 
   test("a weekly series keeps its rule and its zoned exception, and stays at 10:00 across winter time", () => {
