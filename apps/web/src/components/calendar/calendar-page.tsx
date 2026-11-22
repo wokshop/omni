@@ -96,6 +96,13 @@ export function CalendarPage(props: {
       props.calendar ? (all ?? []).filter((e) => e.calendarId === props.calendar) : (all ?? []),
     [all, props.calendar],
   );
+  const inView = useMemo(() => {
+    if (view !== "month") return events;
+    const { from, to } = windowOf("month", new Date(at));
+    return events.filter(
+      (e) => Date.parse(e.start) < to.getTime() && Date.parse(e.end) > from.getTime(),
+    );
+  }, [view, at, events]);
   useNeighbors(view, at, shown.isFetched);
   const todos = useMyTodos();
   const toggleTodo = useToggleTodo();
@@ -127,7 +134,7 @@ export function CalendarPage(props: {
   const opened = panel ? byKey.get(panel) : undefined;
 
   const { move } = useCalendarKeys({
-    events,
+    events: inView,
     selection,
     setSelection,
     open: (event) => {

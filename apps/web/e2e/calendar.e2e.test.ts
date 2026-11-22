@@ -961,6 +961,25 @@ test("Today pressed while the month is still gliding lands on today's month", as
   expect(shownDate(page)?.slice(0, 7)).toBe(first.slice(0, 7));
 });
 
+test("in the month, ] selects only an event of the month in view", async () => {
+  const { org, page, origin } = await invited();
+  const kickoff = page.getByRole("button", { name: /Acme × Studio: kickoff/, pressed: true });
+  await page.goto(new URL(`/${org.slug}/calendar?date=2027-02-01&view=month`, origin).toString());
+  await page.locator('[data-month-day="2027-02-01"]').waitFor();
+  await page.waitForLoadState("networkidle");
+  await page.keyboard.press("]");
+  await page.keyboard.press("[");
+  expect(await kickoff.count()).toBe(0);
+
+  await page.goto(new URL(`/${org.slug}/calendar?date=2026-11-24&view=month`, origin).toString());
+  await page
+    .locator('[data-month-day="2026-11-24"]')
+    .getByRole("button", { name: /kickoff/ })
+    .waitFor();
+  await page.keyboard.press("]");
+  await expect.poll(() => kickoff.count()).toBe(1);
+});
+
 test("one sideways swipe steps the week, and each gesture steps once", async () => {
   const { org, page, origin } = await invited();
   await page.goto(new URL(`/${org.slug}/calendar?date=2026-11-24&view=week`, origin).toString());
