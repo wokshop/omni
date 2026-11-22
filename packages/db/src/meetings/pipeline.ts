@@ -409,3 +409,14 @@ export async function claimSubmission(ex: Ex, meetingId: string) {
     .returning({ id: meetingsJobs.meetingId });
   return rows.length > 0;
 }
+
+/**
+ * Lets go of a claim whose send failed, so the step's retry claims again and counts against the
+ * same retries instead of waiting out the claim.
+ */
+export async function releaseSubmission(ex: Ex, meetingId: string) {
+  await ex
+    .update(meetingsJobs)
+    .set({ submittedAt: null })
+    .where(and(eq(meetingsJobs.meetingId, meetingId), sql`${meetingsJobs.providerJobId} is null`));
+}

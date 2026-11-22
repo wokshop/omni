@@ -101,6 +101,7 @@ export function meetingsPipeline(db: Db) {
     stopRecording: (meetingId: string, stop: pipeline.StoppedRecording) =>
       db.transaction((tx) => pipeline.stopRecording(tx, meetingId, stop)),
     claimSubmission: (meetingId: string) => pipeline.claimSubmission(db, meetingId),
+    releaseSubmission: (meetingId: string) => pipeline.releaseSubmission(db, meetingId),
     setUpload: (meetingId: string, uploadId: string) => pipeline.setUpload(db, meetingId, uploadId),
     setEngineJob: (meetingId: string, provider: string, jobId: string) =>
       pipeline.setEngineJob(db, meetingId, provider, jobId),

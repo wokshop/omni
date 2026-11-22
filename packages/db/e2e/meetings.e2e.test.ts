@@ -366,3 +366,13 @@ test("two people accepting one action at once: one wins, the other is told it wa
   ]);
   expect(results.map((r) => r.status).toSorted()).toEqual(["decided", "ok"]);
 });
+
+test("a claim whose send failed is let go, so the step's retry may send again at once", async () => {
+  const s = await studio();
+  const pipeline = meetingsPipeline(db);
+  const { meetingId } = ok(await record(s.dana.id, { attendees: [s.dana.address] }));
+  expect(await pipeline.claimSubmission(meetingId)).toBe(true);
+  expect(await pipeline.claimSubmission(meetingId)).toBe(false);
+  await pipeline.releaseSubmission(meetingId);
+  expect(await pipeline.claimSubmission(meetingId)).toBe(true);
+});

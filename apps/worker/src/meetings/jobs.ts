@@ -148,6 +148,17 @@ async function transcribe(run: MeetingRun, engine: Engine, found: Found) {
   if (!(await pipeline.claimSubmission(meeting.id))) {
     return outcome({ step: "transcribe", delaySeconds: POLL_SECONDS }, null);
   }
+  try {
+    return await submit(run, engine, found);
+  } catch (error) {
+    await pipeline.releaseSubmission(meeting.id);
+    throw error;
+  }
+}
+
+async function submit(run: MeetingRun, engine: Engine, found: Found) {
+  const { meeting } = found;
+  const pipeline = meetingsPipeline(run.db);
   if (!meeting.audioNodeId) throw new MeetingStepFailed("the recording is missing");
   const file = await storageWorkspaceFile(run.db, meeting.orgId, meeting.audioNodeId);
   const object = file ? await run.env.STORAGE_BUCKET.get(file.r2Key) : null;
