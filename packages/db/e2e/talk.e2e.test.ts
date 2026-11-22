@@ -132,6 +132,8 @@ test("notes page newest first, carry their reactions, and refuse what is not tex
   expect((await anaTalk.sendNote(thread.id, "   ")).status).toBe("invalid_body");
   expect((await anaTalk.sendNote(thread.id, "x".repeat(4001))).status).toBe("invalid_body");
   expect((await anaTalk.react(c.id, "ok", true)).status).toBe("invalid_emoji");
+  ok(await anaTalk.react(c.id, "🇧🇷", true));
+  ok(await anaTalk.react(c.id, "1️⃣", true));
   expect((await anaTalk.react(c.id, "👍👍", true)).status).toBe("invalid_emoji");
 });
 
@@ -168,4 +170,36 @@ test("removing a member takes their threads with them", async () => {
   await db.delete(members).where(eq(members.id, ben.id));
   expect((await forMember(db, ana.id).talk.messages(thread.id)).status).toBe("not_found");
   expect(ok(await forMember(db, ana.id).talk.people()).people).toHaveLength(1);
+});
+
+test("a note still sending when the other one reads stays unread for them", async () => {
+  const { ana, ben } = await team("talk-race");
+  const thread = ok(await forMember(db, ana.id).talk.openThread(ben.id)).thread;
+  const sending = Promise.withResolvers<void>();
+  const written = Promise.withResolvers<void>();
+  const sent = db.transaction(async (tx) => {
+    const note = await forMember(tx as unknown as typeof db, ana.id).talk.sendNote(
+      thread.id,
+      "in flight",
+    );
+    written.resolve();
+    await sending.promise;
+    return note;
+  });
+  await written.promise;
+  ok(await forMember(db, ben.id).talk.read(thread.id));
+  sending.resolve();
+  ok(await sent);
+  const people = ok(await forMember(db, ben.id).talk.people()).people;
+  expect(people.find((p) => p.memberId === ana.id)?.unread).toBe(1);
+});
+
+test("one person's reactions on a note stop at eight, even sent all at once", async () => {
+  const { ana, ben } = await team("talk-cap");
+  const thread = ok(await forMember(db, ana.id).talk.openThread(ben.id)).thread;
+  const note = ok(await forMember(db, ana.id).talk.sendNote(thread.id, "react")).message;
+  const emoji = ["😀", "😁", "😂", "🤣", "😃", "😄", "😅", "😆", "😉", "😊", "😋", "😎"];
+  await Promise.all(emoji.map((e) => forMember(db, ben.id).talk.react(note.id, e, true)));
+  const [shown] = ok(await forMember(db, ben.id).talk.messages(thread.id)).messages;
+  expect(shown!.reactions).toHaveLength(8);
 });

@@ -130,14 +130,22 @@ async function insertMessage(
   thread: TalkThreadRow,
   values: Partial<Pick<MessageRow, "body" | "fileNodeId" | "fileName" | "fileSize" | "fileMime">>,
 ) {
+  // WARNING: stamp the note from the thread row, locked till commit, so a reader never passes it.
+  const [stamp] = await ex
+    .update(talkThreads)
+    .set({ lastMessageAt: sql`greatest(clock_timestamp(), ${talkThreads.lastMessageAt})` })
+    .where(eq(talkThreads.id, thread.id))
+    .returning({ at: talkThreads.lastMessageAt });
   const [row] = await ex
     .insert(talkMessages)
-    .values({ orgId: me.orgId, threadId: thread.id, authorMemberId: me.id, ...values })
+    .values({
+      orgId: me.orgId,
+      threadId: thread.id,
+      authorMemberId: me.id,
+      createdAt: stamp!.at!,
+      ...values,
+    })
     .returning();
-  await ex
-    .update(talkThreads)
-    .set({ lastMessageAt: row!.createdAt })
-    .where(eq(talkThreads.id, thread.id));
   return {
     status: "ok",
     message: toMessage(row!),
@@ -174,11 +182,13 @@ export async function recordFile(
   });
 }
 
-/** One emoji: a single grapheme, at most `EMOJI_MAX_BYTES`, with no letters, digits or spaces. */
+/** One emoji, flags and keycaps included: a single grapheme of at most `EMOJI_MAX_BYTES`. */
 export const isEmoji = (value: string) => {
   if (!value || new TextEncoder().encode(value).length > EMOJI_MAX_BYTES) return false;
   const graphemes = [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(value)];
-  return graphemes.length === 1 && /\p{Extended_Pictographic}/u.test(value);
+  return (
+    graphemes.length === 1 && /\p{Extended_Pictographic}|\p{Regional_Indicator}|\u20e3/u.test(value)
+  );
 };
 
 export type ReactResult =
@@ -200,6 +210,9 @@ export async function react(ex: Ex, me: TalkMember, messageId: string, emoji: st
   if (!isEmoji(emoji)) return { status: "invalid_emoji" } satisfies ReactResult;
   const thread = await messageThread(ex, me, messageId);
   if (!thread) return NOT_FOUND satisfies ReactResult;
+  await ex.execute(
+    sql`select pg_advisory_xact_lock(hashtext(${`talk-react:${messageId}:${me.id}`}))`,
+  );
   const mine = and(eq(talkReactions.messageId, messageId), eq(talkReactions.memberId, me.id));
   if (!on) {
     await ex.delete(talkReactions).where(and(mine, eq(talkReactions.emoji, emoji)));

@@ -127,10 +127,11 @@ export async function getThread(ex: Ex, me: TalkMember, threadId: string) {
 export async function readThread(ex: Ex, me: TalkMember, threadId: string) {
   const thread = await threadOf(ex, me, threadId);
   if (!thread) return NOT_FOUND;
-  // WARNING: the database's clock stamps notes; the Worker's, if behind, would leave them unread.
+  // WARNING: read only up to the last committed note; one still sending is stamped later.
+  const readAt = sql`(select coalesce(${talkThreads.lastMessageAt}, ${talkThreads.createdAt}) from ${talkThreads} where ${talkThreads.id} = ${threadId})`;
   const [row] = await ex
     .insert(talkReads)
-    .values({ orgId: me.orgId, threadId, memberId: me.id, readAt: sql`clock_timestamp()` })
+    .values({ orgId: me.orgId, threadId, memberId: me.id, readAt })
     .onConflictDoUpdate({
       target: [talkReads.threadId, talkReads.memberId],
       set: { readAt: sql`greatest(${talkReads.readAt}, excluded.read_at)` },

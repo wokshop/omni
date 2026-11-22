@@ -43,7 +43,9 @@ export function memberTalk(db: Db, memberId: string) {
       ),
     read: (threadId: string) => asTalkMember(db, memberId, (me) => readThread(db, me, threadId)),
     react: (messageId: string, emoji: string, on: boolean) =>
-      asTalkMember(db, memberId, (me) => react(db, me, messageId, emoji, on)),
+      db.transaction((tx) =>
+        asTalkMember(tx, memberId, (me) => react(tx, me, messageId, emoji, on)),
+      ),
   };
 }
 
