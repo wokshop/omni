@@ -255,7 +255,9 @@ recorded (`calendar_parts`) with what it did, so applying one twice changes noth
    newest by ten minutes, so an attachment committed late is still read; ones already recorded
    are skipped. A fresh install, or one whose calendar tables were emptied, starts at the oldest
    mail and works forward at a few hundred parts a minute: past meetings fill in by themselves.
-2. Parts in Junk or Trash only are skipped. Parts over 256 KB, or that do not parse, are recorded
+2. Calendar apps send the event twice in one message, as the `text/calendar` alternative and as
+   an `invite.ics` attachment; both are applied, and the second changes nothing. Parts in Junk or
+   Trash only are skipped. Parts over 256 KB, or that do not parse, are recorded
    as `invalid`.
 3. The part's VEVENTs are parsed with `ical.js` (Mozilla's, used by Thunderbird) in
    `@omni/mail-core`. Times become UTC instants with the event's zone kept: an IANA `TZID` as is,
@@ -264,8 +266,10 @@ recorded (`calendar_parts`) with what it did, so applying one twice changes noth
 4. **Which wins.** For an event (`UID`, `RECURRENCE-ID`) the higher `(SEQUENCE, DTSTAMP)` wins; an
    older one is recorded as `stale` and changes nothing. A `CANCEL` at or above the current
    sequence marks it `cancelled` (one instance, or the whole series). For an attendee's answer
-   the later `DTSTAMP` wins, between the organizer's `REQUEST` and the attendee's `REPLY`. So the
-   same mail applied in any order ends in the same state, which is what a re-sync needs.
+   the later `DTSTAMP` wins, between the organizer's `REQUEST` and the attendee's `REPLY`. Each
+   answer is kept on its own (`calendar_answers`), so one that arrives before its invitation is
+   not lost. So the same mail applied in any order ends in the same state, which is what a
+   re-sync needs.
 5. **Who may change what.** A `REQUEST` or `CANCEL` for an event the calendar already holds is
    applied only when the message's From is the event's organizer, or the message is in the inbox's
    own Sent folder; a `REPLY` only changes the attendee whose address sent it. Anyone can invite
@@ -289,6 +293,7 @@ Every table is `calendar_*` and carries `org_id`.
 | `calendar_calendars`      | id, org_id, mailbox_id (unique), created_at                                                                                                                                                                                                                                | One per inbox. Access is the inbox's.                                                     |
 | `calendar_events`         | id, org_id, calendar_id, uid, recurrence_id, sequence, dtstamp, source, status, busy, title, description, location, conference_url, starts_at, ends_at, all_day, start_day, end_day, time_zone, rrule, exdates, rdates, recurs_until, organizer_address, organizer_name, message_id, created_by_member_id | Unique on (calendar_id, uid, recurrence_id), nulls not distinct. Indexed on (calendar_id, starts_at) and, for series, (calendar_id, recurs_until). |
 | `calendar_attendees`      | event_id, org_id, address, name, role, response, responded_at                                                                                                                                                                                                              | Key (event_id, address). Indexed on (org_id, address) for `meetingsWith`.                  |
+| `calendar_answers`        | org_id, calendar_id, uid, recurrence_id, address, response, answered_at                                                                                                                                                                                                    | Each attendee's own answer, kept apart from the event; the later one wins.                |
 | `calendar_parts`          | attachment_id, org_id, calendar_id, method, uid, outcome, reason, processed_at                                                                                                                                                                                             | What each part did: `applied`, `stale`, `ignored`, `invalid`. Cascades with its attachment. |
 | `calendar_sweep`          | name, cursor_at, cursor_id                                                                                                                                                                                                                                                 | The sweep's place.                                                                        |
 | `calendar_member_prefs`   | member_id, calendar_id, color, hidden                                                                                                                                                                                                                                      | Per person.                                                                               |
