@@ -61,7 +61,7 @@ function useRows() {
   return {
     rows,
     isPending: recent.isPending || shared.isPending,
-    isError: recent.isError && shared.isError,
+    isError: recent.isError || shared.isError,
     retry: () => {
       void recent.refetch();
       void shared.refetch();
