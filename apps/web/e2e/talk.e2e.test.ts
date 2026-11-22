@@ -434,36 +434,44 @@ test("realtime that comes late or out of order never misorders notes or hides a 
   let holdReads = false;
   const heldReads: string[] = [];
   const readHeld = Promise.withResolvers<void>();
-  const heldNote: string[] = [];
-  const noteHeld = Promise.withResolvers<void>();
-  const heldLate: string[] = [];
-  const lateHeld = Promise.withResolvers<void>();
   const readSeen: Array<PromiseWithResolvers<void>> = [];
+  const holding = (preview: string) => ({
+    preview,
+    frames: [] as string[],
+    held: Promise.withResolvers<void>(),
+  });
+  const fourth = holding("Fourth");
+  const late = holding("Reacted first");
+  const sixthNote = holding("Sixth");
+  const holds = [fourth, late, sixthNote];
   const deliver: Array<(frame: string) => void> = [];
+  const routed = (text: string) => {
+    const event = JSON.parse(text) as { type?: string; preview?: string; read?: boolean };
+    if (event.type === "talk.changed" && event.read) {
+      readSeen.at(-1)?.resolve();
+      if (!holdReads) return "send";
+      heldReads.push(text);
+      readHeld.resolve();
+      return "held";
+    }
+    if (event.type !== "talk.message") return "send";
+    if (event.preview === "First") return (void (swap = text), "held");
+    if (event.preview === "Missed") return "dropped";
+    const hold = holds.find((h) => h.preview === event.preview && h.frames.length === 0);
+    if (!hold) return event.preview === "Second" ? "then-swap" : "send";
+    hold.frames.push(text);
+    hold.held.resolve();
+    return "held";
+  };
   await context.routeWebSocket(/\/api\/realtime/, (ws) => {
     const server = ws.connectToServer();
     deliver.push((frame) => ws.send(frame));
     ws.onMessage((frame) => server.send(frame));
     server.onMessage((frame) => {
-      const text = String(frame);
-      const event = JSON.parse(text) as { type?: string; preview?: string; read?: boolean };
-      if (event.type === "talk.message" && event.preview === "First") return void (swap = text);
-      if (event.type === "talk.message" && event.preview === "Missed") return;
-      if (event.type === "talk.message" && event.preview === "Reacted first") {
-        heldLate.push(text);
-        return lateHeld.resolve();
-      }
-      if (event.type === "talk.message" && event.preview === "Fourth" && !heldNote.length) {
-        heldNote.push(text);
-        return noteHeld.resolve();
-      }
-      if (event.type === "talk.changed" && event.read) readSeen.at(-1)?.resolve();
-      if (holdReads && event.type === "talk.changed" && event.read) {
-        heldReads.push(text);
-        return readHeld.resolve();
-      }
+      const way = routed(String(frame));
+      if (way === "held" || way === "dropped") return;
       ws.send(frame);
-      if (event.type === "talk.message" && event.preview === "Second" && swap) ws.send(swap);
+      if (way === "then-swap" && swap) ws.send(swap);
     });
   });
   const kofi = await context.newPage();
@@ -496,13 +504,13 @@ test("realtime that comes late or out of order never misorders notes or hides a 
   await stack.getByRole("button", { name: "Ana Lima, 1 unread" }).waitFor();
 
   await post(`/threads/${thread.id}/messages`, { body: "Fourth" });
-  await noteHeld.promise;
+  await fourth.held.promise;
   const wide = kofi.viewportSize()!;
   await kofi.setViewportSize({ width: 600, height: wide.height });
   await stack.waitFor({ state: "detached" });
   await kofi.setViewportSize(wide);
   await stack.getByRole("button", { name: "Ana Lima, 2 unread" }).waitFor();
-  deliver.at(-1)!(heldNote[0]!);
+  deliver.at(-1)!(fourth.frames[0]!);
   await kofi.waitForTimeout(1_000);
   await stack.getByRole("button", { name: "Ana Lima, 2 unread" }).waitFor();
 
@@ -548,7 +556,7 @@ test("realtime that comes late or out of order never misorders notes or hides a 
   await window.getByText("Missed", { exact: true }).waitFor();
 
   const { message } = await post(`/threads/${thread.id}/messages`, { body: "Reacted first" });
-  await lateHeld.promise;
+  await late.held.promise;
   const reacted = await fetch(
     new URL(`/api/talk/messages/${message.id}/reactions/${encodeURIComponent("👍")}`, origin()),
     { method: "PUT", headers: { cookie, origin: WEB_ORIGIN } },
@@ -556,7 +564,7 @@ test("realtime that comes late or out of order never misorders notes or hides a 
   expect(reacted.status).toBe(204);
   const early = window.getByText("Reacted first", { exact: true }).locator("..");
   await early.getByRole("button", { name: "👍 1" }).waitFor();
-  deliver.at(-1)!(heldLate[0]!);
+  deliver.at(-1)!(late.frames[0]!);
   await kofi.waitForTimeout(1_000);
   await early.getByRole("button", { name: "👍 1" }).waitFor();
 
@@ -589,4 +597,36 @@ test("realtime that comes late or out of order never misorders notes or hides a 
   peopleRelease.resolve();
   await kofi.waitForTimeout(1_000);
   await stack.getByRole("button", { name: "Ana Lima, offline", exact: true }).waitFor();
+
+  await stack.getByRole("button", { name: /^Ana Lima/ }).click();
+  await window.getByText("Fifth", { exact: true }).waitFor();
+  const pageHeld = Promise.withResolvers<void>();
+  const pageRelease = Promise.withResolvers<void>();
+  let holdPage = true;
+  await kofi.route(`**/api/talk/threads/${thread.id}/messages`, async (route) => {
+    if (!holdPage || route.request().method() !== "GET") return route.fallback();
+    holdPage = false;
+    const older = await route.fetch();
+    pageHeld.resolve();
+    await pageRelease.promise;
+    await route.fulfill({ response: older });
+  });
+  const sixth = (await post(`/threads/${thread.id}/messages`, { body: "Sixth" })).message;
+  await sixthNote.held.promise;
+  const reactTo = (emoji: string) =>
+    fetch(
+      new URL(`/api/talk/messages/${sixth.id}/reactions/${encodeURIComponent(emoji)}`, origin()),
+      { method: "PUT", headers: { cookie, origin: WEB_ORIGIN } },
+    );
+  expect((await reactTo("👍")).status).toBe(204);
+  await pageHeld.promise;
+  deliver.at(-1)!(sixthNote.frames[0]!);
+  const bubble = window.getByText("Sixth", { exact: true }).locator("..");
+  await bubble.waitFor();
+  expect((await reactTo("🎉")).status).toBe(204);
+  await bubble.getByRole("button", { name: "🎉 1" }).waitFor();
+  pageRelease.resolve();
+  await kofi.waitForTimeout(1_000);
+  await bubble.getByRole("button", { name: "🎉 1" }).waitFor();
+  await bubble.getByRole("button", { name: "👍 1" }).waitFor();
 });

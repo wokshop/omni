@@ -83,6 +83,9 @@ export function settlePending(
   });
 }
 
+let reactionsClock = 0;
+const reactionsVersion = new Map<string, number>();
+
 /**
  * A note's reactions as they now are, wherever it sits in the loaded pages; false when the thread
  * is loaded without that note (its own event has not come yet), so the caller can fetch it.
@@ -106,6 +109,7 @@ export function setReactions(
         : page,
     ),
   }));
+  reactionsVersion.set(messageId, ++reactionsClock);
   return true;
 }
 
@@ -155,17 +159,25 @@ export const messageOf = (client: QueryClient, threadId: string, messageId: stri
  */
 export async function fetchNewest(client: QueryClient, threadId: string) {
   if (!client.getQueryData(keys.talkMessages(threadId))) return;
+  const started = ++reactionsClock;
   const page = await call(
     api.talk.threads[":id"].messages.$get({ param: { id: threadId }, query: {} }),
   );
   const fresh = new Map(page.messages.map((m) => [m.id, m]));
+  const newer = (id: string) => (reactionsVersion.get(id) ?? 0) > started;
+  for (const id of fresh.keys()) if (!newer(id)) reactionsVersion.set(id, started);
+  const merged = (m: TalkMessage) => {
+    const got = fresh.get(m.id);
+    if (!got) return m;
+    return newer(m.id) ? { ...got, reactions: m.reactions } : got;
+  };
   editPages(client, threadId, (data) => {
     const known = new Set(data.pages.flatMap((p) => p.messages.map((m) => m.id)));
     const added = page.messages.filter((m) => !known.has(m.id));
     return {
       ...data,
       pages: data.pages.map((p, i) => {
-        const messages = p.messages.map((m) => fresh.get(m.id) ?? m);
+        const messages = p.messages.map(merged);
         return i === 0
           ? { ...p, messages: newestFirst([...added, ...messages]) }
           : { ...p, messages };
