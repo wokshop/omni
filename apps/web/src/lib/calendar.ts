@@ -171,10 +171,28 @@ export const calendarPrefsMutation = (client: QueryClient) =>
           json: { hidden: input.hidden, color: input.color },
         }),
       ),
+    onMutate: async (input) => {
+      await client.cancelQueries({ queryKey: calendarKeys.calendars() });
+      client.setQueryData<{ calendars: CalendarList }>(
+        calendarKeys.calendars(),
+        (body) =>
+          body && {
+            calendars: body.calendars.map((c) =>
+              c.id === input.id
+                ? {
+                    ...c,
+                    hidden: input.hidden ?? c.hidden,
+                    color: input.color === undefined ? c.color : input.color,
+                  }
+                : c,
+            ),
+          },
+      );
+    },
     onSettled: () => calendarChanged(client),
   });
 
-/** A calendar's color when its person picked none: the chart palette, in the calendar's order. */
+/** A calendar's color when its person picked none: the calendar palette, in the calendar's order. */
 export const calendarTone = (calendars: readonly CalendarItem[], calendarId: string) => {
   const picked = calendars.find((c) => c.id === calendarId)?.color;
   if (picked) return picked;
@@ -182,7 +200,7 @@ export const calendarTone = (calendars: readonly CalendarItem[], calendarId: str
     0,
     calendars.findIndex((c) => c.id === calendarId),
   );
-  return `var(--chart-${(index % 5) + 1})`;
+  return `var(--calendar-${(index % 8) + 1})`;
 };
 
 /** The CRM people, companies and deals an event's attendees are (`GET /api/crm/lookup`). */
