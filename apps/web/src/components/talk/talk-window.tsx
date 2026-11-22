@@ -91,20 +91,13 @@ function Composer(props: { person: TalkPerson; threadId: string | undefined }) {
         className="max-h-28 min-h-7 flex-1 resize-none py-1 sm:py-1"
       />
       <FileTrigger allowsMultiple onSelect={(list) => list && attach([...list])}>
-        <Button
-          intent="ghost"
-          size="sq-sm"
-          isCircle
-          aria-label="Attach"
-          isPending={files.isPending}
-        >
+        <Button intent="ghost" size="sq-sm" aria-label="Attach" isPending={files.isPending}>
           <IconPlus />
         </Button>
       </FileTrigger>
       <Button
         intent="primary"
         size="sq-sm"
-        isCircle
         aria-label="Drop"
         isDisabled={!text.trim() || !props.threadId}
         onPress={send}

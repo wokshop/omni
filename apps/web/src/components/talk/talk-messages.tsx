@@ -93,7 +93,7 @@ function Attachment(props: { message: TalkMessage; mine: boolean }) {
           src={href}
           alt={file.name}
           loading="lazy"
-          className="aspect-[4/3] w-44 rounded-2xl border border-border bg-secondary object-cover"
+          className="aspect-[4/3] w-44 rounded-xl border border-border bg-secondary object-cover"
         />
       </Link>
     );
@@ -101,7 +101,7 @@ function Attachment(props: { message: TalkMessage; mine: boolean }) {
   const chip = (
     <span
       className={cn(
-        "flex max-w-56 min-w-0 items-center gap-2 rounded-2xl px-2.5 py-1.5",
+        "flex max-w-56 min-w-0 items-center gap-2 rounded-xl px-2.5 py-1.5",
         props.mine ? "bg-primary text-primary-foreground" : "bg-secondary text-foreground",
       )}
     >
@@ -131,15 +131,15 @@ function Note(props: { message: TalkMessage; meId: string; tail: boolean }) {
   return (
     <div
       className={cn(
-        "group/note relative flex flex-col gap-1",
+        "group/note relative flex flex-col gap-0.5",
         mine ? "items-end ps-20" : "items-start pe-20",
-        props.tail && "mb-1.5",
+        props.tail && "mb-1",
       )}
     >
       {message.body && (
         <p
           className={cn(
-            "max-w-full rounded-2xl px-3 py-1.5 text-sm/5 break-words whitespace-pre-wrap",
+            "max-w-full rounded-xl px-2.5 py-1 text-sm/5 break-words whitespace-pre-wrap",
             mine ? "bg-primary text-primary-foreground" : "bg-secondary text-foreground",
           )}
         >
@@ -157,7 +157,7 @@ function Note(props: { message: TalkMessage; meId: string; tail: boolean }) {
 export function TalkMessages(props: { messages: TalkMessage[]; meId: string }) {
   const ordered = props.messages.toReversed();
   return (
-    <div className="flex flex-col gap-0.5 px-3 py-2">
+    <div className="flex flex-col gap-0.5 px-3 py-1.5">
       {ordered.map((message, i) => {
         const before = ordered[i - 1];
         const after = ordered[i + 1];
