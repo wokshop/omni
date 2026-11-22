@@ -162,10 +162,11 @@ test("a recorded meeting reads as its client's group, its notes, actions and nam
     .toBe(0);
   if (shots) await page.screenshot({ path: join(shots, "meeting-transcript.png") });
 
-  await page.getByRole("tab", { name: /Actions/ }).click();
+  await page.getByRole("tab", { name: "Summary" }).click();
   await page.getByText("Gestionar el acceso al servidor").waitFor();
-  if (shots) await page.screenshot({ path: join(shots, "meeting-actions.png") });
-  await page.getByRole("button", { name: "Add to calendar" }).click();
+  await page
+    .getByRole("checkbox", { name: /Add Gestionar el acceso al servidor/ })
+    .click({ force: true });
   await page.getByText("In calendar").waitFor();
 
   await page.getByRole("button", { name: "Share" }).click();

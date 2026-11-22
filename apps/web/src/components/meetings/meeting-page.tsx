@@ -1,16 +1,20 @@
-import { useRef, useState, type ReactNode } from "react";
+import { useState, type ComponentType, type ReactNode } from "react";
 import { Skeleton } from "skullet/react";
-import { RecordMark } from "@/components/crm/record-list";
-import { DetailSection } from "@/components/crm/record-layout";
-import { PlainValue } from "@/components/crm/record-fields";
 import { EmptyState } from "@/components/empty/empty-state";
 import {
   IconArrowRotateClockwise,
+  IconCalendar,
+  IconCheck,
   IconChecklist,
   IconCircleAlert,
+  IconClock3,
+  IconCopy,
   IconEllipsis,
-  IconMail,
-  IconMicrophone,
+  IconGlobe,
+  IconLink,
+  IconList,
+  IconPeople,
+  IconSparkle,
   IconTrash,
 } from "@/components/icons/central";
 import { StorageFrame } from "@/components/storage/storage-frame";
@@ -21,17 +25,15 @@ import { Loader } from "@/components/ui/loader";
 import { Menu, MenuItem, MenuLabel, MenuTrigger } from "@/components/ui/menu";
 import { Tab, TabList, TabPanel, Tabs } from "@/components/ui/tabs";
 import { appToast } from "@/components/ui/toast";
-import { useMeeting, useMeetingDraft, useMeetingWrites } from "@/hooks/use-meetings.ts";
+import { useClipboard } from "@/hooks/use-clipboard.ts";
+import { useMeeting, useMeetingWrites } from "@/hooks/use-meetings.ts";
 import { ApiError } from "@/lib/api.ts";
-import {
-  groupKind,
-  meetingAudioUrl,
-  meetingClock,
-  type Meeting,
-  type MeetingAction,
-} from "@/lib/meetings.ts";
+import { groupKind, meetingClock, meetingGroupPath, type Meeting } from "@/lib/meetings.ts";
+import { Link } from "@/components/ui/link";
+import { ActionItem } from "./meeting-actions.tsx";
+import { MeetingAudio, PlayerRow, usePlayer } from "./meeting-player.tsx";
 import { ShareMeetingDialog } from "./meeting-share.tsx";
-import { MeetingTranscript, speakerNames } from "./meeting-transcript.tsx";
+import { MeetingTranscript } from "./meeting-transcript.tsx";
 
 const WHEN = new Intl.DateTimeFormat(undefined, {
   weekday: "short",
@@ -49,133 +51,165 @@ const WORKING: Record<string, string> = {
   writing: "Writing notes",
 };
 
-const NAMED_BY: Record<string, string> = {
-  mic: "Recorder's microphone",
-  engine: "Transcription",
-  ai: "Notes",
-  person: "Named by hand",
-};
-
 const LANGUAGES = new Intl.DisplayNames(undefined, { type: "language" });
-
 const minutes = (ms: number | null) => (ms ? `${Math.max(1, Math.round(ms / 60_000))} min` : null);
+const initial = (name: string) => name.trim().slice(0, 1).toUpperCase();
 
-/** One recorded meeting, laid out like a client's page: its head, the recording, tabs, details. */
+/** One recorded meeting: a page to read, with its recording, its notes and who said what. */
 export function MeetingPage({ id }: { id: string }) {
   const meeting = useMeeting(id);
-  const audio = useRef<HTMLAudioElement>(null);
   const [sharing, setSharing] = useState(false);
-  const seek = (ms: number) => {
-    if (!audio.current) return;
-    audio.current.currentTime = ms / 1000;
-    void audio.current.play();
-  };
   if (!meeting.data) return <MeetingState query={meeting} />;
   const data = meeting.data;
   const m = data.meeting;
   const editor = data.role !== "viewer";
-  const open = data.actions.filter((a) => a.state === "open");
   return (
     <StorageFrame
-      title={<h1 className="truncate text-md">{m.title ?? "Untitled meeting"}</h1>}
-      bordered
-      actions={
-        <>
-          {editor && (
-            <Button intent="outline" size="sm" onPress={() => setSharing(true)}>
-              Share
-            </Button>
-          )}
-          <MoreMenu meeting={data} />
-        </>
-      }
+      title={<GroupCrumb meeting={data} />}
+      actions={<HeaderActions meeting={data} onShare={() => setSharing(true)} />}
     >
-      <div className="flex min-h-0 flex-1 overflow-y-auto max-lg:flex-col lg:overflow-hidden">
-        <main className="min-w-0 flex-1 lg:overflow-y-auto">
-          <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-5 pt-8 pb-12">
-            <MeetingHead meeting={data} />
+      <MeetingAudio id={id} hasAudio={m.hasAudio} durationMs={m.durationMs}>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <article className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-5 pt-10 pb-16">
+            <header className="flex flex-col gap-3">
+              <h1 className="text-2xl text-foreground">{m.title ?? "Untitled meeting"}</h1>
+              <MetaRow meeting={data} />
+            </header>
+            <Properties meeting={data} onShare={editor ? () => setSharing(true) : undefined} />
             <Progress meeting={data} />
-            {m.hasAudio && (
-              <section className="flex flex-col gap-2 rounded-lg border bg-background px-4 py-3">
-                <span className="text-xs text-muted-foreground">Recording</span>
-                {/* oxlint-disable-next-line jsx-a11y/media-has-caption */}
-                <audio
-                  ref={audio}
-                  src={meetingAudioUrl(id)}
-                  aria-label="Recording"
-                  controls
-                  preload="metadata"
-                  className="w-full"
-                />
-              </section>
-            )}
             <Tabs className="w-full">
               <TabList
                 aria-label="Meeting"
                 className="sticky top-0 z-10 bg-background pt-1.5 [--tab-list-pb:--spacing(1.5)]"
               >
                 <Tab id="summary">Summary</Tab>
-                <Tab id="actions">
-                  Actions
-                  {open.length > 0 && (
-                    <span className="ms-1.5 text-subtle-foreground tabular-nums">
-                      {open.length}
-                    </span>
-                  )}
-                </Tab>
                 <Tab id="transcript">Transcript</Tab>
               </TabList>
-              <TabPanel id="summary" className="flex flex-col gap-6 pt-4">
-                <Summary meeting={data} onSeek={seek} />
+              <TabPanel id="summary" className="flex flex-col gap-8 pt-6">
+                <Summary meeting={data} canDecide={editor} />
               </TabPanel>
-              <TabPanel id="actions" className="flex flex-col gap-2 pt-4">
-                <Actions actions={data.actions} canDecide={editor} />
-              </TabPanel>
-              <TabPanel id="transcript" className="flex flex-col pt-4">
+              <TabPanel id="transcript" className="flex flex-col pt-6">
                 {m.status === "ready" ? (
-                  <MeetingTranscript meeting={data} canRename={editor} onSeek={seek} />
+                  <MeetingTranscript meeting={data} canRename={editor} />
                 ) : (
-                  <None />
+                  <Quiet>–</Quiet>
                 )}
               </TabPanel>
             </Tabs>
-          </div>
-        </main>
-        <Details meeting={data} />
-      </div>
+          </article>
+        </div>
+      </MeetingAudio>
       {sharing && <ShareMeetingDialog meeting={data} onClose={() => setSharing(false)} />}
     </StorageFrame>
   );
 }
 
-function MeetingHead({ meeting }: { meeting: Meeting }) {
-  const m = meeting.meeting;
-  const kind = groupKind(m.groupKey);
-  const domain = kind === "domain" ? m.groupKey.slice("domain:".length) : null;
-  const meta = [WHEN.format(new Date(m.startedAt)), minutes(m.durationMs)].filter(Boolean);
+function GroupCrumb({ meeting }: { meeting: Meeting }) {
+  const key = meeting.meeting.groupKey;
+  const label =
+    groupKind(key) === "domain"
+      ? key.slice("domain:".length)
+      : (meeting.meeting.title ?? "Meetings");
   return (
-    <header className="flex min-w-0 items-start gap-4">
-      {domain ? (
-        <RecordMark name={domain} square who={{ domain }} size={48} />
-      ) : (
-        <span className="grid size-12 shrink-0 place-items-center rounded-lg border bg-surface">
-          <IconMicrophone className="size-5 text-muted-foreground" />
-        </span>
+    <Link
+      href={meetingGroupPath(key)}
+      className="truncate text-md text-muted-foreground hover:text-foreground"
+    >
+      {label}
+    </Link>
+  );
+}
+
+function HeaderActions(props: { meeting: Meeting; onShare: () => void }) {
+  const { copy, copied } = useClipboard();
+  return (
+    <>
+      <Button
+        intent="plain"
+        size="sq-sm"
+        aria-label={copied ? "Link copied" : "Copy link"}
+        onPress={() => void copy(window.location.href)}
+      >
+        {copied ? <IconCheck /> : <IconLink />}
+      </Button>
+      {props.meeting.role !== "viewer" && (
+        <Button size="sm" onPress={props.onShare}>
+          Share
+        </Button>
       )}
-      <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <h2 className="truncate text-lg text-foreground">{m.title ?? "Untitled meeting"}</h2>
-        <p className="truncate text-sm text-muted-foreground tabular-nums">{meta.join(" · ")}</p>
-        {meeting.notes && meeting.notes.topics.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 pt-1">
-            {meeting.notes.topics.map((topic) => (
-              <Badge key={topic} intent="secondary">
-                {topic}
-              </Badge>
+      <MoreMenu meeting={props.meeting} />
+    </>
+  );
+}
+
+function MetaRow({ meeting }: { meeting: Meeting }) {
+  const m = meeting.meeting;
+  const items: { icon: ComponentType<{ className?: string }>; label: string | null }[] = [
+    { icon: IconCalendar, label: WHEN.format(new Date(m.startedAt)) },
+    { icon: IconClock3, label: minutes(m.durationMs) },
+    {
+      icon: IconPeople,
+      label: meeting.attendees.length ? `${meeting.attendees.length} people` : null,
+    },
+    { icon: IconGlobe, label: m.language ? (LANGUAGES.of(m.language) ?? null) : null },
+  ];
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm text-muted-foreground">
+      {items
+        .filter((item) => item.label)
+        .map(({ icon: Icon, label }) => (
+          <span key={label} className="flex items-center gap-1.5 tabular-nums">
+            <Icon className="size-icon" />
+            {label}
+          </span>
+        ))}
+    </div>
+  );
+}
+
+function Properties(props: { meeting: Meeting; onShare: (() => void) | undefined }) {
+  const player = usePlayer();
+  const people = props.meeting.attendees;
+  return (
+    <dl className="grid grid-cols-[6rem_1fr] items-center gap-x-4 gap-y-3 text-sm">
+      {player.hasAudio && (
+        <Property label="Audio">
+          <PlayerRow />
+        </Property>
+      )}
+      <Property label="Shared with">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <div className="flex -space-x-1">
+            {people.slice(0, 5).map((person) => (
+              <Avatar
+                key={person.address}
+                size="xs"
+                initials={initial(person.name ?? person.address)}
+                className="ring-2 ring-background"
+                title={person.name ?? person.address}
+              />
             ))}
           </div>
-        )}
-      </div>
-    </header>
+          <span className="truncate text-muted-foreground">
+            {people.map((p) => (p.name ?? p.address).split(" ")[0]).join(", ")}
+          </span>
+          {props.onShare && (
+            <Button intent="plain" size="sm" onPress={props.onShare} className="ms-auto">
+              Manage
+            </Button>
+          )}
+        </div>
+      </Property>
+    </dl>
+  );
+}
+
+function Property(props: { label: string; children: ReactNode }) {
+  return (
+    <>
+      <dt className="text-muted-foreground">{props.label}</dt>
+      <dd className="flex min-h-8 min-w-0 items-center">{props.children}</dd>
+    </>
   );
 }
 
@@ -184,7 +218,7 @@ function Progress({ meeting }: { meeting: Meeting }) {
   const m = meeting.meeting;
   if (WORKING[m.status]) {
     return (
-      <div className="flex items-center gap-3 rounded-lg border bg-background px-4 py-3">
+      <div className="flex items-center gap-3 rounded-xl border bg-surface px-4 py-3.5">
         <Loader className="size-4 text-muted-foreground" />
         <span className="text-sm">{WORKING[m.status]}</span>
       </div>
@@ -192,9 +226,9 @@ function Progress({ meeting }: { meeting: Meeting }) {
   }
   if (m.status !== "failed") return null;
   return (
-    <div className="flex items-center gap-3 rounded-lg border bg-background px-4 py-3">
+    <div className="flex items-center gap-3 rounded-xl border bg-surface px-4 py-3.5">
       <IconCircleAlert className="size-icon shrink-0 text-danger" />
-      <span className="min-w-0 flex-1 truncate text-sm">{m.failure}</span>
+      <span className="min-w-0 flex-1 text-sm">{m.failure}</span>
       {meeting.role !== "viewer" && (
         <Button
           intent="outline"
@@ -213,184 +247,98 @@ function Progress({ meeting }: { meeting: Meeting }) {
   );
 }
 
-function Summary({ meeting, onSeek }: { meeting: Meeting; onSeek: (ms: number) => void }) {
+function Block(props: {
+  icon: ComponentType<{ className?: string }>;
+  title: string;
+  action?: ReactNode;
+  children: ReactNode;
+}) {
+  const Icon = props.icon;
+  return (
+    <section className="flex flex-col gap-3" aria-label={props.title}>
+      <div className="flex h-7 items-center gap-2">
+        <Icon className="size-icon text-muted-foreground" />
+        <h2 className="text-sm text-foreground">{props.title}</h2>
+        {props.action && <div className="ms-auto">{props.action}</div>}
+      </div>
+      {props.children}
+    </section>
+  );
+}
+
+function Summary({ meeting, canDecide }: { meeting: Meeting; canDecide: boolean }) {
   const notes = meeting.notes;
-  if (!notes?.summary && !notes?.highlights.length) return <None />;
+  const { copy, copied } = useClipboard();
+  const player = usePlayer();
+  if (!notes?.summary && !meeting.actions.length) return <Quiet>–</Quiet>;
+  const text = [
+    notes?.summary,
+    ...(notes?.highlights ?? []).map((h) => `[${meetingClock(h.atMs)}] ${h.text}`),
+  ]
+    .filter(Boolean)
+    .join("\n");
   return (
     <>
-      {notes.summary && <p className="text-sm text-foreground">{notes.summary}</p>}
-      {notes.highlights.length > 0 && (
-        <section className="flex flex-col gap-2" aria-label="Highlights">
-          <h3 className="text-sm text-foreground">
-            Highlights{" "}
-            <span className="text-subtle-foreground tabular-nums">{notes.highlights.length}</span>
-          </h3>
-          <ul className="flex flex-col divide-y rounded-lg border bg-background">
+      {notes?.summary && (
+        <Block
+          icon={IconSparkle}
+          title="Overview"
+          action={
+            <Button intent="plain" size="sm" onPress={() => void copy(text)}>
+              {copied ? <IconCheck data-slot="icon" /> : <IconCopy data-slot="icon" />}
+              {copied ? "Copied" : "Copy"}
+            </Button>
+          }
+        >
+          <p className="text-sm/6 text-foreground">{notes.summary}</p>
+          {notes.topics.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {notes.topics.map((topic) => (
+                <Badge key={topic} intent="secondary">
+                  {topic}
+                </Badge>
+              ))}
+            </div>
+          )}
+        </Block>
+      )}
+      {meeting.actions.length > 0 && (
+        <Block icon={IconChecklist} title="Action items">
+          <ul className="flex flex-col">
+            {meeting.actions.map((action) => (
+              <ActionItem key={action.id} action={action} canDecide={canDecide} />
+            ))}
+          </ul>
+        </Block>
+      )}
+      {notes && notes.highlights.length > 0 && (
+        <Block icon={IconList} title="Highlights">
+          <ul className="flex flex-col">
             {notes.highlights.map((h) => (
-              <li key={`${h.atMs}:${h.text}`} className="flex items-center gap-3 px-4 py-2.5">
-                <Button
-                  intent="outline"
-                  size="sm"
-                  aria-label={`Play from ${meetingClock(h.atMs)}`}
-                  onPress={() => onSeek(h.atMs)}
-                  className="shrink-0 text-xs tabular-nums"
-                >
-                  {meetingClock(h.atMs)}
-                </Button>
-                <span className="min-w-0 flex-1 text-sm">{h.text}</span>
+              <li key={`${h.atMs}:${h.text}`} className="flex items-center gap-3 py-1">
+                <span aria-hidden className="size-1 shrink-0 rounded-full bg-muted-foreground" />
+                <span className="min-w-0 flex-1 text-sm/6">{h.text}</span>
+                {player.hasAudio ? (
+                  <Button
+                    intent="plain"
+                    size="sm"
+                    aria-label={`Play from ${meetingClock(h.atMs)}`}
+                    onPress={() => player.seek(h.atMs)}
+                    className="shrink-0 text-xs text-muted-foreground tabular-nums"
+                  >
+                    {meetingClock(h.atMs)}
+                  </Button>
+                ) : (
+                  <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                    {meetingClock(h.atMs)}
+                  </span>
+                )}
               </li>
             ))}
           </ul>
-        </section>
+        </Block>
       )}
     </>
-  );
-}
-
-function Actions({ actions, canDecide }: { actions: MeetingAction[]; canDecide: boolean }) {
-  if (!actions.length) return <None />;
-  const open = actions.filter((a) => a.state === "open");
-  const decided = actions.filter((a) => a.state !== "open");
-  return (
-    <>
-      {open.map((action) => (
-        <ActionCard key={action.id} action={action} canDecide={canDecide} />
-      ))}
-      {decided.map((action) => (
-        <ActionCard key={action.id} action={action} canDecide={false} />
-      ))}
-    </>
-  );
-}
-
-type Payload = {
-  title?: string;
-  owner?: string | null;
-  due?: string | null;
-  to?: string[];
-  subject?: string;
-  body?: string;
-};
-
-function ActionCard({ action, canDecide }: { action: MeetingAction; canDecide: boolean }) {
-  const { decideAction } = useMeetingWrites();
-  const draft = useMeetingDraft();
-  const payload = action.payload as Payload;
-  const task = action.kind === "task";
-  const decide = (accept: boolean) =>
-    decideAction.mutate(
-      { id: action.id, accept },
-      { onError: () => appToast.error("That action could not be saved") },
-    );
-  const meta = task
-    ? [payload.owner, payload.due].filter(Boolean).join(" · ")
-    : (payload.to ?? []).join(", ");
-  const Glyph = task ? IconChecklist : IconMail;
-  return (
-    <div className="flex min-w-0 items-center gap-3 rounded-lg border bg-background px-4 py-3">
-      <span className="grid size-8 shrink-0 place-items-center rounded-md bg-surface">
-        <Glyph className="size-icon text-muted-foreground" />
-      </span>
-      <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <span className="truncate text-sm text-foreground">
-          {task ? payload.title : payload.subject}
-        </span>
-        {(meta || (!task && payload.body)) && (
-          <span className="truncate text-xs text-muted-foreground">{meta || payload.body}</span>
-        )}
-      </div>
-      {action.state !== "open" ? (
-        <Badge intent={action.state === "done" ? "success" : "secondary"}>
-          {action.state === "done" ? (task ? "In calendar" : "Drafted") : "Dismissed"}
-        </Badge>
-      ) : (
-        canDecide && (
-          <div className="flex shrink-0 items-center gap-1.5">
-            <Button intent="outline" size="sm" onPress={() => decide(false)}>
-              Dismiss
-            </Button>
-            {task ? (
-              <Button size="sm" isPending={decideAction.isPending} onPress={() => decide(true)}>
-                Add to calendar
-              </Button>
-            ) : (
-              <Button
-                size="sm"
-                isPending={draft.isPending}
-                onPress={() =>
-                  draft.mutate(
-                    {
-                      to: payload.to ?? [],
-                      subject: payload.subject ?? "",
-                      body: payload.body ?? "",
-                    },
-                    {
-                      onSuccess: () => decide(true),
-                      onError: () => appToast.error("The draft could not be made"),
-                    },
-                  )
-                }
-              >
-                Open draft
-              </Button>
-            )}
-          </div>
-        )
-      )}
-    </div>
-  );
-}
-
-function Details({ meeting }: { meeting: Meeting }) {
-  const m = meeting.meeting;
-  const names = speakerNames(meeting);
-  return (
-    <aside
-      aria-label="Details"
-      className="flex shrink-0 flex-col gap-6 px-5 py-5 max-lg:border-t lg:w-80 lg:overflow-y-auto lg:border-s"
-    >
-      <DetailSection title="Details">
-        <PlainValue label="When">{WHEN.format(new Date(m.startedAt))}</PlainValue>
-        <PlainValue label="Length">{minutes(m.durationMs)}</PlainValue>
-        <PlainValue label="Language">{m.language ? LANGUAGES.of(m.language) : null}</PlainValue>
-        <PlainValue label="Status">
-          {WORKING[m.status] ?? (m.status === "ready" ? "Ready" : "Failed")}
-        </PlainValue>
-      </DetailSection>
-      <DetailSection title="People">
-        {meeting.attendees.map((person) => (
-          <Row
-            key={person.address}
-            name={person.name ?? person.address}
-            title={person.address}
-            meta={null}
-          />
-        ))}
-      </DetailSection>
-      {meeting.speakers.length > 0 && (
-        <DetailSection title="Speakers">
-          {meeting.speakers.map((s) => (
-            <Row
-              key={s.label}
-              name={names.get(s.label) ?? s.label}
-              meta={s.source ? NAMED_BY[s.source] : null}
-            />
-          ))}
-        </DetailSection>
-      )}
-    </aside>
-  );
-}
-
-function Row(props: { name: string; meta: ReactNode; title?: string }) {
-  return (
-    <div title={props.title} className="-mx-2 flex h-8 min-w-0 items-center gap-2 rounded-md px-2">
-      <Avatar size="xs" initials={props.name.slice(0, 1).toUpperCase()} />
-      <span className="min-w-0 flex-1 truncate text-sm">{props.name}</span>
-      {props.meta && (
-        <span className="shrink-0 truncate text-xs text-muted-foreground">{props.meta}</span>
-      )}
-    </div>
   );
 }
 
@@ -402,7 +350,7 @@ function MoreMenu({ meeting }: { meeting: Meeting }) {
   if (!owner && !(failed && meeting.role !== "viewer")) return null;
   return (
     <MenuTrigger>
-      <Button intent="outline" size="sq-sm" aria-label="More">
+      <Button intent="plain" size="sq-sm" aria-label="More">
         <IconEllipsis />
       </Button>
       <Menu
@@ -432,8 +380,10 @@ function MoreMenu({ meeting }: { meeting: Meeting }) {
   );
 }
 
-function None() {
-  return <span className="flex h-8 items-center text-sm text-muted-foreground">–</span>;
+function Quiet(props: { children: ReactNode }) {
+  return (
+    <span className="flex h-8 items-center text-sm text-muted-foreground">{props.children}</span>
+  );
 }
 
 function MeetingState(props: { query: { isPending: boolean; error: unknown } }) {

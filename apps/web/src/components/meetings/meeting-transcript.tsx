@@ -9,6 +9,7 @@ import { appToast } from "@/components/ui/toast";
 import { useClipboard } from "@/hooks/use-clipboard.ts";
 import { useMeetingTranscript, useMeetingWrites } from "@/hooks/use-meetings.ts";
 import { meetingClock, type Meeting, type MeetingSegment } from "@/lib/meetings.ts";
+import { usePlayer } from "./meeting-player.tsx";
 
 /** Each speaker's name, by the engine's label: the name given, else `Speaker N`. */
 export function speakerNames(meeting: Meeting) {
@@ -18,15 +19,12 @@ export function speakerNames(meeting: Meeting) {
 const initial = (name: string) => name.trim().slice(0, 1).toUpperCase();
 
 /** Who said what, turn by turn: a face, a name to fix, the time to play from, the words. */
-export function MeetingTranscript(props: {
-  meeting: Meeting;
-  canRename: boolean;
-  onSeek: (ms: number) => void;
-}) {
+export function MeetingTranscript(props: { meeting: Meeting; canRename: boolean }) {
   const id = props.meeting.meeting.id;
   const transcript = useMeetingTranscript(id);
   const [query, setQuery] = useState("");
   const { copy, copied } = useClipboard();
+  const player = usePlayer();
   const names = speakerNames(props.meeting);
   const nameOf = (segment: MeetingSegment) => names.get(segment.speaker ?? "") ?? "Unknown";
   const shown = useMemo(() => {
@@ -55,12 +53,18 @@ export function MeetingTranscript(props: {
         </Button>
       </div>
       <Skeleton loading={transcript.isPending} label="Loading">
-        <ol className="flex flex-col gap-5">
-          {shown.map((segment) => (
-            <li key={segment.seq} className="flex gap-3">
-              <Avatar size="sm" initials={initial(nameOf(segment))} className="mt-0.5" />
-              <div className="flex min-w-0 flex-1 flex-col gap-y-1">
-                <div className="flex h-6 items-center gap-1">
+        <ol className="-mx-3 flex flex-col gap-1">
+          {shown.map((segment) => {
+            const now =
+              player.playing && player.timeMs >= segment.startMs && player.timeMs < segment.endMs;
+            return (
+              <li
+                key={segment.seq}
+                aria-current={now ? "true" : undefined}
+                className="flex flex-col gap-y-1 rounded-xl px-3 py-2.5 transition-colors duration-150 ease-out aria-current:bg-accent"
+              >
+                <div className="flex h-6 items-center gap-2">
+                  <Avatar size="xs" initials={initial(nameOf(segment))} />
                   {props.canRename && segment.speaker ? (
                     <SpeakerMenu
                       meeting={props.meeting}
@@ -73,17 +77,18 @@ export function MeetingTranscript(props: {
                   <Button
                     intent="plain"
                     size="sm"
+                    isDisabled={!player.hasAudio}
                     aria-label={`Play from ${meetingClock(segment.startMs)}`}
-                    onPress={() => props.onSeek(segment.startMs)}
-                    className="text-xs text-muted-foreground tabular-nums"
+                    onPress={() => player.seek(segment.startMs)}
+                    className="-ms-1 text-xs text-muted-foreground tabular-nums"
                   >
                     {meetingClock(segment.startMs)}
                   </Button>
                 </div>
-                <p className="text-sm text-foreground">{segment.text}</p>
-              </div>
-            </li>
-          ))}
+                <p className="ps-7 text-sm/6 text-foreground">{segment.text}</p>
+              </li>
+            );
+          })}
         </ol>
       </Skeleton>
     </div>
