@@ -437,7 +437,7 @@ test("a save holding a guest's and a member's typing is the member's when they t
   tab.socket.close();
 });
 
-test("an outsider's update naming another epoch is refused, and the doc still opens and saves", async () => {
+test("an outsider's update naming another epoch, or not a Yjs update at all, is refused, and the doc still opens and saves", async () => {
   const { ana, doc, shareId } = await sharedDoc("# Plan");
   const guest = await visitorPage(new CookieJar(), shareId, doc.id);
   const forged = {
@@ -446,6 +446,11 @@ test("an outsider's update naming another epoch is refused, and the doc still op
     u: base64(rewriteLive(guest.doc, "# Plan!")),
   };
   expect(await guest.send(forged, doc.id)).toMatchObject({ type: "doc.refused", reason: "tail" });
+  const truncated = { t: "update", e: guest.epoch, u: "AA==" };
+  expect(await guest.send(truncated, doc.id)).toMatchObject({
+    type: "doc.refused",
+    reason: "read_only",
+  });
   const text = "# Plan, still saved";
   const fresh = new Y.Doc();
   for (const entry of guest.live.entries)

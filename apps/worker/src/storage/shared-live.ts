@@ -55,6 +55,8 @@ async function seedFor(
   r2Key: string,
 ) {
   for (let tries = 0; tries < 2; tries++) {
+    const [tail] = await basin.readTail(docStream(file.id), 1);
+    const next = tail ? tail.seqNum + 1 : 0;
     if (await LiveFile.open(basin, file.id, file.contentVersion)) return;
     const object = await c.env.STORAGE_BUCKET.get(r2Key);
     const text = object ? await object.text() : "";
@@ -63,8 +65,6 @@ async function seedFor(
       cv: file.contentVersion,
       u: toBase64(rewriteLive(new Y.Doc(), text)),
     };
-    const [last] = await basin.readTail(docStream(file.id), 1);
-    const next = last ? last.seqNum + 1 : 0;
     if ((await basin.append(docStream(file.id), JSON.stringify(record), next)) !== null) return;
   }
 }

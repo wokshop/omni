@@ -1,4 +1,5 @@
 import { storageLiveRecordSchema, type StorageDocEvent } from "@omni/contracts";
+import { applyUpdate, Doc } from "yjs";
 import { createLogger } from "./log.ts";
 import { docStream, type DocAppendMessage, type DocPresenceMessage } from "./realtime-docs.ts";
 import { audience, editingOf, type Editing } from "./realtime-files.ts";
@@ -60,6 +61,20 @@ const limitsOf = (socket: WebSocket) => {
 };
 
 const epochs = new Map<string, number>();
+
+function wellFormed(u: string) {
+  try {
+    const doc = new Doc();
+    applyUpdate(
+      doc,
+      Uint8Array.from(atob(u), (c) => c.charCodeAt(0)),
+    );
+    doc.destroy();
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function epochOf(body: string, seqNum: number) {
   try {
@@ -166,6 +181,7 @@ export async function onOutsideAppend(
   if (editingOf(socket)?.nodeId !== nodeId) return;
   if (!limitsOf(socket).append.take()) return refuse(socket, nodeId, ref, "rate");
   if (record.t !== "update") return refuse(socket, nodeId, ref, "read_only");
+  if (!wellFormed(record.u)) return refuse(socket, nodeId, ref, "read_only");
   const basin = s2Basin(loadConfig(env));
   if (!basin) return refuse(socket, nodeId, ref, "unavailable");
   if (!(await fresh(env, socket))) return;
