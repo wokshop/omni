@@ -245,3 +245,25 @@ test("an agent reads a doc as people see it, unsaved typing included, and each v
   expect(missing).toHaveProperty("error");
   tab.socket.close();
 });
+
+test("versions too different to diff answer with the version's text instead of running out of time", async () => {
+  const org = await stack.company(`big-diff-${randomUUID().slice(0, 8)}`);
+  const ana = await stack.member(org.id);
+  const agent = await connectAgent(stack.worker.url, ana.jar, { scope: WRITE });
+  const lines = (prefix: string) =>
+    Array.from({ length: 6_000 }, (_, i) => `${prefix}${i}`).join("\n");
+  const doc = await stack.upload(ana.jar, { space: "shared" }, "log.md", bytes(lines("a")));
+  expect(
+    await call(agent, "drive_edit_doc", { id: doc.id, markdown: lines("b") }),
+  ).not.toHaveProperty("error");
+
+  const listed = await call(agent, "drive_versions", { id: doc.id });
+  const [version] = (listed as { versions: { id: string }[] }).versions;
+  const read = await call(agent, "drive_versions", {
+    id: doc.id,
+    version_id: version!.id,
+    max_chars: 200_000,
+  });
+  expect(read).toMatchObject({ diff: "", diff_too_large: true, truncated: false });
+  expect((read as { text: string }).text).toBe(lines("a"));
+});

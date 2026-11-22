@@ -7,6 +7,8 @@ import { result, toolError } from "../format.ts";
 import { guarded, type ToolContext } from "../server.ts";
 
 const MAX_TEXT_BYTES = 1_000_000;
+const DIFF_MAX_EDITS = 5_000;
+const DIFF_TIMEOUT_MS = 500;
 
 const inputSchema = z.object({
   id: z.string().min(1).describe("The file's id, from `drive_search` or `drive_list`."),
@@ -52,6 +54,10 @@ const outputSchema = z.object({
     .string()
     .optional()
     .describe("A unified diff from the version (---) to the file now (+++); empty when the same."),
+  diff_too_large: z
+    .boolean()
+    .optional()
+    .describe("The versions differ too much to diff here: compare `text` with `drive_fetch`."),
   truncated: z.boolean().optional().describe("The text or the diff stops before its end."),
 });
 
@@ -128,12 +134,15 @@ async function versionsOf(context: ToolContext, input: z.infer<typeof inputSchem
   if (before === null || after === null) {
     return toolError("That file is not text Omni can compare. Open it with its `url`.");
   }
-  const diff =
+  const patch =
     before === after
       ? ""
       : createTwoFilesPatch("version", "current", before, after, undefined, undefined, {
           context: 3,
-        }).replace(/^=+\n/, "");
+          maxEditLength: DIFF_MAX_EDITS,
+          timeout: DIFF_TIMEOUT_MS,
+        });
+  const diff = patch?.replace(/^=+\n/, "") ?? "";
   const half = Math.floor(input.max_chars / 2);
   const shownDiff = cut(diff, half);
   const shownText = cut(before, input.max_chars - shownDiff.text.length);
@@ -143,6 +152,7 @@ async function versionsOf(context: ToolContext, input: z.infer<typeof inputSchem
     version: wire(version.id, version),
     text: shownText.text,
     diff: shownDiff.text,
+    ...(patch === undefined ? { diff_too_large: true } : {}),
     truncated: shownText.cut || shownDiff.cut,
   });
 }
