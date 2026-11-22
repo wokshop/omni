@@ -1,4 +1,5 @@
 import { useRef, useState, type CSSProperties } from "react";
+import { IconFolderFilled, IconFolderOpenFilled } from "@/components/icons/central";
 import { useStorageList } from "@/hooks/use-storage.ts";
 import { usePdfPages } from "@/hooks/use-storage-preview.ts";
 import { fileType } from "@/lib/file-kind.ts";
@@ -7,30 +8,23 @@ import { useSeen } from "./file-card.tsx";
 import { FileGlyph } from "./file-glyph.tsx";
 import { hasThumbnail, ThumbnailImage } from "./thumbnail-image.tsx";
 
-type Sheet = readonly [left: number, top: number, turn: number];
+type Spot = readonly [left: number, top: number, width: number, height: number];
 
-const SHEET_WIDTH = 38;
-const SHEET_HEIGHT = 46;
-const ALONE: Sheet = [31, 14, 0];
-const SHEETS: readonly (readonly Sheet[])[] = [
-  [ALONE],
+const EMPTY: Spot = [27, 22, 46, 50];
+const STACK: readonly (readonly Spot[])[] = [
+  [EMPTY],
   [
-    [20, 18, -6],
-    [42, 14, 5],
+    [38, 36, 40, 40],
+    [22, 20, 40, 40],
   ],
   [
-    [14, 21, -9],
-    [31, 13, 0],
-    [48, 19, 8],
+    [30, 40, 40, 38],
+    [14, 18, 40, 38],
+    [46, 24, 40, 38],
   ],
 ];
 
-/**
- * The folder drawn as one: its back with a tab, up to three of its files standing in it, and the
- * front pocket over their lower half; the files rise out of it on hover. Positions are percent of
- * the square: back and front keep 8% from its sides and bottom. Without `node` (a folder being
- * named), or with `peek` off, the empty pocket.
- */
+/** The folder drawn; without `node` (a folder being named), or `peek` off, one dashed card. */
 export function FolderArt(props: {
   node?: StorageNode;
   peek?: boolean | undefined;
@@ -42,48 +36,56 @@ export function FolderArt(props: {
   const enabled = !!node && !!fileUrl && props.peek !== false && near;
   const contents = useStorageList({ parentId: node?.id ?? "" }, { enabled });
   const cards = enabled ? pick(contents.nodes) : [];
-  const spots = SHEETS[cards.length - 1] ?? [];
+  const spots = STACK[cards.length - 1] ?? [];
+  const empty = !node || (contents.isSuccess && contents.nodes.length === 0);
   return (
     <div
       aria-hidden
       data-slot="folder-art"
-      className="relative aspect-square overflow-hidden rounded-lg border border-transparent"
+      className="relative flex aspect-square items-center justify-center overflow-hidden rounded-lg border bg-surface"
     >
       <span ref={anchor} className="absolute inset-0" />
-      <span className="absolute start-[8%] top-[10%] h-[12%] w-[34%] rounded-t-md bg-secondary" />
-      <span className="absolute inset-x-[8%] top-[16%] bottom-[8%] rounded-lg rounded-ss-none bg-secondary" />
+      {empty && <IconFolderOpenFilled className="size-12 text-subtle-foreground" />}
       {fileUrl &&
-        cards.map((card, i) => (
-          <Card key={card.id} node={card} url={fileUrl(card)} sheet={spots[i] ?? ALONE} />
-        ))}
-      <span className="absolute inset-x-[8%] top-[46%] bottom-[8%] rounded-lg border border-foreground/5 bg-accent" />
+        cards.length > 0 &&
+        cards
+          .map((card, i) => (
+            <Card key={card.id} node={card} url={fileUrl(card)} style={place(spots[i] ?? EMPTY)} />
+          ))
+          .toReversed()}
     </div>
   );
 }
 
+const place = ([left, top, width, height]: Spot) => {
+  const result: CSSProperties = {
+    left: `${left}%`,
+    top: `${top}%`,
+    width: `${width}%`,
+    height: `${height}%`,
+  };
+  return result;
+};
+
 function pick(nodes: StorageNode[]) {
   const files = nodes.filter((n) => n.kind === "file");
   const folders = nodes.filter((n) => n.kind === "folder");
-  return [...files, ...folders].slice(0, SHEETS.length);
+  return [...files, ...folders].slice(0, STACK.length);
 }
 
-function Card(props: { node: StorageNode; url: string; sheet: Sheet }) {
+function Card(props: { node: StorageNode; url: string; style: CSSProperties }) {
   const { node } = props;
-  const [left, top, turn] = props.sheet;
   const type = node.kind === "file" ? fileType(node.name, node.mimeType) : null;
-  const style: CSSProperties = {
-    left: `${left}%`,
-    top: `${top}%`,
-    width: `${SHEET_WIDTH}%`,
-    height: `${SHEET_HEIGHT}%`,
-    rotate: `${turn}deg`,
-  };
   return (
     <div
-      style={style}
-      className="absolute flex items-start justify-center overflow-hidden rounded-sm border border-foreground/10 bg-background pt-[18%] transition-[translate] duration-200 ease-out group-hover:-translate-y-[10%] motion-reduce:transition-none"
+      style={props.style}
+      className="absolute flex items-center justify-center overflow-hidden rounded-md border bg-background"
     >
-      <FileGlyph kind={type?.kind ?? "folder"} className="size-5 text-muted-foreground" />
+      {type ? (
+        <FileGlyph kind={type.kind} className="size-6 text-muted-foreground" />
+      ) : (
+        <IconFolderFilled className="size-6 text-primary" />
+      )}
       {hasThumbnail(node) ? (
         <ThumbnailImage
           node={node}
@@ -112,7 +114,7 @@ function PdfImage(props: { node: StorageNode; url: string }) {
       decoding="async"
       draggable={false}
       onLoad={() => setShown(true)}
-      className={`absolute inset-0 size-full object-cover object-top transition-opacity duration-200 ease-out motion-reduce:transition-none ${shown ? "opacity-100" : "opacity-0"}`}
+      className={`absolute inset-0 size-full object-cover transition-opacity duration-200 ease-out motion-reduce:transition-none ${shown ? "opacity-100" : "opacity-0"}`}
     />
   );
 }

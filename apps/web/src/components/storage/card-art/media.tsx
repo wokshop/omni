@@ -28,7 +28,6 @@ export function VideoArt(props: { node: StorageNode; url: string }) {
   const [shown, setShown] = useState(false);
   const [broken, setBroken] = useState(false);
   const [playing, setPlaying] = useState(false);
-  const [duration, setDuration] = useState<number | null>(null);
   const play = () => {
     const element = video.current;
     if (!element || !shown || still()) return;
@@ -64,10 +63,6 @@ export function VideoArt(props: { node: StorageNode; url: string }) {
           disablePictureInPicture
           preload="metadata"
           tabIndex={-1}
-          onLoadedMetadata={(event) => {
-            const length = event.currentTarget.duration;
-            if (Number.isFinite(length)) setDuration(length);
-          }}
           onLoadedData={() => setShown(true)}
           onError={() => setBroken(true)}
           className={`absolute inset-0 size-full bg-foreground object-cover transition-opacity duration-200 ease-out motion-reduce:transition-none ${shown ? "opacity-100" : "opacity-0"}`}
@@ -81,21 +76,9 @@ export function VideoArt(props: { node: StorageNode; url: string }) {
           >
             <IconPlayFilled className="size-4 translate-x-px" />
           </span>
-          {duration !== null && <Length seconds={duration} />}
         </>
       )}
     </div>
-  );
-}
-
-function Length(props: { seconds: number }) {
-  return (
-    <span
-      aria-hidden
-      className="absolute end-2 bottom-2 rounded-md bg-foreground/40 px-1.5 py-0.5 text-xs text-background tabular-nums backdrop-blur-sm"
-    >
-      {formatDuration(props.seconds)}
-    </span>
   );
 }
 

@@ -6,14 +6,13 @@ import type { StorageNode } from "@/lib/storage.ts";
 import { useSeen } from "../file-card.tsx";
 import { FileGlyph } from "../file-glyph.tsx";
 
-const PAGE =
-  "absolute start-[12%] top-[12%] size-full @container overflow-hidden rounded-ss-sm border-s border-t border-foreground/10 bg-background transition-[translate,scale] duration-200 ease-out group-hover:-translate-x-[4%] group-hover:-translate-y-[4%] group-hover:scale-[1.04] motion-reduce:transition-none";
+const PAGE = "absolute inset-0 @container overflow-hidden bg-background";
 const MINI: Record<"title" | "body" | "cell", CSSProperties> = {
   title: { fontSize: "6.5cqw", lineHeight: 1.3 },
   body: { fontSize: "4.6cqw", lineHeight: 1.65 },
   cell: { fontSize: "4.2cqw", lineHeight: 1.5 },
 };
-const MARGIN: CSSProperties = { padding: "9cqw 0 0 9cqw" };
+const MARGIN: CSSProperties = { padding: "10cqw" };
 
 const TONE: Record<CodeTone, string> = {
   keyword: "text-primary",
@@ -47,8 +46,7 @@ const CARD_SHEET_MAX_BYTES = Math.min(2 * 1024 * 1024, SHEET_PREVIEW_MAX_BYTES);
 
 /**
  * The file's first lines drawn as a page: a doc's title and text, code, a grid of cells. The page
- * sits where a PDF's first page does (`pdf-stack.tsx`), 12% in from the square's top and left,
- * bleeding off its right and bottom, and lifts toward the pointer on hover. Its text is sized in
+ * is the whole card, one margin all round (a PDF, with pages behind it, stays a stack). Its text is sized in
  * `cqw` (hundredths of the page's width), so it reads the same at every card width.
  */
 export function FilePage(props: { node: StorageNode; type: FileType; url: string }) {
@@ -111,10 +109,10 @@ function DocBody(props: { text: string; name: string }) {
   const page = docPage(props.text, props.name);
   return (
     <Page>
-      <p style={MINI.title} className="truncate pe-[9cqw] font-medium text-foreground">
+      <p style={MINI.title} className="truncate font-medium text-foreground">
         {page.title}
       </p>
-      <div style={{ ...MINI.body, marginTop: "3cqw" }} className="pe-[9cqw]">
+      <div style={{ ...MINI.body, marginTop: "3cqw" }}>
         {page.body.map((line, i) => (
           <p
             key={i}
@@ -131,7 +129,7 @@ function DocBody(props: { text: string; name: string }) {
 function PlainBody(props: { text: string }) {
   return (
     <Page>
-      <div style={MINI.body} className="pe-[9cqw] text-muted-foreground">
+      <div style={MINI.body} className="text-muted-foreground">
         {textLines(props.text).map((line, i) => (
           <p key={i} className="truncate whitespace-pre">
             {line || "\u00a0"}
