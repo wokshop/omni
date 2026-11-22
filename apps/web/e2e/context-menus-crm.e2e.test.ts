@@ -55,6 +55,21 @@ test("right-clicking a company row archives that company, and only it", async ()
 
   const shown = await rightClick(page, page.getByRole("row", { name: /Acme/ }));
   expect(shown.prevented).toBe(true);
+  await page.mouse.move(1, 1);
+  const focused = () =>
+    page.evaluate(() =>
+      document.activeElement?.getAttribute("role") === "menuitem"
+        ? (document.activeElement.textContent ?? "")
+        : "",
+    );
+  for (let step = 0; step < 10 && !(await focused()).includes("Set owner"); step++) {
+    await page.keyboard.press("ArrowDown");
+  }
+  await page.keyboard.press("ArrowRight");
+  await expect.poll(focused).toContain("No owner");
+  await page.keyboard.press("Escape");
+  await page.getByRole("menuitem", { name: "No owner" }).waitFor({ state: "hidden" });
+  await expect.poll(() => page.getByRole("menu").count()).toBe(1);
   await menuItem(page, "Archive").click();
 
   await expect

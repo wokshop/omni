@@ -301,12 +301,13 @@ export function ContextMenuHost() {
       document.querySelector<HTMLElement>("[role=menu][data-open]")?.focus();
     });
     const escape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") closeContextMenu();
+      if (event.key !== "Escape" || document.activeElement?.closest("[role=menu]")) return;
+      closeContextMenu();
     };
-    document.addEventListener("keydown", escape, true);
+    document.addEventListener("keydown", escape);
     return () => {
       cancelAnimationFrame(frame);
-      document.removeEventListener("keydown", escape, true);
+      document.removeEventListener("keydown", escape);
       if (before instanceof HTMLElement && document.contains(before)) {
         before.focus({ preventScroll: true });
       }
