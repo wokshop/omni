@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { crmErrorToast } from "@/components/crm/crm-errors.ts";
 import { useUpdateTask } from "@/hooks/use-crm-tasks.ts";
 import type { CalendarEvent } from "@/lib/calendar.ts";
@@ -33,17 +34,22 @@ function shiftOf(event: CalendarEvent, drop: Drop, shownOn?: Date) {
  */
 export function useCalendarDrop(move: (event: CalendarEvent, minutes: number) => void) {
   const update = useUpdateTask();
+  const saving = useRef(new Map<string, Promise<unknown>>());
+  const save = (id: string, dueAt: string | null) => {
+    const queue = saving.current;
+    const next = (queue.get(id) ?? Promise.resolve())
+      .then(() => update.mutateAsync({ id, dueAt }))
+      .catch((error: unknown) => crmErrorToast(error, "The to-do was not moved"));
+    queue.set(id, next);
+    void next.finally(() => queue.get(id) === next && queue.delete(id));
+  };
   return (item: Dragged, drop: Drop) => {
     if (item.kind === "todo") {
       const dueAt =
         drop.minutes === undefined
           ? dueAtOf(dayKey(drop.day))
           : dropStart({ ...drop, minutes: drop.minutes }).toISOString();
-      if (dueAt === item.task.dueAt) return;
-      update.mutate(
-        { id: item.task.id, dueAt },
-        { onError: (error) => crmErrorToast(error, "The to-do was not moved") },
-      );
+      if (dueAt !== item.task.dueAt) save(item.task.id, dueAt);
       return;
     }
     if (!ownEvent(item.event)) return;

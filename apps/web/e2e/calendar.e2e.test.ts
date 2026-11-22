@@ -862,6 +862,36 @@ test("one scroll steps the month, one sideways swipe steps the week, and each ge
   expect(shownDate(page)).toBe("2026-12-01");
 });
 
+test("a to-do dragged twice before its first save lands where it was dropped last", async () => {
+  const { org, member, page, origin } = await invited();
+  await db.insert(schema.crmTasks).values({
+    orgId: org.id,
+    title: "Water the plants",
+    assigneeMemberId: member.id,
+    dueAt: new Date("2026-11-24T09:00:00.000Z"),
+  });
+  await openWeek(page, origin, org.slug);
+  let patches = 0;
+  await page.route("**/api/crm/tasks/*", async (route) => {
+    if (route.request().method() === "PATCH" && patches++ === 0) {
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+    await route.continue();
+  });
+  const block = () => page.locator("[data-day] [data-todo]");
+  await block().dragTo(page.locator('[data-day="2026-11-25"]'), {
+    sourcePosition: { x: 60, y: 4 },
+    targetPosition: { x: 20, y: 11 * 48 + 4 },
+  });
+  await page.locator('[data-day="2026-11-25"] [data-todo]').waitFor();
+  await block().dragTo(page.locator('[data-day="2026-11-26"]'), {
+    sourcePosition: { x: 60, y: 4 },
+    targetPosition: { x: 20, y: 15 * 48 + 4 },
+  });
+  await page.waitForTimeout(2500);
+  await expect.poll(() => dueOf(org.id, "Water the plants")).toBe("2026-11-26T14:00:00.000Z");
+});
+
 test("Delete pressed in an open to-do leaves the selected event alone", async () => {
   const { org, member, page, origin } = await invited();
   await madeEvent(org.id, page, origin, "Focus time", [
