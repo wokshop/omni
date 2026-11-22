@@ -122,16 +122,23 @@ export class Board {
     }
   }
 
-  /** Points every connector end bound to an element that moved where it is drawn now. */
+  /**
+   * Points every connector end bound to an element that moved where it is drawn now, again until
+   * nothing moves: a group's bounds cover the connectors inside it, so they settle first.
+   */
   redrawEnds() {
+    for (let pass = 0; pass < 8 && this.redrawPass(); pass++);
+  }
+
+  private redrawPass() {
+    let moved = false;
     for (const element of this.elements) {
       if (element.kind !== "connector" || !element.from || !element.to) continue;
       const ends: [ConnectorEnd, ConnectorEnd][] = [
         [element.from, element.to],
         [element.to, element.from],
       ];
-      const moved = [element.from.id, element.to.id].some((id) => id && this.reshaped(id));
-      if (!moved) continue;
+      if (![element.from.id, element.to.id].some((id) => id && this.reshaped(id))) continue;
       for (const [end, other] of ends) {
         if (end.id === undefined) continue;
         const bound = this.byId.get(end.id);
@@ -141,8 +148,10 @@ export class Board {
         if (at[0] === end.at[0] && at[1] === end.at[1]) continue;
         end.at = at;
         this.touch(element);
+        moved = true;
       }
     }
+    return moved;
   }
 
   /** Frees a connector's ends bound to `gone`, drawing both ends first if either element changed. */

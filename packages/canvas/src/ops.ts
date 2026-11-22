@@ -283,7 +283,7 @@ function connect(board: Board, op: Op<"connect">) {
 
 function arrange(board: Board, op: Op<"arrange">) {
   const items = op.ids.map((id) => board.get(id));
-  refuseTied(board, items);
+  for (const item of items) refuseTied(board, [item]);
   const inside = items.find((item) => items.some((other) => board.under(other.id).has(item.id)));
   if (inside) throw new OpError(`"${inside.id}" is inside another element being arranged.`);
   const boxes = items.map((element) => board.boundsOf(element));
