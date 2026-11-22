@@ -7,6 +7,7 @@ import {
   rewriteCanvas,
   sceneFromJson,
   sceneToJson,
+  type CanvasElement,
   type CanvasOp,
   type Scene,
 } from "@omni/canvas";
@@ -424,4 +425,31 @@ test("two tabs that put two groups inside each other at once still read, and sav
   expect([left, right].filter((id) => byId.get(id!)?.parent !== undefined)).toHaveLength(1);
   one.ws.close();
   two.ws.close();
+});
+
+test("a connector a tab joined to itself is freed where it is drawn, and an agent can still place things by it", async () => {
+  const { ana, agent, node, scene } = await board(STICKIES);
+  const loop: CanvasElement = {
+    id: "loop",
+    kind: "connector",
+    from: { id: "loop", at: [0, 300] },
+    to: { at: [200, 300] },
+    route: "straight",
+    end: "arrow",
+  };
+  const one = await tab(ana.jar, node.id);
+  await one.seed({ elements: [...scene.elements, loop] }, 1);
+
+  const placed = await call(agent, "drive_edit_canvas", {
+    id: node.id,
+    ops: [{ op: "add", kind: "sticky", text: "Next", place: { near: "loop", side: "below" } }],
+  });
+  expect(placed).not.toHaveProperty("error");
+  const file = await saved(ana, node.id);
+  expect(file.elements.find((e) => e.id === "loop")).toMatchObject({
+    from: { at: [0, 300] },
+    to: { at: [200, 300] },
+  });
+  expect(file.elements.find((e) => e.id === "loop")!.from).not.toHaveProperty("id");
+  expect(find(file, "Next").box).toEqual([0, 340, 200, 200]);
 });
