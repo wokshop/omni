@@ -329,3 +329,25 @@ export async function memberAudience(ex: Ex, meetingId: string) {
   }
   return [...reach];
 }
+
+/**
+ * Picks a failed meeting up again from what it already has: without a transcript it goes back to
+ * `uploaded` with the engine's job and polls cleared, so the audio is sent again; with one, to
+ * `naming`. Null when the meeting had not failed.
+ */
+export async function restartFailed(ex: Ex, meetingId: string) {
+  const [segment] = await ex
+    .select({ seq: meetingsSegments.seq })
+    .from(meetingsSegments)
+    .where(eq(meetingsSegments.meetingId, meetingId))
+    .limit(1);
+  const to: MeetingStatus = segment ? "naming" : "uploaded";
+  if (!(await advance(ex, meetingId, ["failed"], to))) return null;
+  if (to === "uploaded") {
+    await ex
+      .update(meetingsJobs)
+      .set({ provider: null, providerJobId: null, submittedAt: null, polls: 0 })
+      .where(eq(meetingsJobs.meetingId, meetingId));
+  }
+  return to;
+}

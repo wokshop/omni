@@ -153,14 +153,12 @@ export const meetings = new Hono<AppEnv>()
     const meeting = await memberMeetings(c).get(id);
     if (meeting.status !== "ok") return refused(c, meeting);
     if (meeting.role === "viewer") return refused(c, { status: "forbidden" });
-    const transcribed = meeting.speakers.length > 0;
-    const moved = await meetingsPipeline(c.var.db).advance(
-      id,
-      ["failed"],
-      transcribed ? "naming" : "uploaded",
-    );
-    if (!moved) return refused(c, { status: "not_retryable" });
-    await enqueueMeeting(c.env, { ...job(c, id), step: transcribed ? "name" : "transcribe" });
+    const restarted = await meetingsPipeline(c.var.db).restartFailed(id);
+    if (!restarted) return refused(c, { status: "not_retryable" });
+    await enqueueMeeting(c.env, {
+      ...job(c, id),
+      step: restarted === "naming" ? "name" : "transcribe",
+    });
     return c.body(null, 204);
   })
   .get("/:id", async (c) => {

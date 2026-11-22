@@ -19,6 +19,7 @@ const fake = {
   uploadedBytes: 0,
   forgotten: [] as string[],
   modelCalls: [] as string[],
+  failJobs: 0,
 };
 let server: Server;
 let stack: StorageStack;
@@ -42,7 +43,14 @@ beforeAll(async () => {
     }
     if (req.url === "/v2/transcript" && req.method === "POST") {
       fake.submitted.push(JSON.parse(raw.toString()));
+      if (fake.failJobs > 0) {
+        fake.failJobs--;
+        return json({ id: "job-err", status: "queued" });
+      }
       return json({ id: "job-1", status: "queued" });
+    }
+    if (req.url === "/v2/transcript/job-err" && req.method === "GET") {
+      return json({ id: "job-err", status: "error", error: "audio could not be decoded" });
     }
     if (req.url === "/v2/transcript/job-1" && req.method === "GET") return json(engineResult);
     if (req.url === "/v2/transcript/job-1" && req.method === "DELETE") {
@@ -217,4 +225,68 @@ test("a recording that is not the recorder's own file is refused", async () => {
   });
   expect(refused.status).toBe(400);
   expect((await api(dana, "POST", "/", { attendees: [] })).status).toBe(400);
+});
+
+async function recordCall(dana: Person) {
+  const started = await api(dana, "POST", "/", {
+    attendees: [{ address: "marta@client.test", name: "Marta Gil" }],
+    consent: true,
+  });
+  const { meetingId, folderId } = started.body;
+  const node = await stack.upload(
+    dana.jar,
+    { parentId: folderId },
+    "c.ogg",
+    new Uint8Array(64),
+    "audio/ogg",
+  );
+  const stopped = await api(dana, "POST", `/${meetingId}/stop`, {
+    audioNodeId: node.id,
+    durationMs: 95_400,
+    micSpans: null,
+  });
+  expect(stopped.status).toBe(204);
+  return meetingId as string;
+}
+
+const settled = (dana: Person, meetingId: string) =>
+  until(
+    () => api(dana, "GET", `/${meetingId}`),
+    (r) => ["ready", "failed"].includes(r.body?.meeting?.status),
+  );
+
+test("a meeting the engine failed on is sent again on retry, as a new engine job", async () => {
+  const org = await stack.company(`meetings-${randomUUID().slice(0, 8)}`);
+  const dana = await stack.member(org.id);
+  fake.failJobs = 1;
+  const before = fake.submitted.length;
+  const meetingId = await recordCall(dana);
+
+  const failed = await settled(dana, meetingId);
+  expect(failed.body.meeting).toMatchObject({ status: "failed" });
+  expect(failed.body.meeting.failure).toContain("audio could not be decoded");
+
+  expect((await api(dana, "POST", `/${meetingId}/retry`)).status).toBe(204);
+  const ready = await settled(dana, meetingId);
+  expect(ready.body.meeting.status).toBe("ready");
+  expect(fake.submitted.length - before).toBe(2);
+});
+
+test("a step delivered late carries the meeting on from its saved status", async () => {
+  const org = await stack.company(`meetings-${randomUUID().slice(0, 8)}`);
+  const dana = await stack.member(org.id);
+  const meetingId = await recordCall(dana);
+  expect((await settled(dana, meetingId)).body.meeting.status).toBe("ready");
+
+  await stack.db
+    .update(schema.meetingsMeetings)
+    .set({ status: "writing" })
+    .where(eq(schema.meetingsMeetings.id, meetingId));
+  const env = await stack.worker.server
+    .getWorker<{ AI_QUEUE: { send(body: unknown): Promise<unknown> } }>()
+    .getEnv();
+  await env.AI_QUEUE.send({ kind: "meeting", meetingId, orgId: org.id, step: "poll" });
+
+  const resumed = await settled(dana, meetingId);
+  expect(resumed.body.meeting.status).toBe("ready");
 });

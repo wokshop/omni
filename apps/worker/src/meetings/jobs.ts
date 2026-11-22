@@ -89,12 +89,31 @@ export async function runMeetingStep(run: MeetingRun, job: MeetingJob) {
   const pipeline = meetingsPipeline(run.db);
   const found = await pipeline.meeting(job.meetingId);
   if (!found || found.meeting.orgId !== job.orgId) return outcome(null, null);
+  const step = stepFor(found);
+  if (!step) return outcome(null, null);
   const engine = meetingEngine(run.config, run.env);
   if (!engine) throw new MeetingStepFailed("no transcription engine is configured");
-  if (job.step === "transcribe") return transcribe(run, engine, found);
-  if (job.step === "poll") return poll(run, engine, found);
-  if (job.step === "name") return name(run, found);
+  if (step === "transcribe") return transcribe(run, engine, found);
+  if (step === "poll") return poll(run, engine, found);
+  if (step === "name") return name(run, found);
   return write(run, found);
+}
+
+/**
+ * The step the meeting's saved status calls for, whatever step the message named: a message
+ * delivered late or twice, or one whose follow-up never reached the queue, carries on from where
+ * the meeting is instead of stopping.
+ */
+export function stepFor(found: {
+  meeting: { status: string };
+  job: { providerJobId: string | null };
+}) {
+  const { status } = found.meeting;
+  if (status === "uploaded") return "transcribe";
+  if (status === "transcribing") return found.job.providerJobId ? "poll" : "transcribe";
+  if (status === "naming") return "name";
+  if (status === "writing") return "write";
+  return null;
 }
 
 type Found = NonNullable<Awaited<ReturnType<ReturnType<typeof meetingsPipeline>["meeting"]>>>;
