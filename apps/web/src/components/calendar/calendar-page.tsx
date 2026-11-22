@@ -21,6 +21,7 @@ import {
   type Slot,
   windowOf,
 } from "@/lib/calendar-grid.ts";
+import { BookingShare } from "./booking-share.tsx";
 import { EventDialog } from "./event-dialog.tsx";
 import { CalendarCrumbs } from "./calendar-crumbs.tsx";
 import { useCalendarMenu } from "./calendar-menu.tsx";
@@ -238,6 +239,7 @@ export function CalendarPage(props: {
                   </Button>
                 </Hinted>
               </div>
+              <BookingShare calendars={calendars} />
             </>
           }
         >
