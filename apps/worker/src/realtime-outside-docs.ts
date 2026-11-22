@@ -1,4 +1,4 @@
-import type { StorageDocEvent } from "@omni/contracts";
+import { storageLiveRecordSchema, type StorageDocEvent } from "@omni/contracts";
 import { createLogger } from "./log.ts";
 import { docStream, type DocAppendMessage, type DocPresenceMessage } from "./realtime-docs.ts";
 import { audience, editingOf, type Editing } from "./realtime-files.ts";
@@ -58,6 +58,37 @@ const limitsOf = (socket: WebSocket) => {
   }
   return found;
 };
+
+const epochs = new Map<string, number>();
+
+function epochOf(body: string, seqNum: number) {
+  try {
+    const parsed = storageLiveRecordSchema.safeParse(JSON.parse(body));
+    if (!parsed.success) return -1;
+    const record = parsed.data;
+    return record.t === "seed" ? seqNum : record.t === "snap" ? record.e : -1;
+  } catch {
+    return -1;
+  }
+}
+
+async function currentEpoch(basin: S2Basin, nodeId: string, fresh: boolean) {
+  const known = epochs.get(nodeId);
+  if (!fresh && known !== undefined) return known;
+  let epoch = -1;
+  for (const { seqNum, body } of await basin.readTail(docStream(nodeId), 1000)) {
+    epoch = Math.max(epoch, epochOf(body, seqNum));
+  }
+  for (let at = 0; epoch < 0;) {
+    const page = await basin.read(docStream(nodeId), at);
+    for (const { seqNum, body } of page.records) epoch = Math.max(epoch, epochOf(body, seqNum));
+    const last = page.records.at(-1);
+    if (!page.more || !last) break;
+    at = last.seqNum + 1;
+  }
+  epochs.set(nodeId, epoch);
+  return epoch;
+}
 
 const send = (socket: WebSocket, event: StorageDocEvent) => {
   try {
@@ -145,6 +176,10 @@ export async function onOutsideAppend(
     return refuse(socket, nodeId, ref, "read_only");
   }
   if (at.locked) return refuse(socket, nodeId, ref, "locked");
+  const epoch = await currentEpoch(basin, nodeId, false);
+  if (record.e !== epoch && record.e !== (await currentEpoch(basin, nodeId, true))) {
+    return refuse(socket, nodeId, ref, "tail");
+  }
   const stamped = { t: "update" as const, e: record.e, u: record.u, by: outside.by };
   const seqNum = await appendFor(ctx, socket, basin, { ...message, record: stamped });
   if (seqNum === null) return;

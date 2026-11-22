@@ -100,9 +100,14 @@ export async function settleOwed(
   } finally {
     await close({ timeout: 0 });
   }
-  for (const [by] of held) delete owed.authors[by];
-  if (Object.keys(owed.authors).length === 0) await ctx.storage.delete(owedKey(fold.nodeId));
-  else await ctx.storage.put(owedKey(fold.nodeId), owed);
+  const now = await ctx.storage.get<Owed>(owedKey(fold.nodeId));
+  if (!now) return;
+  for (const [by] of held) {
+    const author = now.authors[by];
+    if (author && author.lastSeq <= fold.s) delete now.authors[by];
+  }
+  if (Object.keys(now.authors).length === 0) await ctx.storage.delete(owedKey(fold.nodeId));
+  else await ctx.storage.put(owedKey(fold.nodeId), now);
 }
 
 /**

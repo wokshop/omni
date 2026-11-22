@@ -1,5 +1,6 @@
 import {
   latestEpochStart,
+  STORAGE_LIVE_SNAP_EVERY,
   type StorageDocEvent,
   type StorageLiveEntry,
   type StorageLiveRecord,
@@ -17,6 +18,7 @@ const toBase64 = (bytes: Uint8Array) => {
   }
   return btoa(text);
 };
+const SNAP_MAX_CHARS = 850_000;
 const fromBase64 = (text: string) => Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
 
 /**
@@ -32,6 +34,7 @@ export class LiveFile {
 
   private fold: { cv: number; s: number };
   private changedAt = -1;
+  private start = -1;
 
   private constructor(
     basin: S2Basin,
@@ -57,6 +60,7 @@ export class LiveFile {
       cv: record.cv,
       s: record.t === "snap" ? record.f : epoch,
     });
+    live.start = first.seqNum;
     if (record.t === "snap") {
       Y.applyUpdate(live.doc, fromBase64(record.u));
       live.next = record.s + 1;
@@ -101,6 +105,29 @@ export class LiveFile {
     const seqNum = await this.basin.append(docStream(this.nodeId), JSON.stringify(record));
     if (seqNum === null) throw new Error("storage: the live document refused a save");
     if (contentVersion > this.fold.cv) this.fold = { cv: contentVersion, s: through };
+    return { seqNum, record } satisfies StorageLiveEntry;
+  }
+
+  /**
+   * After a save through `through` as `contentVersion`, writes a snap when the epoch has gone
+   * `STORAGE_LIVE_SNAP_EVERY` records past its latest start: on a doc only outsiders type in, no
+   * tab writes one. Null when none is due, or the state is too large for one record.
+   */
+  async snapIfDue(contentVersion: number, through: number) {
+    if (this.start < 0 || through - this.start < STORAGE_LIVE_SNAP_EVERY) return null;
+    const u = toBase64(Y.encodeStateAsUpdate(this.doc));
+    if (u.length > SNAP_MAX_CHARS) return null;
+    const record: StorageLiveRecord = {
+      t: "snap",
+      e: this.epoch,
+      s: through,
+      cv: contentVersion,
+      f: through,
+      u,
+    };
+    const seqNum = await this.basin.append(docStream(this.nodeId), JSON.stringify(record));
+    if (seqNum === null) return null;
+    this.start = seqNum;
     return { seqNum, record } satisfies StorageLiveEntry;
   }
 

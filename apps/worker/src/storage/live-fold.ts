@@ -91,10 +91,11 @@ export const foldLive: (
       });
       if (saved.status === "ok") {
         const entry: StorageLiveEntry = await live.folded(saved.node.contentVersion, through);
+        const snap = await live.snapIfDue(saved.node.contentVersion, through);
         return {
           status: "saved",
           node: saved.node,
-          events: docRecordEvents(input.nodeId, [entry]),
+          events: docRecordEvents(input.nodeId, snap ? [entry, snap] : [entry]),
         };
       }
       await env.STORAGE_BUCKET.delete(r2Key);

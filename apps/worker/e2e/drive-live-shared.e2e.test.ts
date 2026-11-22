@@ -437,6 +437,54 @@ test("a save holding a guest's and a member's typing is the member's when they t
   tab.socket.close();
 });
 
+test("an outsider's update naming another epoch is refused, and the doc still opens and saves", async () => {
+  const { ana, doc, shareId } = await sharedDoc("# Plan");
+  const guest = await visitorPage(new CookieJar(), shareId, doc.id);
+  const forged = {
+    t: "update",
+    e: Number.MAX_SAFE_INTEGER,
+    u: base64(rewriteLive(guest.doc, "# Plan!")),
+  };
+  expect(await guest.send(forged, doc.id)).toMatchObject({ type: "doc.refused", reason: "tail" });
+  const text = "# Plan, still saved";
+  const fresh = new Y.Doc();
+  for (const entry of guest.live.entries)
+    Y.applyUpdate(fresh, Buffer.from(String(entry.record.u), "base64"));
+  await guest.send({ t: "update", e: guest.epoch, u: base64(rewriteLive(fresh, text)) }, doc.id);
+  await vi.waitFor(
+    async () => expect(await (await stack.download(ana.jar, doc.id)).text()).toBe(text),
+    { timeout: 15_000, interval: 250 },
+  );
+  guest.socket.close();
+});
+
+test("a doc only a guest types in gets snaps from the Worker's saves", async () => {
+  const { ana, doc, shareId } = await sharedDoc("# Notes");
+  const guest = await visitorPage(new CookieJar(), shareId, doc.id);
+  const typing = Array.from({ length: 205 }, (_, i) =>
+    base64(rewriteLive(guest.doc, `# Notes\n\nLine ${i + 1}`)),
+  );
+  for (const u of typing) {
+    await vi.waitFor(
+      async () =>
+        expect(await guest.send({ t: "update", e: guest.epoch, u }, doc.id)).toMatchObject({
+          type: "doc.appended",
+        }),
+      { timeout: 10_000, interval: 250 },
+    );
+  }
+  await vi.waitFor(
+    async () => {
+      const live = await stack.api(ana.jar, "GET", `/files/${doc.id}/live?from=latest`);
+      const records = (live.body.entries as { record: Event }[]).map((entry) => entry.record);
+      expect(records).toContainEqual(expect.objectContaining({ t: "snap", e: guest.epoch }));
+    },
+    { timeout: 20_000, interval: 500 },
+  );
+  expect(await (await stack.download(ana.jar, doc.id)).text()).toBe("# Notes\n\nLine 205");
+  guest.socket.close();
+});
+
 test("a guest's comment on a Commenter link reaches everyone on the doc live", async () => {
   const { ana, doc, shareId } = await sharedDoc("# Plan", "commenter");
   const jar = new CookieJar();
