@@ -1,3 +1,4 @@
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { crmErrorToast } from "@/components/crm/crm-errors.ts";
 import { IconPlus } from "@/components/icons/central";
@@ -10,6 +11,7 @@ import { useHasCrm } from "@/hooks/use-crm.ts";
 import { useCreateTask, useCrmTasks, useUpdateTask } from "@/hooks/use-crm-tasks.ts";
 import { useMember } from "@/hooks/use-session.ts";
 import { useWorkspacePaths } from "@/hooks/use-workspaces.ts";
+import { keys } from "@/lib/query-keys.ts";
 import {
   dayOf,
   dueAtOf,
@@ -31,25 +33,49 @@ const SECTIONS: { id: DueGroup; label: string; fixed: boolean }[] = [
   { id: "none", label: "No date", fixed: true },
 ];
 
-/** Every open to-do of the member's, all pages loaded; none where the workspace has no tasks. */
+type Done = Record<string, CrmTask>;
+const doneKey = () => [...keys.calendar(), "todos-done"] as const;
+
+/**
+ * Every open to-do of the member's, all pages loaded, and the ones checked off since the page
+ * opened, still in place and marked done; none where the workspace has no tasks.
+ */
 export function useMyTodos() {
   const hasCrm = useHasCrm();
   const query = useCrmTasks(MY_TODOS);
+  const done =
+    useQuery({
+      queryKey: doneKey(),
+      queryFn: () => ({}) as Done,
+      initialData: {} as Done,
+      staleTime: Number.POSITIVE_INFINITY,
+      gcTime: Number.POSITIVE_INFINITY,
+    }).data ?? {};
   const { hasNextPage, isFetchingNextPage, fetchNextPage } = query;
   useEffect(() => {
     if (hasCrm && hasNextPage && !isFetchingNextPage) void fetchNextPage();
   }, [hasCrm, hasNextPage, isFetchingNextPage, fetchNextPage]);
-  return hasCrm ? query.tasks : [];
+  if (!hasCrm) return [];
+  const open = query.tasks.filter((task) => !done[task.id]);
+  return [...open, ...Object.values(done)];
 }
 
-/** Checks a to-do off, or opens it again. */
+/** Checks a to-do off, or opens it again; one checked off stays in view, marked done. */
 export function useToggleTodo() {
   const update = useUpdateTask();
-  return (task: CrmTask, done: boolean) =>
+  const client = useQueryClient();
+  return (task: CrmTask, done: boolean) => {
+    client.setQueryData<Done>(doneKey(), (was = {}) => {
+      const next = { ...was };
+      if (done) next[task.id] = { ...task, completedAt: new Date().toISOString() };
+      else delete next[task.id];
+      return next;
+    });
     update.mutate(
       { id: task.id, done },
       { onError: (error) => crmErrorToast(error, "The to-do was not changed") },
     );
+  };
 }
 
 function dueFor(section: DueGroup) {
@@ -80,11 +106,11 @@ function Todos() {
         const inSection = tasks.filter((task) => dueGroup(task, now) === section.id);
         if (!section.fixed && inSection.length === 0) return null;
         return (
-          <section key={section.id} aria-label={section.label} className="flex flex-col pb-1">
+          <section key={section.id} aria-label={section.label} className="flex flex-col pb-3">
             <div className="group/section flex h-7 items-center gap-1.5 ps-2 pe-1">
               <span className="text-label text-subtle-foreground">{section.label}</span>
               {inSection.length > 0 && (
-                <span className="text-xs text-subtle-foreground tabular-nums">
+                <span className="text-label text-subtle-foreground tabular-nums">
                   {inSection.length}
                 </span>
               )}
@@ -114,7 +140,7 @@ function Todos() {
 }
 
 const ROW = "flex h-8 min-w-0 items-center gap-2 rounded-md ps-1.5 pe-1";
-const ROUND = "gap-x-0 **:data-[slot=indicator]:rounded-full";
+const ROUND = "gap-x-0 **:data-[slot=control-label]:hidden **:data-[slot=indicator]:rounded-full";
 
 function NewTodo({ section, onDone }: { section: DueGroup; onDone: () => void }) {
   const [title, setTitle] = useState("");
@@ -131,7 +157,7 @@ function NewTodo({ section, onDone }: { section: DueGroup; onDone: () => void })
   };
   return (
     <div className={ROW}>
-      <CheckboxField aria-hidden isDisabled className={ROUND}>
+      <CheckboxField aria-hidden excludeFromTabOrder className={`${ROUND} pointer-events-none`}>
         <Checkbox />
       </CheckboxField>
       <TextField aria-label="New to-do" maxLength={500} value={title} onChange={setTitle}>

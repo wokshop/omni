@@ -472,6 +472,71 @@ test("a new event goes on the calendar the switcher shows alone", async () => {
     .toEqual([team?.id]);
 });
 
+test("the sidebar month's arrows step months", async () => {
+  const { org, page, origin } = await invited();
+  await openWeek(page, origin, org.slug);
+  const next = page.getByRole("button", { name: "Next month" });
+  const previous = page.getByRole("button", { name: "Previous month" });
+  await next.click();
+  await expect.poll(() => page.getByRole("heading", { name: "December 2026" }).count()).toBe(1);
+  await previous.click();
+  await previous.click();
+  await expect.poll(() => page.getByRole("heading", { name: "October 2026" }).count()).toBe(1);
+});
+
+test("crumbs deepen from month to week to day, and an earlier crumb zooms out", async () => {
+  const { org, page, origin } = await invited();
+  await page.goto(new URL(`/${org.slug}/calendar?date=2026-11-24&view=month`, origin).toString());
+  await page
+    .locator('[data-month-day="2026-11-24"]')
+    .getByRole("button", { name: /Acme × Studio: kickoff/ })
+    .waitFor();
+  await page
+    .locator('[data-month-day="2026-11-24"]')
+    .getByRole("button", { name: /^Open / })
+    .click();
+  await expect.poll(() => new URL(page.url()).searchParams.get("view")).toBe("day");
+  const crumbs = page.getByRole("heading", { name: /W48/ });
+  expect(await crumbs.innerText()).toMatch(
+    /November 2026\s*W48\s*Tue,? 24|November 2026\s*W48\s*24/,
+  );
+  await crumbs.getByRole("button", { name: "W48" }).click();
+  await expect.poll(() => new URL(page.url()).searchParams.get("view")).toBe("week");
+  await crumbs.getByRole("button", { name: "November 2026" }).click();
+  await expect.poll(() => new URL(page.url()).searchParams.get("view")).toBe("month");
+});
+
+test("a to-do checked off stays in its section, crossed out", async () => {
+  const { org, member, page, origin } = await invited();
+  await db.insert(schema.crmTasks).values({
+    orgId: org.id,
+    title: "Call the printer",
+    assigneeMemberId: member.id,
+  });
+  await openWeek(page, origin, org.slug);
+  const section = page.getByRole("region", { name: "No date" });
+  await section.getByText("Call the printer").waitFor();
+  await section.locator('[data-slot="indicator"]').first().click();
+  await expect
+    .poll(async () =>
+      (
+        await db
+          .select({ done: schema.crmTasks.completedAt })
+          .from(schema.crmTasks)
+          .where(eq(schema.crmTasks.title, "Call the printer"))
+      ).map((t) => t.done !== null),
+    )
+    .toEqual([true]);
+  await page.waitForLoadState("networkidle");
+  const title = section.getByRole("link", { name: "Call the printer" });
+  await expect
+    .poll(() => title.evaluate((el) => getComputedStyle(el).textDecorationLine))
+    .toBe("line-through");
+  expect(await section.getByRole("checkbox", { name: "Reopen Call the printer" }).isChecked()).toBe(
+    true,
+  );
+});
+
 async function freePort() {
   const server = createServer();
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
