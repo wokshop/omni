@@ -226,7 +226,9 @@ export class Evaluator {
     if (op === "&") {
       const a = toText(left);
       const b = toText(right);
-      return isError(a) ? a : isError(b) ? b : a + b;
+      if (isError(a)) return a;
+      if (isError(b)) return b;
+      return a.length + b.length > SHEET_LIMITS.cellChars ? errors.value : a + b;
     }
     if (COMPARE[op]) {
       const a = single(left);

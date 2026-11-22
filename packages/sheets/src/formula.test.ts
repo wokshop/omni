@@ -86,6 +86,36 @@ describe("lookups and counts as a spreadsheet gives them", () => {
   });
 });
 
+describe("text and dates as a spreadsheet gives them", () => {
+  test("joining text past a cell's length is #VALUE!, and the rest of the sheet evaluates", () => {
+    const rows: string[][] = [['=REPT("x",32767)']];
+    for (let i = 1; i <= 15; i++) rows.push([`=A${i}&A${i}`]);
+    const doc = docOf({ name: "T", rows: [...rows, ["=1+1"]] });
+    const table = firstTab(doc);
+    expect((table[0]![0] as string).length).toBe(32_767);
+    expect(table[1]![0]).toMatchObject({ code: "#VALUE!" });
+    expect(table.at(-1)).toEqual([2]);
+    expect(result("=CONCAT(A1,A1)", [['=REPT("x",20000)']])).toBe("#VALUE!");
+    expect(result('=SUBSTITUTE(A1,"a",A2)', [["aaaa"], ['=REPT("x",10000)']])).toBe("#VALUE!");
+  });
+
+  test("SUBSTITUTE replaces only the occurrence it is given", () => {
+    expect(result('=SUBSTITUTE("a-a-a","a","b",2)')).toBe("a-b-a");
+    expect(result('=SUBSTITUTE("a-a-a","a","b")')).toBe("b-b-b");
+    expect(result('=SUBSTITUTE("a-a-a","a","b",9)')).toBe("a-a-a");
+    expect(result('=SUBSTITUTE("a-a-a","a","b",0)')).toBe("#VALUE!");
+  });
+
+  test("NETWORKDAYS leaves out the holidays it is given, once each and only on weekdays", () => {
+    const monday = 46_349;
+    expect(result("=NETWORKDAYS(A1,A1,A1)", [[monday]])).toBe(0);
+    expect(
+      result("=NETWORKDAYS(A1,A1+6,A2:A4)", [[monday], [monday + 1], [monday + 1], [monday + 5]]),
+    ).toBe(4);
+    expect(result("=NETWORKDAYS(A1,A1+6)", [[monday]])).toBe(5);
+  });
+});
+
 describe("references by id", () => {
   test("a reference past the last row follows its cell once the row exists", () => {
     const doc = docOf({ name: "T", rows: [[1, "=A2"]] });

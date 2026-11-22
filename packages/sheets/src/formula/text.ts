@@ -33,10 +33,23 @@ function joined(args: Arg[]) {
     for (const v of arg instanceof Range ? arg.flat : [arg]) {
       const t = toText(v);
       if (isError(t)) return t;
+      if (out.length + t.length > SHEET_LIMITS.cellChars) return errors.value;
       out += t;
     }
   }
   return out;
+}
+
+function substitute(s: string, from: string, to: string, nth: number | undefined) {
+  if (from === "") return s;
+  const parts = s.split(from);
+  if (nth !== undefined) {
+    if (nth < 1) return errors.value;
+    if (nth >= parts.length) return s;
+    return parts.slice(0, nth).join(from) + to + parts.slice(nth).join(from);
+  }
+  const length = s.length + (parts.length - 1) * (to.length - from.length);
+  return length > SHEET_LIMITS.cellChars ? errors.value : parts.join(to);
 }
 
 const pad = (n: number, width: number) => String(n).padStart(width, "0");
@@ -109,10 +122,28 @@ const weekdaysThrough = (serial: number) => {
   return weeks * 5 + partial;
 };
 
-function networkdays(start: number, end: number) {
+function holidaysIn(arg: Arg | undefined) {
+  const days = new Set<number>();
+  if (arg === undefined) return days;
+  for (const v of arg instanceof Range ? arg.flat : [arg]) {
+    if (v === null) continue;
+    const n = toNumber(v);
+    if (isError(n)) return n;
+    days.add(Math.floor(n));
+  }
+  return days;
+}
+
+function networkdays(start: number, end: number, holidays: Set<number>) {
   if (![start, end].every((n) => n >= 0 && n <= LAST_SERIAL)) return errors.num;
   const [from, to, sign] = start <= end ? [start, end, 1] : [end, start, -1];
-  return (weekdaysThrough(Math.floor(to)) - weekdaysThrough(Math.floor(from) - 1)) * sign;
+  const first = Math.floor(from);
+  const last = Math.floor(to);
+  let off = 0;
+  for (const day of holidays) {
+    if (day >= first && day <= last && day % 7 >= 2) off++;
+  }
+  return (weekdaysThrough(last) - weekdaysThrough(first - 1) - off) * sign;
 }
 
 export const textFunctions: Record<string, SheetFunction> = {
@@ -142,9 +173,12 @@ export const textFunctions: Record<string, SheetFunction> = {
   ),
   SUBSTITUTE: (args) => {
     const [s, from, to] = args.slice(0, 3).map((a) => toText(a));
+    const nth = args[3] === undefined ? undefined : toNumber(args[3]);
     if (isError(s) || isError(from) || isError(to) || s === undefined || from === undefined)
       return errors.value;
-    return from === "" ? s : s.replaceAll(from, to ?? "");
+    if (isError(nth)) return nth;
+    const out = substitute(s, from, to ?? "", nth === undefined ? undefined : Math.floor(nth));
+    return typeof out === "string" && out.length > SHEET_LIMITS.cellChars ? errors.value : out;
   },
   FIND: (args) => {
     const needle = toText(args[0] ?? null);
@@ -202,7 +236,8 @@ export const textFunctions: Record<string, SheetFunction> = {
     const a = toNumber(args[0] ?? null);
     const b = toNumber(args[1] ?? null);
     if (isError(a) || isError(b)) return errors.value;
-    return networkdays(a, b);
+    const holidays = holidaysIn(args[2]);
+    return isError(holidays) ? holidays : networkdays(a, b, holidays);
   },
 };
 
