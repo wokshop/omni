@@ -127,7 +127,7 @@ async function checkpoint(db: Db, doc: Doc, epoch: number, through: number, runs
  * runs it, and the minute job runs it for any doc a save's run missed.
  */
 export async function journalDoc(deps: Deps, doc: Doc) {
-  for (let tries = 0; tries < 4; tries++) {
+  for (let tries = 0; tries < 8; tries++) {
     if (await journalOnce(deps, doc)) return;
   }
   deps.log.warn("storage.journal_busy", { nodeId: doc.id });
@@ -163,16 +163,30 @@ async function nextBaseline(
 
 type Cursor = NonNullable<Awaited<ReturnType<typeof docJournalOf>>>;
 
-async function drain(db: Db, basin: S2Basin, nodeId: string, cursor: Cursor) {
-  const left = (await readLiveTimed(basin, nodeId, cursor.lastSeq + 1)).filter(
-    (e) => e.record.t === "update" && e.record.e === cursor.epoch,
+async function drain(db: Db, basin: S2Basin, nodeId: string, cursor: Cursor, latest: number) {
+  const entries = await readLiveTimed(basin, nodeId, cursor.lastSeq + 1);
+  const left = entries.filter((e) => e.record.t === "update" && e.record.e === cursor.epoch);
+  if (left.length) {
+    const runs = await namedRuns(db, left);
+    return {
+      lastSeq: Math.max(...left.map((e) => e.seqNum)),
+      runs,
+      sinceBaseline: cursor.sinceBaseline + runs.length,
+    };
+  }
+  const seed = entries.find(
+    (e) => e.record.t === "seed" && e.seqNum > cursor.epoch && e.seqNum < latest,
   );
-  if (left.length === 0) return null;
-  const runs = await namedRuns(db, left);
+  if (!seed || seed.record.t !== "seed") return null;
+  const epoch = seed.seqNum;
+  const own = entries.filter((e) => e.record.t === "update" && e.record.e === epoch);
+  const runs = await namedRuns(db, own);
   return {
-    lastSeq: Math.max(...left.map((e) => e.seqNum)),
+    epoch,
+    lastSeq: Math.max(epoch, ...own.map((e) => e.seqNum)),
     runs,
-    sinceBaseline: cursor.sinceBaseline + runs.length,
+    baseline: { seq: epoch, state: seed.record.u },
+    sinceBaseline: runs.length,
   };
 }
 
@@ -204,7 +218,7 @@ async function journalOnce(deps: Deps, doc: Doc) {
   if (!first) return mark({ runs: await writeRun(deps.db, doc, cursor?.contentVersion ?? 0) });
   const epoch = first.record.t === "snap" ? first.record.e : first.seqNum;
   if (cursor && cursor.epoch >= 0 && cursor.epoch !== epoch) {
-    const drained = await drain(deps.db, basin, doc.id, cursor);
+    const drained = await drain(deps.db, basin, doc.id, cursor, epoch);
     if (drained) {
       await mark(drained);
       return false;

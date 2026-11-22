@@ -319,3 +319,56 @@ test("saves journaled late are each named for their own writer, not the one who 
     [-1, `m:${ana.id}`],
   ]);
 });
+
+test("typing left in each of several epochs is journaled, epoch by epoch, before the journal reaches the latest", async () => {
+  const org = await stack.company(`three-epochs-${randomUUID().slice(0, 8)}`);
+  const ana = await stack.member(org.id);
+  const first = "# Log\n\nA";
+  const doc = await stack.upload(ana.jar, { space: "shared" }, "log.md", bytes(first));
+  const tab = await editor(stack, ana.jar, doc.id);
+  const a = new Y.Doc();
+  const epochA = await tab.append({ t: "seed", cv: 1, u: base64(rewriteLive(a, first)) }, 0);
+  await tab.append({ t: "update", e: epochA, u: base64(rewriteLive(a, `${first}\n\nA1`)) });
+  await save(ana.jar, doc.id, `${first}\n\nA1`, 1);
+  await expect.poll(async () => (await changesOf(doc.id)).length, { timeout: 10_000 }).toBe(1);
+
+  const leftA = await tab.append({
+    t: "update",
+    e: epochA,
+    u: base64(rewriteLive(a, `${first}\n\nA2`)),
+  });
+  const b = new Y.Doc();
+  const epochB = await tab.append({ t: "seed", cv: 2, u: base64(rewriteLive(b, "# Log\n\nB")) });
+  const leftB = await tab.append({
+    t: "update",
+    e: epochB,
+    u: base64(rewriteLive(b, "# Log\n\nB1")),
+  });
+  const c = new Y.Doc();
+  const epochC = await tab.append({ t: "seed", cv: 2, u: base64(rewriteLive(c, "# Log\n\nC")) });
+  await save(ana.jar, doc.id, "# Log\n\nC1", 2);
+
+  await expect
+    .poll(async () => (await changesOf(doc.id)).map((run) => [run.epoch, run.firstSeq]), {
+      timeout: 10_000,
+    })
+    .toEqual(
+      expect.arrayContaining([
+        [epochA, leftA],
+        [epochB, leftB],
+      ]),
+    );
+  await expect
+    .poll(
+      async () =>
+        (
+          await stack.db
+            .select({ epoch: schema.storageDocJournals.epoch })
+            .from(schema.storageDocJournals)
+            .where(eq(schema.storageDocJournals.nodeId, doc.id))
+        )[0]?.epoch,
+      { timeout: 10_000 },
+    )
+    .toBe(epochC);
+  tab.socket.close();
+});
