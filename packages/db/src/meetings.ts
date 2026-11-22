@@ -70,7 +70,8 @@ export function memberMeetings(db: Db, memberId: string) {
     ...doors(db, actor),
     groups: async (page: Parameters<typeof listGroups>[2] = {}) =>
       listGroups(db, await actor(), page),
-    groupDigest: async (groupKey: string) => groupDigest(db, await actor(), groupKey),
+    groupDigest: async (groupKey: string, limit?: number) =>
+      groupDigest(db, await actor(), groupKey, limit),
     find: async (filter: MeetingsFilter) => findMeetings(db, await actor(), filter),
     action: async (actionId: string) => getAction(db, await actor(), actionId),
     on: async (query: MeetingsOnQuery) => meetingsOn(db, await actor(), query),

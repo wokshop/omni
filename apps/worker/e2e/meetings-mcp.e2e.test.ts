@@ -322,3 +322,38 @@ test("renaming a speaker and sharing a meeting are for its editors, and sharing 
   expect(promoted.people).toContainEqual({ address: cy.email, role: "editor" });
   await call(outsider, "meetings_rename_speaker", { ...rename, name: "Marta" });
 });
+
+test("a group's digest covers every meeting it lists, past the twelve its summary is made from", async () => {
+  const org = await stack.company(`meetgrp-${randomUUID().slice(0, 8)}`);
+  const dana = await stack.member(org.id);
+  const ids: string[] = [];
+  for (let i = 0; i < 13; i++) {
+    const [meeting] = await stack.db
+      .insert(schema.meetingsMeetings)
+      .values({
+        orgId: org.id,
+        title: `Weekly ${i}`,
+        startedAt: new Date(Date.UTC(2026, 9, 1 + i)),
+        groupKey: "domain:client.test",
+        recordedByMemberId: dana.id,
+        consentAt: new Date(),
+        status: "ready",
+      })
+      .returning();
+    await stack.db.insert(schema.meetingsNotes).values({
+      meetingId: meeting!.id,
+      orgId: org.id,
+      summary: `Summary ${i}`,
+      highlights: [{ text: `Highlight ${i}`, atMs: 1000 }],
+      topics: [],
+      model: "recorded",
+      promptVersion: 1,
+    });
+    ids.unshift(meeting!.id);
+  }
+  const agent = await connectAgent(stack.worker.url, dana.jar, { scope: READ });
+  const [digest] = (await call(agent, "meetings_group", { group: "client.test" })).groups;
+  expect(digest.meetings.map((m: any) => m.id)).toEqual(ids);
+  expect(digest.meetings.map((m: any) => m.summary)).not.toContain(null);
+  expect(digest.timeline).toHaveLength(13);
+});

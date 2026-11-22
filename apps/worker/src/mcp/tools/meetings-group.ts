@@ -47,7 +47,7 @@ const outputSchema = z.object({
         .nullable()
         .optional()
         .describe(
-          "With `group`: where things stand across its meetings, written by AI from their notes; null until it is written.",
+          "With `group`: where things stand across its latest 12 meetings, written by AI from their notes; null until it is written.",
         ),
       timeline: z
         .array(
@@ -100,8 +100,9 @@ async function digestOf(
   limit: number,
 ) {
   const meetings = meetingsOf(context, workspace);
-  const [listed, digest] = await Promise.all([
+  const [listed, digest, summarized] = await Promise.all([
     meetings.list({ groupKey, limit }),
+    meetings.groupDigest(groupKey, limit),
     meetings.groupDigest(groupKey),
   ]);
   if (listed.status !== "ok" || digest.status !== "ok" || !listed.meetings.length) return null;
@@ -113,7 +114,7 @@ async function digestOf(
     workspace: workspace.name,
     meeting_count: listed.meetings.length,
     last_started_at: latest?.startedAt.toISOString() ?? null,
-    summary: digest.cached?.summary ?? null,
+    summary: summarized.status === "ok" ? (summarized.cached?.summary ?? null) : null,
     timeline: digest.meetings.flatMap((m) =>
       m.highlights.map((h) => ({
         meeting_id: m.id,

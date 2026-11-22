@@ -1,5 +1,5 @@
 import type { McpServer } from "@modelcontextprotocol/server";
-import { createDraft, deleteDraft, forMember, schema } from "@omni/db";
+import { createDraft, deleteDraft, forMember, schema, type Db } from "@omni/db";
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { result, toolError } from "../format.ts";
@@ -109,7 +109,50 @@ async function inboxFor(context: ToolContext, workspace: MeetingsWorkspace, from
   return { error: `Name the inbox to write from with \`from\`: one of ${names}.` };
 }
 
-async function acceptTask(context: ToolContext, workspace: MeetingsWorkspace, found: Found) {
+function decideAndRecord(
+  context: ToolContext,
+  workspace: MeetingsWorkspace,
+  input: Input,
+  made: { taskId: string | null; draft: Output["draft"] },
+) {
+  return context.db.transaction(async (tx) => {
+    const decided = await forMember(tx as Db, workspace.memberId).meetings.decideAction(
+      input.action_id,
+      { accept: input.decision === "accept", taskId: made.taskId },
+    );
+    if (decided.status !== "ok") return decided;
+    await tx.insert(schema.auditEvents).values({
+      orgId: workspace.orgId,
+      actorMemberId: workspace.memberId,
+      action: AUDIT,
+      subject: input.action_id,
+      data: { via: "mcp", clientId: context.caller.clientId, decision: input.decision, ...made },
+    });
+    return decided;
+  });
+}
+
+async function settle(
+  context: ToolContext,
+  workspace: MeetingsWorkspace,
+  input: Input,
+  made: { taskId: string | null; draft: Output["draft"] },
+  undo: () => Promise<unknown>,
+) {
+  const decided = await decideAndRecord(context, workspace, input, made).catch(async (error) => {
+    await undo();
+    throw error;
+  });
+  if (decided.status !== "ok") await undo();
+  return decided.status === "ok" ? { decided, ...made } : { decided, taskId: null, draft: null };
+}
+
+async function acceptTask(
+  context: ToolContext,
+  workspace: MeetingsWorkspace,
+  found: Found,
+  input: Input,
+) {
   const calendar = forMember(context.db, workspace.memberId).calendar;
   const fields = taskFields(found.action.payload);
   const body = [
@@ -122,21 +165,19 @@ async function acceptTask(context: ToolContext, workspace: MeetingsWorkspace, fo
     body: body.join("\n"),
   });
   if (made.status !== "ok") return { error: "The task could not be made in your calendar." };
-  const decided = await meetingsOf(context, workspace).decideAction(found.action.id, {
-    accept: true,
-    taskId: made.task.id,
-  });
-  if (decided.status !== "ok") await calendar.deleteTask(made.task.id);
-  return { decided, taskId: decided.status === "ok" ? made.task.id : null, draft: null };
+  const taskId = made.task.id;
+  return settle(context, workspace, input, { taskId, draft: null }, () =>
+    calendar.deleteTask(taskId),
+  );
 }
 
 async function acceptEmail(
   context: ToolContext,
   workspace: MeetingsWorkspace,
   found: Found,
-  from: string | undefined,
+  input: Input,
 ) {
-  const inbox = await inboxFor(context, workspace, from);
+  const inbox = await inboxFor(context, workspace, input.from);
   if ("error" in inbox) return { error: inbox.error };
   const fields = emailFields(found.action.payload);
   const subject = fields.subject ?? `Follow-up: ${found.meetingTitle ?? "our meeting"}`;
@@ -148,17 +189,15 @@ async function acceptEmail(
     bodyText: fields.body ?? "",
   });
   if (!created) return { error: "The draft could not be saved in that inbox." };
-  const decided = await meetingsOf(context, workspace).decideAction(found.action.id, {
-    accept: true,
-  });
-  if (decided.status !== "ok") await deleteDraft(context.db, workspace.memberId, created.id);
   const draft = {
     id: created.id,
     url: draftUrl(context.webAppURL, workspace, inbox.id, created.id),
     to: fields.to,
     subject,
   };
-  return { decided, taskId: null, draft: decided.status === "ok" ? draft : null };
+  return settle(context, workspace, input, { taskId: null, draft }, () =>
+    deleteDraft(context.db, workspace.memberId, created.id),
+  );
 }
 
 async function apply(
@@ -168,14 +207,11 @@ async function apply(
   input: Input,
 ) {
   if (input.decision === "dismiss") {
-    const decided = await meetingsOf(context, workspace).decideAction(found.action.id, {
-      accept: false,
-    });
-    return { decided, taskId: null, draft: null };
+    return settle(context, workspace, input, { taskId: null, draft: null }, async () => null);
   }
   return found.action.kind === "task"
-    ? acceptTask(context, workspace, found)
-    : acceptEmail(context, workspace, found, input.from);
+    ? acceptTask(context, workspace, found, input)
+    : acceptEmail(context, workspace, found, input);
 }
 
 async function decide(context: ToolContext, input: Input) {
@@ -216,19 +252,6 @@ async function decide(context: ToolContext, input: Input) {
       draft: await decidedBefore(context, workspace, found.action.id),
     } satisfies Output);
   }
-  await context.db.insert(schema.auditEvents).values({
-    orgId: workspace.orgId,
-    actorMemberId: workspace.memberId,
-    action: AUDIT,
-    subject: found.action.id,
-    data: {
-      via: "mcp",
-      clientId: context.caller.clientId,
-      decision: input.decision,
-      taskId: applied.taskId,
-      draft: applied.draft,
-    },
-  });
   return result({
     ...base,
     state: input.decision === "accept" ? "done" : "dismissed",
