@@ -149,6 +149,7 @@ export {
   type CrmBulkResult,
 } from "./crm/bulk.ts";
 export type { CrmListCursor, CrmSort, CrmSortDir, CrmSortKey } from "./crm/list-order.ts";
+export { crmRecordCount } from "./crm/record-count.ts";
 export type { CompanyChange } from "./crm/company-change.ts";
 export type {
   CompanyPatch,

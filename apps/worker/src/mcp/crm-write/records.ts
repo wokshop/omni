@@ -2,6 +2,7 @@ import type { CrmPerson } from "@omni/db";
 import { z } from "zod";
 import { companyRow, crmOf, personRow, rowContext, type CrmWorkspace } from "../crm.ts";
 import type { ToolContext } from "../server.ts";
+import { capRefusal } from "../../billing.ts";
 import {
   archivedSchema,
   changesFields,
@@ -64,6 +65,8 @@ async function addPerson(context: ToolContext, workspace: CrmWorkspace, input: P
         "Address edits need the person's `id`. Add the person with `email` first, then change their addresses.",
     };
   }
+  const full = await capRefusal(context.db, context.config, workspace.orgId, "crmRecords");
+  if (full) return { error: `${full.message[0]!.toUpperCase()}${full.message.slice(1)}.` };
   const owner = await ownerId(context, workspace, input.owner);
   if ("error" in owner) return owner;
   const added = await crmOf(context, workspace).addPerson({
@@ -146,6 +149,8 @@ async function addCompany(context: ToolContext, workspace: CrmWorkspace, input: 
       error: "Adding a company takes its `domains`; `add_domains` needs an `id`.",
     };
   }
+  const full = await capRefusal(context.db, context.config, workspace.orgId, "crmRecords");
+  if (full) return { error: `${full.message[0]!.toUpperCase()}${full.message.slice(1)}.` };
   const owner = await ownerId(context, workspace, input.owner);
   if ("error" in owner) return owner;
   const added = await crmOf(context, workspace).createCompany({

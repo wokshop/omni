@@ -12,6 +12,7 @@ import { Hono } from "hono";
 import type { AppEnv } from "../context.ts";
 import { zValidator } from "../validator.ts";
 import { lastContactedAt, subjectOf } from "./mail.ts";
+import { requireCap } from "../billing.ts";
 import {
   announce,
   encodeCursor,
@@ -38,6 +39,7 @@ export const companies = new Hono<AppEnv>()
   })
 
   .post("/companies", zValidator("json", crmCreateCompanyBodySchema), async (c) => {
+    await requireCap(c.var.db, c.var.config, c.var.member.orgId, "crmRecords");
     const made = await memberCrm(c).createCompany(c.req.valid("json"));
     if (made.status !== "ok") return refused(c, made);
     await announce(c, "company", [made.company.id]);
