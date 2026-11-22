@@ -1,3 +1,4 @@
+import { SearchButton } from "@/components/search/search-trigger";
 import { useLocation, useParams } from "@tanstack/react-router";
 import { memo, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import type { Selection } from "react-aria-components";
@@ -246,6 +247,9 @@ export function List(
               </span>
             )}
             <div className="flex min-w-0 items-center gap-1 *:shrink-0">
+              <span className="flex md:hidden">
+                <SearchButton />
+              </span>
               <MarkAllRead rows={threads} />
               <ReloadAction />
               {detail && (

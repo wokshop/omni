@@ -105,3 +105,13 @@ async function freePort() {
   await new Promise((resolve) => server.close(resolve));
   return port;
 }
+
+test("on a phone, where the title bar is hidden, the mail list header still opens search", async () => {
+  const page = await openInbox("title-bar-phone");
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.getByRole("button", { name: "Previous page" }).waitFor({ state: "detached" });
+  const search = page.getByRole("button", { name: "Search", exact: true });
+  expect(await search.count()).toBe(1);
+  await search.click();
+  await page.getByRole("dialog", { name: "Search and commands" }).waitFor();
+});

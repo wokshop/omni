@@ -262,7 +262,8 @@ primitives, and add no text.
   - A **title bar** across the top, 48px: the workspace switcher (mark, name, chevron) past the
     traffic lights, then the sidebar toggle and back and forward arrows (disabled at either end
     of the window's history); at the far end the teammates online (Talk), search (it opens the
-    command menu, as `/` and `⌘K` do; there is no search field in the page headers), then
+    command menu, as `/` and `⌘K` do; there is no search field in the page headers, except a
+    search icon in the mail list header on a phone, where the title bar is hidden), then
     notifications. The whole row is a
     drag region except its controls. Without traffic lights the workspace mark centres on the
     module rail.
