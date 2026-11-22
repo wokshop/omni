@@ -292,3 +292,30 @@ test("a session's diff is rebuilt from the journal: from before its first save, 
   expect(await diffOf(late[1]!.id)).toMatchObject({ available: false, blocks: [] });
   tab.socket.close();
 });
+
+test("saves journaled late are each named for their own writer, not the one who wrote last", async () => {
+  const org = await stack.company(`writers-${randomUUID().slice(0, 8)}`);
+  const ana = await stack.member(org.id);
+  const doc = await stack.upload(ana.jar, { space: "shared" }, "memo.md", bytes("# Memo"));
+  const agent = await connectAgent(stack.worker.url, ana.jar, { scope: WRITE });
+  const edited = await call(agent, "drive_edit_doc", {
+    id: doc.id,
+    markdown: "# Memo\n\nBy the agent",
+  });
+  expect(edited).not.toHaveProperty("error");
+  await save(ana.jar, doc.id, "# Memo\n\nBy the agent\n\nBy Ana", 2);
+  await expect
+    .poll(async () => (await changesOf(doc.id)).length, { timeout: 10_000 })
+    .toBeGreaterThan(0);
+
+  for (const table of [schema.storageDocChanges, schema.storageDocJournals]) {
+    await stack.db.delete(table).where(eq(table.nodeId, doc.id));
+  }
+  expect(await stack.cron("* * * * *")).toBe("ok");
+  const rows = await changesOf(doc.id);
+  expect(rows.map((row) => [row.firstSeq, row.by])).toEqual([
+    [-3, `m:${ana.id}`],
+    [-2, `a:${ana.id}:Drive agent`],
+    [-1, `m:${ana.id}`],
+  ]);
+});
