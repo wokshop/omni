@@ -142,27 +142,29 @@ test("Free holds 1 domain; claiming the same one again is not a second", async (
   expect((await api(owner.jar, "POST", "/onboarding/domains", { domain: other })).status).toBe(200);
 });
 
-test("Free holds 500 CRM records, archived ones included; a paid plan has no limit", async () => {
+test("Free holds 500 CRM records, archived ones and a person's new company included; a paid plan has no limit", async () => {
   const owner = await stack.workspaceWithDomain();
   const { db } = stack.database;
   await db.insert(schema.crmPeople).values(
-    Array.from({ length: 500 }, (_, i) => ({
+    Array.from({ length: 499 }, (_, i) => ({
       orgId: owner.orgId,
       name: `Person ${i}`,
       ...(i % 2 ? { archivedAt: new Date() } : {}),
     })),
   );
-  const add = () =>
-    api(owner.jar, "POST", "/crm/people", { name: "Ana", address: `ana-${tag()}@client.test` });
-  const refused = await add();
-  expect(refused).toMatchObject({
+  const add = (address: string) => api(owner.jar, "POST", "/crm/people", { name: "Ana", address });
+  const withCompany = await add(`ana-${tag()}@newco-${tag()}.test`);
+  expect(withCompany).toMatchObject({
     status: 402,
-    body: { code: "PLAN_LIMIT", details: { cap: "crmRecords", max: 500, held: 500 } },
+    body: { code: "PLAN_LIMIT", details: { cap: "crmRecords", max: 500, held: 499 } },
   });
+  const webmail = `ana-${tag()}@gmail.com`;
+  expect((await add(webmail)).status).toBe(201);
+  expect((await add(webmail)).status).not.toBe(402);
   const company = await api(owner.jar, "POST", "/crm/companies", { name: "Client Co" });
-  expect(company.status).toBe(402);
+  expect(company).toMatchObject({ status: 402, body: { details: { held: 500 } } });
   await subscribe(owner.orgId, "business");
-  expect((await add()).status).toBe(201);
+  expect((await add(`ana-${tag()}@client.test`)).status).toBe(201);
 });
 
 test("a person owns at most 2 Free workspaces; paying for one makes room for another", async () => {

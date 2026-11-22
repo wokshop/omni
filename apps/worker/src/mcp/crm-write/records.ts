@@ -1,4 +1,4 @@
-import type { CrmPerson } from "@omni/db";
+import { personAddRecords, type CrmPerson } from "@omni/db";
 import { z } from "zod";
 import { companyRow, crmOf, personRow, rowContext, type CrmWorkspace } from "../crm.ts";
 import type { ToolContext } from "../server.ts";
@@ -65,7 +65,13 @@ async function addPerson(context: ToolContext, workspace: CrmWorkspace, input: P
         "Address edits need the person's `id`. Add the person with `email` first, then change their addresses.",
     };
   }
-  const full = await capRefusal(context.db, context.config, workspace.orgId, "crmRecords");
+  const adding = await personAddRecords(context.db, workspace.orgId, {
+    address: input.email,
+    companyId: input.company_id,
+  });
+  const full =
+    adding > 0 &&
+    (await capRefusal(context.db, context.config, workspace.orgId, "crmRecords", adding));
   if (full) return { error: `${full.message[0]!.toUpperCase()}${full.message.slice(1)}.` };
   const owner = await ownerId(context, workspace, input.owner);
   if ("error" in owner) return owner;

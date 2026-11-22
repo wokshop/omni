@@ -8,6 +8,7 @@ import {
   type CrmPersonListResponse,
   type CrmPersonResponse,
 } from "@omni/contracts";
+import { personAddRecords } from "@omni/db";
 import { Hono } from "hono";
 import type { AppEnv } from "../context.ts";
 import { zValidator } from "../validator.ts";
@@ -39,7 +40,10 @@ export const people = new Hono<AppEnv>()
   })
 
   .post("/people", zValidator("json", crmAddPersonBodySchema), async (c) => {
-    await requireCap(c.var.db, c.var.config, c.var.member.orgId, "crmRecords");
+    const adding = await personAddRecords(c.var.db, c.var.member.orgId, c.req.valid("json"));
+    if (adding > 0) {
+      await requireCap(c.var.db, c.var.config, c.var.member.orgId, "crmRecords", adding);
+    }
     const added = await memberCrm(c).addPerson(c.req.valid("json"));
     if (added.status !== "ok") return refused(c, added);
     const { person, created } = added;
