@@ -19,8 +19,10 @@ workspace. The new thing is a teamspace, in code and in the UI.
   reaching single files and folders the way they do now: by grant or by link.
 - **Anyone makes one.** Any member of the workspace creates a teamspace and becomes its owner.
 - **Open or private.** An open teamspace is reached by every member of the workspace, as Shared
-  is today (a freelancer only when added). A private one is reached only by its members, and
-  nobody else sees it exists.
+  is today (a freelancer only when added). A private one is reached only by its members and the
+  workspace's owners and admins; nobody else sees it exists.
+- **Leaving.** When a teamspace's only owner leaves the workspace, whoever receives their My
+  files becomes its owner, so no teamspace is left without one.
 - **Nothing is forced.** A new member gets no drive of their own and a new workspace gets no
   teamspace. Whoever wants a place of their own makes a private teamspace with only themselves
   in it.

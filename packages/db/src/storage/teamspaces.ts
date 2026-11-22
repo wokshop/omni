@@ -7,7 +7,7 @@ import {
   storageTeamspaces,
   storageUploads,
 } from "../schema/storage.ts";
-import type { StorageMember } from "./access.ts";
+import { loadMember, type StorageMember } from "./access.ts";
 import { cleanName, deleteSubtree, lockTree, teamspaceDrive, type Drive } from "./core.ts";
 
 export type StorageTeamspaceRole = (typeof storageTeamspaceMembers.role.enumValues)[number];
@@ -88,7 +88,7 @@ export async function teamspaceReach(ex: Db, member: StorageMember, teamspaceId:
     .where(and(eq(storageTeamspaces.id, teamspaceId), eq(storageTeamspaces.orgId, member.orgId)));
   if (!row) return null;
   const role = row.role ?? null;
-  const reach = role !== null || (!row.private && !member.freelancer);
+  const reach = role !== null || member.admin || (!row.private && !member.freelancer);
   if (!reach) return null;
   return toTeamspace(row, role, member.admin || role === "owner");
 }
@@ -126,10 +126,12 @@ export async function reachableTeamspaces(ex: Db, member: StorageMember) {
     .where(
       and(
         eq(storageTeamspaces.orgId, member.orgId),
-        or(
-          sql`${storageTeamspaceMembers.memberId} is not null`,
-          member.freelancer ? sql`false` : eq(storageTeamspaces.private, false),
-        ),
+        member.admin
+          ? undefined
+          : or(
+              sql`${storageTeamspaceMembers.memberId} is not null`,
+              member.freelancer ? sql`false` : eq(storageTeamspaces.private, false),
+            ),
       ),
     )
     .orderBy(sql`lower(${storageTeamspaces.name})`, asc(storageTeamspaces.id));
@@ -369,6 +371,58 @@ export function teamspaceOperations(db: Db, load: () => Promise<StorageMember | 
       });
     },
   };
+}
+
+/**
+ * Every member who reaches the teamspace: its members, the workspace's owners and admins, and,
+ * when it is open, every member who is not a freelancer. For telling only them what happens in
+ * it (who is editing a file, a live document's changes). Empty when there is no such teamspace.
+ */
+export async function teamspaceAudience(ex: Db, teamspaceId: string) {
+  const [teamspace] = await ex
+    .select({ orgId: storageTeamspaces.orgId })
+    .from(storageTeamspaces)
+    .where(eq(storageTeamspaces.id, teamspaceId));
+  if (!teamspace) return [];
+  const everyone = await ex
+    .select({ id: members.id, role: members.role })
+    .from(members)
+    .where(eq(members.organizationId, teamspace.orgId));
+  const reached: string[] = [];
+  for (const { id } of everyone) {
+    const member = await loadMember(ex, id);
+    if (member && (await teamspaceReach(ex, member, teamspaceId))) reached.push(id);
+  }
+  return reached;
+}
+
+/**
+ * Makes `toMemberId` an owner of every teamspace `memberId` alone owns, before `memberId` leaves
+ * the workspace and their memberships go with them. Trusted, for the member hand-over.
+ */
+export async function handOverTeamspaces(tx: Db, memberId: string, toMemberId: string) {
+  const owned = await tx
+    .select({
+      teamspaceId: storageTeamspaceMembers.teamspaceId,
+      orgId: storageTeamspaceMembers.orgId,
+    })
+    .from(storageTeamspaceMembers)
+    .where(
+      and(
+        eq(storageTeamspaceMembers.memberId, memberId),
+        eq(storageTeamspaceMembers.role, "owner"),
+      ),
+    );
+  for (const { teamspaceId, orgId } of owned) {
+    if (!(await soleOwner(tx, teamspaceId, memberId))) continue;
+    await tx
+      .insert(storageTeamspaceMembers)
+      .values({ teamspaceId, orgId, memberId: toMemberId, role: "owner" })
+      .onConflictDoUpdate({
+        target: [storageTeamspaceMembers.teamspaceId, storageTeamspaceMembers.memberId],
+        set: { role: "owner" },
+      });
+  }
 }
 
 async function lockMembers(tx: Db, teamspaceId: string) {
