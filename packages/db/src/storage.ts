@@ -360,3 +360,12 @@ export interface SharedAccess {
   /** False when the link alone opened it and the link is view only: no bytes leave. */
   downloads: boolean;
 }
+export {
+  docJournalOf,
+  docReplayFrom,
+  docsOwedJournal,
+  memberNames,
+  purgeDocHistory,
+  writeDocJournal,
+  type DocRun,
+} from "./storage/history.ts";

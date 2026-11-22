@@ -6,6 +6,7 @@ import { mailMinute } from "./mail/jobs.ts";
 import { notePaymentMethod } from "./storage/billing.ts";
 import { abortExpiredStorageUploads, storageDaily } from "./storage/jobs.ts";
 import { sealSignatures } from "./storage/seal.ts";
+import { journalStorageDocs } from "./storage/journal.ts";
 import { indexStorageTexts } from "./storage/texts.ts";
 import { cleanupExpiredUploads } from "./uploads.ts";
 
@@ -27,7 +28,12 @@ const mail: Module = {
 const storage: Module = {
   name: "storage",
   minute: (env) =>
-    Promise.all([abortExpiredStorageUploads(env), sealSignatures(env), indexStorageTexts(env)]),
+    Promise.all([
+      abortExpiredStorageUploads(env),
+      sealSignatures(env),
+      indexStorageTexts(env),
+      journalStorageDocs(env),
+    ]),
   daily: storageDaily,
   stripeEvent: notePaymentMethod,
   memberRemoved: (db, { memberId, byMemberId }) =>
