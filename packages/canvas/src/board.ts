@@ -124,7 +124,7 @@ export class Board {
         [element.from, element.to],
         [element.to, element.from],
       ];
-      const moved = [element.from.id, element.to.id].some((id) => id && this.changed.has(id));
+      const moved = [element.from.id, element.to.id].some((id) => id && this.reshaped(id));
       if (!moved) continue;
       for (const [end, other] of ends) {
         if (end.id === undefined) continue;
@@ -137,6 +137,11 @@ export class Board {
         this.touch(element);
       }
     }
+  }
+
+  /** Whether an element's bounds may have changed: it, or anything inside it, changed. */
+  reshaped(id: string) {
+    return this.changed.has(id) || [...this.under(id)].some((below) => this.changed.has(below));
   }
 
   /** Where a connector end is: the middle of its element, or its own point. */

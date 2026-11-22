@@ -60,8 +60,7 @@ export type TileLookup = (fileId: string) => { name: string; url: string } | nul
 
 const n = (value: number) => String(Math.round(value));
 const boxText = ([x, y, w, h]: Box) => `[${n(x)},${n(y)} ${n(w)}×${n(h)}]`;
-const quoted = (text: string | undefined) =>
-  text?.trim() ? ` ${JSON.stringify(text.length > 300 ? `${text.slice(0, 300)}…` : text)}` : "";
+const quoted = (text: string | undefined) => (text?.trim() ? ` ${JSON.stringify(text)}` : "");
 
 function line(element: CanvasElement, byId: Map<string, CanvasElement>, tiles: TileLookup) {
   const head = `${element.kind} ${element.id}`;

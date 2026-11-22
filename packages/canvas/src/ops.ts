@@ -391,7 +391,7 @@ function remove(board: Board, op: Op<"delete">) {
       [element.to, element.from],
     ] as const) {
       if (end.id === undefined || !gone.has(end.id)) continue;
-      const box = board.changed.has(end.id) ? board.boundsOf(board.byId.get(end.id)!) : null;
+      const box = board.reshaped(end.id) ? board.boundsOf(board.byId.get(end.id)!) : null;
       if (box) end.at = anchor(box, board.pointOf(other));
       delete end.id;
       board.touch(element);
