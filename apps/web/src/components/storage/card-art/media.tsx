@@ -70,6 +70,10 @@ export function VideoArt(props: { node: StorageNode; url: string }) {
       )}
       {shown && (
         <>
+          <span
+            aria-hidden
+            className={`absolute inset-0 bg-foreground/25 transition-opacity duration-200 ease-out motion-reduce:transition-none ${playing ? "opacity-0" : "opacity-100"}`}
+          />
           <IconPlayFilled
             aria-hidden
             className={`relative size-10 text-background drop-shadow-sm transition-[opacity,scale] duration-200 ease-out motion-reduce:transition-none ${playing ? "scale-90 opacity-0" : "opacity-100"}`}

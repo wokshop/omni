@@ -6,7 +6,7 @@ import type { StorageNode } from "@/lib/storage.ts";
 import { useSeen } from "../file-card.tsx";
 import { FileGlyph } from "../file-glyph.tsx";
 
-const PAGE = "absolute inset-0 @container overflow-hidden bg-background";
+const PAGE = "absolute inset-0 @container overflow-hidden";
 const MINI: Record<"title" | "body" | "cell" | "code", CSSProperties> = {
   title: { fontSize: "6.5cqw", lineHeight: 1.3 },
   body: { fontSize: "4.6cqw", lineHeight: 1.65 },
@@ -16,10 +16,10 @@ const MINI: Record<"title" | "body" | "cell" | "code", CSSProperties> = {
 const MARGIN: CSSProperties = { padding: "10cqw" };
 
 const TONE: Record<CodeTone, string> = {
-  keyword: "text-primary",
-  string: "text-success-subtle-foreground",
-  comment: "text-subtle-foreground",
-  plain: "text-foreground",
+  keyword: "text-chart-3",
+  string: "text-warning",
+  comment: "text-muted-foreground",
+  plain: "text-background",
 };
 
 const HASH_COMMENTS = new Set([
@@ -94,9 +94,9 @@ function SheetPage(props: { node: StorageNode; type: FileType; url: string; near
   return <Grid rows={grid(first.rows)} />;
 }
 
-function Page(props: { children: ReactNode; bare?: boolean }) {
+function Page(props: { children: ReactNode; bare?: boolean; dark?: boolean }) {
   return (
-    <div aria-hidden className={PAGE}>
+    <div aria-hidden className={`${PAGE} ${props.dark ? "bg-foreground" : "bg-background"}`}>
       <div style={props.bare ? undefined : MARGIN}>{props.children}</div>
     </div>
   );
@@ -143,7 +143,7 @@ function PlainBody(props: { text: string }) {
 
 function CodeBody(props: { text: string; hash: boolean }) {
   return (
-    <Page>
+    <Page dark>
       <pre style={MINI.code} className="font-mono">
         {textLines(props.text).map((line, i) => (
           <span key={i} className="block whitespace-pre">
