@@ -70,4 +70,6 @@ test("an outside attendee opens the meeting shared with them, and loses it when 
   expect((await m.api(client, "GET", `/shared/${meetingId}`)).status).toBe(404);
   expect((await m.api(client, "GET", `/shared/${meetingId}/audio`)).status).toBe(404);
   expect((await m.api(client, "GET", "/shared")).body.meetings).toEqual([]);
+  expect((await m.api(dana, "GET", `/shared/${meetingId}`)).status).toBe(404);
+  expect((await m.api(dana, "GET", "/shared")).body.meetings).toEqual([]);
 });
