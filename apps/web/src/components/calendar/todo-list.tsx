@@ -81,7 +81,7 @@ function Todos() {
         if (!section.fixed && inSection.length === 0) return null;
         return (
           <section key={section.id} aria-label={section.label} className="flex flex-col pb-1">
-            <div className="group/section flex h-8 items-center gap-1.5 px-2.25">
+            <div className="group/section flex h-7 items-center gap-1.5 ps-2 pe-1">
               <span className="text-label text-subtle-foreground">{section.label}</span>
               {inSection.length > 0 && (
                 <span className="text-xs text-subtle-foreground tabular-nums">
@@ -113,7 +113,7 @@ function Todos() {
   );
 }
 
-const ROW = "mx-0.5 flex h-8 min-w-0 items-center gap-2 rounded-md px-1.75";
+const ROW = "flex h-8 min-w-0 items-center gap-2 rounded-md ps-1.5 pe-1";
 const ROUND = "gap-x-0 **:data-[slot=indicator]:rounded-full";
 
 function NewTodo({ section, onDone }: { section: DueGroup; onDone: () => void }) {

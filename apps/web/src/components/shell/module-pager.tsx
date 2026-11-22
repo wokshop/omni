@@ -78,14 +78,11 @@ function drivePages(el: HTMLElement, root: HTMLElement, pages: Pages) {
 }
 
 /**
- * The sidebar's nav, one page per module side by side. Opening a module (the rail, the
- * switcher's chevrons, `g f`) glides the pages there; the pages don't scroll under a swipe. The
- * glide follows the sidebar's width while it changes, so a module with a wider sidebar lands
- * square. A page that may not
- * be left (Save your changes?) has the pages glide back while it asks. The pages' position is
- * `--module-at` on the sidebar (0 on the first page, 1 on the second, fractions between), so the
- * switcher's pill moves with them. Pages other than the shown one are inert and hidden from
- * assistive tech.
+ * The sidebar's nav, one page per module side by side. Opening a module (the rail, the phone's
+ * switcher, `g f`) glides the pages there; they don't scroll under a swipe. The pages' position
+ * is `--module-at` on the sidebar (0 on the first page, 1 on the second, fractions between), so
+ * the phone switcher's pill moves with them. Pages other than the shown one are inert and hidden
+ * from assistive tech.
  */
 export function ModulePager({ pages }: { pages: Record<ModuleId, ReactNode> }) {
   const modules = useModules();

@@ -85,8 +85,14 @@ async function openInbox(slug: string, options: { reducedMotion?: "reduce" } = {
   return page;
 }
 
-const shows = (page: Page, id: "mail" | "files" | "crm") =>
-  page.locator(`[role="group"][aria-label="Modules"][data-module="${id}"]`).waitFor();
+const LABELS = { mail: "Mail", files: "Drive", crm: "CRM" } as const;
+const rail = (page: Page, name: string) =>
+  page.getByRole("navigation", { name: "Modules" }).getByRole("link", { name, exact: true });
+const shows = (page: Page, id: keyof typeof LABELS) =>
+  page
+    .getByRole("navigation", { name: "Modules" })
+    .locator(`[aria-current="page"][aria-label="${LABELS[id]}"]`)
+    .waitFor();
 const pager = (page: Page) => page.locator('[data-slot="module-pager"]');
 
 const pageAt = (page: Page) =>
@@ -102,11 +108,9 @@ async function swipe(page: Page, steps: [dx: number, dy: number][]) {
   }
 }
 
-test("the chevrons step to the neighbouring module, the pages glide along, and stop at the ends", async () => {
+test("the rail opens each module and the pages glide along", async () => {
   const page = await openInbox("chevrons");
-  expect(await page.getByRole("button", { name: "No previous module" }).isDisabled()).toBe(true);
-
-  await page.getByRole("button", { name: "Go to Drive" }).click();
+  await rail(page, "Drive").click();
   await page.waitForURL((url) => place(url) === "/files");
   await shows(page, "files");
   await expect.poll(() => pageAt(page)).toBe(1);
@@ -115,13 +119,12 @@ test("the chevrons step to the neighbouring module, the pages glide along, and s
   );
   expect(positions.some((at) => at > 0.1 && at < 0.9)).toBe(true);
 
-  await page.getByRole("button", { name: "Go to CRM" }).click();
+  await rail(page, "CRM").click();
   await page.waitForURL((url) => place(url) === "/crm/companies");
   await shows(page, "crm");
   await expect.poll(() => pageAt(page)).toBe(2);
-  expect(await page.getByRole("button", { name: "No next module" }).isDisabled()).toBe(true);
 
-  await page.getByRole("button", { name: "Go to Drive" }).click();
+  await rail(page, "Drive").click();
   await page.waitForURL((url) => place(url) === "/files");
   await expect.poll(() => pageAt(page)).toBe(1);
 });
@@ -146,17 +149,21 @@ test("Tab never lands in a module's page that isn't shown", async () => {
   const drive = page.locator('[data-module-page="files"] a').first();
   await drive.evaluate((link) => (link as HTMLElement).focus());
   expect(await drive.evaluate((link) => document.activeElement === link)).toBe(false);
-  await page.getByRole("button", { name: "Go to Drive" }).click();
+  await rail(page, "Drive").click();
   await shows(page, "files");
   await drive.evaluate((link) => (link as HTMLElement).focus());
   expect(await drive.evaluate((link) => document.activeElement === link)).toBe(true);
 });
 
-test("leaving a document with unsaved edits asks first; Cancel glides the pages back", async () => {
+test("switching module from the rail keeps a document's edits, and the pages glide there", async () => {
   const page = await openInbox("blocked");
-  await page.getByRole("button", { name: "Go to Drive" }).click();
+  await rail(page, "Drive").click();
   await shows(page, "files");
-  await page.getByRole("button", { name: "Upload", exact: true }).first().waitFor();
+  await page.goto(page.url().replace(/\/files.*$/, "/files/my"));
+  await page
+    .getByRole("button", { name: "Upload", exact: true })
+    .first()
+    .waitFor({ timeout: 15_000 });
   await page
     .locator("input[type=file]")
     .first()
@@ -167,19 +174,14 @@ test("leaving a document with unsaved edits asks first; Cancel glides the pages 
   await page.keyboard.press("End");
   await page.keyboard.type(" B");
 
-  await page.getByRole("button", { name: "Go to CRM" }).click();
-  const leaving = page.getByRole("alertdialog", { name: "Save your changes?" });
-  await leaving.waitFor({ timeout: 2000 });
-  await leaving.getByRole("button", { name: "Cancel" }).click();
-  await expect.poll(() => pageAt(page)).toBe(1);
-  expect(place(page.url())).toMatch(/^\/files\//);
-
-  await page.getByRole("button", { name: "Go to CRM" }).click();
-  await leaving.waitFor({ timeout: 1000 });
-  await leaving.getByRole("button", { name: "Don’t save" }).click();
+  await rail(page, "CRM").click();
   await page.waitForURL((url) => place(url) === "/crm/companies");
   await shows(page, "crm");
   await expect.poll(() => pageAt(page)).toBe(2);
+
+  await page.goto(page.url().replace(/\/crm\/.*$/, "/files/my"));
+  await page.getByRole("row", { name: /plan\.md/ }).click();
+  await page.locator("[contenteditable=true]").getByRole("heading", { name: "Plan B" }).waitFor();
 });
 
 async function freePort() {

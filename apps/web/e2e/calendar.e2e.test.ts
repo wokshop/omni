@@ -344,6 +344,25 @@ test("arrows leave an all-day event's days alone", async () => {
   ]);
 });
 
+test("the switcher at the sidebar's foot shows one inbox's calendar alone", async () => {
+  const { org, member, page, origin } = await invited();
+  const shared = await createMailbox(db, org.id, `team-${Date.now()}@studio.example`, "shared");
+  await grant(db, org.id, shared.id, member.id);
+  await db.insert(schema.calendarCalendars).values({ orgId: org.id, mailboxId: shared.id });
+  await openWeek(page, origin, org.slug);
+  await page.getByRole("button", { name: /Switch calendar, currently All calendars/ }).click();
+  await page.getByRole("menuitem", { name: /Team/ }).click();
+  await expect.poll(() => new URL(page.url()).searchParams.get("calendar")).not.toBeNull();
+  await expect
+    .poll(() => page.getByRole("button", { name: /Acme × Studio: kickoff/ }).count())
+    .toBe(0);
+  await page.getByRole("button", { name: /Switch calendar, currently Team/ }).click();
+  await page.getByRole("menuitem", { name: "All calendars" }).click();
+  await expect
+    .poll(() => page.getByRole("button", { name: /Acme × Studio: kickoff/ }).count())
+    .toBe(1);
+});
+
 async function freePort() {
   const server = createServer();
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));

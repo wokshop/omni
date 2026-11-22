@@ -1,12 +1,6 @@
 import { useLocation, useSearch } from "@tanstack/react-router";
 import { cn } from "cn";
-import {
-  useEffect,
-  useSyncExternalStore,
-  type ComponentType,
-  type CSSProperties,
-  type ReactNode,
-} from "react";
+import { useEffect, useSyncExternalStore, type ComponentType, type ReactNode } from "react";
 import { IconSettings, IconSettingsFilled } from "@/components/icons/central";
 import {
   IconCalendarMark,
@@ -82,16 +76,7 @@ const MODULE_TILE = "size-8 justify-center rounded-[9px] px-0 *:[svg]:size-5 hov
  * current one on a white tile; settings at its foot. Its first tile lines up with the nav
  * panel's header row. Closing the sidebar hides the nav panel; the rail stays.
  */
-export function RailSidebar({
-  title,
-  wide = false,
-  children,
-}: {
-  title?: string;
-  /** A wider panel, for a module whose sidebar holds more (the calendar's month). */
-  wide?: boolean;
-  children: ReactNode;
-}) {
+export function RailSidebar({ title, children }: { title?: string; children: ReactNode }) {
   const { open } = useSidebar();
   const peek = useRailPeek() && !open;
   useEffect(() => {
@@ -111,15 +96,7 @@ export function RailSidebar({
       collapsible="none"
       closeButton={false}
       data-state={open ? "expanded" : "collapsed"}
-      style={
-        wide
-          ? ({ "--sidebar-width": "calc(var(--spacing-sidebar) + 3rem)" } as CSSProperties)
-          : undefined
-      }
-      className={cn(
-        "peer shrink-0 bg-transparent transition-[width] duration-300 ease-(--ease-out) motion-reduce:transition-none",
-        !open && "w-14.5",
-      )}
+      className={cn("peer shrink-0 bg-transparent", !open && "w-14.5")}
     >
       <div className="flex min-h-0 flex-1">
         <ModuleRail />

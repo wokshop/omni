@@ -58,7 +58,7 @@ export function MiniMonth() {
           replace: true,
         })
       }
-      className="px-2 pb-2"
+      className="px-2"
     >
       <header className="-mx-2.5 grid h-11 grid-cols-7 items-center">
         <Heading className="col-span-5 ps-2.5 text-md" />

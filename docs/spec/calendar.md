@@ -131,14 +131,18 @@ sent to both is stored once per mailbox. They share one notes doc, found by `(or
 ## How people use it
 
 **Open the calendar.** `/calendar` opens the week, from Monday, in the browser's time zone, at the
-current hour. Every calendar the person can see in the active workspace is overlaid. The sidebar holds,
-top to bottom, the month (the shown week tinted, a day picks it), the person's to-dos, and the
-calendars, each with a checkbox in its color that shows or hides it.
+current hour. Every calendar the person can see in the active workspace is overlaid. The sidebar has
+no module title: the month leads it (the shown week tinted, a day picks it), the person's to-dos
+follow, and at its foot a switcher shows all calendars or one inbox's alone (`?calendar=`), like
+the workspace switcher. All-day events sit in a strip above the hours.
 
 **To-dos.** The calendar's to-dos are the workspace's tasks (`crm.md`, Tasks) assigned to the
-person: a field adds one assigned to them, and the open ones follow in due groups (Overdue, Today,
-Upcoming, No due date), each checked off in place. A dated one also sits on its day's all-day row,
-where checking it completes it. A Personal space has no tasks yet, so it shows none. All-day events sit in a strip above the hours.
+person, in fixed sections: Today, Upcoming and No date always, Overdue when something is late.
+A section's title shows a `+` on hover that opens an empty row to type into; Enter adds the to-do
+with the section's due day (today, tomorrow, none) and opens the next row, Esc drops it. Each is
+checked off in place. A dated one also sits on its day's all-day row, where checking it completes
+it. A Personal space has no tasks yet, so it shows none.
+
 Overlapping events share the column side by side. A declined event is drawn faint and struck through, a
 tentative one hatched, an unanswered invitation outlined.
 
