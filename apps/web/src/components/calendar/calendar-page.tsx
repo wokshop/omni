@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { IconChevronLeft, IconChevronRight } from "@/components/icons/central";
@@ -7,11 +8,9 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipTrigger } from "@/components/ui/tooltip";
 import { useCalendarEvents, useCalendars } from "@/hooks/use-calendar.ts";
 import { useWorkspaceSlug } from "@/hooks/use-workspaces.ts";
-import type { CalendarEvent } from "@/lib/calendar.ts";
+import { warmCalendarWindow, type CalendarEvent } from "@/lib/calendar.ts";
 import type { CrmTask } from "@/lib/crm-tasks.ts";
 import {
-  addDays,
-  daysOf,
   dayKey,
   eventKey,
   nextHalfHour,
@@ -19,6 +18,7 @@ import {
   parseDayKey,
   type CalendarView,
   type Slot,
+  windowOf,
 } from "@/lib/calendar-grid.ts";
 import { EventDialog } from "./event-dialog.tsx";
 import { CalendarCrumbs } from "./calendar-crumbs.tsx";
@@ -38,6 +38,17 @@ function useNow() {
     return () => window.clearInterval(timer);
   }, []);
   return now;
+}
+
+function useNeighbors(view: CalendarView, at: number, loaded: boolean) {
+  const client = useQueryClient();
+  useEffect(() => {
+    if (!loaded) return;
+    for (const delta of [1, -1]) {
+      const { from, to } = windowOf(view, shiftView(view, new Date(at), delta));
+      void warmCalendarWindow(client, from, to);
+    }
+  }, [client, view, at, loaded]);
 }
 
 function Hinted(props: { label: string; keyName: string; children: ReactNode }) {
@@ -65,13 +76,18 @@ export function CalendarPage(props: {
 }) {
   const view = props.view ?? "week";
   const anchor = parseDayKey(props.date);
-  const days = daysOf(view, anchor);
-  const from = days[0] ?? anchor;
-  const to = addDays(days.at(-1) ?? anchor, 1);
+  const at = anchor.getTime();
+  const { days, from, to } = useMemo(() => windowOf(view, new Date(at)), [view, at]);
   const now = useNow();
   const calendars = useCalendars().data ?? [];
-  const all = useCalendarEvents(from, to).data ?? [];
-  const events = props.calendar ? all.filter((e) => e.calendarId === props.calendar) : all;
+  const shown = useCalendarEvents(from, to);
+  const all = shown.data;
+  const events = useMemo(
+    () =>
+      props.calendar ? (all ?? []).filter((e) => e.calendarId === props.calendar) : (all ?? []),
+    [all, props.calendar],
+  );
+  useNeighbors(view, at, shown.isFetched);
   const todos = useMyTodos();
   const toggleTodo = useToggleTodo();
   const [selection, setSelection] = useState<Selection>(null);

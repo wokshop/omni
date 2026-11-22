@@ -4,7 +4,8 @@ import type { CalendarEvent } from "@/lib/calendar.ts";
 import { addDays, allDayOn, dayKey, eventKey, sameDay } from "@/lib/calendar-grid.ts";
 import { dayOf } from "@/lib/crm-tasks.ts";
 import { useDropZone } from "./drop-zone.ts";
-import { EventChip, TodoChip, type WeekGridProps } from "./week-grid.tsx";
+import { TodoChip } from "./todo-block.tsx";
+import { EventChip, type WeekGridProps } from "./week-grid.tsx";
 
 const SHOWN = 3;
 const weekday = new Intl.DateTimeFormat(undefined, { weekday: "short" });

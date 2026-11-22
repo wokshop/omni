@@ -80,3 +80,34 @@ export function TodoBlock(props: {
     </div>
   );
 }
+
+/** A dated to-do on its day: its check, then its title. */
+export function TodoChip(props: {
+  task: CrmTask;
+  onTodo?: (task: CrmTask, done: boolean) => void;
+  onOpenTodo?: (task: CrmTask) => void;
+}) {
+  const { task } = props;
+  const done = !!task.completedAt;
+  return (
+    <div
+      data-todo={task.id}
+      data-calendar-keys="off"
+      draggable
+      onDragStart={(e) => startDrag(e, { kind: "todo", task })}
+      onDragEnd={endDrag}
+      className="flex min-w-0 cursor-grab items-center gap-1.5 rounded-md px-1.5 py-0.5 hover:bg-hover active:cursor-grabbing"
+    >
+      <TodoCheck task={task} onTodo={props.onTodo} />
+      <CanvasButton
+        onClick={() => props.onOpenTodo?.(task)}
+        className={cn(
+          "min-w-0 flex-1 truncate text-start text-xs",
+          done && "text-muted-foreground line-through",
+        )}
+      >
+        {task.title}
+      </CanvasButton>
+    </div>
+  );
+}

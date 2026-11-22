@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { crmErrorToast } from "@/components/crm/crm-errors.ts";
 import { IconPlus } from "@/components/icons/central";
 import { Button } from "@/components/ui/button";
@@ -18,11 +18,9 @@ import {
   dueLabel,
   type CrmTask,
   type DueGroup,
+  MY_TODOS,
   type TaskFilter,
 } from "@/lib/crm-tasks.ts";
-
-/** The member's open to-dos: the workspace's tasks assigned to them. */
-export const MY_TODOS = { status: "open", assignee: "me" } satisfies TaskFilter;
 
 const SECTIONS: { id: DueGroup; label: string; fixed: boolean }[] = [
   { id: "overdue", label: "Overdue", fixed: false },
@@ -50,10 +48,14 @@ export function useMyTodos() {
   useEffect(() => {
     if (hasCrm && hasNextPage && !isFetchingNextPage) void fetchNextPage();
   }, [hasCrm, hasNextPage, isFetchingNextPage, fetchNextPage]);
-  if (!hasCrm) return [];
-  const openIds = new Set(open.tasks.map((task) => task.id));
-  const recent = done.tasks.filter((task) => doneSinceOpened(task) && !openIds.has(task.id));
-  return [...open.tasks, ...recent];
+  const openTasks = open.tasks;
+  const finished = done.tasks;
+  return useMemo(() => {
+    if (!hasCrm) return [];
+    const openIds = new Set(openTasks.map((task) => task.id));
+    const recent = finished.filter((task) => doneSinceOpened(task) && !openIds.has(task.id));
+    return [...openTasks, ...recent];
+  }, [hasCrm, openTasks, finished]);
 }
 
 /** Checks a to-do off, or opens it again. */
