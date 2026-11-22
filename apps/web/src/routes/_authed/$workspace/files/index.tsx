@@ -1,5 +1,6 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { NoTeamspaces } from "../../../../components/storage/storage-nav.tsx";
+import { ApiError } from "../../../../lib/api.ts";
 import { listSearch } from "../../../../lib/search-params.ts";
 import { storageListQuery } from "../../../../lib/storage.ts";
 import { storageTeamspacesQuery } from "../../../../lib/storage-teamspaces.ts";
@@ -27,7 +28,10 @@ export const Route = createFileRoute("/_authed/$workspace/files/")({
     for (const space of spaces as ("personal" | "shared")[]) {
       const page = await queryClient
         .ensureInfiniteQueryData(storageListQuery({ space }))
-        .catch(() => null);
+        .catch((error: unknown) => {
+          if (error instanceof ApiError && error.status === 404) return null;
+          throw error;
+        });
       if (page?.pages[0]?.nodes.length) {
         throw redirect({
           to: `/$workspace/files/${space === "personal" ? "my" : "shared"}`,
