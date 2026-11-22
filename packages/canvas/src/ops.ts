@@ -349,12 +349,14 @@ function group(board: Board, op: Op<"group">) {
 function ungroup(board: Board, op: Op<"ungroup">) {
   const element = board.get(op.id);
   if (element.kind !== "group") throw new OpError(`"${op.id}" is not a group.`);
+  const gone = new Set([element.id]);
+  for (const item of board.elements) if (!gone.has(item.id)) board.unbind(item, gone);
   for (const child of board.elements.filter((item) => item.parent === element.id)) {
     if (element.parent === undefined) delete child.parent;
     else child.parent = element.parent;
     board.touch(child);
   }
-  board.remove(new Set([element.id]));
+  board.remove(gone);
 }
 
 function frame(board: Board, op: Op<"frame">) {
