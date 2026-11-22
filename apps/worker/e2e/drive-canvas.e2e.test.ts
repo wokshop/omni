@@ -357,3 +357,25 @@ test("a group of loose connectors moves as one", async () => {
     ],
   ]);
 });
+
+test("deleting a group's child redraws connectors bound to the group", async () => {
+  const { ana, agent } = await person();
+  const made = (await call(agent, "drive_create_canvas", {
+    name: "Shrinking group",
+    ops: [
+      { op: "add", kind: "sticky", text: "1", at: { x: 0, y: 0 }, ref: "one" },
+      { op: "add", kind: "sticky", text: "2", at: { x: 300, y: 0 }, ref: "two" },
+      { op: "add", kind: "sticky", text: "3", at: { x: 600, y: 0 }, ref: "three" },
+      { op: "group", ids: ["one", "two", "three"], ref: "row" },
+      { op: "add", kind: "sticky", text: "Far", at: { x: 1400, y: 0 }, ref: "far" },
+      { op: "connect", from: "row", to: "far" },
+    ],
+  })) as Answer & { canvas: { id: string }; created: Record<string, string> };
+  const deleted = await call(agent, "drive_edit_canvas", {
+    id: made.canvas.id,
+    ops: [{ op: "delete", ids: [made.created.three] }],
+  });
+  expect(deleted).not.toHaveProperty("error");
+  const line = (await body(ana, made.canvas.id)).scene.elements.find((e) => e.kind === "connector");
+  expect(line).toMatchObject({ from: { id: made.created.row, at: [500, 100] } });
+});
