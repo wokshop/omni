@@ -46,12 +46,14 @@ function times(start: Date, end: Date) {
   return { day, span: daysBetween(day, dayKey(end)), start: hhmm(start), end: hhmm(end) };
 }
 
+const firstShown = (calendars: readonly CalendarItem[]) =>
+  (calendars.find((c) => !c.hidden) ?? calendars[0])?.id ?? "";
+
 function newDraft(props: EventDialogProps) {
   const start = props.slot?.start ?? new Date();
   const end = props.slot?.end ?? new Date(start.getTime() + 1_800_000);
-  const shown = props.calendars.find((c) => !c.hidden) ?? props.calendars[0];
   const draft: Draft = {
-    calendarId: shown?.id ?? "",
+    calendarId: firstShown(props.calendars),
     title: "",
     ...times(start, end),
     allDay: false,
@@ -123,7 +125,8 @@ interface EventDialogProps {
 
 /** Makes an event, or changes one the member's inbox organizes. Guests get mail either way. */
 export function EventDialog(props: EventDialogProps) {
-  const [draft, setDraft] = useState(() => draftOf(props));
+  const [picked, setDraft] = useState(() => draftOf(props));
+  const draft = picked.calendarId ? picked : { ...picked, calendarId: firstShown(props.calendars) };
   const set =
     <K extends keyof Draft>(key: K) =>
     (value: Draft[K]) =>

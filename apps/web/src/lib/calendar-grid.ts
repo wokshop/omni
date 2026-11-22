@@ -24,6 +24,13 @@ export const daysOf = (view: CalendarView, anchor: Date) =>
     ? [startOfDay(anchor)]
     : Array.from({ length: 7 }, (_, i) => addDays(startOfWeek(anchor), i));
 
+/** What a view around `anchor` reads: its days and the window `[from, to)` they cover. */
+export function windowOf(view: CalendarView, anchor: Date) {
+  const days = daysOf(view, anchor);
+  const from = days[0] ?? anchor;
+  return { days, from, to: addDays(days.at(-1) ?? anchor, 1) };
+}
+
 /** `YYYY-MM-DD` of a local date, for the URL. */
 export const dayKey = (date: Date) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
