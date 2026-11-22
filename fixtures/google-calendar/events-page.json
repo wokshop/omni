@@ -4,7 +4,7 @@
   "updated": "2026-11-21T10:02:11.402Z",
   "timeZone": "Europe/Madrid",
   "accessRole": "owner",
-  "nextSyncToken": "CKCw1Mi_vZEDEKCw1Mi_vZEDGAUggICA7JvF5gI=",
+  "nextSyncToken": "sync-token-fixture",
   "items": [
     {
       "kind": "calendar#event",
