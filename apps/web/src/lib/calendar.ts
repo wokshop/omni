@@ -16,7 +16,7 @@ export type CalendarEventChange = Json<InferRequestType<Calendar["events"][":id"
 export type CalendarAnswer = "accepted" | "declined" | "tentative";
 
 export const calendarKeys = {
-  all: () => [...keys.root, "calendar"] as const,
+  all: () => keys.calendar(),
   calendars: () => [...calendarKeys.all(), "calendars"] as const,
   window: (from: string, to: string) => [...calendarKeys.all(), "events", from, to] as const,
   event: (id: string) => [...calendarKeys.all(), "event", id] as const,

@@ -76,7 +76,7 @@ const MODULE_TILE = "size-8 justify-center rounded-[9px] px-0 *:[svg]:size-5 hov
  * current one on a white tile; settings at its foot. Its first tile lines up with the nav
  * panel's header row. Closing the sidebar hides the nav panel; the rail stays.
  */
-export function RailSidebar({ title, children }: { title: string; children: ReactNode }) {
+export function RailSidebar({ title, children }: { title?: string; children: ReactNode }) {
   const { open } = useSidebar();
   const peek = useRailPeek() && !open;
   useEffect(() => {
@@ -84,7 +84,7 @@ export function RailSidebar({ title, children }: { title: string; children: Reac
   }, [open]);
   const panel = (
     <>
-      <div className="-mb-2 flex h-11 items-center px-2 text-md">{title}</div>
+      {title && <div className="-mb-2 flex h-11 items-center px-2 text-md">{title}</div>}
       {children}
       <div className="mt-auto pb-3 empty:hidden">
         <UpdateRow />

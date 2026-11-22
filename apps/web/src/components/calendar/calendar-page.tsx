@@ -4,7 +4,7 @@ import { IconChevronLeft, IconChevronRight } from "@/components/icons/central";
 import { StorageFrame } from "@/components/storage/storage-frame";
 import { Button } from "@/components/ui/button";
 import { Heading } from "@/components/ui/heading";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { useCalendarEvents, useCalendars } from "@/hooks/use-calendar.ts";
 import { useHasCrm } from "@/hooks/use-crm.ts";
 import { useCrmTasks } from "@/hooks/use-crm-tasks.ts";
@@ -25,6 +25,11 @@ import { EventPanel } from "./event-panel.tsx";
 import { MY_TODOS, useToggleTodo } from "./todo-list.tsx";
 import { useCalendarKeys } from "./use-calendar-keys.ts";
 import { WeekGrid, type Selection } from "./week-grid.tsx";
+
+const VIEWS = [
+  { id: "week", name: "Week" },
+  { id: "day", name: "Day" },
+];
 
 const monthYear = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" });
 
@@ -94,90 +99,89 @@ export function CalendarPage(props: { date?: string; view?: CalendarView }) {
   });
 
   return (
-    <StorageFrame
-      title={
-        <Heading className="flex items-baseline gap-2 truncate text-md">
-          {monthYear.format(from)}
-          <span className="text-xs text-muted-foreground tabular-nums">W{isoWeek(from)}</span>
-        </Heading>
-      }
-      actions={
-        <>
-          <Button size="sm" intent="outline" onPress={() => go({ date: new Date() })}>
-            Today
-          </Button>
-          <Button
-            size="sq-sm"
-            intent="plain"
-            aria-label="Previous"
-            onPress={() => go({ date: addDays(anchor, -step) })}
-          >
-            <IconChevronLeft />
-          </Button>
-          <Button
-            size="sq-sm"
-            intent="plain"
-            aria-label="Next"
-            onPress={() => go({ date: addDays(anchor, step) })}
-          >
-            <IconChevronRight />
-          </Button>
-          <ToggleGroup
-            aria-label="View"
-            size="sm"
-            selectionMode="single"
-            disallowEmptySelection
-            selectedKeys={[view]}
-            onSelectionChange={(keys) => {
-              const [next] = [...keys];
-              if (next === "week" || next === "day") go({ view: next });
-            }}
-          >
-            <ToggleGroupItem id="week">Week</ToggleGroupItem>
-            <ToggleGroupItem id="day">Day</ToggleGroupItem>
-          </ToggleGroup>
-          <Button
-            size="sm"
-            onPress={() =>
-              setEditing({ slot: selection?.kind === "slot" ? selection.slot : nextHalfHour(now) })
-            }
-          >
-            New event
-          </Button>
-        </>
-      }
-    >
-      <div className="flex min-h-0 flex-1">
-        <WeekGrid
-          days={days}
-          events={events}
-          calendars={calendars}
-          selection={selection}
-          now={now}
-          onSelect={setSelection}
-          onOpen={(event) => setPanel(eventKey(event))}
-          onCreate={(slot) => setEditing({ slot })}
-          onMove={(event, minutes) => move(event, minutes)}
-          todos={todos}
-          onTodo={toggleTodo}
-        />
-        {opened && (
-          <EventPanel
-            event={opened}
-            calendarAddress={calendars.find((c) => c.id === opened.calendarId)?.address}
-            onClose={() => setPanel(null)}
-            onEdit={() => setEditing({ event: opened })}
-          />
-        )}
+    <div className="flex h-svh min-h-0 min-w-0">
+      <div className="flex min-w-0 flex-1 flex-col">
+        <StorageFrame
+          title={
+            <Heading className="flex items-baseline gap-2 truncate text-md">
+              {monthYear.format(from)}
+              <span className="text-xs text-muted-foreground tabular-nums">W{isoWeek(from)}</span>
+            </Heading>
+          }
+          actions={
+            <>
+              <Button
+                size="sq-sm"
+                intent="plain"
+                aria-label="Previous"
+                onPress={() => go({ date: addDays(anchor, -step) })}
+              >
+                <IconChevronLeft />
+              </Button>
+              <Button size="sm" intent="plain" onPress={() => go({ date: new Date() })}>
+                Today
+              </Button>
+              <Button
+                size="sq-sm"
+                intent="plain"
+                aria-label="Next"
+                onPress={() => go({ date: addDays(anchor, step) })}
+              >
+                <IconChevronRight />
+              </Button>
+              <Select
+                aria-label="View"
+                value={view}
+                onChange={(next) => {
+                  if (next === "week" || next === "day") go({ view: next });
+                }}
+              >
+                <SelectTrigger className="ms-1 w-24" />
+                <SelectContent items={VIEWS}>
+                  {(item) => <SelectItem id={item.id}>{item.name}</SelectItem>}
+                </SelectContent>
+              </Select>
+            </>
+          }
+        >
+          <div className="flex min-h-0 flex-1">
+            <WeekGrid
+              days={days}
+              events={events}
+              calendars={calendars}
+              selection={selection}
+              now={now}
+              onSelect={setSelection}
+              onOpen={(event) => setPanel(eventKey(event))}
+              onCreate={(slot) => setEditing({ slot })}
+              onMove={(event, minutes) => move(event, minutes)}
+              todos={todos}
+              onTodo={toggleTodo}
+              onNew={() =>
+                setEditing({
+                  slot: selection?.kind === "slot" ? selection.slot : nextHalfHour(now),
+                })
+              }
+            />
+          </div>
+          {editing && (
+            <EventDialog
+              calendars={calendars}
+              event={editing.event}
+              slot={editing.slot}
+              onClose={() => setEditing(null)}
+            />
+          )}
+        </StorageFrame>
       </div>
-      {editing && (
-        <EventDialog
-          calendars={calendars}
-          event={editing.event}
-          slot={editing.slot}
-          onClose={() => setEditing(null)}
+      {opened && (
+        <EventPanel
+          event={opened}
+          calendarAddress={calendars.find((c) => c.id === opened.calendarId)?.address}
+          onClose={() => setPanel(null)}
+          onEdit={() => setEditing({ event: opened })}
         />
       )}
-    </StorageFrame>
+    </div>
   );
 }

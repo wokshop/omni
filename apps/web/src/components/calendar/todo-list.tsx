@@ -55,7 +55,7 @@ function Todos() {
   return (
     <SidebarSection label="To-dos">
       <form
-        className="px-2.5 pb-1"
+        className="px-2 pb-1"
         onSubmit={(event) => {
           event.preventDefault();
           add();
@@ -70,7 +70,7 @@ function Todos() {
         if (inGroup.length === 0) return null;
         return (
           <div key={group.id} className="flex flex-col">
-            <span className="flex h-7 items-center gap-1.5 px-4.5 text-xs text-muted-foreground">
+            <span className="flex h-7 items-center gap-1.5 px-2.25 text-xs text-muted-foreground">
               {group.label}
               <span className="text-subtle-foreground tabular-nums">{inGroup.length}</span>
             </span>
@@ -89,7 +89,7 @@ function TodoRow({ task, overdue }: { task: CrmTask; overdue: boolean }) {
   const { href } = useWorkspacePaths();
   const done = !!task.completedAt;
   return (
-    <div className="mx-2.5 flex h-8 min-w-0 items-center gap-2.5 rounded-md px-2 hover:bg-hover">
+    <div className="mx-0.5 flex h-8 min-w-0 items-center gap-2.5 rounded-md px-1.75 hover:bg-hover">
       <CheckboxField
         aria-label={done ? `Reopen ${task.title}` : `Complete ${task.title}`}
         isSelected={done}

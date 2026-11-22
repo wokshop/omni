@@ -88,60 +88,62 @@ export function EventPanel(props: {
   return (
     <aside
       aria-label={event.title}
-      className="flex w-80 shrink-0 flex-col gap-4 overflow-y-auto border-l bg-background p-4"
+      className="flex h-svh w-80 shrink-0 flex-col border-l bg-background"
     >
-      <div className="flex items-start gap-2">
-        <h2 className="min-w-0 flex-1 text-md break-words">{event.title || "(No title)"}</h2>
+      <div className="flex h-12 shrink-0 items-center gap-2 ps-4 pe-2.5">
+        <h2 className="min-w-0 flex-1 truncate text-md">{event.title || "(No title)"}</h2>
         <Button intent="plain" size="sq-sm" aria-label="Close" onPress={props.onClose}>
           <IconX />
         </Button>
       </div>
-      <div className="flex flex-col gap-1 text-sm">
-        <span className="tabular-nums">{whenOf(event)}</span>
-        {props.calendarAddress && (
-          <span className="text-muted-foreground">{props.calendarAddress}</span>
-        )}
-        {event.location && <span className="text-muted-foreground">{event.location}</span>}
-      </div>
-      {answerable(event) && <AnswerButtons event={event} />}
-      {event.conferenceUrl && (
-        <Button
-          size="sm"
-          intent="secondary"
-          onPress={() => window.open(event.conferenceUrl ?? "", "_blank", "noopener")}
-        >
-          <IconVideo />
-          Join
-        </Button>
-      )}
-      <People event={event} />
-      {event.description && (
-        <p className="text-sm whitespace-pre-wrap break-words text-muted-foreground">
-          {event.description}
-        </p>
-      )}
-      {ownEvent(event) && (
-        <div className="mt-auto flex gap-1.5">
-          <Button size="sm" intent="outline" onPress={props.onEdit}>
-            <IconPencil />
-            Edit
-          </Button>
+      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 pt-1 pb-4">
+        <div className="flex flex-col gap-1 text-sm">
+          <span className="tabular-nums">{whenOf(event)}</span>
+          {props.calendarAddress && (
+            <span className="text-muted-foreground">{props.calendarAddress}</span>
+          )}
+          {event.location && <span className="text-muted-foreground">{event.location}</span>}
+        </div>
+        {answerable(event) && <AnswerButtons event={event} />}
+        {event.conferenceUrl && (
           <Button
             size="sm"
-            intent="danger"
-            isPending={remove.isPending}
-            onPress={() =>
-              remove.mutate(event.id, {
-                onSuccess: props.onClose,
-                onError: () => appToast.error("The event was not deleted"),
-              })
-            }
+            intent="secondary"
+            onPress={() => window.open(event.conferenceUrl ?? "", "_blank", "noopener")}
           >
-            <IconTrash />
-            Delete and tell guests
+            <IconVideo />
+            Join
           </Button>
-        </div>
-      )}
+        )}
+        <People event={event} />
+        {event.description && (
+          <p className="text-sm whitespace-pre-wrap break-words text-muted-foreground">
+            {event.description}
+          </p>
+        )}
+        {ownEvent(event) && (
+          <div className="mt-auto flex gap-1.5">
+            <Button size="sm" intent="outline" onPress={props.onEdit}>
+              <IconPencil />
+              Edit
+            </Button>
+            <Button
+              size="sm"
+              intent="danger"
+              isPending={remove.isPending}
+              onPress={() =>
+                remove.mutate(event.id, {
+                  onSuccess: props.onClose,
+                  onError: () => appToast.error("The event was not deleted"),
+                })
+              }
+            >
+              <IconTrash />
+              Delete and tell guests
+            </Button>
+          </div>
+        )}
+      </div>
     </aside>
   );
 }

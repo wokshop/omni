@@ -238,6 +238,50 @@ test("a day picked in the month shows its week", async () => {
   await page.getByRole("heading", { name: /W45/ }).waitFor();
 });
 
+test("editing an overnight event keeps its end on the next day", async () => {
+  const { org, page, origin } = await invited();
+  const [calendar] = await db
+    .select({ id: schema.calendarCalendars.id })
+    .from(schema.calendarCalendars)
+    .where(eq(schema.calendarCalendars.orgId, org.id));
+  await page.goto(origin);
+  const made = await page.request.post(new URL("/api/calendar/events", origin).toString(), {
+    data: {
+      calendarId: calendar?.id,
+      title: "Night shift",
+      start: "2026-11-24T22:00:00.000Z",
+      end: "2026-11-25T00:00:00.000Z",
+      allDay: false,
+      timeZone: "Europe/Madrid",
+      guests: [],
+    },
+  });
+  expect(made.status()).toBe(201);
+  await openWeek(page, origin, org.slug);
+  await page
+    .getByRole("button", { name: /Night shift/ })
+    .first()
+    .click();
+  await page.keyboard.press("Enter");
+  await page.getByRole("button", { name: "Edit" }).click();
+  const title = page.getByRole("textbox", { name: "Title" });
+  await title.fill("Night shift (cover)");
+  await page.keyboard.press("Enter");
+  await expect
+    .poll(async () => (await ownEvents(org.id)).map((e) => [e.title, e.startsAt.toISOString()]))
+    .toEqual([["Night shift (cover)", "2026-11-24T22:00:00.000Z"]]);
+  const [row] = await db
+    .select({ endsAt: schema.calendarEvents.endsAt })
+    .from(schema.calendarEvents)
+    .where(
+      and(
+        eq(schema.calendarEvents.orgId, org.id),
+        eq(schema.calendarEvents.title, "Night shift (cover)"),
+      ),
+    );
+  expect(row?.endsAt).toEqual(new Date("2026-11-25T00:00:00.000Z"));
+});
+
 async function freePort() {
   const server = createServer();
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));

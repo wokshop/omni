@@ -140,7 +140,7 @@ person: a field adds one assigned to them, and the open ones follow in due group
 Upcoming, No due date), each checked off in place. A dated one also sits on its day's all-day row,
 where checking it completes it. A Personal space has no tasks yet, so it shows none. All-day events sit in a strip above the hours.
 Overlapping events share the column side by side. A declined event is drawn faint and struck through, a
-tentative one with a dashed edge, an unanswered invitation outlined.
+tentative one hatched, an unanswered invitation outlined.
 
 **Keys.** Everything a mouse does, a key does too. The calendar takes no key while a field has
 focus.

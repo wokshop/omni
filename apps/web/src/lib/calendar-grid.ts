@@ -4,7 +4,6 @@ export type CalendarView = "week" | "day";
 
 export const HOUR_PX = 48;
 export const SLOT_MINUTES = 15;
-const DAY_MS = 86_400_000;
 
 /** Local midnight of `date`. */
 export const startOfDay = (date: Date) =>
@@ -50,7 +49,7 @@ export function slotAt(day: Date, minutes: number, length = 30) {
     0,
     Math.min(24 * 60 - SLOT_MINUTES, Math.round(minutes / SLOT_MINUTES) * SLOT_MINUTES),
   );
-  const start = new Date(day.getTime() + snapped * 60_000);
+  const start = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 0, snapped);
   return { start, end: new Date(start.getTime() + length * 60_000) } satisfies Slot;
 }
 
@@ -60,7 +59,15 @@ export function nextHalfHour(now = new Date()) {
   return slotAt(startOfDay(now), Math.ceil(minutes / 30) * 30);
 }
 
-export const minutesInto = (day: Date, at: Date) => (at.getTime() - day.getTime()) / 60_000;
+/**
+ * Where `at` falls on `day`'s column, in minutes of wall-clock time from its midnight: 0 before
+ * the day, 24 hours after it. A day that gains or loses an hour keeps every hour under its label.
+ */
+export function minutesInto(day: Date, at: Date) {
+  if (at.getTime() <= startOfDay(day).getTime()) return 0;
+  if (at.getTime() >= addDays(day, 1).getTime()) return 24 * 60;
+  return at.getHours() * 60 + at.getMinutes() + at.getSeconds() / 60;
+}
 
 /** An event's piece on one day column, placed beside the events it overlaps. */
 export interface Placed {
@@ -82,19 +89,14 @@ export const eventKey = (event: Pick<CalendarEvent, "id" | "recurrenceId">) =>
  */
 export function placeDay(day: Date, events: readonly CalendarEvent[]) {
   const dayStart = day.getTime();
-  const dayEnd = dayStart + DAY_MS;
+  const dayEnd = addDays(day, 1).getTime();
   const pieces = events
-    .filter((e) => !e.allDay)
+    .filter((e) => !e.allDay && Date.parse(e.start) < dayEnd && Date.parse(e.end) > dayStart)
     .map((event) => {
-      const start = Math.max(Date.parse(event.start), dayStart);
-      const end = Math.min(Date.parse(event.end), dayEnd);
-      return {
-        event,
-        from: (start - dayStart) / 60_000,
-        to: Math.max((end - dayStart) / 60_000, (start - dayStart) / 60_000 + SLOT_MINUTES),
-      };
+      const from = minutesInto(day, new Date(event.start));
+      const to = minutesInto(day, new Date(event.end));
+      return { event, from, to: Math.max(to, from + SLOT_MINUTES) };
     })
-    .filter((piece) => piece.from < 24 * 60 && Date.parse(piece.event.end) > dayStart)
     .toSorted((a, b) => a.from - b.from || b.to - a.to);
   const placed: Placed[] = [];
   let cluster: Placed[] = [];

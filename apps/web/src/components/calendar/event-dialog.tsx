@@ -28,6 +28,7 @@ interface Draft {
   calendarId: string;
   title: string;
   day: string;
+  span: number;
   start: string;
   end: string;
   allDay: boolean;
@@ -37,8 +38,12 @@ interface Draft {
   description: string;
 }
 
+const daysBetween = (from: string, to: string) =>
+  Math.round((parseDayKey(to).getTime() - parseDayKey(from).getTime()) / 86_400_000);
+
 function times(start: Date, end: Date) {
-  return { day: dayKey(start), start: hhmm(start), end: hhmm(end) };
+  const day = dayKey(start);
+  return { day, span: daysBetween(day, dayKey(end)), start: hhmm(start), end: hhmm(end) };
 }
 
 function newDraft(props: EventDialogProps) {
@@ -65,7 +70,9 @@ function draftOf(props: EventDialogProps) {
     calendarId: event.calendarId,
     title: event.title,
     ...times(new Date(event.start), new Date(event.end)),
-    day: event.startDay ?? dayKey(new Date(event.start)),
+    ...(event.allDay && event.startDay && event.endDay
+      ? { day: event.startDay, span: daysBetween(event.startDay, event.endDay) }
+      : {}),
     allDay: event.allDay,
     guests: event.attendees
       .filter((a) => a.role !== "chair")
@@ -87,11 +94,11 @@ function bodyOf(draft: Draft) {
   const times = draft.allDay
     ? {
         start: midnightUtc(draft.day),
-        end: midnightUtc(dayKey(addDays(parseDayKey(draft.day), 1))),
+        end: midnightUtc(dayKey(addDays(parseDayKey(draft.day), Math.max(1, draft.span)))),
       }
     : {
         start: at(draft.day, draft.start).toISOString(),
-        end: at(draft.day, draft.end).toISOString(),
+        end: at(dayKey(addDays(parseDayKey(draft.day), draft.span)), draft.end).toISOString(),
       };
   return {
     title: draft.title.trim(),
@@ -188,7 +195,12 @@ export function EventDialog(props: EventDialogProps) {
           </>
         )}
       </div>
-      <CheckboxField isSelected={draft.allDay} onChange={set("allDay")}>
+      <CheckboxField
+        isSelected={draft.allDay}
+        onChange={(allDay: boolean) =>
+          setDraft((d) => ({ ...d, allDay, span: !allDay && d.allDay ? 0 : d.span }))
+        }
+      >
         <Checkbox>
           <Label>All day</Label>
         </Checkbox>

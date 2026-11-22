@@ -24,7 +24,7 @@ function CalendarList() {
   if (calendars.length === 0) return null;
   return (
     <SidebarSection label="Calendars">
-      <div className="flex flex-col gap-1 px-2.5 py-1">
+      <div className="flex flex-col gap-1 px-2.25 py-1">
         {calendars.map((calendar) => {
           const tone = calendarTone(calendars, calendar.id);
           return (

@@ -58,10 +58,10 @@ export function MiniMonth() {
           replace: true,
         })
       }
-      className="px-2.5 pb-2"
+      className="px-2 pb-2"
     >
-      <header className="flex h-8 items-center justify-between ps-1.5">
-        <Heading className="text-sm" />
+      <header className="flex h-11 items-center justify-between">
+        <Heading className="text-md" />
         <div className="flex">
           <Button slot="previous" size="sq-xs" intent="plain" aria-label="Previous month">
             <IconChevronLeft />

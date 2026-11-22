@@ -1,5 +1,7 @@
 import { cn } from "cn";
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent } from "react";
+import { IconPlus } from "@/components/icons/central";
+import { Button } from "@/components/ui/button";
 import { CanvasButton } from "@/components/ui/canvas-button";
 import { Checkbox, CheckboxField } from "@/components/ui/checkbox";
 import type { CalendarEvent, CalendarItem } from "@/lib/calendar.ts";
@@ -38,6 +40,8 @@ export interface WeekGridProps {
   /** The member's open to-dos; each dated one sits on its day's all-day row. */
   todos?: readonly CrmTask[];
   onTodo?: (task: CrmTask, done: boolean) => void;
+  /** A new event at the selection, from the grid's corner. */
+  onNew?: () => void;
 }
 
 /** Whether the member may move it: an event made in Omni that their inbox organizes. */
@@ -53,11 +57,15 @@ export function WeekGrid(props: WeekGridProps) {
     scroller.current?.scrollTo({ top: hour * HOUR_PX });
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const columns = { gridTemplateColumns: `3.5rem repeat(${props.days.length}, minmax(0, 1fr))` };
+  const columns = { gridTemplateColumns: `4.5rem repeat(${props.days.length}, minmax(0, 1fr))` };
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="grid" style={columns}>
-        <div />
+      <div className="grid border-b" style={columns}>
+        <div className="flex items-center justify-end pe-1">
+          <Button size="sq-xs" intent="plain" aria-label="New event" onPress={props.onNew}>
+            <IconPlus />
+          </Button>
+        </div>
         {props.days.map((day) => (
           <DayHeading key={day.getTime()} day={day} today={sameDay(day, props.now)} />
         ))}
@@ -126,7 +134,7 @@ function DayHeading({ day, today }: { day: Date; today: boolean }) {
       <span
         className={cn(
           "grid h-5 min-w-5 place-items-center rounded-md px-1 tabular-nums",
-          today && "bg-module-calendar text-primary-foreground",
+          today && "bg-module-calendar font-medium text-primary-foreground",
         )}
       >
         {day.getDate()}
@@ -229,17 +237,25 @@ function toneStyle(props: WeekGridProps, event: CalendarEvent) {
   const tone = calendarTone(props.calendars, event.calendarId);
   return {
     "--tone": tone,
-    backgroundColor: `color-mix(in oklab, ${tone} 16%, var(--color-background))`,
-    borderColor: tone,
-    color: `color-mix(in oklab, ${tone} 45%, var(--color-foreground))`,
+    backgroundColor: `color-mix(in oklab, ${tone} 22%, var(--color-background))`,
+    color: `color-mix(in oklab, ${tone} 40%, var(--color-foreground))`,
+    ...(event.myResponse === "tentative"
+      ? {
+          backgroundImage: `repeating-linear-gradient(135deg, color-mix(in oklab, ${tone} 22%, transparent) 0 5px, transparent 5px 10px)`,
+          backgroundColor: `color-mix(in oklab, ${tone} 10%, var(--color-background))`,
+        }
+      : {}),
   } as CSSProperties;
 }
+
+const AccentBar = () => (
+  <span aria-hidden className="absolute inset-y-1 start-1 w-0.75 rounded-full bg-(--tone)" />
+);
 
 const answerLook = (event: CalendarEvent) =>
   cn(
     event.myResponse === "declined" && "opacity-45 line-through",
-    event.myResponse === "needs_action" && "bg-background!",
-    event.myResponse === "tentative" && "border-dashed",
+    event.myResponse === "needs_action" && "bg-background! ring-1 ring-(--tone) ring-inset",
   );
 
 function EventBlock(props: WeekGridProps & { placed: ReturnType<typeof placeDay>[number] }) {
@@ -252,8 +268,8 @@ function EventBlock(props: WeekGridProps & { placed: ReturnType<typeof placeDay>
       data-event={eventKey(event)}
       aria-pressed={selected}
       className={cn(
-        "absolute flex flex-col gap-0.5 overflow-hidden rounded-md border-s-3 px-1.5 text-start text-xs",
-        to - from < 30 ? "justify-center py-0 leading-none" : "py-1",
+        "absolute flex flex-col overflow-hidden rounded-lg ps-3 pe-1.5 text-start text-xs",
+        to - from < 30 ? "justify-center py-0" : "py-1",
         selected && "ring-2 ring-(--tone)",
         movable && "cursor-grab active:cursor-grabbing",
         answerLook(event),
@@ -280,11 +296,14 @@ function EventBlock(props: WeekGridProps & { placed: ReturnType<typeof placeDay>
         setDrag(null);
       }}
     >
-      <span className="truncate font-medium">{event.title || "(No title)"}</span>
+      <AccentBar />
+      <span className="truncate">
+        <span className="font-medium">{event.title || "(No title)"}</span>
+        {event.location && <span className="opacity-60"> {event.location}</span>}
+      </span>
       {to - from >= 45 && (
-        <span className="truncate opacity-75 tabular-nums">
+        <span className="truncate opacity-70 tabular-nums">
           {time.format(new Date(event.start))}
-          {event.location && ` · ${event.location}`}
         </span>
       )}
     </CanvasButton>
@@ -299,7 +318,7 @@ function EventChip(props: WeekGridProps & { event: CalendarEvent }) {
       data-event={eventKey(event)}
       aria-pressed={selected}
       className={cn(
-        "truncate rounded-md border-s-3 px-1.5 py-0.5 text-start text-xs font-medium",
+        "relative truncate rounded-md ps-3 pe-1.5 py-0.5 text-start text-xs font-medium",
         selected && "ring-2 ring-(--tone)",
         answerLook(event),
       )}
@@ -307,6 +326,7 @@ function EventChip(props: WeekGridProps & { event: CalendarEvent }) {
       onClick={() => props.onSelect({ kind: "event", key: eventKey(event) })}
       onDoubleClick={() => props.onOpen(event)}
     >
+      <AccentBar />
       {event.title || "(No title)"}
     </CanvasButton>
   );
@@ -319,10 +339,15 @@ function TodoChip({ task, onTodo }: { task: CrmTask; onTodo?: WeekGridProps["onT
       aria-label={done ? `Reopen ${task.title}` : `Complete ${task.title}`}
       isSelected={done}
       onChange={(next: boolean) => onTodo?.(task, next)}
-      className="min-w-0 rounded-md px-1.5 py-0.5 hover:bg-hover"
+      className="min-w-0 overflow-hidden rounded-md px-1.5 py-0.5 hover:bg-hover"
     >
       <Checkbox>
-        <span className={cn("truncate text-xs", done && "text-muted-foreground line-through")}>
+        <span
+          className={cn(
+            "block min-w-0 truncate text-xs",
+            done && "text-muted-foreground line-through",
+          )}
+        >
           {task.title}
         </span>
       </Checkbox>
