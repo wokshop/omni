@@ -97,7 +97,15 @@ async function invited() {
       return { name: pair.slice(0, at), value: pair.slice(at + 1), url: origin };
     }),
   );
-  return { org, address, inbox, threadId: seeded.threadId, page: await context.newPage(), origin };
+  return {
+    org,
+    member,
+    address,
+    inbox,
+    threadId: seeded.threadId,
+    page: await context.newPage(),
+    origin,
+  };
 }
 
 const answerOf = (address: string) =>
@@ -183,6 +191,51 @@ test("the thread shows the invitation with Yes, No and Maybe, and No answers it"
       (await replies(inbox.id)).map((r) => (r.payload as { subject: string }).subject),
     )
     .toEqual(["Declined: Acme × Studio: kickoff"]);
+});
+
+test("a to-do typed beside the calendar is the member's, and checking a dated one on its day completes it", async () => {
+  const { org, member, page, origin } = await invited();
+  await db.insert(schema.crmTasks).values({
+    orgId: org.id,
+    title: "Send the brief",
+    assigneeMemberId: member.id,
+    dueAt: new Date("2026-11-25T22:59:59Z"),
+  });
+  await openWeek(page, origin, org.slug);
+
+  const field = page.getByRole("textbox", { name: "New to-do" });
+  await field.fill("Book the room");
+  await field.press("Enter");
+  await expect
+    .poll(async () =>
+      (
+        await db
+          .select({ title: schema.crmTasks.title, assignee: schema.crmTasks.assigneeMemberId })
+          .from(schema.crmTasks)
+          .where(eq(schema.crmTasks.title, "Book the room"))
+      ).map((t) => t.assignee),
+    )
+    .toEqual([member.id]);
+
+  await page.locator('[data-all-day="2026-11-25"]').getByText("Send the brief").click();
+  await expect
+    .poll(async () =>
+      (
+        await db
+          .select({ done: schema.crmTasks.completedAt })
+          .from(schema.crmTasks)
+          .where(eq(schema.crmTasks.title, "Send the brief"))
+      ).map((t) => t.done !== null),
+    )
+    .toEqual([true]);
+});
+
+test("a day picked in the month shows its week", async () => {
+  const { org, page, origin } = await invited();
+  await openWeek(page, origin, org.slug);
+  await page.getByRole("grid", { name: /Month/ }).getByText("3", { exact: true }).first().click();
+  await expect.poll(() => new URL(page.url()).searchParams.get("date")).toBe("2026-11-03");
+  await page.getByRole("heading", { name: /W45/ }).waitFor();
 });
 
 async function freePort() {

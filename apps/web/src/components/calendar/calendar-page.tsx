@@ -1,11 +1,13 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { IconChevronLeft, IconChevronRight, IconPlus } from "@/components/icons/central";
+import { IconChevronLeft, IconChevronRight } from "@/components/icons/central";
 import { StorageFrame } from "@/components/storage/storage-frame";
 import { Button } from "@/components/ui/button";
 import { Heading } from "@/components/ui/heading";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useCalendarEvents, useCalendars } from "@/hooks/use-calendar.ts";
+import { useHasCrm } from "@/hooks/use-crm.ts";
+import { useCrmTasks } from "@/hooks/use-crm-tasks.ts";
 import { useWorkspaceSlug } from "@/hooks/use-workspaces.ts";
 import type { CalendarEvent } from "@/lib/calendar.ts";
 import {
@@ -20,10 +22,24 @@ import {
 } from "@/lib/calendar-grid.ts";
 import { EventDialog } from "./event-dialog.tsx";
 import { EventPanel } from "./event-panel.tsx";
+import { MY_TODOS, useToggleTodo } from "./todo-list.tsx";
 import { useCalendarKeys } from "./use-calendar-keys.ts";
 import { WeekGrid, type Selection } from "./week-grid.tsx";
 
 const monthYear = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" });
+
+function isoWeek(date: Date) {
+  const day = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  day.setUTCDate(day.getUTCDate() + 4 - (day.getUTCDay() || 7));
+  const yearStart = Date.UTC(day.getUTCFullYear(), 0, 1);
+  return Math.ceil(((day.getTime() - yearStart) / 86_400_000 + 1) / 7);
+}
+
+function useTodos() {
+  const hasCrm = useHasCrm();
+  const { tasks } = useCrmTasks(MY_TODOS);
+  return hasCrm ? tasks : [];
+}
 
 function useNow() {
   const [now, setNow] = useState(() => new Date());
@@ -46,6 +62,8 @@ export function CalendarPage(props: { date?: string; view?: CalendarView }) {
   const now = useNow();
   const calendars = useCalendars().data ?? [];
   const events = useCalendarEvents(from, to).data ?? [];
+  const todos = useTodos();
+  const toggleTodo = useToggleTodo();
   const [selection, setSelection] = useState<Selection>(null);
   const [panel, setPanel] = useState<string | null>(null);
   const [editing, setEditing] = useState<Editing>(null);
@@ -77,7 +95,12 @@ export function CalendarPage(props: { date?: string; view?: CalendarView }) {
 
   return (
     <StorageFrame
-      title={<Heading className="truncate text-md">{monthYear.format(from)}</Heading>}
+      title={
+        <Heading className="flex items-baseline gap-2 truncate text-md">
+          {monthYear.format(from)}
+          <span className="text-xs text-muted-foreground tabular-nums">W{isoWeek(from)}</span>
+        </Heading>
+      }
       actions={
         <>
           <Button size="sm" intent="outline" onPress={() => go({ date: new Date() })}>
@@ -119,7 +142,6 @@ export function CalendarPage(props: { date?: string; view?: CalendarView }) {
               setEditing({ slot: selection?.kind === "slot" ? selection.slot : nextHalfHour(now) })
             }
           >
-            <IconPlus />
             New event
           </Button>
         </>
@@ -136,6 +158,8 @@ export function CalendarPage(props: { date?: string; view?: CalendarView }) {
           onOpen={(event) => setPanel(eventKey(event))}
           onCreate={(slot) => setEditing({ slot })}
           onMove={(event, minutes) => move(event, minutes)}
+          todos={todos}
+          onTodo={toggleTodo}
         />
         {opened && (
           <EventPanel

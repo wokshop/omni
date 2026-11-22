@@ -1,8 +1,10 @@
 import { cn } from "cn";
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent } from "react";
 import { CanvasButton } from "@/components/ui/canvas-button";
+import { Checkbox, CheckboxField } from "@/components/ui/checkbox";
 import type { CalendarEvent, CalendarItem } from "@/lib/calendar.ts";
 import { calendarTone } from "@/lib/calendar.ts";
+import { dayOf, type CrmTask } from "@/lib/crm-tasks.ts";
 import {
   allDayOn,
   dayKey,
@@ -33,6 +35,9 @@ export interface WeekGridProps {
   onOpen: (event: CalendarEvent) => void;
   onCreate: (slot: Slot) => void;
   onMove: (event: CalendarEvent, minutes: number) => void;
+  /** The member's open to-dos; each dated one sits on its day's all-day row. */
+  todos?: readonly CrmTask[];
+  onTodo?: (task: CrmTask, done: boolean) => void;
 }
 
 /** Whether the member may move it: an event made in Omni that their inbox organizes. */
@@ -51,19 +56,28 @@ export function WeekGrid(props: WeekGridProps) {
   const columns = { gridTemplateColumns: `3.5rem repeat(${props.days.length}, minmax(0, 1fr))` };
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="grid border-b" style={columns}>
+      <div className="grid" style={columns}>
         <div />
         {props.days.map((day) => (
           <DayHeading key={day.getTime()} day={day} today={sameDay(day, props.now)} />
         ))}
       </div>
       <div className="grid border-b" style={columns}>
-        <div />
+        <span className="pe-2 pt-1.5 text-end text-xs text-muted-foreground">All day</span>
         {props.days.map((day) => (
-          <div key={day.getTime()} className="flex min-h-7 flex-col gap-0.5 border-l p-0.5">
+          <div
+            key={day.getTime()}
+            data-all-day={dayKey(day)}
+            className={cn("flex min-h-8 flex-col gap-0.5 border-l p-1", weekend(day) && "bg-hover")}
+          >
             {allDayOn(day, props.events).map((event) => (
               <EventChip key={eventKey(event)} event={event} {...props} />
             ))}
+            {props.todos
+              ?.filter((task) => task.dueAt && dayOf(task.dueAt) === dayKey(day))
+              .map((task) => (
+                <TodoChip key={task.id} task={task} onTodo={props.onTodo} />
+              ))}
           </div>
         ))}
       </div>
@@ -79,6 +93,14 @@ export function WeekGrid(props: WeekGridProps) {
                 {hourLabel.format(new Date(2026, 0, 1, hour))}
               </span>
             ))}
+            {props.days.some((day) => sameDay(day, props.now)) && (
+              <span
+                className="absolute end-1.5 z-10 -translate-y-1/2 rounded-sm bg-background px-0.5 text-xs font-medium text-module-calendar tabular-nums"
+                style={{ top: (minutesInto(startOfDayOf(props.now), props.now) / 60) * HOUR_PX }}
+              >
+                {time.format(props.now)}
+              </span>
+            )}
           </div>
           {props.days.map((day) => (
             <DayColumn key={day.getTime()} day={day} {...props} />
@@ -89,14 +111,22 @@ export function WeekGrid(props: WeekGridProps) {
   );
 }
 
+const weekend = (day: Date) => day.getDay() === 0 || day.getDay() === 6;
+const startOfDayOf = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
+
 function DayHeading({ day, today }: { day: Date; today: boolean }) {
   return (
-    <div className="flex items-baseline justify-center gap-1.5 border-l py-2 text-sm">
-      <span className="text-muted-foreground">{weekday.format(day)}</span>
+    <div
+      className={cn(
+        "flex h-10 items-center justify-center gap-1.5 text-sm",
+        today ? "text-foreground" : "text-muted-foreground",
+      )}
+    >
+      <span>{weekday.format(day)}</span>
       <span
         className={cn(
-          "grid min-w-6 place-items-center rounded-full px-1 tabular-nums",
-          today && "bg-primary text-primary-foreground",
+          "grid h-5 min-w-5 place-items-center rounded-md px-1 tabular-nums",
+          today && "bg-module-calendar text-primary-foreground",
         )}
       >
         {day.getDate()}
@@ -119,7 +149,7 @@ function DayColumn(props: WeekGridProps & { day: Date }) {
     <div
       role="presentation"
       data-day={dayKey(props.day)}
-      className="relative border-l"
+      className={cn("relative border-l", weekend(props.day) && "bg-hover")}
       onPointerDown={(event) => {
         if (event.button !== 0 || event.target !== event.currentTarget) return;
         event.currentTarget.setPointerCapture(event.pointerId);
@@ -172,12 +202,25 @@ function DayColumn(props: WeekGridProps & { day: Date }) {
       {placeDay(props.day, props.events).map((placed) => (
         <EventBlock key={eventKey(placed.event)} placed={placed} {...props} />
       ))}
-      {sameDay(props.day, props.now) && (
-        <div
-          className="pointer-events-none absolute inset-x-0 border-t-2 border-primary"
-          style={{ top: (minutesInto(props.day, props.now) / 60) * HOUR_PX }}
-        />
-      )}
+      <NowLine day={props.day} now={props.now} />
+    </div>
+  );
+}
+
+function NowLine({ day, now }: { day: Date; now: Date }) {
+  const top = (minutesInto(startOfDayOf(now), now) / 60) * HOUR_PX;
+  if (!sameDay(day, now)) {
+    return (
+      <div
+        className="pointer-events-none absolute inset-x-0 border-t border-module-calendar/25"
+        style={{ top }}
+      />
+    );
+  }
+  return (
+    <div className="pointer-events-none absolute inset-x-0 z-10" style={{ top }}>
+      <div className="absolute inset-x-0 -top-px border-t-2 border-module-calendar" />
+      <div className="absolute -start-1 -top-1 size-2 rounded-full bg-module-calendar" />
     </div>
   );
 }
@@ -186,8 +229,9 @@ function toneStyle(props: WeekGridProps, event: CalendarEvent) {
   const tone = calendarTone(props.calendars, event.calendarId);
   return {
     "--tone": tone,
-    backgroundColor: `color-mix(in oklab, ${tone} 18%, var(--color-background))`,
+    backgroundColor: `color-mix(in oklab, ${tone} 16%, var(--color-background))`,
     borderColor: tone,
+    color: `color-mix(in oklab, ${tone} 45%, var(--color-foreground))`,
   } as CSSProperties;
 }
 
@@ -208,7 +252,8 @@ function EventBlock(props: WeekGridProps & { placed: ReturnType<typeof placeDay>
       data-event={eventKey(event)}
       aria-pressed={selected}
       className={cn(
-        "absolute flex flex-col overflow-hidden rounded-sm border-l-2 px-1.5 py-0.5 text-start text-xs",
+        "absolute flex flex-col gap-0.5 overflow-hidden rounded-md border-s-3 px-1.5 text-start text-xs",
+        to - from < 30 ? "justify-center py-0 leading-none" : "py-1",
         selected && "ring-2 ring-(--tone)",
         movable && "cursor-grab active:cursor-grabbing",
         answerLook(event),
@@ -237,8 +282,9 @@ function EventBlock(props: WeekGridProps & { placed: ReturnType<typeof placeDay>
     >
       <span className="truncate font-medium">{event.title || "(No title)"}</span>
       {to - from >= 45 && (
-        <span className="truncate text-muted-foreground tabular-nums">
+        <span className="truncate opacity-75 tabular-nums">
           {time.format(new Date(event.start))}
+          {event.location && ` · ${event.location}`}
         </span>
       )}
     </CanvasButton>
@@ -253,7 +299,7 @@ function EventChip(props: WeekGridProps & { event: CalendarEvent }) {
       data-event={eventKey(event)}
       aria-pressed={selected}
       className={cn(
-        "truncate rounded-sm border-l-2 px-1.5 py-0.5 text-start text-xs",
+        "truncate rounded-md border-s-3 px-1.5 py-0.5 text-start text-xs font-medium",
         selected && "ring-2 ring-(--tone)",
         answerLook(event),
       )}
@@ -263,5 +309,23 @@ function EventChip(props: WeekGridProps & { event: CalendarEvent }) {
     >
       {event.title || "(No title)"}
     </CanvasButton>
+  );
+}
+
+function TodoChip({ task, onTodo }: { task: CrmTask; onTodo?: WeekGridProps["onTodo"] }) {
+  const done = !!task.completedAt;
+  return (
+    <CheckboxField
+      aria-label={done ? `Reopen ${task.title}` : `Complete ${task.title}`}
+      isSelected={done}
+      onChange={(next: boolean) => onTodo?.(task, next)}
+      className="min-w-0 rounded-md px-1.5 py-0.5 hover:bg-hover"
+    >
+      <Checkbox>
+        <span className={cn("truncate text-xs", done && "text-muted-foreground line-through")}>
+          {task.title}
+        </span>
+      </Checkbox>
+    </CheckboxField>
   );
 }

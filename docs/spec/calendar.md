@@ -131,8 +131,14 @@ sent to both is stored once per mailbox. They share one notes doc, found by `(or
 ## How people use it
 
 **Open the calendar.** `/calendar` opens the week, from Monday, in the browser's time zone, at the
-current hour. Every calendar the person can see in the active workspace is overlaid; the sidebar
-lists them, each with a checkbox in its color that shows or hides it. All-day events sit in a strip above the hours.
+current hour. Every calendar the person can see in the active workspace is overlaid. The sidebar holds,
+top to bottom, the month (the shown week tinted, a day picks it), the person's to-dos, and the
+calendars, each with a checkbox in its color that shows or hides it.
+
+**To-dos.** The calendar's to-dos are the workspace's tasks (`crm.md`, Tasks) assigned to the
+person: a field adds one assigned to them, and the open ones follow in due groups (Overdue, Today,
+Upcoming, No due date), each checked off in place. A dated one also sits on its day's all-day row,
+where checking it completes it. A Personal space has no tasks yet, so it shows none. All-day events sit in a strip above the hours.
 Overlapping events share the column side by side. A declined event is drawn faint and struck through, a
 tentative one with a dashed edge, an unanswered invitation outlined.
 
