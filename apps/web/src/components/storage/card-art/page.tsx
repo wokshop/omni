@@ -172,7 +172,7 @@ function Grid(props: { rows: string[][] }) {
                 <td
                   key={c}
                   style={{ padding: "2.2cqw 3.4cqw" }}
-                  className={`truncate border-e border-b border-border tabular-nums ${/^-?[\d.,%$€£]+$/.test(cell) ? "text-end" : ""}`}
+                  className={`truncate border-e border-b border-border tabular-nums ${c < 2 && /^-?[\d.,%$€£]+$/.test(cell) ? "text-end" : ""}`}
                 >
                   {cell || "\u00a0"}
                 </td>
