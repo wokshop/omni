@@ -80,6 +80,20 @@ export function insiders(ctx: DurableObjectState, tag?: string) {
   return sockets.filter((socket) => !ctx.getTags(socket)[0]?.startsWith("out:"));
 }
 
+/**
+ * Who hears that a drive changed: the teamspace's members (`reaching`), everyone for Shared, the
+ * owner's app and sync sockets for My files.
+ */
+export function driveAudience(
+  ctx: DurableObjectState,
+  ownerMemberId: string | null,
+  reaching: Set<string> | null,
+) {
+  if (reaching) return insiders(ctx).filter((socket) => reaching.has(ctx.getTags(socket)[0] ?? ""));
+  if (ownerMemberId === null) return insiders(ctx);
+  return [...insiders(ctx, ownerMemberId), ...insiders(ctx, `sync:${ownerMemberId}`)];
+}
+
 /** The app sockets that see the drive: everyone's for Shared, the owner's for My files. */
 export function audience(ctx: DurableObjectState, at: Editing) {
   const sockets = insiders(ctx, at.ownerMemberId ?? undefined);

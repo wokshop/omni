@@ -2,7 +2,7 @@ import { storageLiveRecordSchema, type StorageDocEvent } from "@omni/contracts";
 import { applyUpdate, Doc } from "yjs";
 import { createLogger } from "./log.ts";
 import { docStream, type DocAppendMessage, type DocPresenceMessage } from "./realtime-docs.ts";
-import { audience, editingOf, type Editing } from "./realtime-files.ts";
+import { editingOf, insiders, type Editing } from "./realtime-files.ts";
 import { noteOwed, takeBytes } from "./realtime-folds.ts";
 import {
   noteEdited,
@@ -157,7 +157,7 @@ async function appendFor(
 
 function passOn(ctx: DurableObjectState, socket: WebSocket, at: Editing, event: StorageDocEvent) {
   const forMembers = JSON.stringify(event);
-  for (const other of audience(ctx, at)) {
+  for (const other of insiders(ctx)) {
     if (editingOf(other)?.nodeId !== at.nodeId) continue;
     try {
       other.send(forMembers);

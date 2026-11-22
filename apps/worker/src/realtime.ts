@@ -31,6 +31,7 @@ import {
   passOnRecords,
 } from "./realtime-docs.ts";
 import {
+  driveAudience,
   filePresenceMessage,
   insiders,
   leaveFile,
@@ -40,14 +41,13 @@ import {
 import { runAlarm, scheduleAlarm } from "./realtime-folds.ts";
 import { onOutsideAppend, onOutsidePresence } from "./realtime-outside-docs.ts";
 import {
-  acceptOutside,
   allOutsiders,
   isOutsider,
   OUTSIDE_HEADER,
-  outsideOpening,
+  openOutside,
   recheckOutsiders,
 } from "./realtime-outside.ts";
-import { leavePresence } from "./realtime-presence.ts";
+import { closeOutsider, leavePresence } from "./realtime-presence.ts";
 
 /** Header the Worker sets (never the client) to tell the DO whose socket this is. */
 export const MEMBER_HEADER = "x-omni-member-id";
@@ -111,13 +111,8 @@ export class Realtime extends DurableObject<Env> {
 
   override async fetch(request: Request) {
     const outside = request.headers.get(OUTSIDE_HEADER);
-    const member = request.headers.has(MEMBER_HEADER);
-    if (outside !== null && !member && request.headers.get("upgrade") === "websocket") {
-      const opening = outsideOpening.safeParse(JSON.parse(outside));
-      if (!opening.success) return new Response("bad outside opening", { status: 400 });
-      const response = acceptOutside(this.ctx, opening.data);
-      if (response.status === 101) await scheduleAlarm(this.ctx);
-      return response;
+    if (outside !== null && !request.headers.has(MEMBER_HEADER)) {
+      return openOutside(this.ctx, request, outside, () => scheduleAlarm(this.ctx));
     }
     const memberId = request.headers.get(MEMBER_HEADER);
     if (!memberId || request.headers.get("upgrade") !== "websocket") {
@@ -202,15 +197,7 @@ export class Realtime extends DurableObject<Env> {
     teamspaceId?: string | null,
   ) {
     const reaching = space === "teamspace" ? await this.teamspaceAudience(teamspaceId) : null;
-    const sockets =
-      space === "teamspace"
-        ? insiders(this.ctx).filter((socket) => {
-            const tag = this.ctx.getTags(socket)[0];
-            return !!tag && !!reaching?.has(tag);
-          })
-        : ownerMemberId === null
-          ? insiders(this.ctx)
-          : [...insiders(this.ctx, ownerMemberId), ...insiders(this.ctx, syncTag(ownerMemberId))];
+    const sockets = driveAudience(this.ctx, ownerMemberId, reaching);
     const message = JSON.stringify({
       type: "storage.changed",
       space,
@@ -309,13 +296,7 @@ export class Realtime extends DurableObject<Env> {
   }
 
   override async webSocketClose(socket: WebSocket, code: number) {
-    if (isOutsider(this.ctx, socket)) {
-      leavePresence(this.ctx, socket);
-      try {
-        socket.close(code === 1005 || code === 1006 || code === 1015 ? 1000 : code, "closing");
-      } catch {}
-      return;
-    }
+    if (isOutsider(this.ctx, socket)) return closeOutsider(this.ctx, socket, code);
     const presence = presenceOf(socket);
     const memberId = this.ctx.getTags(socket)[0];
     if (memberId) leaveFile(this.ctx, socket, memberId);

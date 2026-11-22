@@ -141,3 +141,11 @@ export function leavePresence(ctx: DurableObjectState, socket: WebSocket) {
   const u = toBase64(encodePresence([{ clientId: peer.clientId, clock, state: null }]));
   sendPresence(ctx, socket, peer.nodeId, { members: u, outsiders: u });
 }
+
+/** An outsider's socket closed: it leaves the doc's presence, and its close is answered. */
+export function closeOutsider(ctx: DurableObjectState, socket: WebSocket, code: number) {
+  leavePresence(ctx, socket);
+  try {
+    socket.close(code === 1005 || code === 1006 || code === 1015 ? 1000 : code, "closing");
+  } catch {}
+}

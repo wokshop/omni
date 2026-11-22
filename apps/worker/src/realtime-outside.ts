@@ -1,4 +1,4 @@
-import type { StorageDocEvent } from "@omni/contracts";
+import { storageNodeSpaceSchema, type StorageDocEvent } from "@omni/contracts";
 import { linkKeyMatches } from "@omni/crypto";
 import { isDocFile } from "@omni/docs/file";
 import { guestName, presenceSlot, type PresenceUser } from "@omni/docs/presence";
@@ -31,7 +31,7 @@ export const outsideOpening = z.object({
   shareId: z.string().min(1),
   orgId: z.string().min(1),
   nodeId: z.string().min(1),
-  space: z.enum(["personal", "shared"]),
+  space: storageNodeSpaceSchema,
   ownerMemberId: z.string().nullable(),
   locked: z.boolean(),
   role: z.enum(["editor", "commenter"]),
@@ -276,4 +276,24 @@ export async function noteEdited(env: Env, socket: WebSocket, nodeId: string) {
   } finally {
     await close({ timeout: 0 });
   }
+}
+
+/**
+ * Opens an outsider's socket from the opening the Worker vouched for (`OUTSIDE_HEADER`); `opened`
+ * runs once it is taken.
+ */
+export async function openOutside(
+  ctx: DurableObjectState,
+  request: Request,
+  header: string,
+  opened: () => Promise<void>,
+) {
+  if (request.headers.get("upgrade") !== "websocket") {
+    return new Response("expected a websocket upgrade", { status: 426 });
+  }
+  const opening = outsideOpening.safeParse(JSON.parse(header));
+  if (!opening.success) return new Response("bad outside opening", { status: 400 });
+  const response = acceptOutside(ctx, opening.data);
+  if (response.status === 101) await opened();
+  return response;
 }
