@@ -12,6 +12,8 @@ const mail = () => scoped("mail");
 const org = () => scoped("org");
 const storage = () => scoped("storage");
 const crm = () => scoped("crm");
+const calendar = () => scoped("calendar");
+const talk = () => scoped("talk");
 const local = [...root, "local"] as const;
 const preview = [...root, "preview"] as const;
 
@@ -44,6 +46,12 @@ export const keys = {
   senderLogo: (who: string) => [...root, "sender-logo", who] as const,
   /** An agent asking to connect over OAuth. */
   oauthClients: () => [...root, "oauth-clients"] as const,
+
+  /** Talk: the teammates with their threads, and one thread's notes. */
+  talk: () => talk(),
+  talkPeople: () => [...talk(), "people"] as const,
+  talkMessages: (threadId: string) => [...talk(), "messages", threadId] as const,
+  talkThread: (memberId: string) => [...talk(), "thread", memberId] as const,
 
   org: () => org(),
   organizations: () => [...org(), "organizations"] as const,
@@ -161,6 +169,8 @@ export const keys = {
   portalProject: (id: string) => ["portal", "project", id] as const,
   /** The CRM: every list, record, timeline and the stages. */
   crm: () => crm(),
+  /** Everything the calendar caches, in the current workspace. */
+  calendar: () => calendar(),
   /** A list by every filter, sort and search it is asked with, so each view caches apart. */
   crmCompanies: (filter: object) => [...crm(), "companies", filter] as const,
   crmPeople: (filter: object) => [...crm(), "people", filter] as const,
