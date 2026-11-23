@@ -99,7 +99,7 @@ const styles = StyleSheet.create({
     height: DOCK_HEIGHT,
   },
   current: {
-    backgroundColor: colors.accent,
+    backgroundColor: colors.border,
   },
   pressed: {
     transform: [{ scale: 0.94 }],
