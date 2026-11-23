@@ -23,8 +23,10 @@
   --hover: color-mix(in oklab, var(--foreground) 3%, transparent);
   /* A lighter sky blue; as text on white it still clears 4.5:1. */
   --primary: #1d72e8;
-  /* A primary button's fill: the orange-red tile of the sign-in wall, a step lighter. */
-  --primary-button: #ec5a34;
+  /* The brand: the orange-red tile of the sign-in wall, a step lighter. */
+  --brand: #ec5a34;
+  /* A primary button's flat fill: a light sky blue. */
+  --primary-button: #11a8ff;
   /* What dims the app under a dialog: flat black, no blur (transitive's scrim). */
   --scrim: oklch(0 0 0 / 7%);
   --primary-foreground: #ffffff;
@@ -57,7 +59,7 @@
   --ring: var(--primary);
   --card: var(--background);
   --card-foreground: var(--foreground);
-  --overlay: var(--surface);
+  --overlay: var(--background);
   --overlay-foreground: var(--foreground);
   --tooltip: #2b2b2b; /* Coal: softer than the near-black foreground. */
   --navbar: var(--surface);
@@ -109,6 +111,14 @@
   --chart-3: color-mix(in oklab, var(--primary) 60%, white);
   --chart-4: color-mix(in oklab, var(--primary) 40%, white);
   --chart-5: color-mix(in oklab, var(--primary) 20%, white);
+  --calendar-1: #ef4444;
+  --calendar-2: #6366f1;
+  --calendar-3: #16a34a;
+  --calendar-4: #f59e0b;
+  --calendar-5: #0ea5e9;
+  --calendar-6: #db2777;
+  --calendar-7: #0d9488;
+  --calendar-8: #737373;
   /* Someone else's cursor in a doc, and the tag with their name: one hue per person, each deep
      enough for white text on it (about 4.5:1) and clear apart from the others. Hex: the editor's
      cursors take no other colour format. */
@@ -119,6 +129,9 @@
   --collaborator-5: #007a8f;
   --collaborator-6: #b0288f;
   --collaborator-foreground: #ffffff;
+
+  /* Windows' own close button red, on the window controls the page draws there. */
+  --caption-close: #c42b1c;
 
   /* Status colors: not designed yet, Intent UI defaults until they are. */
   --danger: #ef2a51; /* The onboarding reference's red, more saturated. */
@@ -140,6 +153,8 @@
 @theme inline {
   --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
   --font-emoji: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+  /* Windows' window-control glyphs: Segoe Fluent Icons on 11, Segoe MDL2 Assets on 10. */
+  --font-caption: "Segoe Fluent Icons", "Segoe MDL2 Assets";
   /* Inter's recommended web setting (rsms.me/inter): ligatures and contextual alternates. */
   --font-sans--font-feature-settings: "liga" 1, "calt" 1;
   /* Regular text a step over Inter's 400, which reads thin at 13px. `font-normal` follows it. */
@@ -181,6 +196,7 @@
   --color-ring: var(--ring);
   --color-primary: var(--primary);
   --color-primary-button: var(--primary-button);
+  --color-brand: var(--brand);
   --color-primary-foreground: var(--primary-foreground);
   --color-brand-cream: var(--brand-cream);
   --color-primary-subtle: var(--primary-subtle);
@@ -225,6 +241,7 @@
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
   --color-collaborator-foreground: var(--collaborator-foreground);
+  --color-caption-close: var(--caption-close);
   --color-danger: var(--danger);
   --color-danger-foreground: var(--danger-foreground);
   --color-danger-subtle: var(--danger-subtle);
@@ -330,7 +347,7 @@ html .setup-toaster [data-sonner-toast][data-styled="true"] {
   align-items: flex-start;
   border: 0;
   border-radius: 8px;
-  background: var(--primary-button);
+  background: var(--brand);
   color: var(--primary-foreground);
   font-family: var(--font-sans);
   font-size: 13px;
@@ -340,7 +357,7 @@ html .setup-toaster [data-sonner-toast][data-styled="true"] {
 html
   .setup-toaster
   [data-sonner-toast][data-styled="true"][data-expanded="false"][data-front="false"] {
-  background: color-mix(in oklab, var(--primary-button) 65%, var(--background));
+  background: color-mix(in oklab, var(--brand) 65%, var(--background));
 }
 html .setup-toaster [data-sonner-toast][data-styled="true"] [data-icon] {
   margin: 2px 0 0;
@@ -365,7 +382,7 @@ html .setup-toaster [data-sonner-toast][data-styled="true"] [data-close-button] 
 }
 html .setup-toaster [data-sonner-toast][data-styled="true"]:hover [data-close-button]:hover,
 html .setup-toaster [data-sonner-toast][data-styled="true"] [data-close-button]:focus-visible {
-  background: color-mix(in oklab, black 15%, var(--primary-button));
+  background: color-mix(in oklab, black 15%, var(--brand));
   border: 0;
   color: var(--primary-foreground);
 }

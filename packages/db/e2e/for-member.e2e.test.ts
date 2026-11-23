@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import {
   conflictingLock,
@@ -13,6 +13,7 @@ import {
 } from "../src/domains.ts";
 import { applyAgentReply, applyConversationChange } from "../src/mail/conversations.ts";
 import { forMember, forUser } from "../src/for-member.ts";
+import { meetingsPipeline } from "../src/meetings.ts";
 import {
   attachments as attachmentsTable,
   calendarAttendees,
@@ -21,6 +22,7 @@ import {
   drafts as schemaDrafts,
   mailboxes as schemaMailboxes,
   mailboxFolders,
+  mailboxAccess,
   mailDomains,
   meetingsAttendees,
   meetingsGrants,
@@ -628,6 +630,46 @@ test("Later hides the thread from the member's inbox, only theirs, until they mo
   await forMember(db, dana).setThreadState(threadId, { later: false });
   expect(await ids(dana, "inbox")).toEqual([threadId]);
   expect(await ids(dana, "later")).toEqual([]);
+});
+
+test("the inbox count counts a thread once however many people wrote, and skips one only we wrote", async () => {
+  const org = await createOrg(db, "count-once-org");
+  const dana = (await createMember(db, org.id, "dana")).id;
+  const box = await createMailbox(db, org.id, "desk@count-once.test");
+  await grant(db, org.id, box.id, dana);
+  const busy = await seedThread(org.id, box.id, "busy");
+  for (const [i, from] of ["ann@example.test", "bob@example.test", "cy@example.test"].entries()) {
+    await upsertMessage(db, {
+      orgId: org.id,
+      mailboxId: box.id,
+      threadId: busy.threadId,
+      messageIdHeader: `<${busy.threadId}-${i}@example.test>`,
+      subject: "Re: About busy",
+      fromAddress: from,
+      sentAt: new Date(`2026-10-0${i + 2}T00:00:00Z`),
+      cleanText: "Me too.",
+    });
+  }
+  const ours = await createThread(db, {
+    orgId: org.id,
+    mailboxId: box.id,
+    subjectKey: "ours",
+    lastMessageAt: new Date("2026-10-01T00:00:00Z"),
+  });
+  await upsertMessage(db, {
+    orgId: org.id,
+    mailboxId: box.id,
+    threadId: ours,
+    messageIdHeader: `<${ours}@count-once.test>`,
+    subject: "Our announcement",
+    fromAddress: "Desk@Count-Once.test",
+    sentAt: new Date("2026-10-01T00:00:00Z"),
+    cleanText: "News from us.",
+  });
+
+  expect(await forMember(db, dana).counts()).toMatchObject([{ inbox: 1, unread: 1, later: 0 }]);
+  await forMember(db, dana).setThreadState(busy.threadId, { read: true });
+  expect(await forMember(db, dana).counts()).toMatchObject([{ inbox: 1, unread: 0, later: 0 }]);
 });
 
 test("a shared conversation stays in each teammate's Inbox until they mark it done", async () => {
@@ -1271,6 +1313,57 @@ test("calendar occurrences: an event by row or UID, and the one on now, only fro
   }
 });
 
+test("booking links: only their owner lists or changes them, and only while the owner can open the calendar", async () => {
+  const t = crypto.randomUUID().slice(0, 8);
+  const home = await createOrg(db, `book-home-${t}`);
+  const away = await createOrg(db, `book-away-${t}`);
+  const ana = await createMember(db, home.id, `ana-${t}`);
+  const ben = await createMember(db, home.id, `ben-${t}`);
+  const eve = await createMember(db, away.id, `eve-${t}`);
+  const box = await createMailbox(db, home.id, `hello-${t}@studio.test`);
+  await grant(db, home.id, box.id, ana.id);
+  await grant(db, home.id, box.id, ben.id);
+  await grant(db, home.id, box.id, eve.id);
+  const [calendar] = await db
+    .insert(calendarCalendars)
+    .values({ orgId: home.id, mailboxId: box.id })
+    .returning();
+  const anaDoor = forMember(db, ana.id).calendar;
+  const made = await anaDoor.createBookingLink({
+    calendarId: calendar!.id,
+    title: "Intro call",
+    durationMinutes: 30,
+    timeZone: "UTC",
+  });
+  if (made.status !== "ok") throw new Error(made.status);
+  expect((await anaDoor.bookingLinks()).map((l) => l.id)).toEqual([made.link.id]);
+
+  for (const outsider of [ben.id, eve.id]) {
+    const door = forMember(db, outsider).calendar;
+    expect(await door.bookingLinks()).toEqual([]);
+    expect(await door.updateBookingLink(made.link.id, { title: "Mine" })).toEqual({
+      status: "not_found",
+    });
+    expect(await door.deleteBookingLink(made.link.id)).toEqual({ status: "not_found" });
+  }
+  expect(
+    await forMember(db, eve.id).calendar.createBookingLink({
+      calendarId: calendar!.id,
+      title: "Across",
+      durationMinutes: 30,
+      timeZone: "UTC",
+    }),
+  ).toEqual({ status: "not_found" });
+
+  await db
+    .delete(mailboxAccess)
+    .where(and(eq(mailboxAccess.mailboxId, box.id), eq(mailboxAccess.memberId, ana.id)));
+  expect(await anaDoor.bookingLinks()).toEqual([]);
+  expect(await anaDoor.updateBookingLink(made.link.id, { title: "Still mine" })).toEqual({
+    status: "not_found",
+  });
+});
+
 test("meetings Ask sources: only notes and transcripts of meetings the member can open, in their own workspace", async () => {
   const t = crypto.randomUUID().slice(0, 8);
   const home = await createOrg(db, `ask-home-${t}`);
@@ -1361,4 +1454,43 @@ test("meetings Ask sources: only notes and transcripts of meetings the member ca
   expect(await one(ben.id, mine)).toBe("ok");
   expect(await sources(fran.id)).toBe("not_found");
   expect(await one(fran.id, mine)).toBe("not_found");
+});
+
+test("a recording's chunks: only its recorder reads them; a teammate it is shared with, or another workspace, gets not_found", async () => {
+  const t = crypto.randomUUID().slice(0, 8);
+  const home = await createOrg(db, `chunks-home-${t}`);
+  const away = await createOrg(db, `chunks-away-${t}`);
+  const dana = await createMember(db, home.id, `dana-${t}@studio.test`);
+  const ben = await createMember(db, home.id, `ben-${t}@studio.test`);
+  const stranger = await createMember(db, away.id, `eve-${t}@else.test`);
+  const started = await forMember(db, dana.id).meetings.start({
+    title: "Kickoff",
+    event: null,
+    attendees: [],
+    groupKey: null,
+    consent: true,
+  });
+  if (started.status !== "ok") throw new Error(started.status);
+  await forMember(db, dana.id).meetings.change(started.meetingId, { access: "workspace" });
+  await meetingsPipeline(db).receiveChunk(started.meetingId, home.id, {
+    seq: 0,
+    size: 10,
+    sha256: "a".repeat(64),
+    endMs: 5000,
+  });
+
+  const mine = await forMember(db, dana.id).meetings.recordedChunks(started.meetingId);
+  expect(mine).toMatchObject({ status: "ok", meetingStatus: "recording" });
+  expect(mine.status === "ok" && mine.chunks?.map((c) => c.seq)).toEqual([0]);
+  expect(
+    await forMember(db, dana.id).meetings.recordedChunks(started.meetingId, { missingBelow: 3 }),
+  ).toMatchObject({ status: "ok", missing: [1, 2] });
+  expect((await forMember(db, ben.id).meetings.get(started.meetingId)).status).toBe("ok");
+  for (const other of [ben, stranger]) {
+    for (const read of [undefined, { seq: 0 }, { missingBelow: 3 }]) {
+      expect(
+        await forMember(db, other.id).meetings.recordedChunks(started.meetingId, read),
+      ).toEqual({ status: "not_found" });
+    }
+  }
 });

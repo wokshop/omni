@@ -51,9 +51,9 @@ and rules (`docs/spec/modules.md`), because it owns tables and reads Storage thr
 
 ## Who may use it
 
-- **Teammates only.** Members of a company workspace who are not freelancers. A freelancer is
+- **Teammates only.** Members of a workspace who are not freelancers. A freelancer is
   in a workspace to work on their projects: they neither see who is online nor get threads.
-  A Personal space has nobody to talk to.
+  A Personal space has Talk once someone joins it.
 - **One thread per pair.** A thread belongs to exactly two members of one workspace. Only those
   two read it, write to it or react in it; nobody else, an owner or admin included, can open it,
   learn it exists or see its unread count. No admin view.
@@ -78,7 +78,7 @@ All tables carry `org_id`, cascade with the workspace, and are named `talk_*`.
   notes after `read_at`.
 
 Reads and writes go through `forMember(db, memberId).talk`, which loads the member, refuses a
-freelancer or a Personal space, and reaches only threads the member is one of the two in. The
+freelancer, and reaches only threads the member is one of the two in. The
 door takes the other person as a member id and checks they are a teammate in the same workspace.
 
 ## Files go into Drive
@@ -109,6 +109,11 @@ Opening a file is `GET /api/talk/messages/:id/file`: Talk checks the note is in 
 threads, then Storage's own doors decide. The sender is sent to the file's content through the
 member door, the recipient through the share link their grant opens (read fresh each time, since
 a link can be reset).
+
+An image shows inline as Storage's 640 px thumbnail (`?size=640`), named by the file's version so
+the browser keeps it for good; that redirect may be reused for an hour, so a reopened thread
+shows its images with no request. A GIF, a file too large to draw, or a thumbnail that fails
+shows the file itself.
 
 The folder drops go into is shared with nobody else: if the sender shares their `Talk` folder in
 Drive, the next drop makes a new one, so a later file is never visible to that folder's

@@ -60,13 +60,10 @@ const configSchema = z
     TRANSCRIBE_URL: optionalText.pipe(z.url().optional()),
     TRANSCRIBE_MODEL: optionalText,
     TRANSCRIBE_API_KEY: optionalText,
-    MEETINGS_FIRST_RETRY_SECONDS: z.coerce
-      .number<string | undefined>()
-      .int()
-      .positive()
-      .max(600)
-      .default(30),
-    GOOGLE_CALENDAR: optionalText.pipe(z.enum(["on", "off"]).default("on")),
+    MEETINGS_FIRST_RETRY_SECONDS: optionalText.pipe(
+      z.coerce.number<string | undefined>().int().positive().max(600).default(30),
+    ),
+    GOOGLE_CALENDAR: optionalText.pipe(z.enum(["on", "all", "off"]).default("on")),
     TYPESAFE_API_KEY: optionalText,
     TRIAGE_PROVIDER: optionalText.pipe(z.enum(["jev", "claude"]).optional()),
     JEV_MODEL: optionalText,
@@ -145,6 +142,8 @@ const configSchema = z
     RATE_LIMIT_STORAGE_LINK_LIVE: rateLimit("30/60"),
     RATE_LIMIT_STORAGE_LINK_COMMENT: rateLimit("30/600"),
     RATE_LIMIT_STORAGE_SYNC: rateLimit("600/60"),
+    RATE_LIMIT_BOOKING: rateLimit("120/60"),
+    RATE_LIMIT_BOOKING_NEW: rateLimit("10/3600"),
   })
   .refine((env) => !env.S2_BASIN_URL || !!env.S2_BASIN, {
     path: ["S2_BASIN"],

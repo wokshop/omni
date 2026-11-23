@@ -4,6 +4,7 @@ import {
   advanceOrgSetup,
   DOMAIN_ADMIN_ROLES,
   ensurePersonalSpace,
+  ownPersonalSpace,
   findMemberDomain,
   listDomainAudit,
   listMemberDomains,
@@ -95,10 +96,7 @@ export const onboarding = new Hono<AppEnv>()
     const canCreateOrganization =
       !user.scopeOrgId && (await mayCreateOrganization(db, user.id, config.auth.signUp));
     const billing = { enabled: config.auth.billing !== undefined };
-    const [personal] = await db
-      .select({ orgId: schema.personalSpaces.orgId })
-      .from(schema.personalSpaces)
-      .where(eq(schema.personalSpaces.userId, user.id));
+    const personal = await ownPersonalSpace(db, user.id);
     const canCreatePersonalSpace = !personal && !user.scopeOrgId;
     if (!member) {
       return c.json({
@@ -373,7 +371,6 @@ export const onboarding = new Hono<AppEnv>()
 const HAND_OVER_REFUSALS = {
   has_mailboxes: "still has mailboxes in this workspace",
   not_locked: "is not set up by this workspace",
-  personal_space: "cannot move to a Personal space",
 } as const;
 
 function handOverRefusal(reason: keyof typeof HAND_OVER_REFUSALS, domain: string) {

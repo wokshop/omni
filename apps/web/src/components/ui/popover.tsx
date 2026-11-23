@@ -9,6 +9,7 @@ import {
 } from "@ui-sdk/react/popover";
 import { Children, type ReactElement, type ReactNode } from "react";
 import { cn } from "cn";
+import { useSteadyTrigger } from "./steady-trigger";
 import { toSideAlign, type Placement } from "./placement";
 
 /** The raised surface every popup shares: popovers, menus. */
@@ -44,13 +45,21 @@ export function PopoverTrigger({
   children,
 }: PopoverTriggerProps) {
   const [trigger, ...rest] = Children.toArray(children);
+  const steady = useSteadyTrigger();
   return (
     <PopoverRoot
       open={isOpen}
       defaultOpen={defaultOpen}
-      onOpenChange={onOpenChange && ((open) => onOpenChange(open))}
+      onOpenChange={(open) => {
+        steady.onOpenChange(open);
+        onOpenChange?.(open);
+      }}
+      onOpenChangeComplete={steady.onOpenChangeComplete}
     >
-      <PopoverTriggerPrimitive render={trigger as ReactElement<Record<string, unknown>>} />
+      <PopoverTriggerPrimitive
+        ref={steady.ref as React.Ref<HTMLButtonElement>}
+        render={trigger as ReactElement<Record<string, unknown>>}
+      />
       {rest}
     </PopoverRoot>
   );
@@ -61,6 +70,8 @@ export interface PopoverProps {
   /** Gap to the trigger, in pixels. */
   offset?: number;
   arrow?: boolean;
+  /** Room kept from the viewport's edges, in pixels. */
+  collisionPadding?: number;
   className?: string;
   /** Names the popover when it has no `PopoverTitle`. */
   "aria-label"?: string;
@@ -72,6 +83,7 @@ export function Popover({
   placement = "bottom",
   offset,
   arrow = false,
+  collisionPadding = 16,
   className,
   children,
   ...props
@@ -80,7 +92,7 @@ export function Popover({
     <PopoverContent
       {...toSideAlign(placement)}
       sideOffset={offset ?? (arrow ? 12 : 8)}
-      collisionPadding={16}
+      collisionPadding={collisionPadding}
       className={cn("group/popover flex flex-col", popupSurface, className)}
       {...props}
     >

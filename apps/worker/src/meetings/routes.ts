@@ -12,6 +12,7 @@ import { Hono, type Context } from "hono";
 import { gateMeter, hasAllowance, READ_ONLY_MESSAGE } from "../billing.ts";
 import type { AppEnv } from "../context.ts";
 import { apiError } from "../errors.ts";
+import { storageLimit } from "../storage/core.ts";
 import { zValidator } from "../validator.ts";
 import { groupSummary, memberAsk } from "./ask.ts";
 import { meetingFile } from "./audio.ts";
@@ -99,6 +100,9 @@ export const meetings = new Hono<AppEnv>()
       });
     }
     if (!room.ok) return apiError(c, "billing_inactive", READ_ONLY_MESSAGE);
+    if (await storageIsFull(c)) {
+      return apiError(c, "storage_full", "this workspace's storage is full");
+    }
     const folderId = await recordingsFolder(memberFiles(c));
     if (!folderId) return apiError(c, "not_found", "your My files could not be reached");
     const started = await memberMeetings(c).start({
@@ -241,8 +245,14 @@ async function taskFor(c: Context<AppEnv>, actionId: string) {
   if (found.status !== "ok") return null;
   const { action, role, meetingTitle } = found;
   if (action.kind !== "task" || action.state !== "open" || role === "viewer") return null;
-  const payload = action.payload as { title?: string; owner?: string | null; due?: string | null };
+  const payload = action.payload as {
+    title?: string;
+    description?: string | null;
+    owner?: string | null;
+    due?: string | null;
+  };
   const notes = [
+    payload.description || null,
     `From the meeting ${meetingTitle ?? "without a title"}`,
     payload.owner ? `Owner: ${payload.owner}` : null,
     payload.due ? `Due: ${payload.due}` : null,
@@ -260,7 +270,9 @@ async function stopRefusal(
   body: { audioNodeId?: string; chunks?: number },
 ) {
   if (body.chunks !== undefined) {
-    const missing = await meetingsPipeline(c.var.db).missingChunks(meetingId, body.chunks);
+    const found = await memberMeetings(c).recordedChunks(meetingId, { missingBelow: body.chunks });
+    if (found.status !== "ok") return refused(c, found);
+    const missing = found.missing ?? [];
     if (!missing.length) return null;
     return apiError(c, "conflict", "some chunks have not arrived; send them, then stop again", {
       details: { reason: "missing_chunks", missing },
@@ -276,4 +288,14 @@ async function stopRefusal(
     return refused(c, { status: "not_a_recording" });
   }
   return null;
+}
+
+async function storageIsFull(c: Context<AppEnv>) {
+  const { db, config, member } = c.var;
+  const [{ limitBytes }, usage] = await Promise.all([
+    storageLimit(db, config, member.orgId),
+    memberFiles(c).usage(),
+  ]);
+  if (limitBytes === null) return false;
+  return (usage?.bytes ?? 0) + (usage?.reservedBytes ?? 0) >= limitBytes;
 }

@@ -1,13 +1,13 @@
 import { Button as ButtonPrimitive } from "@ui-sdk/react/button";
 import { tv, type VariantProps } from "tailwind-variants";
-import { Children, isValidElement } from "react";
+import { Children, createContext, isValidElement, useContext, type ReactNode } from "react";
 import { cx } from "@/lib/primitive";
 import { Loader } from "./loader";
 
 export const buttonStyles = tv({
   base: [
     "[--btn-border:var(--color-foreground)]/15 [--btn-icon-active:var(--btn-foreground)] [--btn-outline:var(--btn-bg)] [--btn-radius:calc(var(--radius-lg)-1px)]",
-    "bg-(--btn-bg) text-(--btn-foreground) outline-(--btn-outline) hover:bg-(--btn-overlay) active:bg-(--btn-overlay) pressed:bg-(--btn-overlay)",
+    "bg-(--btn-bg) text-(--btn-foreground) outline-(--btn-outline) hover:bg-(--btn-overlay) active:bg-(--btn-overlay) pressed:bg-(--btn-overlay) aria-expanded:bg-(--btn-overlay)",
     "relative isolate inline-flex items-center justify-center border border-(--btn-border) hover:no-underline",
     "transition-[scale,background-color] duration-150 ease-out motion-safe:[&:active]:not-aria-[haspopup]:scale-97 disabled:[&:active]:scale-100 pending:[&:active]:scale-100",
     "focus:outline-0 focus-visible:outline focus-visible:outline-offset-2",
@@ -19,7 +19,7 @@ export const buttonStyles = tv({
   variants: {
     intent: {
       primary: [
-        "shadow-(--shadow-button) [--btn-bg:var(--color-primary-button)] [--btn-border:color-mix(in_oklab,var(--color-primary-button)_85%,black)] [--btn-foreground:var(--color-primary-foreground)] [--btn-icon-active:var(--primary-foreground)] [--btn-icon:var(--primary-foreground)] [--btn-overlay:color-mix(in_oklab,var(--color-primary-foreground)_10%,var(--color-primary-button)_90%)]",
+        "[--btn-bg:var(--color-primary-button)] [--btn-border:transparent] bg-clip-padding [--btn-foreground:var(--color-primary-foreground)] [--btn-icon-active:var(--primary-foreground)] [--btn-icon:var(--primary-foreground)] [--btn-overlay:color-mix(in_oklab,var(--color-primary-foreground)_10%,var(--color-primary-button)_90%)]",
         "disabled:opacity-100 disabled:[--btn-bg:var(--color-secondary)] disabled:[--btn-border:color-mix(in_oklab,var(--color-secondary)_50%,var(--color-background))] disabled:[--btn-foreground:var(--color-muted-foreground)] disabled:[--btn-icon:var(--color-muted-foreground)] disabled:[--btn-icon-active:var(--color-muted-foreground)] disabled:[--btn-overlay:var(--color-secondary)]",
       ],
       secondary:
@@ -37,11 +37,17 @@ export const buttonStyles = tv({
         "shadow-(--shadow-button) border-border [--btn-bg:var(--color-background)] [--btn-foreground:var(--color-black)] [--btn-icon:var(--color-muted-foreground)] [--btn-outline:var(--color-ring)] [--btn-overlay:color-mix(in_oklab,var(--color-foreground)_4%,var(--color-background))]",
       ghost:
         "border-0 [--btn-bg:transparent] [--btn-foreground:var(--color-foreground)] [--btn-icon:var(--color-muted-foreground)] [--btn-outline:var(--color-ring)] [--btn-overlay:var(--color-accent)] aria-expanded:[--btn-bg:var(--color-accent)] aria-pressed:[--btn-bg:var(--color-accent)] aria-pressed:[--btn-icon:var(--color-foreground)]",
+      /** A window control the page draws on Windows (minimize, maximize), flat and square. */
+      caption:
+        "border-0 [--btn-bg:transparent] [--btn-foreground:var(--color-foreground)] [--btn-outline:var(--color-ring)] [--btn-overlay:var(--color-secondary)] in-data-inactive:[--btn-foreground:var(--color-muted-foreground)]",
+      /** The window's close control on Windows: red under the pointer, with a white glyph. */
+      "caption-close":
+        "border-0 [--btn-bg:transparent] [--btn-foreground:var(--color-foreground)] [--btn-outline:var(--color-ring)] [--btn-overlay:var(--color-caption-close)] in-data-inactive:[--btn-foreground:var(--color-muted-foreground)] hover:[--btn-foreground:var(--color-white)] active:[--btn-foreground:var(--color-white)]",
       plain:
         "border-0 [--btn-bg:transparent] [--btn-foreground:var(--color-foreground)] [--btn-icon:var(--color-muted-foreground)] [--btn-outline:var(--color-ring)] [--btn-overlay:transparent]",
     },
     size: {
-      sm: ["h-7 gap-x-2 px-2.5 text-sm", "*:[svg]:size-3.5", "*:data-[slot=loader]:size-3.5"],
+      sm: ["h-7 gap-x-1.5 px-2 text-sm", "*:[svg]:size-3.5", "*:data-[slot=loader]:size-3.5"],
       md: ["h-8 gap-x-2.5 px-2.5 text-sm", "*:[svg]:size-4", "*:data-[slot=loader]:size-4"],
       lg: ["h-10 gap-x-2.5 px-3 text-sm", "*:[svg]:size-4.5", "*:data-[slot=loader]:size-4.5"],
       "sq-2xs": [
@@ -62,6 +68,8 @@ export const buttonStyles = tv({
         "*:data-[slot=loader]:size-4.5",
       ],
       inset: "size-4.5 shrink-0 border-0",
+      /** Windows' caption button: 46 wide, the title bar's height, a 10px glyph. */
+      caption: "h-12 w-11.5 shrink-0 font-caption text-[10px]",
       text: ["gap-x-1 p-0 text-xs", "*:[svg]:size-3"],
     },
 
@@ -73,6 +81,10 @@ export const buttonStyles = tv({
   compoundVariants: [
     { size: "inset", isCircle: false, class: "rounded-sm" },
     { size: "sq-2xs", isCircle: false, class: "rounded-sm" },
+    {
+      size: "caption",
+      class: "rounded-none motion-safe:[&:active]:not-aria-[haspopup]:scale-100",
+    },
   ],
   defaultVariants: {
     intent: "primary",
@@ -100,6 +112,19 @@ export interface ButtonProps
   isPending?: boolean;
 }
 
+const InPageBar = createContext(false);
+
+/**
+ * A page's or panel's own actions (its header's right side). Every button inside is bordered or
+ * primary: a bare `plain` or `ghost` one draws as `outline`, since bare icons belong to the shell.
+ */
+export function PageBarActions({ children }: { children: ReactNode }) {
+  return <InPageBar.Provider value={true}>{children}</InPageBar.Provider>;
+}
+
+/** True inside `PageBarActions`, for controls that change their look there. */
+export const useInPageBar = () => useContext(InPageBar);
+
 export function Button({
   className,
   intent,
@@ -113,6 +138,8 @@ export function Button({
   ...props
 }: ButtonProps & { onClick?: ButtonPrimitiveProps["onClick"] }) {
   const { onClick: forwardedClick, ...rest } = props;
+  const inBar = useContext(InPageBar);
+  const drawn = inBar && (intent === "plain" || intent === "ghost") ? "outline" : intent;
   return (
     <ButtonPrimitive
       ref={ref}
@@ -130,7 +157,7 @@ export function Button({
             }
           : undefined
       }
-      className={cx(buttonStyles({ intent, size, isCircle }), className)}
+      className={cx(buttonStyles({ intent: drawn, size, isCircle }), className)}
     >
       {isPending ? <Pending>{children}</Pending> : children}
     </ButtonPrimitive>

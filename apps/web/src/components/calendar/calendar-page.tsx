@@ -12,6 +12,7 @@ import { useWorkspaceSlug } from "@/hooks/use-workspaces.ts";
 import { warmCalendarWindow, type CalendarEvent } from "@/lib/calendar.ts";
 import type { Todo } from "@/lib/calendar-tasks.ts";
 import {
+  DEFAULT_VIEW,
   dayKey,
   eventKey,
   nextHalfHour,
@@ -21,7 +22,9 @@ import {
   type Slot,
   windowOf,
 } from "@/lib/calendar-grid.ts";
+import { BookingShare } from "./booking-share.tsx";
 import { EventDialog } from "./event-dialog.tsx";
+import { CalendarFilter } from "./calendar-filter.tsx";
 import { CalendarCrumbs } from "./calendar-crumbs.tsx";
 import { useCalendarMenu } from "./calendar-menu.tsx";
 import { EventPanel } from "./event-panel.tsx";
@@ -73,13 +76,8 @@ function Hinted(props: { label: string; keyName: string; children: ReactNode }) 
 export type Editing = { event?: CalendarEvent; slot?: Slot } | null;
 
 /** The calendar: a week or a day of every shown calendar, driven by keys or the pointer. */
-export function CalendarPage(props: {
-  date?: string;
-  view?: CalendarView;
-  calendar?: string;
-  task?: string;
-}) {
-  const view = props.view ?? "week";
+export function CalendarPage(props: { date?: string; view?: CalendarView; task?: string }) {
+  const view = props.view ?? DEFAULT_VIEW;
   const anchor = parseDayKey(props.date);
   const at = anchor.getTime();
   const span = useMonthSpan(anchor);
@@ -91,13 +89,13 @@ export function CalendarPage(props: {
   );
   const now = useNow();
   const calendars = useCalendars().data ?? [];
+  const writable = calendars.filter((calendar) => !calendar.readOnly);
   const shown = useCalendarWindows(windows);
   const all = shown.data;
-  const events = useMemo(
-    () =>
-      props.calendar ? (all ?? []).filter((e) => e.calendarId === props.calendar) : (all ?? []),
-    [all, props.calendar],
-  );
+  const events = useMemo(() => {
+    const hidden = new Set(calendars.filter((c) => c.hidden).map((c) => c.id));
+    return (all ?? []).filter((e) => !hidden.has(e.calendarId));
+  }, [all, calendars]);
   const [scrolled, setScrolled] = useState<{ first: Date; under: string } | null>(null);
   const here = view === "month" && scrolled?.under === dayKey(anchor) ? scrolled.first : anchor;
   const hereAt = here.getTime();
@@ -238,6 +236,8 @@ export function CalendarPage(props: {
                   </Button>
                 </Hinted>
               </div>
+              <CalendarFilter />
+              <BookingShare calendars={writable} />
             </>
           }
         >
@@ -290,10 +290,9 @@ export function CalendarPage(props: {
           </div>
           {editing && (
             <EventDialog
-              calendars={calendars}
+              calendars={writable}
               event={editing.event}
               slot={editing.slot}
-              calendarId={props.calendar}
               onClose={() => setEditing(null)}
             />
           )}

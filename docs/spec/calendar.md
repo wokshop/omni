@@ -18,8 +18,9 @@ sits: next to the mail, the clients and the files a meeting is about.
 
 The first version needs no new service, no new credential and no new variable. Events come from
 the invitations the mail service already stores (iCalendar over email, iMIP), and invitations Omni
-sends go out through the mail outbox. A connected Gmail account also shows its own Google
-Calendar, read through Google's Calendar API with the account's existing connection. CalDAV and
+sends go out through the mail outbox. A connected Gmail account also shows its Google calendars
+(its own, shared ones, subscribed ones such as holidays), read through Google's Calendar API with
+the account's existing connection. CalDAV and
 Microsoft calendars come later, behind the mailbox's provider. Meeting recording and transcription are their own module, `docs/spec/meetings.md`.
 
 ## Goals and non-goals
@@ -32,6 +33,7 @@ Microsoft calendars come later, behind the mailbox's provider. Meeting recording
   calendar and inline in the thread, with an answer that reaches the organizer's calendar.
 - Events made in Omni invite people on any calendar app, by mail.
 - A link and a block of text that share free time, never what fills the rest.
+- Booking links: a public page where a visitor picks a free slot and books a meeting.
 - A meeting's people are CRM records; a deal lists its meetings; notes are a Drive doc.
 - Agents read events and propose times through MCP.
 - Works on any IMAP/SMTP host. Self-hostable with no new required config.
@@ -39,10 +41,9 @@ Microsoft calendars come later, behind the mailbox's provider. Meeting recording
 **Non-goals for this version** (each is additive later)
 
 - Two-way sync with the host's own calendar (CalDAV), Google Calendar or Microsoft 365. A Gmail
-  account's Google Calendar is read only: events made there show in Omni, events made in Omni
+  account's Google calendars are read only: events made there show in Omni, events made in Omni
   are not written to it.
 - Repeating events made in Omni. Repeating invitations from elsewhere are shown in full.
-- Booking pages where a visitor picks a slot. The shared link shows free time only.
 - Reminders and notifications before a meeting, tasks on the calendar, travel time.
 - Rooms and resources, delegated calendars, a teammate's calendar beyond the inboxes you share.
 - Meeting recording and transcription (`docs/spec/meetings.md`).
@@ -53,8 +54,8 @@ Microsoft calendars come later, behind the mailbox's provider. Meeting recording
 | Pattern                   | In v1                                                           | Later                                              |
 | ------------------------- | --------------------------------------------------------------- | -------------------------------------------------- |
 | Keyboard first            | Create, open, move, delete, answer and navigate without a mouse | A command bar that parses "lunch with Ana fri 1pm" |
-| Several calendars at once | One per inbox you can open, overlaid, each toggled and colored; a Gmail inbox's shows its Google Calendar | CalDAV and Microsoft calendars; writing to Google |
-| Share availability        | Copy free slots as text; a link that shows free and busy        | Booking: the visitor picks a slot                  |
+| Several calendars at once | Every calendar of every inbox you can open, overlaid, each toggled and colored; a Gmail inbox has one per Google calendar | CalDAV and Microsoft calendars; writing to Google |
+| Share availability        | Copy free slots as text; a link that shows free and busy; booking links where the visitor picks a slot | Several people per booking, buffers, questions |
 | Join from the event       | The video link pulled from the invitation, one key to join      | Joining from a notification                        |
 | Meeting context           | People as CRM records, the email thread, the notes doc          | The last threads with each person                  |
 | Time zones                | The viewer's own; the event keeps its zone                      | A second zone in the gutter                        |
@@ -74,7 +75,7 @@ sources were weighed.
 | **Invitations in mail (iMIP)**     | Every meeting someone invites an inbox to, from any calendar app | None new. The mail service already stores each `text/calendar` part                    | v1    |
 | **Events made in Omni**            | Your own events, and invitations you send                        | Postgres rows; invitations go out through the existing outbox                          | v1    |
 | CalDAV on the mail host            | The host's own calendars, synced both ways with Apple Calendar   | A DAV client in `apps/mail`, per-host quirks; Purelymail implements the basic RFC only | Later |
-| Google Calendar API                | The primary calendar of a connected Gmail account, read only     | One more OAuth scope (`calendar.events.readonly`, sensitive) on the Gmail connection   | Now   |
+| Google Calendar API                | Every calendar of a connected Gmail account, read only           | Two more OAuth scopes (`calendar.events.readonly`, `calendar.calendarlist.readonly`, both sensitive) on the Gmail connection | Now   |
 | Microsoft calendar API             | Full calendars of connected accounts                             | A Microsoft connection mail lacks                                                      | Later |
 
 **Why mail first.** iMIP (RFC 6047) is how every calendar app invites someone on another one: the
@@ -112,16 +113,36 @@ If it comes, it comes through the mail service, which can pin a resolved address
 ## Google calendars
 
 A Gmail account connects with one more scope, `calendar.events.readonly`, on the same consent
-screen as mail. It is optional: someone who unticks it on Google's screen still connects mail, and
-`GOOGLE_CALENDAR=off` on the Worker stops asking for it (a self-hoster whose Google app is not
-verified for it). The inbox's calendar then shows the account's primary Google Calendar.
+screen as mail, and a second, `calendar.calendarlist.readonly`, to see which calendars it has.
+Both are sensitive scopes: an unverified Google app shows Google's warning for them, and a verified
+one adds them to its verification (no security assessment, unlike mail's restricted scope). Both
+are optional: someone who unticks one on Google's screen still connects mail. `GOOGLE_CALENDAR`
+on the Worker says what to ask for: `on` (the default) the events scope alone, so the inbox shows
+the account's primary calendar; `all` both, so it shows every calendar; `off` neither (a
+self-hoster whose Google app is not verified for them).
 
+- **A mailbox owns several calendars.** A Gmail inbox's own calendar, where its invitations land
+  and Omni makes its events, shows the account's primary Google calendar. Every other calendar in
+  the account's calendar list (a shared team calendar, "Holidays in Mexico", a calendar someone
+  shared with it) is a calendar of the same inbox, with Google's id for it (`google_id`), its name
+  (the one the account gave it, else Google's) and Google's colour as the default each member's
+  own colour replaces. Who sees one is who sees the inbox, and each member toggles it on its own.
+  It is read only in Omni: nothing Omni makes lands on it, and its events are Google's.
+- **The list.** Each pass of an inbox's own calendar first reads the account's calendar list,
+  `POST /google/calendar/list` on the mail service (signed like every Worker → mail service call),
+  which pages through `calendarList.list` to the end (at most 500, only the fields Omni reads) or
+  says `no_access`. A calendar the list gains is added and synced in the same run; one renamed or
+  recoloured in Google follows; one the list no longer has is retired with its events and each
+  member's prefs. A list the mail service cannot read (no scope, an error) changes nothing: the
+  inbox keeps the calendars it has, and its own calendar keeps syncing.
 - **Who fetches.** Only the mail service holds the account's tokens, so it alone calls Google:
   `POST /google/calendar/events` (signed like every Worker → mail service call) returns one page
-  of `events.list` on `primary` (`showDeleted`, `singleEvents=false`, 250 events, only the fields
+  of `events.list` on the calendar it names, `primary` when it names none (`showDeleted`,
+  `singleEvents=false`, 250 events, only the fields
   Omni reads), or `reset` (Google forgot the sync token, 410) or `no_access` (`no_scope`,
   `api_disabled`, `revoked`, `not_gmail`). The calendar module drives the sync and writes the rows.
-- **When.** The calendar's minute job claims up to 20 due Gmail calendars (`calendar_google_sync`),
+- **When.** Every calendar keeps its own place in Google (`calendar_google_sync`, one row per
+  calendar). The calendar's minute job claims up to 20 due Gmail calendars,
   each for 5 minutes so two runs never sync one, and pages through each within 25 seconds. A pass
   with a sync token asks only for what changed; one without reads the whole calendar. A calendar
   is due again 2 minutes after a finished pass, 10 after `no_access` (a reconnect with the scope
@@ -132,11 +153,14 @@ verified for it). The inbox's calendar then shows the account's primary Google C
   version, the zone from `start.timeZone` or the calendar's, `recurrence` lines parsed by the same
   iCalendar parser, a changed instance by its `originalStartTime`, attendees with their answers
   (rooms left out), the Meet link, HTML descriptions as text. Working locations are skipped.
-- **One row per meeting.** An invitation in mail and the same meeting in Google land on one row,
+- **One row per meeting on a calendar.** An invitation in mail and the same meeting in the
+  primary Google calendar land on one row,
   by `UID`; the higher `(SEQUENCE, updated or DTSTAMP)` wins, so either order ends the same. An
   event made in Omni is Omni's and Google never changes it. An event first seen in Google has
   `source = 'google'` and is read only in Omni, like an invitation; its row keeps Google's id
-  (`google_id`), because a deleted event comes back from Google as its id alone.
+  (`google_id`), because a deleted event comes back from Google as its id alone. The same meeting
+  on two Google calendars is one row on each, as Google shows it on each: deleting it from one
+  leaves the other.
 - **Deleting.** A cancelled item cancels the row with its Google id (a series with all its
   instances) and stamps its `dtstamp` with when that was applied, so an invitation of the same
   `SEQUENCE` that mail delivers later is older and cannot bring it back (a higher one can, as in
@@ -146,21 +170,22 @@ verified for it). The inbox's calendar then shows the account's primary Google C
   is in, and what still waits when the pass ends had no series. A full pass that finishes deletes
   the `google` rows it did not see, except a meeting mail also brought (an invitation for its
   `UID` was applied or found older on the calendar, `calendar_parts`), whichever came first.
-- **Re-sync.** Losing `calendar_google_sync` or the calendar's rows costs one full pass, which
-  converges on what Google and mail hold.
+- **Re-sync.** Losing `calendar_google_sync` or an inbox's calendars and their rows costs one
+  full pass of the list and of each calendar, which converges on what Google and mail hold.
 
 ## Objects
 
-- **Calendar.** One per inbox, made the first time it is needed. Who sees it is who sees the
-  inbox (`mailbox_access`): a personal inbox's calendar is its owner's, `hello@`'s is everyone
-  on `hello@`. Each person picks its color and whether it shows, for themselves only.
+- **Calendar.** Every inbox has its own, made the first time it is needed, and a Gmail inbox one
+  more per other Google calendar ("Google calendars"). Who sees one is who sees the inbox
+  (`mailbox_access`): a personal inbox's calendars are its owner's, `hello@`'s are everyone on
+  `hello@`. Each person picks its color and whether it shows, for themselves only.
 - **Event.** A title, a time (a start and end instant, or a start and end day for an all-day
   event), its time zone, a location, a video link, a description, a status (`confirmed`,
   `tentative`, `cancelled`), whether it counts as busy, the organizer, the attendees with their
   answers, and the iCalendar identity it was sent with (`UID`, `SEQUENCE`, `DTSTAMP`, and
   `RECURRENCE-ID` for one changed instance of a repeating event). It comes from an invitation
-  (`source = 'invite'`), was made in Omni (`'omni'`), or was first seen in a Gmail account's
-  Google Calendar (`'google'`).
+  (`source = 'invite'`), was made in Omni (`'omni'`), or was first seen in one of a Gmail
+  account's Google calendars (`'google'`).
 - **Attendee.** An address, a name, a role (`chair`, `required`, `optional`, `none`) and an
   answer (`needs_action`, `accepted`, `declined`, `tentative`). The inbox's own address among them
   is "me": its answer is the calendar's answer.
@@ -173,12 +198,15 @@ sent to both is stored once per mailbox. They share one notes doc, found by `(or
 
 ## How people use it
 
-**Open the calendar.** `/calendar` opens the week, from Monday, in the browser's time zone, at the
-current hour. Every calendar the person can see in the active workspace is overlaid. The sidebar has
+**Open the calendar.** `/calendar` opens the month, weeks from Monday, in the browser's time zone. Every calendar the person can see in the active workspace is overlaid. The sidebar has
 no module title: the month leads it (the shown week or day tinted, nothing in month view; a day
-picks it), the person's to-dos
-follow, and at its foot a switcher shows all calendars or one inbox's alone (`?calendar=`), like
-the workspace switcher. All-day events sit in a strip above the hours.
+picks it). It steps on its own, by its arrows and the wheel, and never follows the big view as it
+moves, nor moves it. The person's to-dos follow. Which calendars are laid over each other is
+picked in the page's header, beside the arrows: a button with the shown calendars' colors and how
+many there are opens a popover with a filter field and every calendar, grouped under its account's
+address, each with a checkbox to show it or not (`hidden`, for that person only). A calendar's
+color is its person's pick, or the next of eight distinct calendar hues. A new event goes on the
+first calendar still shown. All-day events sit in a strip above the hours.
 
 **Views and where you are.** Month, week and day. The page's title is crumbs that deepen with the
 view, as Amie's do: the month; then its week (`W48`); then the day (`Tue 24`). An earlier crumb
@@ -188,6 +216,9 @@ The month view is one long page of weeks that scrolls freely, months running int
 1st of each labelled with its month); the title follows the month that fills most of the view, and
 the arrows and Today scroll it smoothly to a month's first week. `?date=` catches up once the
 scrolling stops, so passing months costs no navigation. Weekends are tinted lighter than a hover.
+An event over several days is one bar across them, carried on into the next week's row; a timed
+event shorter than a day shows on its first day only. A day shows as many events as its row has
+room for, and only a day that overflows gives its last line to "N more".
 The sidebar's month always takes six weeks' height, so nothing below it moves between months.
 
 **To-dos.** The sidebar's to-dos are the person's tasks (see "Tasks"): the ones they own and the
@@ -257,6 +288,24 @@ public page with the next 14 days in the visitor's time zone: free and busy only
 people, no places. The link reads the calendars and hours its owner chose, can be turned off, and
 gets a new token when it is reset. A busy block is any confirmed or tentative event that counts as
 busy, an answered Yes or Maybe, or an unanswered invitation; a declined one is free.
+
+**Booking links.** The calendar header's **Share** lists the member's booking links and makes
+new ones, as Amie does. A link has a title, a length (15 to 90 minutes), the calendar a booking
+lands on (an inbox they can send from), the days and hours it takes meetings in the time zone it
+was made in, and gives `<WEB_APP_URL>/book/<slug>`, where `slug` is 128 random bits. Clicking a
+row copies it; deleting it closes the page.
+
+The page needs no account. It shows the owner's name, the title and length, and the slots left
+over the next 14 days in the visitor's time zone, and nothing else: no title, person or place of
+what fills the rest. Slots follow one another from the day's opening and start at least four
+hours from now. Busy is every calendar the owner can open, hidden ones included, by the same rule
+as the availability link. A visitor picks a slot and gives a name, an email and a note; the
+booking is an event made in Omni on the link's calendar, organized by its inbox, with the visitor
+as guest, so they get an invitation by mail and the owner sees it on their week at once. Bookings
+for one owner run one at a time and each checks its slot is still free, so two visitors never
+get the same time (`409 SLOT_TAKEN`). A link answers `404` once deleted, once its owner can no
+longer open its calendar, or while its workspace is read-only. Per IP, reads are limited by
+`RATE_LIMIT_BOOKING` and bookings, which send mail, by `RATE_LIMIT_BOOKING_NEW`.
 
 ## Tasks
 
@@ -416,15 +465,16 @@ Every table is `calendar_*` and carries `org_id`.
 
 | Table                   | Key fields                                                                                                                                                                                                                                                                                                | Notes                                                                                                                                                                                                                              |
 | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `calendar_calendars`    | id, org_id, mailbox_id (unique), created_at                                                                                                                                                                                                                                                               | One per inbox. Access is the inbox's.                                                                                                                                                                                              |
+| `calendar_calendars`    | id, org_id, mailbox_id, google_id, name, color, created_at | An inbox's calendars: its own (`google_id` null) and, for a Gmail inbox, one per other Google calendar, with Google's name and colour. Unique on (mailbox_id, google_id), nulls not distinct, so one own calendar per inbox. Access is the inbox's. |
 | `calendar_events`       | id, org_id, calendar_id, uid, recurrence_id, sequence, dtstamp, source, status, busy, title, description, location, conference_url, starts_at, ends_at, all_day, start_day, end_day, time_zone, rrule, exdates, rdates, recurs_until, organizer_address, organizer_name, message_id, created_by_member_id, google_id | Unique on (calendar_id, uid, recurrence_id), nulls not distinct. Indexed on (calendar_id, starts_at) and, for series, (calendar_id, recurs_until).                                                                                 |
 | `calendar_attendees`    | event_id, org_id, address, name, role, response, responded_at                                                                                                                                                                                                                                             | Key (event_id, address). Indexed on (org_id, address) for `meetingsWith`.                                                                                                                                                          |
 | `calendar_answers`      | org_id, calendar_id, uid, recurrence_id, address, response, answered_at                                                                                                                                                                                                                                   | Each attendee's own answer, kept apart from the event; the later one wins.                                                                                                                                                         |
 | `calendar_parts`        | attachment_id, org_id, calendar_id, method, uid, outcome, reason, processed_at                                                                                                                                                                                                                            | What each part did: `applied`, `stale`, `ignored`, `invalid`. Cascades with its attachment.                                                                                                                                        |
-| `calendar_google_sync`  | calendar_id, org_id, sync_token, page_token, full_sync_started_at, waiting, state, next_sync_at, synced_at | A Gmail inbox's calendar's place in its Google Calendar. `state`: `ok` or `no_access`. |
+| `calendar_google_sync`  | calendar_id, org_id, sync_token, page_token, full_sync_started_at, waiting, state, next_sync_at, synced_at | Each Gmail calendar's place in its Google calendar, one row per calendar. `state`: `ok` or `no_access`. |
 | `calendar_sweep`        | name, cursor_at, cursor_id                                                                                                                                                                                                                                                                                | The sweep's place.                                                                                                                                                                                                                 |
 | `calendar_member_prefs` | member_id, calendar_id, color, hidden                                                                                                                                                                                                                                                                     | Per person.                                                                                                                                                                                                                        |
 | `calendar_availability` | id, org_id, member_id, token_hash, calendar_ids, time_zone, hours, days, enabled                                                                                                                                                                                                                          | One per member and workspace. The token is stored hashed.                                                                                                                                                                          |
+| `calendar_booking_links` | id, org_id, member_id, calendar_id, slug (unique), title, duration_minutes, time_zone, weekdays, start_minute, end_minute, notice_minutes, horizon_days | A member's booking links. Cascades with the member and the calendar. |
 | `calendar_tasks`        | id, org_id, owner_member_id, title, body, subtasks, due_at, completed_at, completed_by_member_id, assignee_member_id, record_kind, record_id, created_by_member_id, created_at, updated_at                                                                                                                | Private while `record_kind` is null: `owner_member_id` not null and the assignee is the owner (checks). Indexed on (owner_member_id, due_at) and (assignee_member_id, due_at) where open, and on (org_id, record_kind, record_id). |
 | `calendar_notes`        | org_id, uid, recurrence_id, node_id, created_by_member_id                                                                                                                                                                                                                                                 | Unique on (org_id, uid, recurrence_id). `node_id` cascades with the doc.                                                                                                                                                           |
 
@@ -443,7 +493,7 @@ days, errors as `{ error, code }`.
 
 | Route                                                                  | Does                                                                                                                                                     |
 | ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /calendars` · `PATCH /calendars/:id`                              | The calendars the member can see, with their inbox, color and whether shown. Set color, hidden.                                                          |
+| `GET /calendars` · `PATCH /calendars/:id`                              | The calendars the member can see, with their inbox, name (null for an inbox's own), whether read only, color (theirs, else Google's) and whether shown. Set color, hidden. |
 | `GET /events?from=&to=&calendar=`                                      | Events and expanded instances overlapping the window (at most 62 days), across shown calendars.                                                          |
 | `GET /events/:id`                                                      | One event with its attendees, its thread when the member can open it, and its notes doc id.                                                              |
 | `POST /events` · `PATCH /events/:id` · `DELETE`                        | Make, change, delete an event made in Omni on a calendar of an inbox the member may send from. Sends invitations, updates and cancellations.             |
@@ -452,14 +502,16 @@ days, errors as `{ error, code }`.
 | `GET /free-busy?from=&to=&addresses=`                                  | Busy blocks for the member's own calendars and for teammates' inboxes the member can see.                                                                |
 | `POST /events/:id/notes`                                               | `{ teamspaceId? }`. Finds or makes the meeting's notes doc and returns its node id.                                                                      |
 | `GET /availability` · `PUT /availability` · `POST /availability/reset` | The member's availability link, its settings, and a new token.                                                                                           |
+| `GET /booking-links` · `POST /booking-links` · `PATCH /booking-links/:id` · `DELETE` | The member's booking links. A link's calendar must be one they can open. |
 | `GET /tasks?status=&due=` · `POST /tasks`                              | The member's tasks: owned or assigned, open soonest due first or `done` latest first. Make a private task.                                               |
 | `GET /tasks/:id` · `PATCH /tasks/:id` · `DELETE`                       | A task the member owns or is assigned. Change, complete or reopen (`done`), delete. A linked task's record and assignee change through the CRM's routes. |
+| `GET /api/booking/:slug` · `POST /api/booking/:slug` | Public. A booking link's free slots, no titles; book one (`{ start, name, email, note?, timeZone? }`). |
 | `GET /api/availability/:token`                                         | Public. Free and busy for the next 14 days, no titles. 404 when off or reset.                                                                            |
 
 - Writes publish `{ type: "calendar.changed", calendarIds }` to the sockets of each calendar's
   inbox members.
 - Error codes: `NOT_FOUND`, `NOT_ORGANIZER` (an invitation's details are its organizer's), `NOT_INVITED`
-  (no attendee line for the inbox to answer), `WINDOW_TOO_LARGE`, and the platform's
+  (no attendee line for the inbox to answer), `WINDOW_TOO_LARGE`, `SLOT_TAKEN` (a booking's slot is no longer free), and the platform's
   `BILLING_INACTIVE` for writes on a read-only workspace.
 - A Personal space has a calendar too: its inboxes are in it.
 

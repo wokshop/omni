@@ -1,7 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, test } from "vitest";
-import { firstSyncDone, hasUnsyncedWork, listMisplacedMailboxes } from "../src/mail/placement.ts";
+import {
+  firstSyncDone,
+  hasUnsyncedWork,
+  listMisplacedMailboxes,
+  placeForAddress,
+} from "../src/mail/placement.ts";
 import {
   drafts,
   mailActions,
@@ -63,6 +68,81 @@ test("the closest company lock decides; a member of a parent's company does not 
     targetOrgId: b.orgId,
     targetMemberId: b.memberIds[1],
   });
+});
+
+test("a teammate's inbox in someone's Personal space moves only with the teammate, as the teammate", async () => {
+  const { db } = database;
+  const tag = randomUUID().slice(0, 8);
+  const alice = await personalMailbox(`alice@${tag}.test`);
+  const [space] = await db
+    .select({ orgId: personalSpaces.orgId })
+    .from(personalSpaces)
+    .where(eq(personalSpaces.userId, alice.userId));
+  const bob = await createMember(db, space!.orgId, "bob");
+  const [bobs] = await db
+    .insert(mailboxes)
+    .values({
+      orgId: space!.orgId,
+      address: `bob@${tag}.test`,
+      kind: "personal",
+      provider: "gmail",
+      credentialsEnc: "x",
+    })
+    .returning();
+  await db
+    .insert(mailboxAccess)
+    .values({ orgId: space!.orgId, mailboxId: bobs!.id, memberId: bob.id, role: "owner" });
+
+  const onlyAlice = await company(`${tag}.test`, alice.userId);
+  let misplaced = await listMisplacedMailboxes(db);
+  expect(misplaced.find((m) => m.id === alice.box.id)).toMatchObject({
+    targetOrgId: onlyAlice.orgId,
+  });
+  expect(misplaced.map((m) => m.id)).not.toContain(bobs!.id);
+
+  await db.insert(members).values({
+    id: randomUUID(),
+    organizationId: onlyAlice.orgId,
+    userId: bob.userId,
+    createdAt: new Date(),
+  });
+  const [bobThere] = await db
+    .select({ id: members.id })
+    .from(members)
+    .where(eq(members.userId, bob.userId))
+    .then((rows) => rows.filter((row) => row.id !== bob.id));
+  misplaced = await listMisplacedMailboxes(db);
+  expect(misplaced.find((m) => m.id === bobs!.id)).toMatchObject({
+    targetOrgId: onlyAlice.orgId,
+    targetMemberId: bobThere!.id,
+  });
+});
+
+test("a Personal space's domain places like a company's: its members land there, others are refused", async () => {
+  const { db } = database;
+  const tag = randomUUID().slice(0, 8);
+  const alice = await personalMailbox(`alice@${tag}.test`);
+  const [space] = await db
+    .select({ orgId: personalSpaces.orgId })
+    .from(personalSpaces)
+    .where(eq(personalSpaces.userId, alice.userId));
+  await db
+    .insert(mailDomains)
+    .values({ orgId: space!.orgId, domain: `${tag}.test`, provider: "imap" });
+  const bob = await createMember(db, space!.orgId, "bob");
+  const outsider = await createOrg(db, `out-${tag}`);
+  const carol = await createMember(db, outsider.id, "carol");
+
+  expect(await placeForAddress(db, { userId: bob.userId, address: `bob@${tag}.test` })).toEqual({
+    ok: true,
+    orgId: space!.orgId,
+    memberId: bob.id,
+    kind: "company",
+  });
+  expect(await placeForAddress(db, { userId: carol.userId, address: `carol@${tag}.test` })).toEqual(
+    { ok: false, reason: "not_a_member", orgId: space!.orgId },
+  );
+  expect((await listMisplacedMailboxes(db)).map((m) => m.id)).not.toContain(alice.box.id);
 });
 
 test("a draft or an unfinished action keeps a mailbox busy; a finished action does not", async () => {

@@ -21,6 +21,7 @@ import { CommandMenu } from "../../components/search/command-menu.tsx";
 import { KeyboardShortcuts } from "../../components/shell/keyboard-shortcuts.tsx";
 import { NotificationsPanel } from "../../components/shell/notifications.tsx";
 import { OfflineNotice } from "../../components/shell/offline-notice.tsx";
+import { RecorderProvider } from "../../components/meetings/recorder.tsx";
 import {
   ResizableSidebarProvider,
   SidebarResizeGrip,
@@ -34,7 +35,7 @@ import { useDesktopSyncSetup } from "../../hooks/use-desktop-sync.ts";
 import { useDockBadge } from "../../hooks/use-dock-badge.ts";
 import { usePreloadScreens } from "../../hooks/use-preload-screens.ts";
 import { useRealtimeConnection } from "../../hooks/use-realtime.ts";
-import { useThreadInItsWorkspace } from "../../hooks/use-workspaces.ts";
+import { useThreadInItsWorkspace, useWarmWorkspaces } from "../../hooks/use-workspaces.ts";
 import { billingQuery } from "../../lib/billing.ts";
 import { currentWorkspaceId } from "../../lib/current-workspace.ts";
 import { requireMember, requireUser } from "../../lib/guards.ts";
@@ -81,18 +82,24 @@ export const Route = createFileRoute("/_authed/$workspace")({
       });
     }
     if (preload && workspace.id !== currentWorkspaceId()) throw notFound();
-    await enterWorkspace(client, workspace);
+    const switched = await enterWorkspace(client, workspace);
     const { member } = await requireMember(client, location);
-    return { member, workspace };
+    return { member, workspace, switched };
   },
   loader: ({ context }) => {
-    void context.queryClient.prefetchQuery(billingQuery());
-    return Promise.all([
-      context.queryClient.ensureQueryData(mailboxesQuery()),
-      context.queryClient.ensureQueryData(allMailboxesQuery()),
-      context.queryClient.ensureQueryData(countsQuery()),
-      context.queryClient.ensureQueryData(workspacesQuery()),
+    const client = context.queryClient;
+    void client.prefetchQuery(billingQuery());
+    const shell = Promise.all([
+      client.ensureQueryData(mailboxesQuery()),
+      client.ensureQueryData(allMailboxesQuery()),
+      client.ensureQueryData(countsQuery()),
+      client.ensureQueryData(workspacesQuery()),
     ]);
+    if (context.switched) {
+      shell.catch(() => undefined);
+      return;
+    }
+    return shell;
   },
   component: Shell,
 });
@@ -107,30 +114,33 @@ function Shell() {
   useDesktopSyncSetup();
   useDesktopShortcuts();
   usePreloadScreens();
+  useWarmWorkspaces();
   const settings = useSettingsLocation();
   useShortcut("settings", useToggleSettings());
   return (
-    <ResizableSidebarProvider className="h-svh overflow-hidden bg-shell">
-      <ListSweepProvider>
-        <DriveDragProvider>
-          {settings ? <SettingsNav /> : <AppSidebar />}
-          <NotificationsPanel />
-          <CommandMenu />
-          <SidebarInset className="md:mt-12 md:border-t md:border-sidebar-border md:peer-data-[state=collapsed]:rounded-tl-xl md:peer-data-[state=collapsed]:border-s">
-            <SidebarResizeGrip />
-            <ModuleBoundary>
-              <Outlet />
-            </ModuleBoundary>
-          </SidebarInset>
-        </DriveDragProvider>
-      </ListSweepProvider>
-      <TitleBar />
-      <TalkWindow />
-      <TalkArrival meId={member.id} />
-      <KeyboardShortcuts />
-      <OfflineNotice />
-      <ComposeDialog />
-    </ResizableSidebarProvider>
+    <RecorderProvider>
+      <ResizableSidebarProvider className="h-svh overflow-hidden bg-shell">
+        <ListSweepProvider>
+          <DriveDragProvider>
+            {settings ? <SettingsNav /> : <AppSidebar />}
+            <NotificationsPanel />
+            <CommandMenu />
+            <SidebarInset className="md:mt-12 md:border-t md:border-sidebar-border md:peer-data-[state=collapsed]:rounded-tl-xl md:peer-data-[state=collapsed]:border-s">
+              <SidebarResizeGrip />
+              <ModuleBoundary>
+                <Outlet />
+              </ModuleBoundary>
+            </SidebarInset>
+          </DriveDragProvider>
+        </ListSweepProvider>
+        <TitleBar />
+        <TalkWindow />
+        <TalkArrival meId={member.id} />
+        <KeyboardShortcuts />
+        <OfflineNotice />
+        <ComposeDialog />
+      </ResizableSidebarProvider>
+    </RecorderProvider>
   );
 }
 

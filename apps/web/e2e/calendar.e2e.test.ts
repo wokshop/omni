@@ -2,8 +2,20 @@ import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
-import { parseCalendar } from "@omni/mail-core/calendar";
-import { applyCalendarPart, calendarArrivals, forMember, schema } from "@omni/db";
+import {
+  parseCalendar,
+  readGoogleCalendars,
+  readGoogleEvent,
+  type GoogleCalendarChange,
+} from "@omni/mail-core/calendar";
+import {
+  applyCalendarPart,
+  applyGoogleChanges,
+  calendarArrivals,
+  forMember,
+  saveGoogleCalendarList,
+  schema,
+} from "@omni/db";
 import { and, eq } from "drizzle-orm";
 import { chromium, type Browser, type Page } from "playwright-core";
 import { afterAll, beforeAll, expect, test } from "vitest";
@@ -21,10 +33,10 @@ import {
   type TestDb,
 } from "../../worker/e2e/support.ts";
 
-const invite = readFileSync(
-  join(import.meta.dirname, "../../../fixtures/ics/google-invite.ics"),
-  "utf8",
-);
+const fixtures = join(import.meta.dirname, "../../../fixtures");
+const invite = readFileSync(join(fixtures, "ics/google-invite.ics"), "utf8");
+const googleFixture = <T>(name: string) =>
+  JSON.parse(readFileSync(join(fixtures, "google-calendar", name), "utf8")) as T;
 
 let database: Awaited<ReturnType<typeof createTestDatabase>>;
 let db: TestDb;
@@ -375,23 +387,44 @@ test("arrows leave an all-day event's days alone", async () => {
   ]);
 });
 
-test("the switcher at the sidebar's foot shows one inbox's calendar alone", async () => {
-  const { org, member, page, origin } = await invited();
+test("the calendars menu in the header hides a calendar for this person, and shows it again", async () => {
+  const { org, member, address, inbox, page, origin } = await invited();
   const shared = await createMailbox(db, org.id, `team-${Date.now()}@studio.example`, "shared");
   await grant(db, org.id, shared.id, member.id);
   await db.insert(schema.calendarCalendars).values({ orgId: org.id, mailboxId: shared.id });
   await openWeek(page, origin, org.slug);
-  await page.getByRole("button", { name: /Switch calendar, currently All calendars/ }).click();
-  await page.getByRole("menuitem", { name: /Team/ }).click();
-  await expect.poll(() => new URL(page.url()).searchParams.get("calendar")).not.toBeNull();
-  await expect
-    .poll(() => page.getByRole("button", { name: /Acme × Studio: kickoff/ }).count())
-    .toBe(0);
-  await page.getByRole("button", { name: /Switch calendar, currently Team/ }).click();
-  await page.getByRole("menuitem", { name: "All calendars" }).click();
-  await expect
-    .poll(() => page.getByRole("button", { name: /Acme × Studio: kickoff/ }).count())
-    .toBe(1);
+  const kickoff = page.getByRole("button", { name: /Acme × Studio: kickoff/ });
+  await kickoff.waitFor();
+  await page.getByRole("button", { name: "Calendars, 2 calendars shown" }).click();
+  await page.getByText(shared.address).waitFor();
+  await page.getByRole("searchbox", { name: "Filter calendars" }).fill(address);
+  await page.getByRole("grid", { name: "Calendars" }).getByRole("row").last().click();
+  await expect.poll(() => kickoff.count()).toBe(0);
+  const hidden = async () =>
+    (
+      await db
+        .select({ hidden: schema.calendarMemberPrefs.hidden })
+        .from(schema.calendarMemberPrefs)
+        .innerJoin(
+          schema.calendarCalendars,
+          eq(schema.calendarCalendars.id, schema.calendarMemberPrefs.calendarId),
+        )
+        .where(
+          and(
+            eq(schema.calendarMemberPrefs.memberId, member.id),
+            eq(schema.calendarCalendars.mailboxId, inbox.id),
+          ),
+        )
+    )[0]?.hidden;
+  await expect.poll(hidden).toBe(true);
+  await page.keyboard.press("Escape");
+  await page.reload();
+  await page.getByRole("button", { name: "Calendars, 1 calendar shown" }).click();
+  await expect.poll(() => kickoff.count()).toBe(0);
+  await page.getByRole("searchbox", { name: "Filter calendars" }).fill(address);
+  await page.getByRole("grid", { name: "Calendars" }).getByRole("row").last().click();
+  await expect.poll(() => kickoff.count()).toBe(1);
+  await expect.poll(hidden).toBe(false);
 });
 
 test("double-clicking a slot opens the new event at the slot a click there selects", async () => {
@@ -473,20 +506,77 @@ test("Enter opens the event that has focus, not the one selected before", async 
   await page.getByRole("complementary", { name: "Planning" }).waitFor();
 });
 
-test("a new event goes on the calendar the switcher shows alone", async () => {
-  const { org, member, page, origin } = await invited();
+test("unticking and re-ticking a calendar fast keeps it shown, whichever save lands last", async () => {
+  const { org, member, address, inbox, page, origin } = await invited();
+  const shared = await createMailbox(db, org.id, `team-${Date.now()}@studio.example`, "shared");
+  await grant(db, org.id, shared.id, member.id);
+  await db.insert(schema.calendarCalendars).values({ orgId: org.id, mailboxId: shared.id });
+  await page.route("**/api/calendar/calendars/*", async (route) => {
+    if (route.request().method() === "PATCH") await new Promise((done) => setTimeout(done, 1500));
+    await route.continue();
+  });
+  await openWeek(page, origin, org.slug);
+  await page.getByRole("button", { name: "Calendars, 2 calendars shown" }).click();
+  await page.getByRole("searchbox", { name: "Filter calendars" }).fill(address);
+  const row = page.getByRole("grid", { name: "Calendars" }).getByRole("row").last();
+  await row.click();
+  await row.click();
+  await page.waitForTimeout(2200);
+  expect(await page.getByRole("button", { name: /Acme × Studio: kickoff/ }).count()).toBe(1);
+  await page.waitForLoadState("networkidle");
+  await page.waitForTimeout(1500);
+  const [prefs] = await db
+    .select({ hidden: schema.calendarMemberPrefs.hidden })
+    .from(schema.calendarMemberPrefs)
+    .innerJoin(
+      schema.calendarCalendars,
+      eq(schema.calendarCalendars.id, schema.calendarMemberPrefs.calendarId),
+    )
+    .where(
+      and(
+        eq(schema.calendarMemberPrefs.memberId, member.id),
+        eq(schema.calendarCalendars.mailboxId, inbox.id),
+      ),
+    );
+  expect(prefs?.hidden).toBe(false);
+});
+
+test("a page bar's buttons are bordered, and its title's crumbs stay bare", async () => {
+  const { org, threadId, page, origin } = await invited();
+  const edge = (name: string | RegExp) =>
+    page
+      .getByRole("button", { name, exact: typeof name === "string" })
+      .first()
+      .evaluate((el) => {
+        const style = getComputedStyle(el);
+        return { width: style.borderTopWidth, color: style.borderTopColor };
+      });
+  await page.goto(new URL(`/inbox/${threadId}`, origin).toString());
+  await page.getByRole("button", { name: "Done", exact: true }).waitFor();
+  for (const name of ["Done", "Later", "Full screen"]) {
+    const border = await edge(name);
+    expect(border.width).toBe("1px");
+    expect(border.color).not.toBe("rgba(0, 0, 0, 0)");
+  }
+  await openWeek(page, origin, org.slug);
+  expect((await edge(/November 2026/)).width).toBe("0px");
+  expect((await edge("Today")).width).toBe("1px");
+});
+
+test("a new event goes on the first calendar still shown", async () => {
+  const { org, member, address, page, origin } = await invited();
   const shared = await createMailbox(db, org.id, `team-${Date.now()}@studio.example`, "shared");
   await grant(db, org.id, shared.id, member.id);
   const [team] = await db
     .insert(schema.calendarCalendars)
     .values({ orgId: org.id, mailboxId: shared.id })
     .returning({ id: schema.calendarCalendars.id });
-  await page.goto(
-    new URL(
-      `/${org.slug}/calendar?date=2026-11-24&view=week&calendar=${team?.id}`,
-      origin,
-    ).toString(),
-  );
+  await openWeek(page, origin, org.slug);
+  await page.getByRole("button", { name: "Calendars, 2 calendars shown" }).click();
+  await page.getByRole("searchbox", { name: "Filter calendars" }).fill(address);
+  await page.getByRole("grid", { name: "Calendars" }).getByRole("row").last().click();
+  await page.getByRole("button", { name: "Calendars, 1 calendar shown" }).waitFor();
+  await page.keyboard.press("Escape");
   await page.locator('[data-day="2026-11-24"]').click({ position: { x: 20, y: 10 * 48 + 6 } });
   await page.keyboard.press("c");
   await page.getByRole("textbox", { name: "Title" }).fill("Team sync");
@@ -1119,7 +1209,7 @@ test("a day picked in the sidebar right after scrolling into another month stays
   expect(shownDate(page)).toBe("2026-11-10");
 });
 
-test("after scrolling a month and back, a month picked in the sidebar scrolls the page there", async () => {
+test("after scrolling a month and back, a day picked in the sidebar's own month scrolls the page there", async () => {
   const { org, page, origin } = await invited();
   await page.goto(new URL(`/${org.slug}/calendar?date=2026-11-24&view=month`, origin).toString());
   const day = page.locator('[data-month-day="2026-11-24"]');
@@ -1135,10 +1225,15 @@ test("after scrolling a month and back, a month picked in the sidebar scrolls th
     await page.mouse.wheel(0, -row);
   }
   await expect.poll(() => shownDate(page)).toBe("2026-12-01");
+  const next = page.getByRole("application", { name: /Month/ }).getByRole("button", {
+    name: "Next month",
+  });
+  await next.click();
+  await next.click();
   await page
     .getByRole("application", { name: /Month/ })
-    .getByRole("button", { name: "Next month" })
-    .click();
+    .getByRole("heading", { name: "January 2027" })
+    .waitFor();
   await page.getByRole("grid", { name: /Month/ }).getByText("1", { exact: true }).first().click();
   await expect.poll(() => shownDate(page)).toBe("2027-01-01");
   await expect
@@ -1201,13 +1296,13 @@ test("one sideways swipe steps the week, and each gesture steps once", async () 
   const box = await month.boundingBox();
   await page.mouse.move((box?.x ?? 0) + 40, (box?.y ?? 0) + 80);
   await gesture(page, 0, 30);
-  await month.getByRole("heading", { name: "January 2027" }).waitFor();
+  await month.getByRole("heading", { name: "December 2026" }).waitFor();
   expect(shownDate(page)).toBe("2026-12-01");
 
   await page.keyboard.down("Control");
   await gesture(page, 0, 30);
   await page.keyboard.up("Control");
-  expect(await month.getByRole("heading", { name: "January 2027" }).count()).toBe(1);
+  expect(await month.getByRole("heading", { name: "December 2026" }).count()).toBe(1);
 });
 
 test("a to-do dragged twice before its first save lands where it was dropped last", async () => {
@@ -1463,7 +1558,7 @@ test("Open on a to-do's right-click menu in the grid opens it beside the calenda
   expect(new URL(page.url()).pathname).toBe(`/${org.slug}/calendar`);
 });
 
-test("a Personal space keeps its to-dos beside the calendar, with no CRM to add them to", async () => {
+test("a Personal space keeps its to-dos beside the calendar, and can add them to its CRM", async () => {
   const { org, member, page, origin } = await invited();
   await db.insert(schema.personalSpaces).values({ orgId: org.id, userId: member.userId });
   const [task] = await db
@@ -1484,7 +1579,8 @@ test("a Personal space keeps its to-dos beside the calendar, with no CRM to add 
     .waitFor();
   const panel = page.getByRole("region", { name: "Task" });
   await panel.getByText("Due").waitFor();
-  expect(await panel.getByText("Add to CRM").count()).toBe(0);
+  await panel.getByText("Add to CRM").waitFor();
+  expect(await panel.getByText("Add to CRM").count()).toBe(1);
 });
 
 test("a linked to-do checked off in the calendar leaves a teammate's open CRM list without a reload", async () => {
@@ -1519,4 +1615,119 @@ test("a linked to-do checked off in the calendar leaves a teammate's open CRM li
     .click({ force: true });
   await expect.poll(() => list.getByText("Book the barge").count(), { timeout: 10_000 }).toBe(0);
   await context.close();
+});
+
+test("the month lays a stay over its days as one bar and shows every event that fits", async () => {
+  const { org, page, origin } = await invited();
+  const [calendar] = await db
+    .select({ id: schema.calendarCalendars.id })
+    .from(schema.calendarCalendars)
+    .where(eq(schema.calendarCalendars.orgId, org.id));
+  await page.goto(origin);
+  const make = async (title: string, start: string, end: string, allDay: boolean) => {
+    const made = await page.request.post(new URL("/api/calendar/events", origin).toString(), {
+      data: {
+        calendarId: calendar?.id,
+        title,
+        start,
+        end,
+        allDay,
+        timeZone: "Europe/Madrid",
+        guests: [],
+      },
+    });
+    expect(made.status()).toBe(201);
+  };
+  await make("Stay in Ghent", "2026-12-08T00:00:00.000Z", "2026-12-11T00:00:00.000Z", true);
+  for (const [title, hour] of [
+    ["Museum", 9],
+    ["Lunch", 13],
+    ["Train", 17],
+  ] as const) {
+    const start = `2026-12-09T${String(hour).padStart(2, "0")}:00:00.000Z`;
+    await make(
+      title,
+      start,
+      start.replace(`T${String(hour).padStart(2, "0")}`, `T${hour + 1}`),
+      false,
+    );
+  }
+  await page.goto(new URL(`/${org.slug}/calendar?date=2026-12-09&view=month`, origin).toString());
+  const stay = page.getByRole("button", { name: "Stay in Ghent" });
+  await stay.waitFor();
+  expect(await stay.count()).toBe(1);
+  const cell = await page.locator('[data-month-day="2026-12-08"]').boundingBox();
+  const bar = await stay.boundingBox();
+  expect(bar?.width ?? 0).toBeGreaterThan(2.5 * (cell?.width ?? 0));
+  const busy = page.locator('[data-month-day="2026-12-09"]');
+  for (const title of ["Museum", "Lunch", "Train"]) {
+    await expect
+      .poll(() => page.getByRole("button", { name: new RegExp(title) }).isVisible())
+      .toBe(true);
+  }
+  expect(await busy.getByText(/more$/).count()).toBe(0);
+});
+
+test("the calendar opens on the month when the link names no view", async () => {
+  const { org, page, origin } = await invited();
+  await page.goto(new URL(`/${org.slug}/calendar?date=2026-11-24`, origin).toString());
+  await page.locator('[data-month-day="2026-11-24"]').waitFor();
+  expect(await page.locator("[data-day]").count()).toBe(0);
+});
+
+test("the sidebar month stays put while the big month moves, and moves without it", async () => {
+  const { org, page, origin } = await invited();
+  await page.goto(new URL(`/${org.slug}/calendar?date=2026-11-24&view=month`, origin).toString());
+  const sidebar = page.getByRole("application", { name: /Month/ });
+  await sidebar.getByRole("heading", { name: "November 2026" }).waitFor();
+  await page.getByRole("button", { name: "Next month", exact: true }).first().waitFor();
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowRight");
+  await expect.poll(() => new URL(page.url()).searchParams.get("date")).toBe("2027-01-01");
+  expect(await sidebar.getByRole("heading", { name: "November 2026" }).count()).toBe(1);
+  await sidebar.getByRole("button", { name: "Previous month" }).click();
+  await sidebar.getByRole("heading", { name: "October 2026" }).waitFor();
+  expect(new URL(page.url()).searchParams.get("date")).toBe("2027-01-01");
+});
+
+test("a Gmail account's Google calendars are rows under its address, each named by Google and toggled on its own", async () => {
+  const { org, address, inbox, page, origin } = await invited();
+  const list = googleFixture<{ items: Record<string, unknown>[] }>("calendar-list.json");
+  const team = googleFixture<{ timeZone: string; items: unknown[] }>("events-team.json");
+  const family = "ruiz.family.4x2@gmail.example";
+  await saveGoogleCalendarList(
+    db,
+    inbox,
+    readGoogleCalendars(list.items.filter((item) => item.id !== family)),
+  );
+  const [teamCalendar] = await db
+    .select({ id: schema.calendarCalendars.id })
+    .from(schema.calendarCalendars)
+    .where(
+      and(
+        eq(schema.calendarCalendars.mailboxId, inbox.id),
+        eq(schema.calendarCalendars.name, "Studio team"),
+      ),
+    );
+  await applyGoogleChanges(
+    db,
+    { id: teamCalendar!.id, orgId: org.id },
+    team.items
+      .map((item) => readGoogleEvent(item, team.timeZone))
+      .filter((change): change is GoogleCalendarChange => change !== null),
+  );
+  await page.goto(new URL(`/${org.slug}/calendar?date=2026-11-24&view=week`, origin).toString());
+  const shoot = page.getByRole("button", { name: /Lookbook shoot/ });
+  await shoot.waitFor();
+  await page.getByRole("button", { name: "Calendars, 3 calendars shown" }).click();
+  const grid = page.getByRole("grid", { name: "Calendars" });
+  await grid.getByText(address).first().waitFor();
+  const rows = await grid.getByRole("row").allTextContents();
+  expect(rows).toEqual([address, address, "Holidays in Mexico", "Studio team"]);
+  await grid.getByRole("row", { name: "Studio team" }).click();
+  await expect.poll(() => shoot.count()).toBe(0);
+  await expect
+    .poll(() => page.getByRole("button", { name: /Acme × Studio: kickoff/ }).count())
+    .toBe(1);
+  await page.getByRole("button", { name: "Calendars, 2 calendars shown" }).waitFor();
 });

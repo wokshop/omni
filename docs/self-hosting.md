@@ -245,12 +245,16 @@ the mail service. Only the mail service exchanges codes and holds the tokens: th
 encrypted with `MAIL_CREDENTIALS_KEY` like an app password. A person who revokes Omni's access in
 their Google account sees the mailbox in `error` until they connect it again.
 
-The same connection shows the account's Google Calendar on its inbox's calendar, read only. For
-it, enable the Google Calendar API in the client's Google Cloud project and add the scope
+The same connection shows the account's Google calendars beside its inbox's, read only. For
+them, enable the Google Calendar API in the client's Google Cloud project and add the scope
 `https://www.googleapis.com/auth/calendar.events.readonly` to the consent screen (a sensitive
 scope: an unverified app shows Google's warning, and a verified one needs it added to its
-verification). The Worker asks for it unless `GOOGLE_CALENDAR=off`; an account connected without
-it, or before it, keeps working for mail and shows its calendar once it is connected again.
+verification). With it the inbox shows the account's primary calendar. To show every calendar
+the account has (shared ones, subscribed ones such as holidays), also add
+`https://www.googleapis.com/auth/calendar.calendarlist.readonly` (sensitive too, so one more scope
+in the same verification) and set `GOOGLE_CALENDAR=all` on the Worker. The Worker asks for the
+first unless `GOOGLE_CALENDAR=off`; an account connected without a scope, or before it, keeps
+working for mail and shows its calendars once it is connected again.
 
 From the command line, with the service running and `MAIL_SERVICE_URL` set, add
 `http://localhost:8790/callback` as an authorized redirect URI and run:
@@ -345,7 +349,7 @@ to `.dev.vars`.
 | `WEB_APP_URL`                  | var    | no       | Web app origin; invitation emails link to `<WEB_APP_URL>/invite/<id>`. Defaults to `BETTER_AUTH_URL`.                                                                                                                                                 |
 | `GOOGLE_CLIENT_ID`             | var    | no       | Google OAuth client ID. With `GOOGLE_CLIENT_SECRET`, the login page shows "Using Google". See [Sign in with Google](#sign-in-with-google).                                                                                                            |
 | `GOOGLE_CLIENT_SECRET`         | secret | no       | Google OAuth client secret. Set both or neither; one alone stops the Worker from starting.                                                                                                                                                            |
-| `GOOGLE_CALENDAR`              | var    | no       | `off` connects Gmail without asking for its Google Calendar. On by default; see [Connecting a Gmail account](#connecting-a-gmail-account).                                                                                                            |
+| `GOOGLE_CALENDAR`              | var    | no       | `on` (default) shows a Gmail account's primary Google Calendar, `all` every calendar in its list, `off` none; see [Connecting a Gmail account](#connecting-a-gmail-account).                                                                          |
 | `MAIL_SERVICE_URL`             | var    | yes      | Base URL of the mail service; the Worker pings `POST /ping` on it.                                                                                                                                                                                    |
 | `MAIL_SERVICE_HMAC_SECRET`     | secret | yes      | Same value as the mail service's.                                                                                                                                                                                                                     |
 | `SYSTEM_MAIL_FROM`             | var    | no       | Address magic links, invitations and notices come from (Email Sending). Empty disables them; people added to a Storage item are then added without a mail and find it under Shared with me.                                                           |
@@ -375,7 +379,7 @@ to `.dev.vars`.
 | `STORAGE_HASH_CHECK_MAX_BYTES` | var    | no       | Largest upload whose declared `sha256` the Worker checks by reading the file once more (about 1.5 s of CPU a GB); a mismatch answers `422 CHECKSUM_MISMATCH`. Past it the hash is kept as sent. Default 8 GB.                                         |
 | `STORAGE_MAX_OPEN_UPLOADS`     | var    | no       | Uploads one person may have in progress at once in a workspace; past it `POST /uploads` answers `429 TOO_MANY_UPLOADS`. Default 500.                                                                                                                  |
 | `STORAGE_MAX_RESERVED_BYTES`   | var    | no       | Bytes one person's uploads in progress may hold in a workspace (they count against its storage until they finish). Default 1 TB (`1099511627776`).                                                                                                    |
-| `STORAGE_PERSONAL_GB`          | var    | no       | Most a Personal space may store, in GB (1024³ bytes; decimals allowed). Past it uploads answer `402 STORAGE_FULL`. Empty: no cap.                                                                                                                     |
+| `STORAGE_PERSONAL_GB`          | var    | no       | Without billing, most a Personal space may store, in GB (1024³ bytes; decimals allowed). Past it uploads answer `402 STORAGE_FULL`. Empty: no cap.                                                                                                    |
 | `STORAGE_MAX_GB`               | var    | no       | Ceiling on what any one workspace may store, in GB, whatever its plan. Empty: none.                                                                                                                                                                   |
 | `UPLOAD_MAX_BYTES`             | var    | no       | Largest file one upload may stage for a send, in bytes. Empty: 25 MB (`26214400`).                                                                                                                                                                    |
 | `ENVIRONMENT`                  | var    | no       | `production` (default). `development` (local only) also logs magic-link and invitation URLs. `test` (e2e suites) is the only value that allows `IMAGE_PROXY_TEST_ALLOW_ORIGIN`.                                                                       |
@@ -467,12 +471,14 @@ which Cloudflare sets and clients cannot.
 | `RATE_LIMIT_PROVISION`             | `30/3600`  | Per member: creating a mailbox, which calls the mail service. Adding and checking domains have their own per-workspace limits (`DOMAIN_ADD_LIMITER`, `DOMAIN_CHECK_LIMITER`). |
 | `RATE_LIMIT_IMAGE_PROXY`           | `300/60`   | Per member: image-proxy fetches of images not already cached (cached ones are free).                                                                                          |
 | `RATE_LIMIT_STORAGE_SHARE`         | `60/3600`  | Per member: people added to a file or folder in Storage, each of whom is sent one mail. Changing a role sends none and is free.                                               |
-| `RATE_LIMIT_STORAGE_SHARE_NEW`     | `10/86400` | Per person, on top of the above, while their account is under 7 days old or the workspace is free (a Personal space, or no paid plan).                                        |
+| `RATE_LIMIT_STORAGE_SHARE_NEW`     | `10/86400` | Per person, on top of the above, while their account is under 7 days old or the workspace has no plan in good standing.                                                       |
 | `RATE_LIMIT_STORAGE_LINK`          | `300/60`   | Per signed-in person, or per IP for a visitor who is not: requests to Storage's link door (`/api/storage/shared/*`).                                                          |
 | `RATE_LIMIT_STORAGE_LINK_PASSWORD` | `10/900`   | Per link and visitor: tries at a link password (`POST /api/storage/shared/:shareId/unlock`).                                                                                  |
 | `RATE_LIMIT_STORAGE_LINK_LIVE`     | `30/60`    | Per signed-in person, or per IP: live-document sockets opened through a link (`GET /api/storage/shared/:shareId/realtime`).                                                   |
 | `RATE_LIMIT_STORAGE_LINK_COMMENT`  | `30/600`   | Per guest: comments written through a link with no sign-in.                                                                                                                   |
 | `RATE_LIMIT_STORAGE_SYNC`          | `600/60`   | Per person and desktop app: requests to the desktop sync API (`/api/storage/sync/*`).                                                                                         |
+| `RATE_LIMIT_BOOKING`               | `120/60`   | Per IP: reads of a public booking page (`GET /api/booking/:slug`).                                                                                                            |
+| `RATE_LIMIT_BOOKING_NEW`           | `10/3600`  | Per IP: meetings booked through a booking link, each of which sends the visitor an invitation from the owner's inbox.                                                         |
 
 #### Billing (optional)
 
