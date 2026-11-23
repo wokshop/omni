@@ -26,6 +26,6 @@ export function BottomBar() {
 }
 
 const styles = StyleSheet.create({
-  dockWrap: { position: "absolute", left: 0, right: 0, bottom: 0, gap: space(3) },
+  dockWrap: { position: "absolute", left: 0, right: 0, bottom: 0, gap: space(5) },
   ctaRow: { alignItems: "center" },
 });
