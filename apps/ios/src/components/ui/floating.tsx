@@ -51,6 +51,8 @@ export interface FloatingButtonProps extends Omit<PressableProps, "children" | "
   primary?: boolean;
   /** 44pt instead of 48: a control in a page's top row (the menu's Settings). */
   compact?: boolean;
+  /** Wider pill shape (54×44) for a top-bar primary action. */
+  pill?: boolean;
   /** 44pt: beside the open search field. */
   searching?: boolean;
   /** The glyph's size; 18pt unless set. */
@@ -69,6 +71,7 @@ export function FloatingButton({
   label,
   primary = false,
   compact = false,
+  pill = false,
   searching = false,
   glyph = iconSize.field,
   isPending = false,
@@ -76,7 +79,12 @@ export function FloatingButton({
   ...props
 }: FloatingButtonProps) {
   const ink = primary ? colors.primaryForeground : colors.foreground;
-  const shape = [styles.round, compact && styles.compactRound, searching && styles.searchRound];
+  const shape = [
+    styles.round,
+    compact && styles.compactRound,
+    pill && styles.pillButton,
+    searching && styles.searchRound,
+  ];
   const content = isPending ? (
     <Spinner size={glyph} color={ink} />
   ) : (
@@ -199,6 +207,7 @@ const styles = StyleSheet.create({
   round: { width: floatingControl, alignItems: "center", justifyContent: "center" },
   compact: { height: compactControl },
   compactRound: { width: compactControl, height: compactControl },
+  pillButton: { width: space(13.5), height: compactControl },
   searchRound: { width: searchControl, height: searchControl },
   field: { height: searchControl, paddingHorizontal: space(4) },
   primary: { backgroundColor: colors.primaryButton, borderWidth: 0 },

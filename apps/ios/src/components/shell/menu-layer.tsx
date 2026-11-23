@@ -11,6 +11,7 @@ import { colors, space } from "@/theme/tokens.ts";
 import type { Module } from "./menu-nav.ts";
 import { MENU_INSET, NAV_LEAD, NAV_PAD_LEFT } from "./menu-row.tsx";
 import { CalendarMenu, CrmMenu, DriveMenu, MailMenu } from "./menu-rows.tsx";
+import { WorkspaceButton } from "./menu-workspace.tsx";
 import { useModules } from "./modules.ts";
 
 const ROWS = {
@@ -66,10 +67,14 @@ export function MenuDrawer({
       ) : null}
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.rows, { paddingBottom: insets.bottom + space(8) }]}
+        style={styles.scroll}
+        contentContainerStyle={styles.rows}
       >
         <Rows />
       </ScrollView>
+      <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, space(3)) }]}>
+        <WorkspaceButton />
+      </View>
     </Animated.View>
   );
 }
@@ -95,5 +100,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  rows: { paddingHorizontal: MENU_INSET, paddingTop: space(1) },
+  scroll: { flex: 1 },
+  rows: { paddingHorizontal: MENU_INSET, paddingTop: space(1), paddingBottom: space(4) },
+  footer: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    paddingHorizontal: MENU_INSET,
+    paddingTop: space(2),
+  },
 });

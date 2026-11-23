@@ -1,59 +1,154 @@
+import { router } from "expo-router";
 import { useEffect, useRef } from "react";
 import { Animated, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { IconMenu } from "@/components/icons.ts";
+import { useAddActions } from "@/components/drive/add-menu.tsx";
+import {
+  IconCompose,
+  IconFile,
+  IconFolderPlus,
+  IconImage,
+  IconMenu,
+  IconPlus,
+} from "@/components/icons.ts";
+import { BottomSheet, useSheet } from "@/components/ui/bottom-sheet.tsx";
 import { FloatingButton } from "@/components/ui/floating.tsx";
 import { Text } from "@/components/ui/text.tsx";
+import type { CrmPage } from "@/lib/crm.ts";
+import { DRIVE_PAGES } from "@/lib/drive.ts";
 import { colors, iconSize, space } from "@/theme/tokens.ts";
+import type { FloatingBarAction } from "./floating-bar.tsx";
 import { useMenu } from "./menu-context.tsx";
-import { SHELL_CONTROL, useMenuPlace } from "./menu-nav.ts";
-import { WorkspaceButton } from "./menu-workspace.tsx";
+import { SHELL_CONTROL, useMenuPlace, type Module } from "./menu-nav.ts";
+import { MenuRow } from "./menu-row.tsx";
 import { usePageTitle } from "./use-page-title.ts";
 
 const FADE_MS = 180;
 const SIDE = space(4);
 
+const NEW_RECORD: Record<CrmPage, { kind: string; label: string }> = {
+  companies: { kind: "company", label: "New company" },
+  people: { kind: "person", label: "New person" },
+  deals: { kind: "deal", label: "New deal" },
+  projects: { kind: "deal", label: "New deal" },
+  tasks: { kind: "task", label: "New task" },
+};
+
 /**
- * The shell's top bar on a module's root page: ☰ (opens the left navigation drawer) and the
- * workspace button in equal round slots at the sides; between them, centred on the screen, the
- * page's title and count. Its hairline shows once rows have scrolled under it. Steps away while
- * the bottom bar's search field is open.
+ * The shell's top bar on a module's root page: ☰ on the left (opens the left sidebar drawer),
+ * the page's title and count centred, and the current module's main action as a pill button on
+ * the right. Its hairline shows once rows have scrolled under it.
  */
 export function TopBar() {
   const shell = useMenu();
   const place = useMenuPlace();
+  const adding = useSheet();
   const insets = useSafeAreaInsets();
   const page = usePageTitle();
   const edge = useCrossfade(shell.scrolled && !shell.isOpen);
-  const { setScrolled } = shell;
+  const { close, setScrolled } = shell;
   useEffect(() => setScrolled(false), [page.title, place.mailbox, setScrolled]);
+
+  const shared = place.drivePage === "shared";
+  const add = useAddActions({ space: shared ? "shared" : "personal" });
+  const record = NEW_RECORD[place.crmPage ?? "companies"];
+
+  const actions: Partial<Record<Module, FloatingBarAction>> = {
+    mail: {
+      icon: IconCompose,
+      label: "New message",
+      onPress: () => {
+        close();
+        router.push({
+          pathname: "/mail/compose",
+          params: place.mailbox ? { mailbox: place.mailbox } : {},
+        });
+      },
+    },
+    drive: {
+      icon: IconPlus,
+      label: "New",
+      onPress: () => {
+        close();
+        adding.open();
+      },
+    },
+    crm: {
+      icon: IconPlus,
+      label: record.label,
+      onPress: () => {
+        close();
+        if (record.kind === "task") router.push("/crm/task-new");
+        else router.push({ pathname: "/crm/form", params: { kind: record.kind } });
+      },
+    },
+  };
+
+  const action = actions[place.module];
+
   if (shell.searching) return null;
   return (
-    <View style={[styles.bar, { paddingTop: insets.top + space(2) }]}>
-      <Animated.View pointerEvents="none" style={[styles.edge, { opacity: edge }]} />
-      <View style={styles.slot}>
-        <FloatingButton
-          icon={IconMenu}
-          glyph={iconSize.md}
-          label={shell.isOpen ? "Close menu" : "Open menu"}
-          compact
-          onPress={shell.toggle}
-        />
-      </View>
-      <View style={styles.center}>
-        <Text weight="semibold" numberOfLines={1} accessibilityRole="header" style={styles.title}>
-          {page.title}
-        </Text>
-        {page.count ? (
-          <Text size="subhead" tone="mutedForeground" tabular>
-            {page.count}
+    <>
+      <View style={[styles.bar, { paddingTop: insets.top + space(2) }]}>
+        <Animated.View pointerEvents="none" style={[styles.edge, { opacity: edge }]} />
+        <View style={styles.leftSlot}>
+          <FloatingButton
+            icon={IconMenu}
+            glyph={iconSize.md}
+            label={shell.isOpen ? "Close menu" : "Open menu"}
+            compact
+            onPress={shell.toggle}
+          />
+        </View>
+        <View style={styles.center}>
+          <Text weight="semibold" numberOfLines={1} accessibilityRole="header" style={styles.title}>
+            {page.title}
           </Text>
-        ) : null}
+          {page.count ? (
+            <Text size="subhead" tone="mutedForeground" tabular>
+              {page.count}
+            </Text>
+          ) : null}
+        </View>
+        <View style={styles.rightSlot}>
+          {action ? (
+            <FloatingButton
+              icon={action.icon}
+              glyph={iconSize.md}
+              label={action.label}
+              pill
+              primary
+              onPress={action.onPress}
+            />
+          ) : null}
+        </View>
       </View>
-      <View style={styles.slot}>
-        <WorkspaceButton />
-      </View>
-    </View>
+      <BottomSheet
+        isOpen={adding.isOpen}
+        onClose={adding.close}
+        onClosed={adding.onClosed}
+        title={`Add to ${DRIVE_PAGES[shared ? "shared" : "my"].label}`}
+      >
+        <MenuRow
+          icon={IconFolderPlus}
+          muted
+          label="New folder"
+          onPress={() => adding.pick(add.newFolder)}
+        />
+        <MenuRow
+          icon={IconImage}
+          muted
+          label="Photos and videos"
+          onPress={() => adding.pick(add.uploadMedia)}
+        />
+        <MenuRow
+          icon={IconFile}
+          muted
+          label="Choose file"
+          onPress={() => adding.pick(add.uploadFiles)}
+        />
+      </BottomSheet>
+    </>
   );
 }
 
@@ -77,11 +172,12 @@ const styles = StyleSheet.create({
     height: StyleSheet.hairlineWidth,
     backgroundColor: colors.border,
   },
-  slot: { width: SHELL_CONTROL, height: SHELL_CONTROL },
+  leftSlot: { width: space(13.5), height: SHELL_CONTROL, alignItems: "flex-start" },
+  rightSlot: { width: space(13.5), height: SHELL_CONTROL, alignItems: "flex-end" },
   center: {
     flex: 1,
     height: SHELL_CONTROL,
-    marginHorizontal: space(3),
+    marginHorizontal: space(2),
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
