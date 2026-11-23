@@ -11,11 +11,10 @@ import { useMenuPlace, type Module } from "./menu-nav.ts";
 import { MenuRow } from "./menu-row.tsx";
 import { ModuleDock } from "./module-dock.tsx";
 
-const PLACEHOLDER: Record<Module, string> = {
+const PLACEHOLDER: Partial<Record<Module, string>> = {
   mail: "Search mail",
   drive: "Search files",
   crm: "Search records",
-  calendar: "Search",
 };
 
 const NEW_RECORD: Record<CrmPage, { kind: string; label: string }> = {
@@ -27,9 +26,9 @@ const NEW_RECORD: Record<CrmPage, { kind: string; label: string }> = {
 };
 
 /**
- * The shell's bottom bar on a module's root page: the module's primary action floating above the
- * bottom dock (4 modules around a center Search button). Tapping Search opens the live search
- * field above the keyboard.
+ * The shell's bottom bar on a module's root page: a full-width module-focused search bar stacked
+ * directly above the bottom dock (4 modules split symmetrically around the module's primary
+ * action: New message, Drive's Add sheet, or a new CRM record).
  */
 export function BottomBar() {
   const shell = useMenu();
@@ -79,12 +78,16 @@ export function BottomBar() {
       <FloatingBar
         key={module}
         placeholder={PLACEHOLDER[module]}
-        searching={mine}
+        initial={{ searching: mine, query: mine ? shell.query : "" }}
         query={mine ? shell.query : undefined}
         onSearch={setQuery}
+        onStart={() => {
+          close();
+          setQuery("");
+          setSearchIn(module);
+        }}
         onStop={() => setSearchIn(null)}
-        action={actions[module]}
-        dock={<ModuleDock />}
+        dock={<ModuleDock action={actions[module]} />}
       />
       <BottomSheet
         isOpen={adding.isOpen}

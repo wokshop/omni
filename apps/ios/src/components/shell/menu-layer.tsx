@@ -80,7 +80,7 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     bottom: 0,
-    backgroundColor: colors.background,
+    backgroundColor: colors.sidebar,
   },
   header: {
     flexDirection: "row",

@@ -90,7 +90,7 @@ export function FloatingPill({
         pressed && styles.pressed,
       ]}
     >
-      <Icon size={iconSize.field} color={colors.mutedForeground} />
+      <Icon size={iconSize.md} strokeWidth={2} color={colors.mutedForeground} />
       <Text size="body" tone="mutedForeground" numberOfLines={1} style={styles.shrink}>
         {label}
       </Text>
@@ -102,7 +102,7 @@ export function FloatingPill({
 export function FloatingField({ icon: Icon, children }: { icon: Glyph; children: ReactNode }) {
   return (
     <View style={[styles.surface, styles.pill, styles.field]}>
-      <Icon size={iconSize.field} color={colors.mutedForeground} />
+      <Icon size={iconSize.md} strokeWidth={2} color={colors.mutedForeground} />
       {children}
     </View>
   );

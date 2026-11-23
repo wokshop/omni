@@ -1,6 +1,8 @@
 export const colors = {
-  /** The app canvas. */
-  background: "#fafafa",
+  /** The main app canvas. */
+  background: "#ffffff",
+  /** The left navigation drawer and welcome canvas. */
+  sidebar: "#fafafa",
   /** Anything raised on the canvas: cards, sheets, buttons, the search field. */
   surface: "#ffffff",
   foreground: "#171717",

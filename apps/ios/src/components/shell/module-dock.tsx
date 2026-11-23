@@ -1,8 +1,7 @@
 import * as Haptics from "expo-haptics";
-import { router } from "expo-router";
 import { Pressable, StyleSheet, View } from "react-native";
-import { IconSearch } from "@/components/icons.ts";
 import { colors, iconSize, radius, space } from "@/theme/tokens.ts";
+import type { FloatingBarAction } from "./floating-bar.tsx";
 import { useMenu } from "./menu-context.tsx";
 import { useMenuPlace } from "./menu-nav.ts";
 import { useModules, type ModuleEntry } from "./modules.ts";
@@ -11,10 +10,11 @@ import { useModules, type ModuleEntry } from "./modules.ts";
 export const DOCK_HEIGHT = space(10);
 
 /**
- * The bottom dock: the 4 modules split symmetrically around a visitable center Search tab
- * (`Mail`, `Drive`, `🔍`, `CRM`, `Calendar`). Only the active tab takes the soft accent pill.
+ * The bottom dock: the 4 modules split symmetrically around the current module's primary action
+ * (`Mail`, `Drive`, `[Compose / +]`, `CRM`, `Calendar`). Each module shows its desktop icon in
+ * full colour, the active one sitting on a soft accent pill.
  */
-export function ModuleDock({ isSearch = false }: { isSearch?: boolean }) {
+export function ModuleDock({ action }: { action?: FloatingBarAction }) {
   const modules = useModules();
   const place = useMenuPlace();
   const { close } = useMenu();
@@ -23,7 +23,7 @@ export function ModuleDock({ isSearch = false }: { isSearch?: boolean }) {
   const right = modules.slice(split);
 
   const renderModule = (entry: ModuleEntry) => {
-    const current = !isSearch && entry.id === place.module;
+    const current = entry.id === place.module;
     const Mark = entry.mark;
     return (
       <Pressable
@@ -47,30 +47,26 @@ export function ModuleDock({ isSearch = false }: { isSearch?: boolean }) {
     );
   };
 
+  const ActionIcon = action?.icon;
+
   return (
     <View accessibilityRole="tablist" style={styles.dock}>
       {left.map(renderModule)}
-      <Pressable
-        accessibilityRole="tab"
-        accessibilityLabel="Search"
-        accessibilityState={{ selected: isSearch }}
-        onPress={() => {
-          if (isSearch) return;
-          void Haptics.selectionAsync();
-          close();
-          router.replace({ pathname: "/search", params: { in: place.module } });
-        }}
-        style={({ pressed }) => [
-          styles.slot,
-          isSearch && styles.current,
-          pressed && styles.pressed,
-        ]}
-      >
-        <IconSearch
-          size={iconSize.md}
-          color={isSearch ? colors.foreground : colors.mutedForeground}
-        />
-      </Pressable>
+      {action && ActionIcon ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={action.label}
+          onPress={() => {
+            void Haptics.selectionAsync();
+            action.onPress();
+          }}
+          style={({ pressed }) => [styles.actionSlot, pressed && styles.pressed]}
+        >
+          <ActionIcon size={iconSize.md} color={colors.primaryForeground} />
+        </Pressable>
+      ) : (
+        <View style={styles.emptySlot} />
+      )}
       {right.map(renderModule)}
     </View>
   );
@@ -89,6 +85,18 @@ const styles = StyleSheet.create({
     borderRadius: radius.full,
     alignItems: "center",
     justifyContent: "center",
+  },
+  actionSlot: {
+    width: space(11),
+    height: DOCK_HEIGHT,
+    borderRadius: radius.full,
+    backgroundColor: colors.primaryButton,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  emptySlot: {
+    width: space(11),
+    height: DOCK_HEIGHT,
   },
   current: {
     backgroundColor: colors.accent,

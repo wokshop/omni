@@ -18,7 +18,7 @@ import {
   verifyEmailOtp,
 } from "@/lib/session.ts";
 import { useSplashDone } from "@/lib/splash.ts";
-import { gutter, space } from "@/theme/tokens.ts";
+import { colors, gutter, space } from "@/theme/tokens.ts";
 
 type Step = "choose" | "email" | "code";
 
@@ -72,7 +72,7 @@ export default function SignIn() {
   };
 
   return (
-    <Screen>
+    <Screen style={styles.screen}>
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={styles.body}
@@ -273,6 +273,7 @@ function CodeStep(props: {
 }
 
 const styles = StyleSheet.create({
+  screen: { backgroundColor: colors.sidebar },
   body: { flex: 1, paddingHorizontal: gutter + space(1), paddingBottom: space(4) },
   hero: {
     flex: 1,
