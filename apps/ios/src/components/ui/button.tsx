@@ -1,7 +1,7 @@
 import type { ComponentType } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, View, type PressableProps } from "react-native";
 import type { SvgProps } from "react-native-svg";
-import { colors, iconSize, radius, shadowRaised, space } from "@/theme/tokens.ts";
+import { colors, iconSize, radius, space } from "@/theme/tokens.ts";
 import { Text } from "./text.tsx";
 
 export interface ButtonProps extends Omit<PressableProps, "children"> {
@@ -87,7 +87,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
-    ...shadowRaised,
   },
   quiet: { minHeight: 36, paddingHorizontal: 0, alignSelf: "flex-start" },
   dimmed: { opacity: 0.5 },
