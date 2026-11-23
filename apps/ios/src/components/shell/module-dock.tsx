@@ -92,7 +92,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   current: {
-    backgroundColor: colors.border,
+    backgroundColor: colors.well,
   },
   pressed: {
     transform: [{ scale: 0.94 }],
