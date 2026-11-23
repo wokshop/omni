@@ -103,9 +103,8 @@ const styles = StyleSheet.create({
   scroll: { flex: 1 },
   rows: { paddingHorizontal: MENU_INSET, paddingTop: space(1), paddingBottom: space(4) },
   footer: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
-    paddingHorizontal: MENU_INSET,
+    paddingLeft: MENU_INSET + NAV_PAD_LEFT,
     paddingTop: space(2),
+    alignItems: "flex-start",
   },
 });

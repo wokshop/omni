@@ -12,6 +12,7 @@ import {
   IconPlus,
 } from "@/components/icons.ts";
 import { BottomSheet, useSheet } from "@/components/ui/bottom-sheet.tsx";
+import { Button } from "@/components/ui/button.tsx";
 import { FloatingButton } from "@/components/ui/floating.tsx";
 import { Text } from "@/components/ui/text.tsx";
 import type { CrmPage } from "@/lib/crm.ts";
@@ -53,9 +54,10 @@ export function TopBar() {
   const add = useAddActions({ space: shared ? "shared" : "personal" });
   const record = NEW_RECORD[place.crmPage ?? "companies"];
 
-  const actions: Partial<Record<Module, FloatingBarAction>> = {
+  const actions: Partial<Record<Module, FloatingBarAction & { title: string }>> = {
     mail: {
       icon: IconCompose,
+      title: "Compose",
       label: "New message",
       onPress: () => {
         close();
@@ -67,7 +69,8 @@ export function TopBar() {
     },
     drive: {
       icon: IconPlus,
-      label: "New",
+      title: "Add",
+      label: "Add",
       onPress: () => {
         close();
         adding.open();
@@ -75,6 +78,7 @@ export function TopBar() {
     },
     crm: {
       icon: IconPlus,
+      title: "New",
       label: record.label,
       onPress: () => {
         close();
@@ -112,13 +116,13 @@ export function TopBar() {
         </View>
         <View style={styles.rightSlot}>
           {action ? (
-            <FloatingButton
+            <Button
+              size="sm"
               icon={action.icon}
-              glyph={iconSize.md}
-              label={action.label}
-              pill
-              primary
+              label={action.title}
+              accessibilityLabel={action.label}
               onPress={action.onPress}
+              style={styles.actionButton}
             />
           ) : null}
         </View>
@@ -172,10 +176,10 @@ const styles = StyleSheet.create({
     height: StyleSheet.hairlineWidth,
     backgroundColor: colors.border,
   },
-  leftSlot: { width: space(13.5), height: SHELL_CONTROL, alignItems: "flex-start" },
-  rightSlot: { width: space(13.5), height: SHELL_CONTROL, alignItems: "flex-end" },
+  leftSlot: { flex: 1, height: SHELL_CONTROL, alignItems: "flex-start", justifyContent: "center" },
+  rightSlot: { flex: 1, height: SHELL_CONTROL, alignItems: "flex-end", justifyContent: "center" },
   center: {
-    flex: 1,
+    flexShrink: 1,
     height: SHELL_CONTROL,
     marginHorizontal: space(2),
     flexDirection: "row",
@@ -183,6 +187,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: space(1.5),
   },
+  actionButton: { minHeight: space(9.5), paddingHorizontal: space(3.5) },
   title: { flexShrink: 1 },
 });
 

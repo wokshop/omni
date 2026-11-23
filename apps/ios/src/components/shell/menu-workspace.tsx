@@ -2,7 +2,6 @@ import type { Workspace } from "@omni/client";
 import { router } from "expo-router";
 import { StyleSheet, View } from "react-native";
 import {
-  IconChevronsUpDown,
   IconConnections,
   IconLogOut,
   IconPlus,
@@ -11,10 +10,8 @@ import {
   IconUserAdd,
   IconUserRound,
 } from "@/components/icons.ts";
-import { Avatar } from "@/components/ui/avatar.tsx";
+import { Avatar, AvatarButton } from "@/components/ui/avatar.tsx";
 import { BottomSheet, useSheet } from "@/components/ui/bottom-sheet.tsx";
-import { PressableRow } from "@/components/ui/pressable-row.tsx";
-import { Text } from "@/components/ui/text.tsx";
 import { usePictureSource } from "@/lib/picture.ts";
 import { signOut, useSession } from "@/lib/session.ts";
 import { openOnWeb, useWorkspaceMenu } from "@/lib/workspace-menu.ts";
@@ -24,11 +21,11 @@ import { ChoiceRow } from "./mailbox-chooser.tsx";
 import { useMenuPlace } from "./menu-nav.ts";
 import { MenuRow, SheetDivider } from "./menu-row.tsx";
 
-const AVATAR = space(8);
+const AVATAR = space(9);
 const SHEET_LEAD = space(9);
 
 /**
- * The left drawer's footer row: the active workspace's avatar, name, and up/down chevron.
+ * The left drawer's footer button: the active workspace's avatar alone.
  * A tap opens the workspace & account sheet (switch workspace, settings, connections, log out).
  */
 export function WorkspaceButton() {
@@ -49,18 +46,14 @@ export function WorkspaceButton() {
     pick(() => openOnWeb({ settings: page, workspace: active }));
   return (
     <>
-      <PressableRow
-        shape="nav"
-        accessibilityLabel={`Workspace, ${label}`}
+      <AvatarButton
+        name={label}
+        size={AVATAR}
+        photo={logo}
+        inverse
+        label={`Workspace, ${label}`}
         onPress={sheet.open}
-        style={styles.trigger}
-      >
-        <Avatar name={label} size={AVATAR} photo={logo} inverse />
-        <Text size="body" weight="medium" numberOfLines={1} style={styles.triggerLabel}>
-          {label}
-        </Text>
-        <IconChevronsUpDown size={iconSize.sm} color={colors.mutedForeground} />
-      </PressableRow>
+      />
       <BottomSheet
         isOpen={sheet.isOpen}
         onClose={sheet.close}
@@ -161,8 +154,6 @@ function WorkspaceChoice(props: {
 }
 
 const styles = StyleSheet.create({
-  trigger: { gap: space(2.5), paddingLeft: space(2), paddingRight: space(2.5) },
-  triggerLabel: { flex: 1, minWidth: 0 },
   choice: { minHeight: space(15), paddingVertical: 0 },
   newLead: {
     width: SHEET_LEAD,
