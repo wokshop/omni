@@ -167,9 +167,16 @@ export interface FloatingGroupAction {
  * Related actions in one floating pill (a conversation's Reply, Reply all, Forward): native Liquid
  * Glass on iOS 26+, each a 44pt glyph. One without `onPress` is dimmed.
  */
-export function FloatingGroup({ actions }: { actions: FloatingGroupAction[] }) {
+export function FloatingGroup({
+  actions,
+  compact = false,
+}: {
+  actions: FloatingGroupAction[];
+  /** 44pt tall, to sit beside a compact button (the top bar's ☰). */
+  compact?: boolean;
+}) {
   return (
-    <GlassSurface style={styles.group}>
+    <GlassSurface style={[styles.group, compact && styles.compact]}>
       {actions.map(({ icon: Icon, label, onPress }) => (
         <Pressable
           key={label}

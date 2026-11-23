@@ -15,8 +15,11 @@ import { TextField } from "@/components/ui/text-field.tsx";
 import { floatingControl, iconSize, space, text } from "@/theme/tokens.ts";
 import { DOCK_HEIGHT } from "./module-dock.tsx";
 
+/** The gap between the search bar and the module dock under it. */
+export const SEARCH_DOCK_GAP = space(5);
+
 /** How far a list under the bar and dock scrolls past its last row, so chrome never covers it. */
-export const FLOATING_BAR_SPACE = floatingControl + DOCK_HEIGHT + space(12);
+export const FLOATING_BAR_SPACE = floatingControl + SEARCH_DOCK_GAP + DOCK_HEIGHT + space(10);
 
 const SIDE = space(4);
 
@@ -147,7 +150,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    gap: space(2.5),
+    gap: SEARCH_DOCK_GAP,
   },
   row: {
     flexDirection: "row",
