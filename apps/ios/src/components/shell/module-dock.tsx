@@ -1,7 +1,7 @@
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
 import { Pressable, StyleSheet, View } from "react-native";
-import { IconSearch } from "@/components/icons.ts";
+import Svg, { Path } from "react-native-svg";
 import { colors, radius, space } from "@/theme/tokens.ts";
 import { useMenu } from "./menu-context.tsx";
 import { useMenuPlace } from "./menu-nav.ts";
@@ -9,6 +9,20 @@ import { useModules, type ModuleEntry } from "./modules.ts";
 
 /** Height of the bottom module switcher dock row. */
 export const DOCK_HEIGHT = space(10);
+
+function SearchDockGlyph({ size = 23, color }: { size?: number; color: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M20.25 20.25L16.1265 16.1265M16.1265 16.1265C17.4385 14.8145 18.25 13.002 18.25 11C18.25 6.99594 15.0041 3.75 11 3.75C6.99594 3.75 3.75 6.99594 3.75 11C3.75 15.0041 6.99594 18.25 11 18.25C13.002 18.25 14.8145 17.4385 16.1265 16.1265Z"
+        stroke={color}
+        strokeWidth={2.2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
 
 /**
  * The bottom dock: the 4 modules split symmetrically around a visitable center Search tab
@@ -66,11 +80,7 @@ export function ModuleDock({ isSearch = false }: { isSearch?: boolean }) {
           pressed && styles.pressed,
         ]}
       >
-        <IconSearch
-          size={21}
-          strokeWidth={2}
-          color={isSearch ? colors.foreground : colors.mutedForeground}
-        />
+        <SearchDockGlyph size={23} color={colors.foreground} />
       </Pressable>
       {right.map(renderModule)}
     </View>

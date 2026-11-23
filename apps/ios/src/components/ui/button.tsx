@@ -16,6 +16,8 @@ export interface ButtonProps extends Omit<PressableProps, "children"> {
   size?: "sm" | "md" | "lg";
   /** A glyph before the label, as the web's leading `<Icon />`. */
   icon?: ComponentType<SvgProps & { size?: number }>;
+  /** Override the leading/trailing glyph size. */
+  glyphSize?: number;
   /** A glyph after the label: a menu's chevron. */
   trailingIcon?: ComponentType<SvgProps & { size?: number }>;
   /** The action is running: dimmed like a disabled button, a spinner beside the label. */
@@ -30,13 +32,14 @@ export function Button({
   isPending,
   disabled,
   icon: Icon,
+  glyphSize: glyphSizeProp,
   trailingIcon: Trailing,
   style,
   ...props
 }: ButtonProps) {
   const primary = intent === "primary";
   const glyph = primary ? colors.primaryForeground : colors.foreground;
-  const glyphSize = size === "sm" ? iconSize.sm : iconSize.field;
+  const glyphSize = glyphSizeProp ?? (size === "sm" ? iconSize.sm : iconSize.field);
   return (
     <Pressable
       {...props}

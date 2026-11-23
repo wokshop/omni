@@ -1,12 +1,12 @@
 import { router } from "expo-router";
+import { StyleSheet } from "react-native";
 import { useAddActions } from "@/components/drive/add-menu.tsx";
 import { IconCompose, IconFile, IconFolderPlus, IconImage, IconPlus } from "@/components/icons.ts";
 import { BottomSheet, useSheet } from "@/components/ui/bottom-sheet.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import type { CrmPage } from "@/lib/crm.ts";
 import { DRIVE_PAGES } from "@/lib/drive.ts";
-import { space } from "@/theme/tokens.ts";
-import { StyleSheet } from "react-native";
+import { iconSize, space } from "@/theme/tokens.ts";
 import type { FloatingBarAction } from "./floating-bar.tsx";
 import { useMenu } from "./menu-context.tsx";
 import { useMenuPlace, type Module } from "./menu-nav.ts";
@@ -22,7 +22,7 @@ const NEW_RECORD: Record<CrmPage, { kind: string; label: string }> = {
 
 /**
  * The current module's main CTA pill (Compose in Mail, Add in Drive, New in CRM), shared between
- * the top-right bar and the bottom-right of the left sidebar drawer.
+ * the bottom floating bar above the module dock and the bottom-right of the left sidebar drawer.
  */
 export function ModuleActionPill() {
   const { close } = useMenu();
@@ -74,6 +74,7 @@ export function ModuleActionPill() {
       <Button
         size="sm"
         icon={action.icon}
+        glyphSize={iconSize.md}
         label={action.title}
         accessibilityLabel={action.label}
         onPress={action.onPress}
@@ -109,5 +110,5 @@ export function ModuleActionPill() {
 }
 
 const styles = StyleSheet.create({
-  button: { minHeight: space(9.5), paddingHorizontal: space(3.5) },
+  button: { minHeight: space(10), paddingHorizontal: space(4) },
 });

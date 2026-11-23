@@ -7,16 +7,14 @@ import { Text } from "@/components/ui/text.tsx";
 import { colors, iconSize, space } from "@/theme/tokens.ts";
 import { useMenu } from "./menu-context.tsx";
 import { SHELL_CONTROL, useMenuPlace } from "./menu-nav.ts";
-import { ModuleActionPill } from "./module-action.tsx";
 import { usePageTitle } from "./use-page-title.ts";
 
 const FADE_MS = 180;
 const SIDE = space(4);
 
 /**
- * The shell's top bar on a module's root page: ☰ on the left (opens the left sidebar drawer),
- * the page's title and count centred, and the current module's main action pill on the right.
- * Its hairline shows once rows have scrolled under it.
+ * The shell's top bar on a module's root page: ☰ on the left (opens the left sidebar drawer) and
+ * the page's title and count centred. Its hairline shows once rows have scrolled under it.
  */
 export function TopBar() {
   const shell = useMenu();
@@ -50,9 +48,7 @@ export function TopBar() {
           </Text>
         ) : null}
       </View>
-      <View style={styles.rightSlot}>
-        <ModuleActionPill />
-      </View>
+      <View style={styles.rightSlot} />
     </View>
   );
 }
