@@ -54,7 +54,7 @@ fi
 [ "$target" = simulator ] && { open -a Simulator 2>/dev/null || true; }
 
 # What the native build depends on. A change here means the installed app is stale.
-fingerprint="$(cat package.json app.config.ts | shasum | cut -c1-16)-$OMNI_IOS_BUNDLE_ID-$target"
+fingerprint="$(cat package.json app.config.ts fingerprint.config.js | shasum | cut -c1-16)-$OMNI_IOS_BUNDLE_ID-$target-${OMNI_IOS_EAS_PROJECT_ID:-}"
 stamp=ios/.omni-dev-build
 installed=0
 if [ "$target" = simulator ]; then
