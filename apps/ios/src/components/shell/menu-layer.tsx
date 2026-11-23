@@ -9,7 +9,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text } from "@/components/ui/text.tsx";
 import { colors, space } from "@/theme/tokens.ts";
 import type { Module } from "./menu-nav.ts";
-import { MENU_INSET } from "./menu-row.tsx";
+import { MENU_INSET, NAV_LEAD, NAV_PAD_LEFT } from "./menu-row.tsx";
 import { CalendarMenu, CrmMenu, DriveMenu, MailMenu } from "./menu-rows.tsx";
 import { useModules } from "./modules.ts";
 
@@ -56,8 +56,10 @@ export function MenuDrawer({
     >
       {entry && Mark ? (
         <View style={styles.header}>
-          <Mark size={24} />
-          <Text size="lg" weight="semibold" numberOfLines={1}>
+          <View style={styles.headerLead}>
+            <Mark size={20} />
+          </View>
+          <Text size="md" weight="semibold" numberOfLines={1}>
             {entry.label}
           </Text>
         </View>
@@ -83,9 +85,15 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     alignItems: "center",
-    gap: space(2.5),
-    paddingHorizontal: MENU_INSET + space(3.5),
-    paddingBottom: space(3),
+    gap: space(2),
+    paddingLeft: MENU_INSET + NAV_PAD_LEFT,
+    paddingRight: MENU_INSET + space(3),
+    paddingBottom: space(2.5),
+  },
+  headerLead: {
+    width: NAV_LEAD,
+    alignItems: "center",
+    justifyContent: "center",
   },
   rows: { paddingHorizontal: MENU_INSET, paddingTop: space(1) },
 });

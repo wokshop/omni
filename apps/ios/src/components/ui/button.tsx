@@ -1,7 +1,8 @@
 import type { ComponentType } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, View, type PressableProps } from "react-native";
+import { Pressable, StyleSheet, View, type PressableProps } from "react-native";
 import type { SvgProps } from "react-native-svg";
 import { colors, iconSize, radius, space } from "@/theme/tokens.ts";
+import { Spinner } from "./spinner.tsx";
 import { Text } from "./text.tsx";
 
 export interface ButtonProps extends Omit<PressableProps, "children"> {
@@ -53,7 +54,10 @@ export function Button({
     >
       <View style={styles.row}>
         {isPending ? (
-          <ActivityIndicator color={primary ? colors.primaryForeground : colors.foreground} />
+          <Spinner
+            size={glyphSize}
+            color={primary ? colors.primaryForeground : colors.foreground}
+          />
         ) : Icon ? (
           <Icon size={glyphSize} color={glyph} />
         ) : null}

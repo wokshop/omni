@@ -1,7 +1,8 @@
 import type { ComponentType, ReactNode } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, View, type PressableProps } from "react-native";
+import { Pressable, StyleSheet, View, type PressableProps } from "react-native";
 import type { SvgProps } from "react-native-svg";
 import { colors, floatingControl, iconSize, radius, searchControl, space } from "@/theme/tokens.ts";
+import { Spinner } from "./spinner.tsx";
 import { Text } from "./text.tsx";
 
 export const compactControl = space(11);
@@ -34,7 +35,7 @@ export function FloatingButton({
   primary = false,
   compact = false,
   searching = false,
-  glyph = iconSize.md,
+  glyph = iconSize.field,
   isPending = false,
   disabled,
   ...props
@@ -57,7 +58,7 @@ export function FloatingButton({
         pressed && styles.pressed,
       ]}
     >
-      {isPending ? <ActivityIndicator color={ink} /> : <Icon size={glyph} color={ink} />}
+      {isPending ? <Spinner size={glyph} color={ink} /> : <Icon size={glyph} color={ink} />}
     </Pressable>
   );
 }
@@ -147,7 +148,7 @@ const styles = StyleSheet.create({
     height: floatingControl,
     borderRadius: radius.full,
     backgroundColor: colors.surface,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: 1,
     borderColor: colors.border,
   },
   round: { width: floatingControl, alignItems: "center", justifyContent: "center" },

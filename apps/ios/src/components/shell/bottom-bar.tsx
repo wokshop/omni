@@ -11,10 +11,11 @@ import { useMenuPlace, type Module } from "./menu-nav.ts";
 import { MenuRow } from "./menu-row.tsx";
 import { ModuleDock } from "./module-dock.tsx";
 
-const PLACEHOLDER: Partial<Record<Module, string>> = {
+const PLACEHOLDER: Record<Module, string> = {
   mail: "Search mail",
   drive: "Search files",
   crm: "Search records",
+  calendar: "Search",
 };
 
 const NEW_RECORD: Record<CrmPage, { kind: string; label: string }> = {
@@ -26,9 +27,9 @@ const NEW_RECORD: Record<CrmPage, { kind: string; label: string }> = {
 };
 
 /**
- * The shell's bottom bar on a module's root page, the page fading out behind it: the module's
- * search bar and main action (New message, Drive's Add sheet, a new record) stacked above the
- * bottom module switcher dock. Calendar shows only the dock until calendar features land.
+ * The shell's bottom bar on a module's root page: the module's primary action floating above the
+ * bottom dock (4 modules around a center Search button). Tapping Search opens the live search
+ * field above the keyboard.
  */
 export function BottomBar() {
   const shell = useMenu();
@@ -78,14 +79,9 @@ export function BottomBar() {
       <FloatingBar
         key={module}
         placeholder={PLACEHOLDER[module]}
-        initial={{ searching: mine, query: mine ? shell.query : "" }}
+        searching={mine}
         query={mine ? shell.query : undefined}
         onSearch={setQuery}
-        onStart={() => {
-          close();
-          setQuery("");
-          setSearchIn(module);
-        }}
         onStop={() => setSearchIn(null)}
         action={actions[module]}
         dock={<ModuleDock />}
