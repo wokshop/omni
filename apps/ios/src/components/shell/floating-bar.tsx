@@ -9,7 +9,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { SvgProps } from "react-native-svg";
-import { IconSearch, IconX } from "@/components/icons.ts";
+import { IconMicrophone, IconSearch, IconX } from "@/components/icons.ts";
 import { FloatingButton, FloatingField, FloatingPill } from "@/components/ui/floating.tsx";
 import { TextField } from "@/components/ui/text-field.tsx";
 import { floatingControl, iconSize, space, text } from "@/theme/tokens.ts";
@@ -68,6 +68,11 @@ export function FloatingBar({
     onSearch("");
     onStop?.();
   };
+  const open = () => {
+    onStart?.();
+    setFocus(true);
+    setSearching(true);
+  };
   const bottom =
     searching && keyboard ? keyboard + space(2.5) : Math.max(insets.bottom - space(1), space(3));
   return (
@@ -107,11 +112,8 @@ export function FloatingBar({
               <FloatingPill
                 icon={IconSearch}
                 label={placeholder}
-                onPress={() => {
-                  onStart?.();
-                  setFocus(true);
-                  setSearching(true);
-                }}
+                trailing={{ icon: IconMicrophone, label: "Dictate", onPress: open }}
+                onPress={open}
               />
             </View>
           ) : null}

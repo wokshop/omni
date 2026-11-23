@@ -115,20 +115,24 @@ export function FloatingButton({
 }
 
 /**
- * The floating bar's wide search pill, at rest: native Liquid Glass on iOS 26+, with a glyph and
- * placeholder; a tap opens the live field (`FloatingField`).
+ * The floating bar's wide search pill, at rest: native Liquid Glass on iOS 26+, its glyph at the
+ * left, the placeholder centred, and an optional trailing action (dictation) at the right; a tap
+ * opens the live field (`FloatingField`), where text sits at the left.
  */
 export function FloatingPill({
   icon: Icon,
   label,
   compact = false,
+  trailing,
   onPress,
 }: {
   icon: Glyph;
   label: string;
   compact?: boolean;
+  trailing?: FloatingGroupAction;
   onPress: () => void;
 }) {
+  const Trailing = trailing?.icon;
   return (
     <Pressable
       accessibilityRole="search"
@@ -137,10 +141,27 @@ export function FloatingPill({
       style={({ pressed }) => [styles.pillWrap, pressed && styles.pressed]}
     >
       <GlassSurface interactive style={[styles.pill, compact && styles.compact]}>
-        <Icon size={iconSize.md} strokeWidth={2} color={colors.mutedForeground} />
-        <Text size="body" tone="mutedForeground" numberOfLines={1} style={styles.shrink}>
+        <Icon size={iconSize.md} strokeWidth={2} color={colors.foreground} />
+        <Text
+          size="body"
+          tone="mutedForeground"
+          numberOfLines={1}
+          style={[styles.shrink, styles.centeredText]}
+        >
           {label}
         </Text>
+        {trailing && Trailing ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={trailing.label}
+            hitSlop={space(2)}
+            onPress={trailing.onPress}
+          >
+            <Trailing size={iconSize.md} strokeWidth={2} color={colors.foreground} />
+          </Pressable>
+        ) : (
+          <View style={styles.glyphSlot} />
+        )}
       </GlassSurface>
     </Pressable>
   );
@@ -150,7 +171,7 @@ export function FloatingPill({
 export function FloatingField({ icon: Icon, children }: { icon: Glyph; children: ReactNode }) {
   return (
     <GlassSurface interactive style={[styles.pill, styles.field]}>
-      <Icon size={iconSize.md} strokeWidth={2} color={colors.mutedForeground} />
+      <Icon size={iconSize.md} strokeWidth={2} color={colors.foreground} />
       {children}
     </GlassSurface>
   );
@@ -226,6 +247,8 @@ const styles = StyleSheet.create({
     gap: space(2.5),
     paddingHorizontal: space(4.5),
   },
+  centeredText: { flex: 1, textAlign: "center" },
+  glyphSlot: { width: iconSize.md },
   group: { flexDirection: "row", alignItems: "center", paddingHorizontal: space(1.5) },
   groupButton: {
     width: compactControl,

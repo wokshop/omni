@@ -93,3 +93,4 @@ export { IconSparkle } from "@central-icons-react-native/round-outlined-radius-3
 export { IconStar } from "@central-icons-react-native/round-outlined-radius-3-stroke-1.5/IconStar";
 export { IconTarget } from "@central-icons-react-native/round-outlined-radius-3-stroke-1.5/IconTarget";
 export { IconTrophy } from "@central-icons-react-native/round-outlined-radius-3-stroke-1.5/IconTrophy";
+export { IconMicrophone } from "@central-icons-react-native/round-outlined-radius-3-stroke-1.5/IconMicrophone";
